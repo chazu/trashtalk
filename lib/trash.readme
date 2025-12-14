@@ -1,0 +1,109 @@
+TODOs
+* _wrap_value function for wrapping a value into json _if needed_
+* values can be represented as tagged json objects e.g. {"type": "foo", "value": {"lol": "wat"} } or {"type": "string", "value": "bar"}
+* Right now only numbers can be assigned as result of a stack frame - any type needs to be able to be assigned
+* Top level has a stack frame - at the end of execution the return value is printed
+* Stack frames are used to pass in arguments for message sends
+* Stack frames are used to return values
+* Good first expression to parse: `[1,2,3] at: 1` or something?
+* Or maybe 2 + 2? Something that just sends a simple message and gets back a simple piece of data.
+
+DONE
+* Stack frames are JSON, build with `jo` and parsed with `jq`
+* Set a stack frame to a uuid key and add that key to the top of the stack (_stack)
+* A stack frame is stored in kv
+* Set the current stack frame return value (^ and _set_return_value functions)
+* build a stack frame with jo
+* Stack Frame should have a _type key with "StackFrame"
+* It also has a result and args map
+
+Per https://wiki.c2.com/?HeartOfSmalltalk:
+
+* Send a message -- invoke the method found by looking up the message selector in the class of the receiver
+* Read the value of a variable. Variables hold references to objects.
+* Read the value of a literal, i.e. 'hello' or 3.
+* Assign a variable -- store a reference to an object in a variable (could be a temporary (method scoped) variable or an instance variable
+* [DONE] Return a value -- push an object on the stack to be found by the invoker of this method
+* Create a block -- an object that refers to some code you can evaluate. It is a closure, like in Scheme, and is used to make control structures. It is the only thing on this list that is complicated.
+
+* Primitives are in bash - theyre just bash functions
+* Use `jo` to build json, `kvset` to store it, `jq` to get type info and values back.
+* Use `yq` to parse yaml
+* Objects are serialized as yaml?
+* Implement a simple line editor like in that one japanese guys project?
+
+first use cases:
+
+trash jira tasksClosedYesterday
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Okay, new idea. How can we mimic elvish's behavior of having both
+
+# TODO
+* TEST: if I send object `self`, it should resolve self to `object`
+* TEST: if I send a unit subclassing object `self`, it should resolve to the name of that unit (its filename under the trash dir)
+
+* How do we deal with scope?
+* units specify what they are subclassing
+* if no superclass is specified then its object by default
+* @ does object lookup by default - e.g. `@ object` returns the object
+* @ gets most of its behavior from object, except it returns/prints a printed representation of an object as the result of any command - OR a reference to its stored state in kv
+
+* Objects are defined in units (files)
+* Objects (units) need to be able to inherit
+* Instance data lives in kv (json)
+* Do we need to be able to define new units programmatically? I dont think so
+* Some (live) units should be able to run as processes - maybe a base unit called Actor or something
+* Get all the selectors defined in a unit
+* rehash to rebuild dispatch? is this necessary?
+
+* Look at these projects for help with late binding implementations:
+** https://github.com/Mosai/workshop/blob/master/doc/dispatch.md
+** https://github.com/wpalmer/dispatch.sh
+** https://github.com/rerun/rerun
+
+* This list probably has some stuff we can crib for utilities:
+** https://github.com/alebcay/awesome-shell
+
+* * [Foo bar:1 withQuux: [Fnord at:3]]
+* * forth with [nested procedures]
+* * * Primitive functions are in bash, defined words are in kv as combinations of primitive words
+* Make the stack work properly (i think its in bsfl, make it use kv i guess)
+* @ needs to resolve the receiver - i.e. it needs to parse the command
+
+
+
+# DONE
+* TEST: if I call to_sends with '[foo bar]' it returns 'foo bar'
+* TEST: if i call to_sends with two args and no brackets it returns '<arg1> <arg2>'
+* TEST: if I call to_sends on a unary message with no receiever ( a single word ) it returns 'object <msg>'
+* 'self' is passed into send and lookup
+* Add bats suite
+
+Idea: methods must be defined with prefix of +
+# Tasks:
+## Create an instance of http service
+@ httpService atUrl: https://vault.develop.trhc.io
+or
+@ [httpService atUrl: https://vault.develop.trhc.io]
+## Create a live object (job)
+ This is done inside the code unit
+## Persist an object
+@ [httpService atUrl: https://vault.develop.trhc.io persistAs: vault-develop]
+
+## Create an http resource
+@ vaultService resource: tokens atPath: /whatever/foo?lol

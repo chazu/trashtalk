@@ -1,0 +1,50 @@
+is_a Object
+include Debuggable
+
+# Counter object for testing nested messages and state
+
+# Initialize counter
+new() {
+    local counter_id=$(_generate_instance_id "Counter")
+    _create_instance "Counter" "$counter_id" "0"
+    echo "$counter_id"
+}
+
+# Get current value
+getValue() {
+    local value=$(kvget "$_RECEIVER")
+    echo "${value:-0}"
+}
+
+# Set value
+setValue() {
+    local new_value="$1"
+    kvset "$_RECEIVER" "$new_value"
+    echo "$new_value"
+}
+
+# Increment by amount (default 1)
+increment() {
+    local amount="${1:-1}"
+    local current=$(getValue)
+    local new_value=$((current + amount))
+    setValue "$new_value"
+}
+
+# Decrement by amount (default 1)
+decrement() {
+    local amount="${1:-1}"
+    local current=$(getValue)
+    local new_value=$((current - amount))
+    setValue "$new_value"
+}
+
+# Reset to zero
+reset() {
+    setValue "0"
+}
+
+# Show current state
+show() {
+    echo "Counter $_RECEIVER: $(getValue)"
+}

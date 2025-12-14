@@ -1,0 +1,9 @@
+is_a Object
+
+fooBar() {
+  echo Coming to ya from fooBar in Object
+}
+
+baz() {
+  echo Comin to ya from baz in Object
+}

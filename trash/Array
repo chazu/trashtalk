@@ -1,0 +1,93 @@
+is_a Object
+include Debuggable
+
+# Array object for testing indexing and collections
+
+# Create a new array
+new() {
+    local array_id=$(_generate_instance_id "Array")
+    _create_instance "Array" "$array_id" "[]"
+    echo "$array_id"
+}
+
+# Get element at index (Lua-style: everything is a string key)
+at() {
+    local index="$1"
+    local array_data=$(kvget "$_RECEIVER")
+    
+    if [[ -n "$array_data" ]]; then
+        echo "$array_data" | jq -r ".[$index] // empty"
+    fi
+}
+
+# Set element at index
+at_put() {
+    local index="$1"
+    local value="$2"
+    local array_data=$(kvget "$_RECEIVER")
+    
+    if [[ -z "$array_data" ]]; then
+        array_data="[]"
+    fi
+    
+    # Extend array if necessary
+    local new_data=$(echo "$array_data" | jq ".[$index] = \"$value\"")
+    kvset "$_RECEIVER" "$new_data"
+    echo "$value"
+}
+
+# Add element to end
+push() {
+    local value="$1"
+    local array_data=$(kvget "$_RECEIVER")
+    
+    if [[ -z "$array_data" ]]; then
+        array_data="[]"
+    fi
+    
+    local new_data=$(echo "$array_data" | jq ". + [\"$value\"]")
+    kvset "$_RECEIVER" "$new_data"
+    echo "$value"
+}
+
+# Get array length
+size() {
+    local array_data=$(kvget "$_RECEIVER")
+    
+    if [[ -n "$array_data" ]]; then
+        echo "$array_data" | jq 'length'
+    else
+        echo "0"
+    fi
+}
+
+# Print array contents
+show() {
+    local array_data=$(kvget "$_RECEIVER")
+    
+    if [[ -n "$array_data" ]]; then
+        echo "$array_data" | jq -r '.[]' | nl -v0 | sed 's/^[ \t]*//'
+    else
+        echo "(empty array)"
+    fi
+}
+
+# Initialize with values
+withValues() {
+    local values="$*"
+    local array_data="["
+    local first=true
+    
+    for value in $values; do
+        if [[ "$first" == true ]]; then
+            first=false
+        else
+            array_data="$array_data,"
+        fi
+        array_data="$array_data\"$value\""
+    done
+    array_data="$array_data]"
+    
+    kvset "$_RECEIVER" "$array_data"
+    echo "$_RECEIVER"
+}

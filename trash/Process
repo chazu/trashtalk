@@ -1,0 +1,455 @@
+is_a Object
+include Debuggable
+
+# Enhanced Process object using Tuplespace for robust process management
+# Provides event-driven, fault-tolerant process coordination
+
+# Initialize tuplespace for process management
+_init_tuplespace() {
+    if ! TRASH_DEBUG=0 send Tuplespace count >/dev/null 2>&1; then
+        debug "Initializing tuplespace for process management"
+        TRASH_DEBUG=0 send Tuplespace init >/dev/null
+    fi
+}
+
+# Spawn a new process running the given object
+spawn() {
+    local object_name="$1"
+    local process_id="proc_$(uuidgen 2>/dev/null || echo "$$_$(date +%s)")"
+
+    debug "Spawning process $process_id for object $object_name"
+    _init_tuplespace
+
+    # Register process in tuplespace
+    TRASH_DEBUG=0 send Tuplespace put "process" \
+        "id" "$process_id" \
+        "object" "$object_name" \
+        "status" "starting" \
+        "created" "$(date +%s)" \
+        "pid" "" >/dev/null
+
+    # Start the process message loop in background with all output suppressed
+    (tuplespace_message_loop "$process_id" "$object_name") >/dev/null 2>&1 &
+    local bg_pid=$!
+
+    # Update process with actual PID and running status
+    TRASH_DEBUG=0 send Tuplespace take "process" "id" "$process_id" >/dev/null
+    TRASH_DEBUG=0 send Tuplespace put "process" \
+        "id" "$process_id" \
+        "object" "$object_name" \
+        "status" "running" \
+        "created" "$(date +%s)" \
+        "pid" "$bg_pid" >/dev/null
+
+    # Emit process started event
+    TRASH_DEBUG=0 send Tuplespace putEvent "process_started" "$process_id" >/dev/null
+
+    echo "$process_id"
+}
+
+# Tuplespace-based message loop for spawned processes
+tuplespace_message_loop() {
+    local process_id="$1"
+    local object_name="$2"
+
+    # Completely suppress all output in background process
+    exec >/dev/null 2>&1
+
+    # Set up signal handling for graceful shutdown
+    trap "cleanup_process_internal '$process_id'; exit 0" TERM INT
+
+    while true; do
+        # Wait for messages directed to this process with timeout
+        local message_tuple
+        message_tuple=$(TRASH_DEBUG=0 send Tuplespace wait "message" "target" "$process_id" 1 2>/dev/null || true)
+
+        if [[ -n "$message_tuple" ]]; then
+            # Extract message details
+            local message_id sender payload message_type
+            message_id=$(echo "$message_tuple" | TRASH_DEBUG=0 send Tuplespace field - "ID" 2>/dev/null | tail -1 || true)
+            sender=$(echo "$message_tuple" | TRASH_DEBUG=0 send Tuplespace field - "sender" 2>/dev/null | tail -1 || true)
+            payload=$(echo "$message_tuple" | TRASH_DEBUG=0 send Tuplespace field - "payload" 2>/dev/null | tail -1 || true)
+            message_type=$(echo "$message_tuple" | TRASH_DEBUG=0 send Tuplespace field - "type" 2>/dev/null | tail -1 || true)
+
+            # Remove the message from the queue
+            TRASH_DEBUG=0 send Tuplespace take "message" "ID" "$message_id" >/dev/null 2>&1 || true
+
+            case "$message_type" in
+                "terminate")
+                    break
+                    ;;
+                "message"|*)
+                    # Execute the message in the context of the object
+                    local result exit_code
+                    result=$(TRASH_DEBUG=0 send "$object_name" $payload 2>&1 || true)
+                    exit_code=$?
+
+                    # Send response back via tuplespace
+                    TRASH_DEBUG=0 send Tuplespace put "response" \
+                        "request_id" "$message_id" \
+                        "sender" "$process_id" \
+                        "target" "$sender" \
+                        "result" "$result" \
+                        "exit_code" "$exit_code" \
+                        "timestamp" "$(date +%s)" >/dev/null 2>&1 || true
+                    ;;
+            esac
+        fi
+
+        # Check for shutdown signals
+        local shutdown_signal
+        shutdown_signal=$(TRASH_DEBUG=0 send Tuplespace get "signal" "target" "$process_id" "type" "shutdown" 2>/dev/null || true)
+        if [[ -n "$shutdown_signal" ]]; then
+            TRASH_DEBUG=0 send Tuplespace take "signal" "target" "$process_id" "type" "shutdown" >/dev/null 2>&1 || true
+            break
+        fi
+
+        # Add a small sleep to prevent busy waiting
+        sleep 0.1
+    done
+
+    # Cleanup and exit
+    cleanup_process_internal "$process_id"
+}
+
+# Send a message to a spawned process
+sendToProcess() {
+    local process_id="$1"
+    shift
+    local message="$*"
+
+    debug "Sending message to process $process_id: $message"
+    _init_tuplespace
+
+    # Check if process exists and is running (suppress debug output)
+    local process_tuple
+    process_tuple=$(TRASH_DEBUG=0 send Tuplespace get "process" "id" "$process_id" 2>/dev/null)
+    if [[ -z "$process_tuple" ]]; then
+        echo "Error: Process $process_id not found"
+        return 1
+    fi
+
+    local status
+    status=$(echo "$process_tuple" | TRASH_DEBUG=0 send Tuplespace field - "status" 2>/dev/null | tail -1)
+    if [[ "$status" != "running" ]]; then
+        echo "Error: Process $process_id is not running (status: $status)"
+        return 1
+    fi
+
+    # Generate unique message ID
+    local message_id="msg_$(uuidgen 2>/dev/null || echo "$$_$(date +%s.%N)")"
+
+    # Put message in tuplespace (suppress debug output)
+    TRASH_DEBUG=0 send Tuplespace put "message" \
+        "ID" "$message_id" \
+        "target" "$process_id" \
+        "sender" "$$" \
+        "payload" "$message" \
+        "type" "message" \
+        "timestamp" "$(date +%s)" >/dev/null 2>&1
+
+    echo "$message_id"
+}
+
+# Get result from a process (blocking)
+getFromProcess() {
+    local process_id="$1"
+    local timeout="${2:-10}"  # Default 10 second timeout
+
+    debug "Getting result from process $process_id (timeout: ${timeout}s)"
+    _init_tuplespace
+
+    # Check if process exists (suppress debug output)
+    local process_tuple
+    process_tuple=$(TRASH_DEBUG=0 send Tuplespace get "process" "id" "$process_id" 2>/dev/null)
+    if [[ -z "$process_tuple" ]]; then
+        echo "Error: Process $process_id not found"
+        return 1
+    fi
+
+    # Wait for response from the process (suppress debug output)
+    local response_tuple
+    response_tuple=$(TRASH_DEBUG=0 send Tuplespace wait "response" "sender" "$process_id" "$timeout" 2>/dev/null)
+
+    if [[ -z "$response_tuple" ]]; then
+        echo "Error: Timeout waiting for response from process $process_id"
+        return 1
+    fi
+
+    # Extract and return the result (suppress debug output)
+    local result exit_code response_id
+    result=$(echo "$response_tuple" | TRASH_DEBUG=0 send Tuplespace field - "result" 2>/dev/null | tail -1)
+    exit_code=$(echo "$response_tuple" | TRASH_DEBUG=0 send Tuplespace field - "exit_code" 2>/dev/null | tail -1)
+    response_id=$(echo "$response_tuple" | TRASH_DEBUG=0 send Tuplespace field - "ID" 2>/dev/null | tail -1)
+
+    # Remove the response from tuplespace
+    TRASH_DEBUG=0 send Tuplespace take "response" "ID" "$response_id" >/dev/null 2>&1
+
+    echo "$result"
+    return "${exit_code:-0}"
+}
+
+# Terminate a process gracefully
+terminate() {
+    local process_id="$1"
+
+    debug "Terminating process $process_id"
+    _init_tuplespace
+
+    # Check if process exists
+    local process_tuple=$(TRASH_DEBUG=0 send Tuplespace get "process" "id" "$process_id")
+    if [[ -z "$process_tuple" ]]; then
+        echo "Error: Process $process_id not found"
+        return 1
+    fi
+
+    local pid=$(echo "$process_tuple" | TRASH_DEBUG=0 send Tuplespace field - "pid")
+    local status=$(echo "$process_tuple" | TRASH_DEBUG=0 send Tuplespace field - "status")
+
+    if [[ "$status" != "running" ]]; then
+        echo "Process $process_id is not running (status: $status)"
+        cleanup_process "$process_id"
+        return 0
+    fi
+
+    # Send termination message
+    TRASH_DEBUG=0 send Tuplespace put "message" \
+        "target" "$process_id" \
+        "sender" "$$" \
+        "payload" "terminate" \
+        "type" "terminate" \
+        "timestamp" "$(date +%s)"
+
+    # Wait for graceful shutdown
+    local wait_count=0
+    while [[ $wait_count -lt 5 ]]; do
+        if ! kill -0 "$pid" 2>/dev/null; then
+            debug "Process $process_id terminated gracefully"
+            cleanup_process "$process_id"
+            return 0
+        fi
+        sleep 1
+        ((wait_count++))
+    done
+
+    # Force kill if still running
+    if kill -0 "$pid" 2>/dev/null; then
+        debug "Force killing process $process_id (PID: $pid)"
+        kill -TERM "$pid" 2>/dev/null
+        sleep 1
+        if kill -0 "$pid" 2>/dev/null; then
+            kill -KILL "$pid" 2>/dev/null
+        fi
+    fi
+
+    cleanup_process "$process_id"
+}
+
+# Clean up process resources (external interface)
+cleanup_process() {
+    local process_id="$1"
+    debug "Cleaning up process $process_id"
+
+    _init_tuplespace
+
+    # Remove process from tuplespace
+    TRASH_DEBUG=0 send Tuplespace take "process" "id" "$process_id" >/dev/null
+
+    # Clean up any remaining messages for this process
+    TRASH_DEBUG=0 send Tuplespace take "message" "target" "$process_id" >/dev/null 2>&1
+
+    # Clean up any remaining responses from this process
+    TRASH_DEBUG=0 send Tuplespace take "response" "sender" "$process_id" >/dev/null 2>&1
+
+    # Emit process stopped event
+    TRASH_DEBUG=0 send Tuplespace putEvent "process_stopped" "$process_id"
+
+    debug "Process $process_id cleanup complete"
+}
+
+# Internal cleanup (called from within process)
+cleanup_process_internal() {
+    local process_id="$1"
+    debug "Internal cleanup for process $process_id"
+
+    # Update process status to stopped
+    TRASH_DEBUG=0 send Tuplespace take "process" "id" "$process_id" >/dev/null
+    TRASH_DEBUG=0 send Tuplespace put "process" \
+        "id" "$process_id" \
+        "status" "stopped" \
+        "stopped" "$(date +%s)"
+
+    # Emit process stopped event
+    TRASH_DEBUG=0 send Tuplespace putEvent "process_stopped" "$process_id"
+}
+
+# List all processes (running and stopped)
+listProcesses() {
+    debug "Listing all processes"
+    _init_tuplespace
+
+    TRASH_DEBUG=0 send Tuplespace get "process" | while IFS= read -r line; do
+        if [[ "$line" =~ ^ID: ]]; then
+            local process_id=$(echo "$line" | sed 's/^ID: //')
+            local process_tuple=$(TRASH_DEBUG=0 send Tuplespace get "process" "id" "$process_id")
+
+            if [[ -n "$process_tuple" ]]; then
+                local object_name=$(echo "$process_tuple" | TRASH_DEBUG=0 send Tuplespace field - "object")
+                local status=$(echo "$process_tuple" | TRASH_DEBUG=0 send Tuplespace field - "status")
+                local pid=$(echo "$process_tuple" | TRASH_DEBUG=0 send Tuplespace field - "pid")
+
+                if [[ "$status" == "running" ]]; then
+                    # Verify process is actually running
+                    if kill -0 "$pid" 2>/dev/null; then
+                        echo "$process_id: $object_name (PID: $pid, status: $status)"
+                    else
+                        # Process died, clean it up
+                        debug "Found dead process $process_id, cleaning up"
+                        cleanup_process "$process_id"
+                    fi
+                else
+                    echo "$process_id: $object_name (status: $status)"
+                fi
+            fi
+        fi
+    done
+}
+
+# List only running processes
+listRunning() {
+    debug "Listing running processes"
+    _init_tuplespace
+
+    TRASH_DEBUG=0 send Tuplespace get "process" "status" "running" | while IFS= read -r line; do
+        if [[ "$line" =~ ^ID: ]]; then
+            local process_id=$(echo "$line" | sed 's/^ID: //')
+            local process_tuple=$(TRASH_DEBUG=0 send Tuplespace get "process" "id" "$process_id")
+
+            if [[ -n "$process_tuple" ]]; then
+                local object_name=$(echo "$process_tuple" | TRASH_DEBUG=0 send Tuplespace field - "object")
+                local pid=$(echo "$process_tuple" | TRASH_DEBUG=0 send Tuplespace field - "pid")
+
+                # Verify process is actually running
+                if kill -0 "$pid" 2>/dev/null; then
+                    echo "$process_id: $object_name (PID: $pid)"
+                else
+                    # Process died, clean it up
+                    cleanup_process "$process_id"
+                fi
+            fi
+        fi
+    done
+}
+
+# Get process status
+status() {
+    local process_id="$1"
+
+    if [[ -z "$process_id" ]]; then
+        echo "Usage: @ Process status <process_id>"
+        return 1
+    fi
+
+    debug "Getting status for process $process_id"
+    _init_tuplespace
+
+    # Get process tuple (suppress debug output)
+    local process_tuple
+    process_tuple=$(TRASH_DEBUG=0 send Tuplespace get "process" "id" "$process_id" 2>/dev/null)
+    if [[ -z "$process_tuple" ]]; then
+        echo "Process $process_id not found"
+        return 1
+    fi
+
+    # Extract fields (suppress debug output)
+    local object_name status_val pid created
+    object_name=$(echo "$process_tuple" | TRASH_DEBUG=0 send Tuplespace field - "object" 2>/dev/null | tail -1)
+    status_val=$(echo "$process_tuple" | TRASH_DEBUG=0 send Tuplespace field - "status" 2>/dev/null | tail -1)
+    pid=$(echo "$process_tuple" | TRASH_DEBUG=0 send Tuplespace field - "pid" 2>/dev/null | tail -1)
+    created=$(echo "$process_tuple" | TRASH_DEBUG=0 send Tuplespace field - "created" 2>/dev/null | tail -1)
+
+    echo "Process ID: $process_id"
+    echo "Object: $object_name"
+    echo "Status: $status_val"
+    echo "PID: $pid"
+    echo "Created: $(date -r "$created" 2>/dev/null || echo "$created")"
+
+    if [[ "$status_val" == "running" ]]; then
+        if kill -0 "$pid" 2>/dev/null; then
+            echo "Process is alive"
+        else
+            echo "Process appears dead (cleaning up)"
+            cleanup_process "$process_id"
+        fi
+    fi
+}
+
+# Clean up all dead processes
+cleanupAll() {
+    debug "Cleaning up all dead processes"
+    _init_tuplespace
+
+    local cleaned=0
+    TRASH_DEBUG=0 send Tuplespace get "process" "status" "running" | while IFS= read -r line; do
+        if [[ "$line" =~ ^ID: ]]; then
+            local process_id=$(echo "$line" | sed 's/^ID: //')
+            local process_tuple=$(TRASH_DEBUG=0 send Tuplespace get "process" "id" "$process_id")
+
+            if [[ -n "$process_tuple" ]]; then
+                local pid=$(echo "$process_tuple" | TRASH_DEBUG=0 send Tuplespace field - "pid")
+
+                if ! kill -0 "$pid" 2>/dev/null; then
+                    debug "Cleaning up dead process: $process_id"
+                    cleanup_process "$process_id"
+                    ((cleaned++))
+                fi
+            fi
+        fi
+    done
+
+    echo "Cleaned up $cleaned dead processes"
+}
+
+# Show system statistics
+stats() {
+    debug "Getting process statistics"
+    _init_tuplespace
+
+    local total=$(TRASH_DEBUG=0 send Tuplespace count "process")
+    local running=$(TRASH_DEBUG=0 send Tuplespace count "process" | grep -c "running" || echo "0")
+    local messages=$(TRASH_DEBUG=0 send Tuplespace count "message")
+    local responses=$(TRASH_DEBUG=0 send Tuplespace count "response")
+
+    echo "=== Process System Statistics ==="
+    echo "Total processes: $total"
+    echo "Running processes: $running"
+    echo "Pending messages: $messages"
+    echo "Pending responses: $responses"
+    echo "Tuplespace location: $(TRASH_DEBUG=0 send Tuplespace info | grep "Directory:" | cut -d: -f2 | xargs)"
+}
+
+# Show help
+help() {
+    echo "=== Process Management Commands ==="
+    echo "Basic Operations:"
+    echo "  @ Process spawn <object>              - Spawn new process"
+    echo "  @ Process sendToProcess <id> <msg>    - Send message to process"
+    echo "  @ Process getFromProcess <id> [timeout] - Get response from process"
+    echo "  @ Process terminate <id>              - Terminate process"
+    echo ""
+    echo "Process Management:"
+    echo "  @ Process listProcesses               - List all processes"
+    echo "  @ Process listRunning                 - List running processes only"
+    echo "  @ Process status <id>                 - Get process status"
+    echo "  @ Process cleanupAll                  - Clean up dead processes"
+    echo ""
+    echo "System Information:"
+    echo "  @ Process stats                       - Show system statistics"
+    echo "  @ Process help                        - Show this help"
+    echo ""
+    echo "Examples:"
+    echo "  process_id=\$(@ Process spawn Tool)"
+    echo "  @ Process sendToProcess \$process_id install"
+    echo "  result=\$(@ Process getFromProcess \$process_id 10)"
+    echo "  @ Process terminate \$process_id"
+}

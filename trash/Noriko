@@ -1,0 +1,7 @@
+dock() {
+  xrandr --output DP2-1 --auto
+}
+
+undock() {
+  xrandr --output eDP1 --auto
+}
