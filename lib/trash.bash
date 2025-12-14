@@ -40,11 +40,10 @@ TRASH_AUTHOR="Chaz Straney"
 TRASH_DESCRIPTION="Smalltalk-inspired message-passing system for Bash"
 
 function wrapped_readlink {
-  local greadlink_exists
-  if command -v greadlink; then
-    greadlink $@
+  if command -v greadlink >/dev/null 2>&1; then
+    greadlink "$@"
   else
-    readlink $@
+    readlink "$@"
   fi
 }
 
@@ -327,14 +326,33 @@ function send {
   # Load the function context of receiver unit
   source "$class_file"
 
-  # Call the function if it exists after sourcing
-  if declare -F "$_SELECTOR" >/dev/null 2>&1; then
-    msg_debug "Function $_SELECTOR found, calling it"
+  # Check if function is available and appropriate to call
+  # - If defined in this class file: call it
+  # - If it's a generated accessor (defined in trash.bash): call it
+  # - Otherwise: try method_missing for inheritance lookup
+  if file_defines_function "$class_file" "$_SELECTOR"; then
+    msg_debug "Function $_SELECTOR found in $class_file, calling it"
     "$_SELECTOR" "$@"
     exit_code=$?
+  elif declare -F "$_SELECTOR" >/dev/null 2>&1; then
+    # Function exists - check if it's a generated accessor (from trash.bash)
+    shopt -s extdebug
+    local defined_in=$(declare -F "$_SELECTOR" | awk '{print $NF}')
+    shopt -u extdebug
+    if [[ "$defined_in" == *"trash.bash" ]]; then
+      # Generated accessor - safe to call
+      msg_debug "Function $_SELECTOR is generated accessor, calling it"
+      "$_SELECTOR" "$@"
+      exit_code=$?
+    else
+      # Function from another class file - use method_missing
+      msg_debug "Function $_SELECTOR from other class, trying method_missing"
+      method_missing "$@"
+      exit_code=$?
+    fi
   else
     msg_debug "Function $_SELECTOR not found, trying method_missing"
-    method_missing $_INVOCATION
+    method_missing "$@"
     exit_code=$?
   fi
 
@@ -361,7 +379,7 @@ function @ {
   fi
 
   msg_debug "Entrypoint: $*"
-  send $*
+  send "$@"
 }
 
 # Get list of functions defined in $1

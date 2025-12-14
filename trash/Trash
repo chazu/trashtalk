@@ -171,120 +171,60 @@ cleanup() {
 
 # ============================================
 # Instance Query API
+# Note: These delegate to Object methods. You can also call directly:
+#   @ Counter findAll        (same as @ Trash findAll Counter)
+#   @ Counter find 'x > 5'   (same as @ Trash find Counter 'x > 5')
+#   @ Counter count          (same as @ Trash countInstances Counter)
 # ============================================
 
 # Find all instances of a class
+# Usage: @ Trash findAll <ClassName>
 findAll() {
     local class_name="$1"
 
     if [[ -z "$class_name" ]]; then
         echo "Usage: @ Trash findAll <ClassName>"
+        echo "Or:    @ <ClassName> findAll"
         return 1
     fi
 
-    # Scan kv-bash for type markers
-    local kv_dir="${KV_USER_DIR:-$HOME/.kv-bash}"
-    for file in "$kv_dir"/*._type 2>/dev/null; do
-        if [[ -f "$file" ]]; then
-            local type_val=$(cat "$file")
-            if [[ "$type_val" == "$class_name" ]]; then
-                # Extract instance ID from filename
-                local instance_id=$(basename "$file" ._type)
-                echo "$instance_id"
-            fi
-        fi
-    done
+    @ "$class_name" findAll
 }
 
 # Find instances matching a predicate
+# Usage: @ Trash find <ClassName> [predicate]
 find() {
     local class_name="$1"
     local predicate="$2"
 
     if [[ -z "$class_name" ]]; then
         echo "Usage: @ Trash find <ClassName> [predicate]"
+        echo "Or:    @ <ClassName> find 'predicate'"
         echo "Example: @ Trash find Counter 'value > 5'"
         return 1
     fi
 
-    # Get all instances of the class
-    local instances=$(findAll "$class_name")
-
-    if [[ -z "$predicate" ]]; then
-        echo "$instances"
-        return 0
-    fi
-
-    # Filter by predicate
-    echo "$instances" | while read -r instance_id; do
-        if [[ -n "$instance_id" ]]; then
-            if _evaluate_predicate "$instance_id" "$class_name" "$predicate"; then
-                echo "$instance_id"
-            fi
-        fi
-    done
-}
-
-# Helper: evaluate a predicate against an instance
-_evaluate_predicate() {
-    local instance_id="$1"
-    local class_name="$2"
-    local predicate="$3"
-
-    # Get the instance value (try getValue method first, then raw kv data)
-    local value
-    value=$(@ "$instance_id" getValue 2>/dev/null)
-    if [[ -z "$value" ]]; then
-        value=$(kvget "$instance_id" 2>/dev/null)
-    fi
-
-    # Simple predicate evaluation
-    # Format: "value OP number" or just "OP number" (value implied)
-    if [[ "$predicate" =~ ^(value[[:space:]]*)?([<>=!]+)[[:space:]]*([0-9]+)$ ]]; then
-        local op="${BASH_REMATCH[2]}"
-        local target="${BASH_REMATCH[3]}"
-
-        # Handle non-numeric values
-        if ! [[ "$value" =~ ^-?[0-9]+$ ]]; then
-            return 1
-        fi
-
-        case "$op" in
-            ">")  [[ "$value" -gt "$target" ]] ;;
-            "<")  [[ "$value" -lt "$target" ]] ;;
-            ">=") [[ "$value" -ge "$target" ]] ;;
-            "<=") [[ "$value" -le "$target" ]] ;;
-            "=="|"=") [[ "$value" -eq "$target" ]] ;;
-            "!=") [[ "$value" -ne "$target" ]] ;;
-            *)    return 1 ;;
-        esac
-    else
-        # Unsupported predicate format
-        echo "Warning: Unsupported predicate format: $predicate" >&2
-        return 1
-    fi
+    @ "$class_name" find "$predicate"
 }
 
 # Count instances of a class
+# Usage: @ Trash countInstances <ClassName>
 countInstances() {
     local class_name="$1"
 
     if [[ -z "$class_name" ]]; then
         echo "Usage: @ Trash countInstances <ClassName>"
+        echo "Or:    @ <ClassName> count"
         return 1
     fi
 
-    findAll "$class_name" | wc -l | tr -d ' '
+    @ "$class_name" count
 }
 
-# List all instance types
+# List all classes that have instances
+# Usage: @ Trash listInstanceTypes
 listInstanceTypes() {
-    local kv_dir="${KV_USER_DIR:-$HOME/.kv-bash}"
-    for file in "$kv_dir"/*._type 2>/dev/null; do
-        if [[ -f "$file" ]]; then
-            cat "$file"
-        fi
-    done | sort -u
+    db_list_classes
 }
 
 # ============================================
@@ -375,20 +315,28 @@ help() {
     echo "@ Trash inspect <object>        - Detailed object inspection"
     echo ""
     echo "=== Instance Query Commands ==="
-    echo "@ Trash findAll <Class>         - Find all instances of a class"
-    echo "@ Trash find <Class> [pred]     - Find instances matching predicate"
-    echo "@ Trash countInstances <Class>  - Count instances of a class"
-    echo "@ Trash listInstanceTypes       - List all instance types"
+    echo "@ Trash findAll <Class>         - Find all instances"
+    echo "@ Trash find <Class> [pred]     - Find with predicate"
+    echo "@ Trash countInstances <Class>  - Count instances"
+    echo "@ Trash listInstanceTypes       - List classes with instances"
     echo "@ Trash showStack               - Show current call stack"
-    echo "@ Trash clearStack              - Clear call stack (recovery)"
+    echo "@ Trash clearStack              - Clear call stack"
+    echo ""
+    echo "=== Object Persistence (on any class) ==="
+    echo "@ <Class> findAll               - Find all instances"
+    echo "@ <Class> find 'field > val'    - Find with predicate"
+    echo "@ <Class> count                 - Count instances"
+    echo "@ \$instance save               - Save to database"
+    echo "@ \$instance delete             - Delete from database"
+    echo "@ \$instance class              - Get instance class"
+    echo "@ \$instance asJson             - Get as JSON"
     echo ""
     echo "@ Trash help                    - Show this help"
     echo ""
     echo "Examples:"
-    echo "  @ Trash createObject MyService Tool"
+    echo "  @ Counter findAll"
+    echo "  @ Counter find 'value > 5'"
     echo "  @ Trash methodsFor Array"
-    echo "  @ Trash findAll Counter"
-    echo "  @ Trash find Counter 'value > 5'"
 }
 
 # Show version information

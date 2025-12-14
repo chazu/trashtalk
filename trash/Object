@@ -1,9 +1,105 @@
 is_a Object
 
-fooBar() {
-  echo Coming to ya from fooBar in Object
+# Object - Base class for all Trashtalk objects
+# Provides persistence methods inherited by all subclasses
+
+# ============================================
+# Class Methods (when receiver is a class name)
+# ============================================
+
+# Find all instances of this class
+# Usage: @ Counter findAll
+findAll() {
+    db_find_by_class "$_RECEIVER"
 }
 
-baz() {
-  echo Comin to ya from baz in Object
+# Find instances matching a predicate
+# Usage: @ Counter find 'value > 5'
+# Predicate format: "field OP value" e.g. "value > 5", "count = 10"
+find() {
+    local predicate="$1"
+
+    if [[ -z "$predicate" ]]; then
+        # No predicate - return all
+        db_find_by_class "$_RECEIVER"
+        return 0
+    fi
+
+    # Parse predicate: "field OP number" format
+    local escaped_class
+    escaped_class=$(_db_escape "$_RECEIVER")
+
+    if [[ "$predicate" =~ ^([a-zA-Z_][a-zA-Z0-9_]*)[[:space:]]*([<>=!]+)[[:space:]]*(.+)$ ]]; then
+        local field="${BASH_REMATCH[1]}"
+        local op="${BASH_REMATCH[2]}"
+        local target="${BASH_REMATCH[3]}"
+
+        # Normalize operator
+        [[ "$op" == "==" ]] && op="="
+        [[ "$op" == "!=" ]] && op="<>"
+
+        # Build SQL WHERE clause
+        local where_clause="class = '$escaped_class' AND json_extract(data, '\$.$field') $op $target"
+        db_query "$where_clause"
+    else
+        echo "Error: Invalid predicate format: $predicate" >&2
+        echo "Expected: field OP value (e.g. 'value > 5')" >&2
+        return 1
+    fi
+}
+
+# Count instances of this class
+# Usage: @ Counter count
+count() {
+    db_count_by_class "$_RECEIVER"
+}
+
+# ============================================
+# Instance Methods (when receiver is an instance ID)
+# ============================================
+
+# Explicitly save instance to database
+# Note: Setters auto-save, but this provides explicit control
+# Usage: @ $counter save
+save() {
+    local data
+    data=$(db_get "$_RECEIVER")
+    if [[ -n "$data" ]]; then
+        db_put "$_RECEIVER" "$data"
+    else
+        echo "Error: Instance $_RECEIVER not found" >&2
+        return 1
+    fi
+}
+
+# Delete this instance from database
+# Usage: @ $counter delete
+delete() {
+    db_delete "$_RECEIVER"
+}
+
+# Get the class of this instance
+# Usage: @ $counter class
+class() {
+    _get_instance_class "$_RECEIVER"
+}
+
+# Get instance ID
+# Usage: @ $counter id
+id() {
+    echo "$_RECEIVER"
+}
+
+# Get all data as JSON
+# Usage: @ $counter asJson
+asJson() {
+    db_get "$_RECEIVER"
+}
+
+# Check if instance exists in database
+# Usage: @ $counter exists
+exists() {
+    local data
+    data=$(db_get "$_RECEIVER" 2>/dev/null)
+    [[ -n "$data" ]]
 }

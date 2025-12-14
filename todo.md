@@ -1,5 +1,32 @@
 # Trashtalk Roadmap
 
+## Recently Completed
+
+### Object Persistence Methods (2024-12-13)
+Added persistence methods to Object base class, inherited by all subclasses:
+- **Class methods**: `findAll`, `find 'predicate'`, `count`
+- **Instance methods**: `save`, `delete`, `class`, `id`, `asJson`, `exists`
+
+```bash
+@ Counter findAll              # All Counter instances
+@ Counter find 'value > 5'     # Query with predicate
+@ Counter count                # Count instances
+@ $counter delete              # Remove from DB
+@ $counter asJson              # Get raw JSON
+```
+
+### Trash Class Updated (2024-12-13)
+- Converted `findAll`, `find`, `countInstances` to use SQLite via Store
+- Now delegates to Object methods: `@ Trash findAll Counter` → `@ Counter findAll`
+- Both API styles work interchangeably
+
+### Bug Fixes (2024-12-13)
+- Fixed `wrapped_readlink` breaking `file_defines_function` on macOS
+- Fixed argument quoting in `@` and `send` functions (predicates with spaces now work)
+- Improved method dispatch to correctly handle generated accessors vs inherited methods
+
+---
+
 ## High Priority
 
 ### Instance Variable Defaults
@@ -8,9 +35,6 @@ Allow default values in instance_vars declaration:
 instance_vars count:0 step:1 name:""
 ```
 Would simplify `new()` methods significantly.
-
-### Update Trash Class
-The Trash object has `findAll`, `find`, `countInstances` that currently scan kv-bash. Should use Store/sqlite-json now. Dogfooding the new persistence layer.
 
 ### Edit Message on Object
 Add an `edit` method to Object that opens the class definition in `$EDITOR`:
@@ -107,4 +131,4 @@ increment() { ... }
 
 ---
 
-*Last updated: 2024-12-13*
+*Last updated: 2024-12-13* (Object persistence, Trash delegation, bug fixes)
