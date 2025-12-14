@@ -103,3 +103,33 @@ exists() {
     data=$(db_get "$_RECEIVER" 2>/dev/null)
     [[ -n "$data" ]]
 }
+
+# ============================================
+# Development Methods
+# ============================================
+
+# Open the class definition in $EDITOR
+# Usage: @ Counter edit       (opens trash/Counter)
+# Usage: @ $counter edit      (opens the class file for this instance)
+edit() {
+    local class_name
+    local class_file
+
+    # Check if receiver is an instance or a class name
+    if _is_instance "$_RECEIVER"; then
+        class_name=$(_get_instance_class "$_RECEIVER")
+    else
+        class_name="$_RECEIVER"
+    fi
+
+    class_file="$TRASHDIR/$class_name"
+
+    if [[ ! -f "$class_file" ]]; then
+        echo "Error: Class file not found: $class_file" >&2
+        return 1
+    fi
+
+    # Use $EDITOR, fall back to vi
+    local editor="${EDITOR:-vi}"
+    "$editor" "$class_file"
+}

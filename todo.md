@@ -1,30 +1,6 @@
 # Trashtalk Roadmap
 
-## High Priority
-
-### Instance Variable Defaults
-Allow default values in instance_vars declaration:
-```bash
-instance_vars count:0 step:1 name:""
-```
-Would simplify `new()` methods significantly.
-
-### Edit Message on Object
-Add an `edit` method to Object that opens the class definition in `$EDITOR`:
-```bash
-@ Counter edit        # Opens trash/Counter in $EDITOR
-@ $instance edit      # Opens the class file for this instance's type
-```
-
 ## Medium Priority
-
-### Inheritance of instance_vars
-If `Counter is_a ValueHolder` and ValueHolder declares `instance_vars value`, Counter should inherit those variables. Currently each class must redeclare everything.
-
-### Migration Script
-- Clear out old kv-bash instance data (`~/.kv-bash/counter_*`, etc.)
-- Or migrate existing instances to SQLite
-- Keep kv-bash only for stack frames
 
 ### Keyword Message Syntax
 Support Smalltalk-style keyword messages:
@@ -76,8 +52,6 @@ Validate on set, reject invalid types.
 ### Schema Versioning
 Handle upgrades to instance structure over time. What happens when you add a new instance_var to a class with existing instances?
 
-## Ideas to Explore
-
 ### Self-Hosting
 Could more of Trashtalk be written in Trashtalk? The Store object is a start, but what about the parser, method dispatch, etc.?
 
@@ -105,6 +79,39 @@ increment() { ... }
 
 ## Recently Completed
 
+### Edit Method on Object (2024-12-13)
+Added `edit` method to Object that opens class definitions in `$EDITOR`:
+```bash
+@ Counter edit        # Opens trash/Counter in $EDITOR
+@ $counter edit       # Opens the class file for this instance's type
+```
+- Works for both class names and instance IDs
+- Falls back to `vi` if `$EDITOR` not set
+- Error handling for missing class files
+
+### Instance Variable Defaults (2024-12-13)
+Added default value syntax to `instance_vars`:
+```bash
+instance_vars count:0 step:5 name:hello enabled:true items:[]
+```
+- Supports integers, floats, booleans, strings, empty arrays/objects
+- Counter updated to use `instance_vars value:0` (no manual init needed)
+- Tests: `tests/test_instance_var_defaults.bash` (7 tests)
+
+### Inheritance of instance_vars (2024-12-13)
+Child classes now automatically inherit instance variables from parent classes:
+```bash
+# Vehicle declares: instance_vars wheels:4 brand
+# Car inherits wheels/brand and adds: instance_vars color:red engine
+car=$(@ Car new)
+@ $car getWheels  # 4 (inherited with default)
+@ $car setBrand "Toyota"  # inherited setter works
+```
+- Multi-level inheritance supported (tested 3 levels)
+- Child can override parent defaults
+- Inherited vars included in `_vars` array
+- Tests: `tests/test_instance_var_inheritance.bash` (6 tests)
+
 ### Object Persistence Methods (2024-12-13)
 Added persistence methods to Object base class, inherited by all subclasses:
 - **Class methods**: `findAll`, `find 'predicate'`, `count`
@@ -130,4 +137,4 @@ Added persistence methods to Object base class, inherited by all subclasses:
 
 ---
 
-*Last updated: 2024-12-13* (Object persistence, Trash delegation, bug fixes)
+*Last updated: 2024-12-13* (Edit method, instance var defaults, instance var inheritance)
