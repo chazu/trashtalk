@@ -1,93 +1,83 @@
 is_a Object
 include Debuggable
+instance_vars items
 
-# Array object for testing indexing and collections
+# Array object for collections
 
 # Create a new array
 new() {
     local array_id=$(_generate_instance_id "Array")
-    _create_instance "Array" "$array_id" "[]"
+    _create_instance "Array" "$array_id"
+    # Initialize items as empty JSON array (stored as string)
+    @ $array_id setItems "[]"
     echo "$array_id"
 }
 
-# Get element at index (Lua-style: everything is a string key)
+# Get the raw items JSON array
+_getItemsArray() {
+    local items=$(@ $_RECEIVER getItems)
+    echo "${items:-[]}"
+}
+
+# Get element at index
 at() {
     local index="$1"
-    local array_data=$(kvget "$_RECEIVER")
-    
-    if [[ -n "$array_data" ]]; then
-        echo "$array_data" | jq -r ".[$index] // empty"
-    fi
+    local items=$(_getItemsArray)
+    echo "$items" | jq -r ".[$index] // empty"
 }
 
 # Set element at index
 at_put() {
     local index="$1"
     local value="$2"
-    local array_data=$(kvget "$_RECEIVER")
-    
-    if [[ -z "$array_data" ]]; then
-        array_data="[]"
-    fi
-    
-    # Extend array if necessary
-    local new_data=$(echo "$array_data" | jq ".[$index] = \"$value\"")
-    kvset "$_RECEIVER" "$new_data"
+    local items=$(_getItemsArray)
+    local new_items=$(echo "$items" | jq -c ".[$index] = \"$value\"")
+    @ $_RECEIVER setItems "$new_items"
     echo "$value"
 }
 
 # Add element to end
 push() {
     local value="$1"
-    local array_data=$(kvget "$_RECEIVER")
-    
-    if [[ -z "$array_data" ]]; then
-        array_data="[]"
-    fi
-    
-    local new_data=$(echo "$array_data" | jq ". + [\"$value\"]")
-    kvset "$_RECEIVER" "$new_data"
+    local items=$(_getItemsArray)
+    local new_items=$(echo "$items" | jq -c ". + [\"$value\"]")
+    @ $_RECEIVER setItems "$new_items"
     echo "$value"
+}
+
+# Remove and return last element
+pop() {
+    local items=$(_getItemsArray)
+    local last=$(echo "$items" | jq -r '.[-1] // empty')
+    local new_items=$(echo "$items" | jq -c '.[0:-1]')
+    @ $_RECEIVER setItems "$new_items"
+    echo "$last"
 }
 
 # Get array length
 size() {
-    local array_data=$(kvget "$_RECEIVER")
-    
-    if [[ -n "$array_data" ]]; then
-        echo "$array_data" | jq 'length'
-    else
-        echo "0"
-    fi
+    local items=$(_getItemsArray)
+    echo "$items" | jq 'length'
 }
 
 # Print array contents
 show() {
-    local array_data=$(kvget "$_RECEIVER")
-    
-    if [[ -n "$array_data" ]]; then
-        echo "$array_data" | jq -r '.[]' | nl -v0 | sed 's/^[ \t]*//'
-    else
+    local items=$(_getItemsArray)
+    local len=$(echo "$items" | jq 'length')
+
+    if [[ "$len" -eq 0 ]]; then
         echo "(empty array)"
+    else
+        echo "$items" | jq -r '.[]' | nl -v0 | sed 's/^[ \t]*//'
     fi
 }
 
 # Initialize with values
 withValues() {
-    local values="$*"
-    local array_data="["
-    local first=true
-    
-    for value in $values; do
-        if [[ "$first" == true ]]; then
-            first=false
-        else
-            array_data="$array_data,"
-        fi
-        array_data="$array_data\"$value\""
+    local items="[]"
+    for value in $*; do
+        items=$(echo "$items" | jq -c ". + [\"$value\"]")
     done
-    array_data="$array_data]"
-    
-    kvset "$_RECEIVER" "$array_data"
+    @ $_RECEIVER setItems "$items"
     echo "$_RECEIVER"
 }

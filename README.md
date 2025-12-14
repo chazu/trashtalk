@@ -1,3 +1,9 @@
+# TODO
+
+Reimplement instance persistence using https://www.dbpro.app/blog/sqlite-json-virtual-columns-indexing
+
+
+
 # Trashtalk
 
 A Smalltalk-inspired message-passing system for Bash.

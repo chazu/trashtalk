@@ -7,10 +7,18 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/vendor/bsfl.sh" 2>/dev/null || echo "Warning: bsfl.sh not found"
 source "$SCRIPT_DIR/vendor/fun.sh" 2>/dev/null || echo "Warning: fun.sh not found"
 source "$SCRIPT_DIR/vendor/kv-bash" 2>/dev/null || echo "Warning: kv-bash not found"
+source "$SCRIPT_DIR/vendor/sqlite-json.bash" 2>/dev/null || echo "Warning: sqlite-json.bash not found"
 
-# Export kv-bash functions so they're available in subshells
+# Export kv-bash functions so they're available in subshells (used for stack frames)
 export -f kvset kvget kvdel kv_validate_key 2>/dev/null
 export KV_USER_DIR
+
+# Export sqlite-json functions so they're available in subshells
+export -f db_init db_put db_get db_delete db_find_by_class db_query db_query_data 2>/dev/null
+export -f db_ensure_virtual_column db_create_index db_list_indices db_list_columns 2>/dev/null
+export -f db_count_by_class db_list_classes db_clear db_drop 2>/dev/null
+export -f _db_validate_id _db_validate_name _db_escape _db_sql 2>/dev/null
+export SQLITE_JSON_DB
 
 # Override msg_debug to respect DEBUG mode and output to stderr
 # This overrides BSFL's msg_debug which outputs to stdout regardless
@@ -100,24 +108,104 @@ function _set_return_value {
 }
 
 # ============================================
+# Instance Variable Declaration
+# ============================================
+
+# Stores declared instance vars for current class being defined
+_CURRENT_CLASS_VARS=""
+
+# Declare instance variables for a class
+# Usage: instance_vars foo bar baz
+# Generates: getFoo/setFoo, getBar/setBar, getBaz/setBaz
+function instance_vars {
+  _CURRENT_CLASS_VARS="$*"
+
+  for var in $*; do
+    # Capitalize first letter for method names
+    local capitalized
+    capitalized="$(echo "${var:0:1}" | tr '[:lower:]' '[:upper:]')${var:1}"
+
+    # Generate getter: getFoo()
+    eval "get${capitalized}() {
+      local data=\$(db_get \"\$_RECEIVER\")
+      [[ -n \"\$data\" ]] && echo \"\$data\" | jq -r \".$var // empty\"
+    }"
+
+    # Generate setter: setFoo()
+    eval "set${capitalized}() {
+      local value=\"\$1\"
+      local data=\$(db_get \"\$_RECEIVER\")
+
+      if [[ -z \"\$data\" ]]; then
+        echo \"Error: Instance \$_RECEIVER not found\" >&2
+        return 1
+      fi
+
+      # Validate field is declared
+      local vars=\$(echo \"\$data\" | jq -r '._vars // [] | .[]')
+      if ! echo \"\$vars\" | grep -qx \"$var\"; then
+        echo \"Error: Field '$var' not declared for this instance\" >&2
+        return 1
+      fi
+
+      # Update the field (handle numeric, JSON, or string)
+      local updated
+      if [[ \"\$value\" =~ ^-?[0-9]+\$ ]]; then
+        # Numeric value
+        updated=\$(echo \"\$data\" | jq -c \".$var = \$value\")
+      elif echo \"\$value\" | jq -e . >/dev/null 2>&1; then
+        # Valid JSON - use as raw JSON value
+        updated=\$(echo \"\$data\" | jq -c --argjson v \"\$value\" \".$var = \\\$v\")
+      else
+        # String value - use --arg for safe escaping
+        updated=\$(echo \"\$data\" | jq -c --arg v \"\$value\" \".$var = \\\$v\")
+      fi
+
+      db_put \"\$_RECEIVER\" \"\$updated\"
+    }"
+  done
+}
+
+# ============================================
 # Instance Management Functions
 # ============================================
 
-# Create an instance with type tracking
+# Create an instance with declared instance variables
+# Usage: _create_instance <class_name> <instance_id>
 function _create_instance {
   local class_name="$1"
   local instance_id="$2"
-  local initial_value="$3"
+  local created_at
+  created_at=$(date +%s)
 
-  kvset "$instance_id" "$initial_value"
-  kvset "${instance_id}._type" "$class_name"
-  kvset "${instance_id}._created" "$(date +%s)"
+  # Build vars array from _CURRENT_CLASS_VARS
+  local vars_json="[]"
+  if [[ -n "$_CURRENT_CLASS_VARS" ]]; then
+    vars_json=$(printf '%s\n' $_CURRENT_CLASS_VARS | jq -R . | jq -s .)
+  fi
+
+  # Create initial JSON with class, created_at, _vars, and null for each var
+  local data
+  data=$(jq -n \
+    --arg class "$class_name" \
+    --arg created "$created_at" \
+    --argjson vars "$vars_json" \
+    '{class: $class, created_at: $created, _vars: $vars}')
+
+  # Add null value for each declared variable
+  for var in $_CURRENT_CLASS_VARS; do
+    data=$(echo "$data" | jq -c ". + {\"$var\": null}")
+  done
+
+  db_put "$instance_id" "$data"
 }
 
 # Get the class of an instance
 function _get_instance_class {
   local instance_id="$1"
-  kvget "${instance_id}._type" 2>/dev/null
+  local data
+  data=$(db_get "$instance_id" 2>/dev/null)
+  [[ -n "$data" ]] && echo "$data" | jq -r '.class // empty'
 }
 
 # Check if something is an instance ID
@@ -127,12 +215,10 @@ function _is_instance {
   [[ -n "$type_val" ]]
 }
 
-# Delete an instance and its metadata
+# Delete an instance
 function _delete_instance {
   local instance_id="$1"
-  kvdel "$instance_id" 2>/dev/null
-  kvdel "${instance_id}._type" 2>/dev/null
-  kvdel "${instance_id}._created" 2>/dev/null
+  db_delete "$instance_id" 2>/dev/null
 }
 
 # Generate a unique instance ID for a class
@@ -143,6 +229,7 @@ function _generate_instance_id {
 }
 
 # Export instance functions so they're available in subshells (for command substitution)
+export -f instance_vars
 export -f _create_instance
 export -f _get_instance_class
 export -f _is_instance
@@ -348,6 +435,9 @@ function initialize_trash() {
     mkdir -p "$TRASHDIR/traits"
     msg_info "Created traits directory: $TRASHDIR/traits"
   fi
+
+  # Initialize SQLite database for instance storage
+  db_init 2>/dev/null || msg_debug "Database already initialized"
 
   # Create object stubs for all objects
   for file in $TRASHDIR/*; do
