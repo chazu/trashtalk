@@ -1,6 +1,6 @@
 is_a Object
 include Debuggable
-instance_vars value
+instance_vars value:0
 
 # Counter object with instance variable for value
 
@@ -8,7 +8,6 @@ instance_vars value
 new() {
     local counter_id=$(_generate_instance_id "Counter")
     _create_instance "Counter" "$counter_id"
-    @ $counter_id setValue 0
     echo "$counter_id"
 }
 

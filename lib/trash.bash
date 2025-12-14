@@ -113,61 +113,198 @@ function _set_return_value {
 # Stores declared instance vars for current class being defined
 _CURRENT_CLASS_VARS=""
 
-# Declare instance variables for a class
-# Usage: instance_vars foo bar baz
-# Generates: getFoo/setFoo, getBar/setBar, getBaz/setBaz
-function instance_vars {
-  _CURRENT_CLASS_VARS="$*"
+# Associative array for instance variable defaults
+# Key: var_name, Value: default value (or empty for null)
+declare -gA _CURRENT_CLASS_DEFAULTS
 
-  for var in $*; do
-    # Capitalize first letter for method names
-    local capitalized
-    capitalized="$(echo "${var:0:1}" | tr '[:lower:]' '[:upper:]')${var:1}"
+# Parse a class file to extract its instance_vars declaration
+# Usage: _get_class_instance_vars ClassName
+# Returns: space-separated list of var specs (e.g., "count:0 step:5 name")
+function _get_class_instance_vars {
+  local class_name="$1"
+  local class_file="$TRASHDIR/$class_name"
 
-    # Generate getter: getFoo()
-    eval "get${capitalized}() {
-      local data=\$(db_get \"\$_RECEIVER\")
-      [[ -n \"\$data\" ]] && echo \"\$data\" | jq -r \".$var // empty\"
-    }"
+  if [[ ! -f "$class_file" ]]; then
+    return 0
+  fi
 
-    # Generate setter: setFoo()
-    eval "set${capitalized}() {
-      local value=\"\$1\"
-      local data=\$(db_get \"\$_RECEIVER\")
+  # Extract instance_vars line and get the arguments
+  # Handles: instance_vars foo bar baz
+  # Or:      instance_vars count:0 step:5
+  grep -E "^instance_vars " "$class_file" 2>/dev/null | sed 's/^instance_vars //' || true
+}
 
-      if [[ -z \"\$data\" ]]; then
-        echo \"Error: Instance \$_RECEIVER not found\" >&2
-        return 1
-      fi
+# Get the parent class of a given class
+# Usage: _get_parent_class ClassName
+# Returns: parent class name or empty if none/Object
+function _get_parent_class {
+  local class_name="$1"
+  local class_file="$TRASHDIR/$class_name"
 
-      # Validate field is declared
-      local vars=\$(echo \"\$data\" | jq -r '._vars // [] | .[]')
-      if ! echo \"\$vars\" | grep -qx \"$var\"; then
-        echo \"Error: Field '$var' not declared for this instance\" >&2
-        return 1
-      fi
+  if [[ ! -f "$class_file" ]]; then
+    return 0
+  fi
 
-      # Update the field (handle numeric, JSON, or string)
-      local updated
-      if [[ \"\$value\" =~ ^-?[0-9]+\$ ]]; then
-        # Numeric value
-        updated=\$(echo \"\$data\" | jq -c \".$var = \$value\")
-      elif echo \"\$value\" | jq -e . >/dev/null 2>&1; then
-        # Valid JSON - use as raw JSON value
-        updated=\$(echo \"\$data\" | jq -c --argjson v \"\$value\" \".$var = \\\$v\")
+  # Extract is_a declaration
+  local parent
+  parent=$(grep -E "^is_a " "$class_file" 2>/dev/null | head -1 | sed 's/^is_a //' || true)
+
+  # Don't return Object as a parent to traverse (it's the root)
+  if [[ "$parent" != "Object" && -n "$parent" ]]; then
+    echo "$parent"
+  fi
+}
+
+# Collect all instance vars from a class and its ancestors
+# Usage: _collect_inherited_vars ClassName
+# Sets: _INHERITED_VARS (space-separated list)
+#       _INHERITED_DEFAULTS (associative array)
+declare -gA _INHERITED_DEFAULTS
+
+function _collect_inherited_vars {
+  local class_name="$1"
+  local visited=""
+  local all_vars=""
+  _INHERITED_DEFAULTS=()
+
+  # Walk up the inheritance chain
+  local current="$class_name"
+  while [[ -n "$current" ]]; do
+    # Prevent infinite loops
+    if [[ " $visited " == *" $current "* ]]; then
+      break
+    fi
+    visited="$visited $current"
+
+    # Get vars for this class
+    local class_vars
+    class_vars=$(_get_class_instance_vars "$current")
+
+    # Parse and merge vars (child vars override parent vars)
+    for spec in $class_vars; do
+      local var default_val
+
+      if [[ "$spec" == *:* ]]; then
+        var="${spec%%:*}"
+        default_val="${spec#*:}"
       else
-        # String value - use --arg for safe escaping
-        updated=\$(echo \"\$data\" | jq -c --arg v \"\$value\" \".$var = \\\$v\")
+        var="$spec"
+        default_val=""
       fi
 
-      db_put \"\$_RECEIVER\" \"\$updated\"
-    }"
+      # Only add if not already defined (child takes precedence)
+      if [[ " $all_vars " != *" $var "* ]]; then
+        all_vars="$all_vars $var"
+        _INHERITED_DEFAULTS["$var"]="$default_val"
+      fi
+    done
+
+    # Move to parent
+    current=$(_get_parent_class "$current")
+  done
+
+  # Trim leading space
+  _INHERITED_VARS="${all_vars# }"
+}
+
+# Declare instance variables for a class
+# Usage: instance_vars foo bar baz           (all default to null)
+# Usage: instance_vars count:0 step:1 name   (count=0, step=1, name=null)
+# Generates: getFoo/setFoo, getBar/setBar, getBaz/setBaz
+# Also generates accessors for inherited vars from parent classes
+function instance_vars {
+  _CURRENT_CLASS_VARS=""
+  _CURRENT_CLASS_DEFAULTS=()
+
+  # First, generate accessors for inherited vars from parent class
+  # _SUPERCLASS is set by is_a before instance_vars is called
+  if [[ -n "$_SUPERCLASS" && "$_SUPERCLASS" != "Object" ]]; then
+    _collect_inherited_vars "$_SUPERCLASS"
+    for var in $_INHERITED_VARS; do
+      _generate_accessor "$var"
+    done
+  fi
+
+  # Now process this class's declared vars
+  for spec in $*; do
+    local var default_val
+
+    # Check for default value syntax: var:default
+    if [[ "$spec" == *:* ]]; then
+      var="${spec%%:*}"
+      default_val="${spec#*:}"
+    else
+      var="$spec"
+      default_val=""
+    fi
+
+    # Add to var list (space-separated)
+    if [[ -z "$_CURRENT_CLASS_VARS" ]]; then
+      _CURRENT_CLASS_VARS="$var"
+    else
+      _CURRENT_CLASS_VARS="$_CURRENT_CLASS_VARS $var"
+    fi
+
+    # Store default value
+    _CURRENT_CLASS_DEFAULTS["$var"]="$default_val"
+
+    # Generate accessor for this var
+    _generate_accessor "$var"
   done
 }
 
 # ============================================
 # Instance Management Functions
 # ============================================
+
+# Generate accessor methods (getter/setter) for a variable
+# Usage: _generate_accessor <var_name>
+function _generate_accessor {
+  local var="$1"
+
+  # Capitalize first letter for method names
+  local capitalized
+  capitalized="$(echo "${var:0:1}" | tr '[:lower:]' '[:upper:]')${var:1}"
+
+  # Generate getter: getFoo()
+  eval "get${capitalized}() {
+    local data=\$(db_get \"\$_RECEIVER\")
+    [[ -n \"\$data\" ]] && echo \"\$data\" | jq -r \".$var // empty\"
+  }"
+
+  # Generate setter: setFoo()
+  eval "set${capitalized}() {
+    local value=\"\$1\"
+    local data=\$(db_get \"\$_RECEIVER\")
+
+    if [[ -z \"\$data\" ]]; then
+      echo \"Error: Instance \$_RECEIVER not found\" >&2
+      return 1
+    fi
+
+    # Validate field is declared
+    local vars=\$(echo \"\$data\" | jq -r '._vars // [] | .[]')
+    if ! echo \"\$vars\" | grep -qx \"$var\"; then
+      echo \"Error: Field '$var' not declared for this instance\" >&2
+      return 1
+    fi
+
+    # Update the field (handle numeric, JSON, or string)
+    local updated
+    if [[ \"\$value\" =~ ^-?[0-9]+\$ ]]; then
+      # Numeric value
+      updated=\$(echo \"\$data\" | jq -c \".$var = \$value\")
+    elif echo \"\$value\" | jq -e . >/dev/null 2>&1; then
+      # Valid JSON - use as raw JSON value
+      updated=\$(echo \"\$data\" | jq -c --argjson v \"\$value\" \".$var = \\\$v\")
+    else
+      # String value - use --arg for safe escaping
+      updated=\$(echo \"\$data\" | jq -c --arg v \"\$value\" \".$var = \\\$v\")
+    fi
+
+    db_put \"\$_RECEIVER\" \"\$updated\"
+  }"
+}
 
 # Create an instance with declared instance variables
 # Usage: _create_instance <class_name> <instance_id>
@@ -177,13 +314,41 @@ function _create_instance {
   local created_at
   created_at=$(date +%s)
 
-  # Build vars array from _CURRENT_CLASS_VARS
+  # Collect inherited vars from parent classes
+  _collect_inherited_vars "$class_name"
+
+  # Merge inherited vars with current class vars (current class takes precedence)
+  local all_vars="$_CURRENT_CLASS_VARS"
+  declare -A all_defaults
+
+  # First add inherited defaults
+  for var in $_INHERITED_VARS; do
+    if [[ " $all_vars " != *" $var "* ]]; then
+      if [[ -z "$all_vars" ]]; then
+        all_vars="$var"
+      else
+        all_vars="$all_vars $var"
+      fi
+    fi
+    # Set inherited default (will be overridden by current class if exists)
+    all_defaults["$var"]="${_INHERITED_DEFAULTS[$var]}"
+
+    # Generate accessor for inherited var
+    _generate_accessor "$var"
+  done
+
+  # Then add/override with current class defaults
+  for var in $_CURRENT_CLASS_VARS; do
+    all_defaults["$var"]="${_CURRENT_CLASS_DEFAULTS[$var]}"
+  done
+
+  # Build vars array from merged vars
   local vars_json="[]"
-  if [[ -n "$_CURRENT_CLASS_VARS" ]]; then
-    vars_json=$(printf '%s\n' $_CURRENT_CLASS_VARS | jq -R . | jq -s .)
+  if [[ -n "$all_vars" ]]; then
+    vars_json=$(printf '%s\n' $all_vars | jq -R . | jq -s .)
   fi
 
-  # Create initial JSON with class, created_at, _vars, and null for each var
+  # Create initial JSON with class, created_at, _vars
   local data
   data=$(jq -n \
     --arg class "$class_name" \
@@ -191,9 +356,29 @@ function _create_instance {
     --argjson vars "$vars_json" \
     '{class: $class, created_at: $created, _vars: $vars}')
 
-  # Add null value for each declared variable
-  for var in $_CURRENT_CLASS_VARS; do
-    data=$(echo "$data" | jq -c ". + {\"$var\": null}")
+  # Add value for each variable (using default or null)
+  for var in $all_vars; do
+    local default_val="${all_defaults[$var]}"
+
+    if [[ -z "$default_val" ]]; then
+      # No default - use null
+      data=$(echo "$data" | jq -c ". + {\"$var\": null}")
+    elif [[ "$default_val" =~ ^-?[0-9]+$ ]]; then
+      # Numeric default
+      data=$(echo "$data" | jq -c ". + {\"$var\": $default_val}")
+    elif [[ "$default_val" =~ ^-?[0-9]+\.[0-9]+$ ]]; then
+      # Float default
+      data=$(echo "$data" | jq -c ". + {\"$var\": $default_val}")
+    elif [[ "$default_val" == "true" || "$default_val" == "false" ]]; then
+      # Boolean default
+      data=$(echo "$data" | jq -c ". + {\"$var\": $default_val}")
+    elif [[ "$default_val" == "[]" || "$default_val" == "{}" ]]; then
+      # Empty array or object
+      data=$(echo "$data" | jq -c ". + {\"$var\": $default_val}")
+    else
+      # String default (use --arg for safe escaping)
+      data=$(echo "$data" | jq -c --arg v "$default_val" ". + {\"$var\": \$v}")
+    fi
   done
 
   db_put "$instance_id" "$data"
@@ -234,6 +419,10 @@ export -f _get_instance_class
 export -f _is_instance
 export -f _delete_instance
 export -f _generate_instance_id
+export -f _get_class_instance_vars
+export -f _get_parent_class
+export -f _collect_inherited_vars
+export -f _generate_accessor
 
 # ============================================
 
