@@ -19,8 +19,8 @@ __Trash__info() {
 
 __Trash__listObjects() {
   find "$TRASHDIR" -maxdepth 1 -type f ! -path "*/traits/*" | while read -r file; do
-  basename "$file"
-  done | sort
+    basename "$file"
+  done | grep -v '\.trash$' | grep -v '\.legacy$' | sort
 }
 
 __Trash__listTraits() {
