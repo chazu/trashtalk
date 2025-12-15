@@ -1,0 +1,43 @@
+# Debuggable trait - provides debugging capabilities to objects
+Debuggable trait
+
+  # Output debug message (respects TRASH_DEBUG env var)
+  method: debug: message [
+    [[ "${TRASH_DEBUG:-1}" == "0" ]] && return 0
+    | timestamp |
+    timestamp := $(date '+%Y-%m-%d %H:%M:%S')
+    echo "[$timestamp] DEBUG ($_RECEIVER): $message" >&2
+  ]
+
+  # Trace a method call
+  method: trace: method_name args: args [
+    @ self debug: "Calling $method_name with args: $args"
+  ]
+
+  # Inspect object details
+  method: inspect [
+    echo "Object: $_RECEIVER"
+    echo "Class: $_SUPERCLASS"
+    echo "Methods:"
+    get_fcn_list "$(receiver_path $_RECEIVER)" | sed 's/^/  /'
+  ]
+
+  # Show the inheritance chain
+  method: ancestry [
+    | current_class super |
+    current_class := "$_RECEIVER"
+    echo "Inheritance chain for $_RECEIVER:"
+    while [[ -n "$current_class" ]]; do
+      echo "  $current_class"
+      if [[ -f "$TRASHDIR/$current_class" ]]; then
+        super := $(grep "^is_a" "$TRASHDIR/$current_class" | awk '{print $2}')
+        current_class := "$super"
+        if [[ "$current_class" == "Object" ]]; then
+          echo "  Object"
+          break
+        fi
+      else
+        break
+      fi
+    done
+  ]
