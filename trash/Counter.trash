@@ -1,0 +1,44 @@
+# Counter - A simple counter class demonstrating Trashtalk DSL
+# Instance variables are accessed via getters: $(@ self getVarName)
+Counter subclass: Object
+  instanceVars: value:0 step:1
+
+  method: new [
+    | id |
+    id := $(_generate_instance_id Counter)
+    _create_instance Counter $id
+    ^ $id
+  ]
+
+  method: increment [
+    | current step newVal |
+    current := $(@ self getValue)
+    step := $(@ self getStep)
+    newVal := $((current + step))
+    @ self setValue: $newVal
+    ^ $newVal
+  ]
+
+  method: decrement [
+    | current step newVal |
+    current := $(@ self getValue)
+    step := $(@ self getStep)
+    newVal := $((current - step))
+    @ self setValue: $newVal
+    ^ $newVal
+  ]
+
+  method: incrementBy: amount [
+    | current newVal |
+    current := $(@ self getValue)
+    newVal := $((current + amount))
+    @ self setValue: $newVal
+  ]
+
+  method: reset [
+    @ self setValue: 0
+  ]
+
+  classMethod: description [
+    ^ "A simple counter"
+  ]
