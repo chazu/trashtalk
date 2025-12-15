@@ -1,5 +1,38 @@
 # Trashtalk Roadmap
 
+## High Priority
+
+### Compile Remaining Core Classes
+The DSL compiler and namespace isolation are working. Next step is to compile the remaining core classes to prevent namespace pollution:
+- `Trash` - System introspection class (has `find` method that shadows bash)
+- `Array`, `Store`, `Process` - Other classes with potential conflicts
+- Create `.trash` DSL versions and compile them to `trash/.compiled/`
+
+### Improve DSL Compiler
+The compiler (`lib/trash-compiler.bash`) works but has limitations:
+- Complex bash constructs in method bodies need manual handling
+- Add support for `if/then/else`, `while`, `case` statements
+- Better error messages for syntax errors
+- Consider a two-pass approach: parse to AST, then generate bash
+
+### Pure Smalltalk Syntax in Method Bodies
+Currently method bodies use bash syntax with `$()` escapes:
+```smalltalk
+method: increment [
+  current := $(@ self getValue)      # bash escape
+  newVal := $((current + step))      # bash arithmetic
+]
+```
+Goal: Pure Smalltalk syntax that compiles to bash:
+```smalltalk
+method: increment [
+  current := self getValue.
+  newVal := current + step.
+  self setValue: newVal.
+  ^ newVal
+]
+```
+
 ## Medium Priority
 
 ### Keyword Message Syntax
@@ -10,19 +43,6 @@ Support Smalltalk-style keyword messages:
 @ [store find: "Counter" where: "value > 5"]
 ```
 Would require extending trash-parser.bash to handle colon-delimited keywords.
-
-### More Smalltalk-like Object Definitions
-Explore making class definitions less bash-like:
-```smalltalk
-Counter subclass: Object [
-    | count step |
-
-    increment [
-        count := count + step
-    ]
-]
-```
-Could be a DSL that compiles to bash, or a custom parser.
 
 ## Lower Priority
 
@@ -78,6 +98,54 @@ increment() { ... }
 
 
 ## Recently Completed
+
+### Namespace Pollution Fix & DSL Compiler (2024-12-14)
+**Problem**: Trash methods like `find()` were polluting the global bash namespace, making the POSIX `find` utility unusable after sourcing Trash.
+
+**Solution**: Created a compilation pipeline that generates namespaced functions:
+- **New file**: `lib/trash-compiler.bash` - Compiles `.trash` DSL files to namespaced bash
+- **Naming convention**: Methods compile to `__ClassName__methodName` (e.g., `__Counter__increment`)
+- **Updated dispatcher**: `send()` and `method_missing()` now prefer compiled classes
+- **Compiled classes**: `trash/.compiled/Counter`, `trash/.compiled/Object`
+
+**DSL Syntax** (keyword-based, Option B):
+```smalltalk
+Counter subclass: Object
+  instanceVars: value:0 step:1
+
+  method: increment [
+    | current step newVal |
+    current := $(@ self getValue)
+    step := $(@ self getStep)
+    newVal := $((current + step))
+    @ self setValue: $newVal
+    ^ $newVal
+  ]
+
+  classMethod: description [
+    ^ "A simple counter"
+  ]
+```
+
+**Usage**:
+```bash
+# Compile a class
+bash lib/trash-compiler.bash compile trash/Counter.trash trash/.compiled/Counter
+
+# Dispatcher automatically uses compiled version
+counter=$(@ Counter new)
+@ $counter increment  # Uses __Counter__increment, not find()
+find . -name "*.md"   # Still works! bash find not shadowed
+```
+
+### Instance Method Dispatch Fix (2024-12-14)
+**Problem**: Instance methods like `@ $counter find 'x > 5'` failed because `$_RECEIVER` was the instance ID, but `find()` expected a class name.
+
+**Solution**: Added `$_CLASS` export to `send()` function:
+- `$_RECEIVER` = actual receiver (instance ID or class name)
+- `$_CLASS` = always the class name
+- `$_INSTANCE` = instance ID if receiver is instance, empty otherwise
+- Updated `Object.find`, `Object.findAll`, `Object.count` to use `$_CLASS`
 
 ### Edit Method on Object (2024-12-13)
 Added `edit` method to Object that opens class definitions in `$EDITOR`:
@@ -137,4 +205,4 @@ Added persistence methods to Object base class, inherited by all subclasses:
 
 ---
 
-*Last updated: 2024-12-13* (Edit method, instance var defaults, instance var inheritance)
+*Last updated: 2024-12-14* (DSL compiler, namespace pollution fix, instance method dispatch fix)

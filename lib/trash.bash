@@ -427,6 +427,7 @@ export -f _generate_accessor
 # ============================================
 
 # Traverse inheritance chain looking for method
+# Prefers compiled classes to prevent namespace pollution
 method_missing() {
   msg_debug "In method_missing with args: $*"
   msg_debug "Current superclass is $_SUPERCLASS"
@@ -435,10 +436,54 @@ method_missing() {
   local current_class="$_SUPERCLASS"
 
   # Traverse up the inheritance chain
-  while [[ -n "$current_class" && "$current_class" != "Object" ]]; do
+  while [[ -n "$current_class" ]]; do
     msg_debug "Checking class: $current_class"
 
-    # Source the superclass
+    # Check for compiled version first (prevents namespace pollution)
+    local compiled_file="$TRASHDIR/.compiled/$current_class"
+    if [[ -f "$compiled_file" ]]; then
+      # Source compiled file only once
+      if [[ -z "${_SOURCED_COMPILED_CLASSES[$current_class]}" ]]; then
+        source "$compiled_file"
+        _SOURCED_COMPILED_CLASSES[$current_class]=1
+        msg_debug "Sourced compiled class $current_class in method_missing"
+
+        # Set up instance variables from compiled class metadata
+        local vars_var="__${current_class}__instanceVars"
+        if [[ -n "${!vars_var}" ]]; then
+          local super_var="__${current_class}__superclass"
+          if [[ -n "${!super_var}" ]]; then
+            _SUPERCLASS="${!super_var}"
+          fi
+          instance_vars ${!vars_var}
+        fi
+      fi
+
+      # Check for namespaced method
+      local namespaced_func="__${current_class}__${_SELECTOR}"
+      if declare -F "$namespaced_func" >/dev/null 2>&1; then
+        msg_info "Found $_SELECTOR in compiled $current_class"
+        "$namespaced_func" "$@"
+        return $?
+      fi
+
+      # Check for class method
+      local class_method_func="__${current_class}__class__${_SELECTOR}"
+      if declare -F "$class_method_func" >/dev/null 2>&1; then
+        msg_info "Found $_SELECTOR (class method) in compiled $current_class"
+        "$class_method_func" "$@"
+        return $?
+      fi
+
+      # Get superclass from compiled metadata and continue
+      local super_var="__${current_class}__superclass"
+      if [[ -n "${!super_var}" && "${!super_var}" != "$current_class" ]]; then
+        current_class="${!super_var}"
+        continue
+      fi
+    fi
+
+    # Fall back to legacy class file if no compiled version
     if [[ -f "$TRASHDIR/$current_class" ]]; then
       source "$TRASHDIR/$current_class"
 
@@ -455,22 +500,20 @@ method_missing() {
       msg_debug "Class file not found: $TRASHDIR/$current_class"
       break
     fi
-  done
 
-  # If we reach Object and still haven't found it, try Object
-  if [[ "$current_class" == "Object" && -f "$TRASHDIR/Object" ]]; then
-    source "$TRASHDIR/Object"
-    if file_defines_function "$TRASHDIR/Object" "$_SELECTOR"; then
-      msg_info "Found $_SELECTOR in Object"
-      "$_SELECTOR" "$@"
-      return $?
+    # Prevent infinite loop if we've hit the top
+    if [[ "$current_class" == "Object" ]]; then
+      break
     fi
-  fi
+  done
 
   # Method not found anywhere
   echo "Error: Method '$_SELECTOR' not found in $original_receiver or its superclasses"
   return 1
 }
+
+# Track which compiled classes have been sourced to avoid re-sourcing
+declare -gA _SOURCED_COMPILED_CLASSES
 
 function send {
   msg_debug "Send: $*"
@@ -480,6 +523,7 @@ function send {
 
   local class_file
   local class_name
+  local compiled_file
   local frame_id=""
   local result
   local exit_code
@@ -500,11 +544,86 @@ function send {
     fi
     class_file=$(receiver_path "$class_name")
     msg_debug "Instance $_RECEIVER is of class $class_name"
+    # Export class context for methods that need it
+    export _CLASS="$class_name"
+    export _INSTANCE="$_RECEIVER"
   else
     # Assume it's a class name
+    class_name="$_RECEIVER"
     class_file=$(receiver_path "$_RECEIVER")
+    # For class-level calls, _CLASS is the receiver, no instance
+    export _CLASS="$_RECEIVER"
+    export _INSTANCE=""
   fi
 
+  # Check for compiled version first (prevents namespace pollution)
+  compiled_file="$TRASHDIR/.compiled/$class_name"
+  if [[ -f "$compiled_file" ]]; then
+    msg_debug "Found compiled class: $compiled_file"
+
+    # Source compiled file only once
+    if [[ -z "${_SOURCED_COMPILED_CLASSES[$class_name]}" ]]; then
+      source "$compiled_file"
+      _SOURCED_COMPILED_CLASSES[$class_name]=1
+      msg_debug "Sourced compiled class $class_name"
+
+      # Set up instance variables from compiled class metadata
+      local vars_var="__${class_name}__instanceVars"
+      if [[ -n "${!vars_var}" ]]; then
+        # Get superclass from compiled class
+        local super_var="__${class_name}__superclass"
+        if [[ -n "${!super_var}" ]]; then
+          _SUPERCLASS="${!super_var}"
+        fi
+
+        # Call instance_vars to generate accessors
+        # This also sets _CURRENT_CLASS_VARS/_CURRENT_CLASS_DEFAULTS for _create_instance
+        instance_vars ${!vars_var}
+        msg_debug "Generated accessors for compiled class $class_name: ${!vars_var}"
+      fi
+    fi
+
+    # Build namespaced function name: __ClassName__selector
+    local namespaced_func="__${class_name}__${_SELECTOR}"
+
+    # Check if the namespaced function exists
+    if declare -F "$namespaced_func" >/dev/null 2>&1; then
+      msg_debug "Calling namespaced function: $namespaced_func"
+      "$namespaced_func" "$@"
+      exit_code=$?
+      [[ -n "$frame_id" ]] && _pop_stack_frame >/dev/null
+      return $exit_code
+    fi
+
+    # Check for class method: __ClassName__class__selector
+    local class_method_func="__${class_name}__class__${_SELECTOR}"
+    if declare -F "$class_method_func" >/dev/null 2>&1; then
+      msg_debug "Calling class method: $class_method_func"
+      "$class_method_func" "$@"
+      exit_code=$?
+      [[ -n "$frame_id" ]] && _pop_stack_frame >/dev/null
+      return $exit_code
+    fi
+
+    # Check for generated accessor
+    if declare -F "$_SELECTOR" >/dev/null 2>&1; then
+      shopt -s extdebug
+      local defined_in=$(declare -F "$_SELECTOR" | awk '{print $NF}')
+      shopt -u extdebug
+      if [[ "$defined_in" == *"trash.bash" ]]; then
+        msg_debug "Calling generated accessor: $_SELECTOR"
+        "$_SELECTOR" "$@"
+        exit_code=$?
+        [[ -n "$frame_id" ]] && _pop_stack_frame >/dev/null
+        return $exit_code
+      fi
+    fi
+
+    # Fall through to inheritance chain lookup
+    msg_debug "Method $_SELECTOR not in compiled $class_name, checking inheritance"
+  fi
+
+  # Legacy mode: source class file directly (for non-compiled classes)
   # Validate class file exists
   if [[ ! -f "$class_file" ]]; then
     echo "Error: Class file not found: $class_file" >&2
