@@ -1,0 +1,84 @@
+# Array - Collection object for managing lists
+Array subclass: Object
+  include: Debuggable
+  instanceVars: items:'[]'
+
+  # Create a new array
+  method: new [
+    | array_id |
+    array_id := $(_generate_instance_id "Array")
+    _create_instance "Array" "$array_id"
+    ^ $array_id
+  ]
+
+  # Private helper - get the raw items JSON array
+  method: _getItemsArray [
+    | items |
+    items := $(@ self getItems)
+    ^ ${items:-[]}
+  ]
+
+  # Get element at index
+  method: at: index [
+    | items |
+    items := $(@ self _getItemsArray)
+    echo "$items" | jq -r ".[$index] // empty"
+  ]
+
+  # Set element at index
+  method: at: index put: value [
+    | items new_items |
+    items := $(@ self _getItemsArray)
+    new_items := $(echo "$items" | jq -c ".[$index] = \"$value\"")
+    @ self setItems: "$new_items"
+    ^ $value
+  ]
+
+  # Add element to end
+  method: push: value [
+    | items new_items |
+    items := $(@ self _getItemsArray)
+    new_items := $(echo "$items" | jq -c ". + [\"$value\"]")
+    @ self setItems: "$new_items"
+    ^ $value
+  ]
+
+  # Remove and return last element
+  method: pop [
+    | items last new_items |
+    items := $(@ self _getItemsArray)
+    last := $(echo "$items" | jq -r '.[-1] // empty')
+    new_items := $(echo "$items" | jq -c '.[0:-1]')
+    @ self setItems: "$new_items"
+    ^ $last
+  ]
+
+  # Get array length
+  method: size [
+    | items |
+    items := $(@ self _getItemsArray)
+    echo "$items" | jq 'length'
+  ]
+
+  # Print array contents
+  method: show [
+    | items len |
+    items := $(@ self _getItemsArray)
+    len := $(echo "$items" | jq 'length')
+    if [[ "$len" -eq 0 ]]; then
+      echo "(empty array)"
+    else
+      echo "$items" | jq -r '.[]' | nl -v0 | sed 's/^[ \t]*//'
+    fi
+  ]
+
+  # Initialize with values
+  method: withValues: values [
+    | items value |
+    items := "[]"
+    for value in $values; do
+      items := $(echo "$items" | jq -c ". + [\"$value\"]")
+    done
+    @ self setItems: "$items"
+    ^ self
+  ]

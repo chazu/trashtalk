@@ -1,0 +1,513 @@
+# Trash - The system object representing the entire trash system
+# Provides introspection, management, and system-wide operations
+Trash subclass: Object
+  include: Debuggable
+
+  # Get system information
+  method: info [
+    echo "=== Trash System Information ==="
+    echo "Version: 0.1.0"
+    echo "Directory: $TRASHDIR"
+    echo "Objects: $(@ self listObjects | wc -l)"
+    echo "Traits: $(@ self listTraits | wc -l)"
+    echo "Active Processes: $(@ Process listProcesses | wc -l)"
+    echo "KV Store: $KV_USER_DIR"
+  ]
+
+  # List all available objects
+  method: listObjects [
+    find "$TRASHDIR" -maxdepth 1 -type f ! -path "*/traits/*" | while read -r file; do
+      basename "$file"
+    done | sort
+  ]
+
+  # List all available traits
+  method: listTraits [
+    if [[ -d "$TRASHDIR/traits" ]]; then
+      find "$TRASHDIR/traits" -type f | while read -r file; do
+        basename "$file"
+      done | sort
+    fi
+  ]
+
+  # Get methods available on an object
+  method: methodsFor: object_name [
+    | object_file superclass |
+    object_file := "$TRASHDIR/$object_name"
+    if [[ -f "$object_file" ]]; then
+      echo "Methods for $object_name:"
+      get_fcn_list "$object_file" | sed 's/^/  /'
+      superclass := $(grep "^is_a" "$object_file" | awk '{print $2}')
+      if [[ -n "$superclass" && "$superclass" != "Object" ]]; then
+        echo "  (inherited from $superclass)"
+        @ self methodsFor: "$superclass" | sed 's/^/    /'
+      fi
+    else
+      echo "Object $object_name not found"
+      return 1
+    fi
+  ]
+
+  # Show inheritance hierarchy for an object
+  method: hierarchyFor: object_name [
+    | object_file |
+    object_file := "$TRASHDIR/$object_name"
+    if [[ -f "$object_file" ]]; then
+      echo "Inheritance hierarchy for $object_name:"
+      @ self _showHierarchy: "$object_name" depth: 0
+    else
+      echo "Object $object_name not found"
+      return 1
+    fi
+  ]
+
+  # Helper for showing hierarchy
+  method: _showHierarchy: object_name depth: depth [
+    | indent i object_file superclass |
+    indent := ""
+    for ((i=0; i<depth; i++)); do
+      indent := "  $indent"
+    done
+    echo "$indent$object_name"
+    object_file := "$TRASHDIR/$object_name"
+    if [[ -f "$object_file" ]]; then
+      superclass := $(grep "^is_a" "$object_file" | awk '{print $2}')
+      if [[ -n "$superclass" ]]; then
+        @ self _showHierarchy: "$superclass" depth: $((depth + 1))
+      fi
+    fi
+  ]
+
+  # Create a new object file (uses heredoc - raw method)
+  rawMethod: createObject: object_name super: superclass [
+    local object_file="$TRASHDIR/$object_name"
+    superclass="${superclass:-Object}"
+
+    if [[ -f "$object_file" ]]; then
+      echo "Object $object_name already exists"
+      return 1
+    fi
+
+    cat > "$object_file" << EOF
+is_a $superclass
+
+# $object_name - Created by Trash system
+# Add your methods below
+
+example() {
+    echo "Hello from $object_name"
+}
+EOF
+
+    echo "Created object $object_name (inherits from $superclass)"
+    echo "Edit $object_file to add methods"
+    create_object_stub "$object_name"
+  ]
+
+  # Remove an object (with confirmation)
+  method: removeObject: object_name [
+    | object_file confirmation |
+    object_file := "$TRASHDIR/$object_name"
+    if [[ ! -f "$object_file" ]]; then
+      echo "Object $object_name not found"
+      return 1
+    fi
+    echo "Are you sure you want to remove object $object_name? (y/N)"
+    read -r confirmation
+    if [[ "$confirmation" =~ ^[Yy]$ ]]; then
+      rm "$object_file"
+      echo "Removed object $object_name"
+      kvdel "$object_name" 2>/dev/null || true
+    else
+      echo "Cancelled"
+    fi
+  ]
+
+  # Reload all object stubs
+  method: reload [
+    echo "Reloading all object stubs..."
+    initialize_trash
+    echo "Reload complete"
+  ]
+
+  # Reload a single class (hot reload for development)
+  rawMethod: reloadClass: class_name [
+    if [[ -z "$class_name" ]]; then
+      echo "Usage: @ Trash reloadClass <ClassName>"
+      return 1
+    fi
+
+    local compiled_file="$TRASHDIR/.compiled/$class_name"
+    local class_file="$TRASHDIR/$class_name"
+    local trait_file="$TRASHDIR/traits/$class_name"
+    local compiled_trait="$TRASHDIR/.compiled/traits/$class_name"
+
+    # Check if it's a trait
+    if [[ -f "$compiled_trait" ]]; then
+      echo "Reloading trait $class_name..."
+      # Unset old trait functions
+      while IFS= read -r func; do
+        unset -f "$func" 2>/dev/null
+      done < <(declare -F | awk '{print $3}' | grep "^__${class_name}__")
+      # Source the compiled trait
+      source "$compiled_trait"
+      cp "$compiled_trait" "$trait_file"
+      echo "✓ Trait $class_name reloaded"
+      return 0
+    fi
+
+    # Check for compiled class
+    if [[ -f "$compiled_file" ]]; then
+      echo "Reloading class $class_name..."
+      # Unset old class functions
+      while IFS= read -r func; do
+        unset -f "$func" 2>/dev/null
+      done < <(declare -F | awk '{print $3}' | grep "^__${class_name}__")
+      # Source the compiled class
+      source "$compiled_file"
+      cp "$compiled_file" "$class_file"
+      echo "✓ Class $class_name reloaded"
+      return 0
+    fi
+
+    # Fall back to legacy class file
+    if [[ -f "$class_file" ]]; then
+      echo "Reloading legacy class $class_name..."
+      source "$class_file"
+      echo "✓ Legacy class $class_name reloaded"
+      return 0
+    fi
+
+    echo "Error: Class $class_name not found"
+    echo "Searched:"
+    echo "  - $compiled_file"
+    echo "  - $compiled_trait"
+    echo "  - $class_file"
+    return 1
+  ]
+
+  # Compile and reload a class from .trash source
+  rawMethod: compileAndReload: class_name [
+    if [[ -z "$class_name" ]]; then
+      echo "Usage: @ Trash compileAndReload <ClassName>"
+      return 1
+    fi
+
+    local source_file="$TRASHDIR/${class_name}.trash"
+    local trait_source="$TRASHDIR/traits/${class_name}.trash"
+
+    # Check for trait source
+    if [[ -f "$trait_source" ]]; then
+      echo "Compiling trait $class_name..."
+      source "$SCRIPT_DIR/lib/trash-compiler.bash"
+      compile_file "$trait_source" > "$TRASHDIR/.compiled/traits/$class_name"
+      @ "$_RECEIVER" reloadClass "$class_name"
+      return $?
+    fi
+
+    # Check for class source
+    if [[ -f "$source_file" ]]; then
+      echo "Compiling class $class_name..."
+      source "$SCRIPT_DIR/lib/trash-compiler.bash"
+      compile_file "$source_file" > "$TRASHDIR/.compiled/$class_name"
+      @ "$_RECEIVER" reloadClass "$class_name"
+      return $?
+    fi
+
+    echo "Error: No source file found for $class_name"
+    echo "Searched:"
+    echo "  - $source_file"
+    echo "  - $trait_source"
+    return 1
+  ]
+
+  # Show system statistics
+  method: stats [
+    echo "=== Trash System Statistics ==="
+    echo "Objects: $(@ self listObjects | wc -l)"
+    echo "Traits: $(@ self listTraits | wc -l)"
+    echo "KV entries: $(kvlist 2>/dev/null | wc -l)"
+    echo "Active processes: $(@ Process listProcesses 2>/dev/null | wc -l)"
+    echo "Memory usage: $(du -sh "$TRASHDIR" | cut -f1)"
+    echo "KV store size: $(du -sh "$KV_USER_DIR" 2>/dev/null | cut -f1 || echo "0B")"
+  ]
+
+  # Clean up system
+  method: cleanup [
+    echo "Cleaning up trash system..."
+    @ Process listProcesses >/dev/null 2>&1
+    echo "Cleanup complete"
+  ]
+
+  # Find all instances of a class (delegates to Object)
+  method: findAll: class_name [
+    if [[ -z "$class_name" ]]; then
+      echo "Usage: @ Trash findAll <ClassName>"
+      return 1
+    fi
+    @ "$class_name" findAll
+  ]
+
+  # Find instances matching a predicate (delegates to Object)
+  method: find: class_name where: predicate [
+    if [[ -z "$class_name" ]]; then
+      echo "Usage: @ Trash find <ClassName> [predicate]"
+      return 1
+    fi
+    @ "$class_name" find "$predicate"
+  ]
+
+  # Count instances of a class
+  method: countInstances: class_name [
+    if [[ -z "$class_name" ]]; then
+      echo "Usage: @ Trash countInstances <ClassName>"
+      return 1
+    fi
+    @ "$class_name" count
+  ]
+
+  # List all classes that have instances
+  method: listInstanceTypes [
+    db_list_classes
+  ]
+
+  # Show current call stack
+  method: showStack [
+    | stack count i frame_id frame_data receiver selector args |
+    _ensure_stack
+    stack := $(kvget _stack 2>/dev/null)
+    if [[ -z "$stack" || "$stack" == "[]" ]]; then
+      echo "Call stack is empty"
+      return 0
+    fi
+    count := $(echo "$stack" | jq 'length')
+    echo "=== Call Stack ($count frames) ==="
+    for ((i=count-1; i>=0; i--)); do
+      frame_id := $(echo "$stack" | jq -r ".[$i]")
+      frame_data := $(kvget "$frame_id" 2>/dev/null)
+      if [[ -n "$frame_data" ]]; then
+        receiver := $(echo "$frame_data" | jq -r '.args.receiver // "?"')
+        selector := $(echo "$frame_data" | jq -r '.args.selector // "?"')
+        args := $(echo "$frame_data" | jq -r '.args.args // ""')
+        echo "  [$i] $receiver >> $selector $args"
+      else
+        echo "  [$i] $frame_id (frame data missing)"
+      fi
+    done
+    echo ""
+    echo "Enable stack frames with: export TRASH_STACK_FRAMES=1"
+  ]
+
+  # Clear the call stack
+  method: clearStack [
+    | stack frame_id |
+    _ensure_stack
+    stack := $(kvget _stack 2>/dev/null)
+    if [[ -z "$stack" || "$stack" == "[]" ]]; then
+      echo "Stack already empty"
+      return 0
+    fi
+    echo "$stack" | jq -r '.[]' 2>/dev/null | while read -r frame_id; do
+      if [[ -n "$frame_id" ]]; then
+        kvdel "$frame_id" 2>/dev/null
+      fi
+    done
+    kvset _stack "[]"
+    echo "Stack cleared"
+  ]
+
+  # Get stack depth
+  method: stackDepth [
+    | stack |
+    _ensure_stack
+    stack := $(kvget _stack 2>/dev/null)
+    if [[ -z "$stack" ]]; then
+      echo "0"
+    else
+      echo "$stack" | jq 'length'
+    fi
+  ]
+
+  # Show help
+  method: help [
+    echo "=== Trash System Commands ==="
+    echo "@ Trash info                    - Show system information"
+    echo "@ Trash listObjects             - List all objects"
+    echo "@ Trash listTraits              - List all traits"
+    echo "@ Trash methodsFor <object>     - Show methods for object"
+    echo "@ Trash hierarchyFor <object>   - Show inheritance hierarchy"
+    echo "@ Trash createObject <name> [super] - Create new object"
+    echo "@ Trash removeObject <name>     - Remove object"
+    echo "@ Trash reload                  - Reload all object stubs"
+    echo "@ Trash reloadClass <class>     - Hot reload a single class"
+    echo "@ Trash compileAndReload <class> - Compile and reload from .trash"
+    echo "@ Trash stats                   - Show system statistics"
+    echo "@ Trash cleanup                 - Clean up system"
+    echo "@ Trash version                 - Show version information"
+    echo "@ Trash inspect <object>        - Detailed object inspection"
+    echo ""
+    echo "=== Instance Query Commands ==="
+    echo "@ Trash findAll <Class>         - Find all instances"
+    echo "@ Trash find <Class> [pred]     - Find with predicate"
+    echo "@ Trash countInstances <Class>  - Count instances"
+    echo "@ Trash listInstanceTypes       - List classes with instances"
+    echo "@ Trash showStack               - Show current call stack"
+    echo "@ Trash clearStack              - Clear call stack"
+  ]
+
+  # Show version information
+  method: version [
+    echo "Trash System v$TRASH_VERSION"
+    echo "Author: $TRASH_AUTHOR"
+    echo "Description: $TRASH_DESCRIPTION"
+    echo "Bash version: $BASH_VERSION"
+    echo "System: $(uname -s) $(uname -r)"
+  ]
+
+  # Detailed object inspection
+  method: inspect: object_name [
+    | object_file traits state |
+    if [[ -z "$object_name" ]]; then
+      echo "Usage: @ Trash inspect <object_name>"
+      return 1
+    fi
+    echo "=== Detailed Inspection: $object_name ==="
+    object_file := "$TRASHDIR/$object_name"
+    if [[ ! -f "$object_file" ]]; then
+      echo "Object $object_name not found"
+      return 1
+    fi
+    echo "File: $object_file"
+    echo "Size: $(wc -l < "$object_file") lines"
+    echo "Modified: $(stat -f "%Sm" "$object_file" 2>/dev/null || stat -c "%y" "$object_file" 2>/dev/null)"
+    echo ""
+    @ self hierarchyFor: "$object_name"
+    echo ""
+    @ self methodsFor: "$object_name"
+    echo ""
+    traits := $(grep "^include" "$object_file" | awk '{print $2}')
+    if [[ -n "$traits" ]]; then
+      echo "Traits:"
+      echo "$traits" | sed 's/^/  /'
+    else
+      echo "Traits: none"
+    fi
+    echo ""
+    state := $(kvget "$object_name" 2>/dev/null)
+    if [[ -n "$state" ]]; then
+      echo "Persistent state:"
+      echo "$state" | jq . 2>/dev/null || echo "$state"
+    else
+      echo "Persistent state: none"
+    fi
+  ]
+
+  # Quick object creation with template (uses heredocs - raw method)
+  rawMethod: quickCreate: object_name template: template [
+    template="${template:-basic}"
+    local object_file="$TRASHDIR/$object_name"
+
+    if [[ -f "$object_file" ]]; then
+      echo "Object $object_name already exists"
+      return 1
+    fi
+
+    case "$template" in
+      "service")
+        cat > "$object_file" << 'EOF'
+is_a Object
+include Debuggable
+
+# Service object template
+
+start() {
+    debug "Starting service..."
+    echo "Service started"
+}
+
+stop() {
+    debug "Stopping service..."
+    echo "Service stopped"
+}
+
+status() {
+    echo "Service is running"
+}
+
+restart() {
+    stop
+    start
+}
+EOF
+        ;;
+      "tool")
+        cat > "$object_file" << 'EOF'
+is_a Tool
+include Debuggable
+
+# Tool object template
+
+install() {
+    debug "Installing tool..."
+    echo "Tool installed"
+}
+
+uninstall() {
+    debug "Uninstalling tool..."
+    echo "Tool uninstalled"
+}
+
+configure() {
+    local config="$1"
+    debug "Configuring with: $config"
+    echo "Tool configured"
+}
+EOF
+        ;;
+      "actor")
+        cat > "$object_file" << 'EOF'
+is_a Object
+include Debuggable
+
+# Actor object template (for use with Process)
+
+receive() {
+    local message="$1"
+    debug "Received message: $message"
+
+    case "$message" in
+        "ping")
+            echo "pong"
+            ;;
+        "status")
+            echo "active"
+            ;;
+        *)
+            echo "Unknown message: $message"
+            ;;
+    esac
+}
+
+initialize() {
+    debug "Actor initialized"
+    kvset "$_RECEIVER" "$(jo status=active created=$(date))"
+}
+EOF
+        ;;
+      *)
+        # Basic template
+        cat > "$object_file" << EOF
+is_a Object
+
+# $object_name - Created by Trash system
+
+example() {
+    echo "Hello from $object_name"
+}
+EOF
+        ;;
+    esac
+
+    echo "Created $object_name using $template template"
+    create_object_stub "$object_name"
+  ]

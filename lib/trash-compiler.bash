@@ -32,16 +32,25 @@ mkdir -p "$COMPILED_DIR"
 # ============================================
 
 declare -a TOKENS
+declare -a TOKEN_POSITIONS  # Track character position of each token
+declare -a TOKEN_LINES      # Track line number for each token
 declare -i TOKEN_POS=0
+declare SOURCE_TEXT=""  # Original source for raw extraction
+declare SOURCE_FILE=""  # Source file name for error messages
 
 tokenize() {
     local input="$1"
     TOKENS=()
+    TOKEN_POSITIONS=()
+    TOKEN_LINES=()
     TOKEN_POS=0
+    SOURCE_TEXT="$input"  # Store for raw extraction
 
     local i=0
     local len=${#input}
     local token=""
+    local token_start=0
+    local current_line=1  # Track current line number
 
     while ((i < len)); do
         local char="${input:i:1}"
@@ -52,81 +61,126 @@ tokenize() {
             $' '|$'\t')
                 if [[ -n "$token" ]]; then
                     TOKENS+=("$token")
+                    TOKEN_POSITIONS+=("$token_start")
+                    TOKEN_LINES+=("$current_line")
                     token=""
                 fi
                 ((i++))
+                token_start=$i
                 ;;
             # Newline - emit token and newline marker
             $'\n')
                 if [[ -n "$token" ]]; then
                     TOKENS+=("$token")
+                    TOKEN_POSITIONS+=("$token_start")
+                    TOKEN_LINES+=("$current_line")
                     token=""
                 fi
                 TOKENS+=("NEWLINE")
+                TOKEN_POSITIONS+=("$i")
+                TOKEN_LINES+=("$current_line")
+                ((current_line++))
                 ((i++))
+                token_start=$i
                 ;;
             # Comment - skip to end of line
             '#')
                 if [[ -n "$token" ]]; then
                     TOKENS+=("$token")
+                    TOKEN_POSITIONS+=("$token_start")
+                    TOKEN_LINES+=("$current_line")
                     token=""
                 fi
                 while ((i < len)) && [[ "${input:i:1}" != $'\n' ]]; do
                     ((i++))
                 done
+                token_start=$i
                 ;;
             # Special characters
             '[')
                 if [[ -n "$token" ]]; then
                     TOKENS+=("$token")
+                    TOKEN_POSITIONS+=("$token_start")
+                    TOKEN_LINES+=("$current_line")
                     token=""
                 fi
                 TOKENS+=("LBRACKET")
+                TOKEN_POSITIONS+=("$i")
+                TOKEN_LINES+=("$current_line")
                 ((i++))
+                token_start=$i
                 ;;
             ']')
                 if [[ -n "$token" ]]; then
                     TOKENS+=("$token")
+                    TOKEN_POSITIONS+=("$token_start")
+                    TOKEN_LINES+=("$current_line")
                     token=""
                 fi
                 TOKENS+=("RBRACKET")
+                TOKEN_POSITIONS+=("$i")
+                TOKEN_LINES+=("$current_line")
                 ((i++))
+                token_start=$i
                 ;;
             '|')
                 if [[ -n "$token" ]]; then
                     TOKENS+=("$token")
+                    TOKEN_POSITIONS+=("$token_start")
+                    TOKEN_LINES+=("$current_line")
                     token=""
                 fi
                 TOKENS+=("PIPE")
+                TOKEN_POSITIONS+=("$i")
+                TOKEN_LINES+=("$current_line")
                 ((i++))
+                token_start=$i
                 ;;
             '^')
                 if [[ -n "$token" ]]; then
                     TOKENS+=("$token")
+                    TOKEN_POSITIONS+=("$token_start")
+                    TOKEN_LINES+=("$current_line")
                     token=""
                 fi
                 TOKENS+=("CARET")
+                TOKEN_POSITIONS+=("$i")
+                TOKEN_LINES+=("$current_line")
                 ((i++))
+                token_start=$i
                 ;;
             '.')
                 if [[ -n "$token" ]]; then
                     TOKENS+=("$token")
+                    TOKEN_POSITIONS+=("$token_start")
+                    TOKEN_LINES+=("$current_line")
                     token=""
                 fi
                 TOKENS+=("DOT")
+                TOKEN_POSITIONS+=("$i")
+                TOKEN_LINES+=("$current_line")
                 ((i++))
+                token_start=$i
                 ;;
             ':')
                 # Check for :=
                 if [[ "$next_char" == "=" ]]; then
                     if [[ -n "$token" ]]; then
                         TOKENS+=("$token")
+                        TOKEN_POSITIONS+=("$token_start")
+                        TOKEN_LINES+=("$current_line")
                         token=""
                     fi
                     TOKENS+=("ASSIGN")
+                    TOKEN_POSITIONS+=("$i")
+                    TOKEN_LINES+=("$current_line")
                     ((i += 2))
+                    token_start=$i
                 else
-                    # Colon is part of keyword
+                    # Colon is part of keyword - track start if new token
+                    if [[ -z "$token" ]]; then
+                        token_start=$i
+                    fi
                     token+="$char"
                     ((i++))
                 fi
@@ -135,8 +189,11 @@ tokenize() {
             "'")
                 if [[ -n "$token" ]]; then
                     TOKENS+=("$token")
+                    TOKEN_POSITIONS+=("$token_start")
+                    TOKEN_LINES+=("$current_line")
                     token=""
                 fi
+                local str_start=$i
                 ((i++))
                 local str="'"
                 while ((i < len)) && [[ "${input:i:1}" != "'" ]]; do
@@ -146,17 +203,26 @@ tokenize() {
                 str+="'"
                 ((i++))  # Skip closing quote
                 TOKENS+=("STRING:$str")
+                TOKEN_POSITIONS+=("$str_start")
+                TOKEN_LINES+=("$current_line")
+                token_start=$i
                 ;;
             # Numbers
             [0-9]|'-')
                 if [[ "$char" == "-" && ! "$next_char" =~ [0-9] ]]; then
+                    if [[ -z "$token" ]]; then
+                        token_start=$i
+                    fi
                     token+="$char"
                     ((i++))
                 else
                     if [[ -n "$token" ]]; then
                         TOKENS+=("$token")
+                        TOKEN_POSITIONS+=("$token_start")
+                        TOKEN_LINES+=("$current_line")
                         token=""
                     fi
+                    local num_start=$i
                     local num="$char"
                     ((i++))
                     while ((i < len)) && [[ "${input:i:1}" =~ [0-9.] ]]; do
@@ -164,10 +230,16 @@ tokenize() {
                         ((i++))
                     done
                     TOKENS+=("NUMBER:$num")
+                    TOKEN_POSITIONS+=("$num_start")
+                    TOKEN_LINES+=("$current_line")
+                    token_start=$i
                 fi
                 ;;
             # Everything else - accumulate into token
             *)
+                if [[ -z "$token" ]]; then
+                    token_start=$i
+                fi
                 token+="$char"
                 ((i++))
                 ;;
@@ -177,6 +249,8 @@ tokenize() {
     # Emit final token
     if [[ -n "$token" ]]; then
         TOKENS+=("$token")
+        TOKEN_POSITIONS+=("$token_start")
+        TOKEN_LINES+=("$current_line")
     fi
 }
 
@@ -185,6 +259,39 @@ current_token() {
     if ((TOKEN_POS < ${#TOKENS[@]})); then
         echo "${TOKENS[TOKEN_POS]}"
     fi
+}
+
+# Get current token's position in source
+current_token_pos() {
+    if ((TOKEN_POS < ${#TOKEN_POSITIONS[@]})); then
+        echo "${TOKEN_POSITIONS[TOKEN_POS]}"
+    fi
+}
+
+# Get current token's line number
+current_token_line() {
+    if ((TOKEN_POS < ${#TOKEN_LINES[@]})); then
+        echo "${TOKEN_LINES[TOKEN_POS]}"
+    else
+        echo "?"
+    fi
+}
+
+# Format error location
+error_location() {
+    local line=$(current_token_line)
+    if [[ -n "$SOURCE_FILE" ]]; then
+        echo "$SOURCE_FILE:$line"
+    else
+        echo "line $line"
+    fi
+}
+
+# Report a parse error with line number
+parse_error() {
+    local message="$1"
+    local location=$(error_location)
+    echo "Parse error at $location: $message" >&2
 }
 
 # Advance to next token
@@ -204,7 +311,7 @@ expect() {
     local expected="$1"
     local actual=$(current_token)
     if [[ "$actual" != "$expected" ]]; then
-        echo "Parse error: expected '$expected', got '$actual'" >&2
+        parse_error "expected '$expected', got '$actual'"
         return 1
     fi
     advance
@@ -226,21 +333,35 @@ parse_class() {
 
     skip_newlines
 
-    # ClassName subclass: ParentClass
+    # ClassName subclass: ParentClass  OR  ClassName trait
     local class_name=$(current_token)
     advance
 
     skip_newlines
-    expect "subclass:"
-    skip_newlines
 
-    local parent_class=$(current_token)
-    advance
+    local next=$(current_token)
+    local parent_class=""
+    local is_trait=0
+
+    if [[ "$next" == "subclass:" ]]; then
+        advance
+        skip_newlines
+        parent_class=$(current_token)
+        advance
+    elif [[ "$next" == "trait" ]]; then
+        advance
+        is_trait=1
+    else
+        parse_error "expected 'subclass:' or 'trait', got '$next'"
+        return 1
+    fi
 
     CLASS_AST[name]="$class_name"
     CLASS_AST[parent]="$parent_class"
     CLASS_AST[instanceVars]=""
     CLASS_AST[traits]=""
+    CLASS_AST[is_trait]="$is_trait"
+    CLASS_AST[requires]=""
 
     skip_newlines
 
@@ -264,13 +385,37 @@ parse_class() {
                     CLASS_AST[traits]="$trait"
                 fi
                 ;;
+            "requires:")
+                advance
+                skip_newlines
+                # Get the path (might be a STRING token)
+                local req_path=$(current_token)
+                if [[ "$req_path" == STRING:* ]]; then
+                    req_path="${req_path#STRING:}"
+                    req_path="${req_path//\'/}"  # Remove quotes
+                fi
+                advance
+                if [[ -n "${CLASS_AST[requires]}" ]]; then
+                    CLASS_AST[requires]+=$'\n'"$req_path"
+                else
+                    CLASS_AST[requires]="$req_path"
+                fi
+                ;;
             "method:")
                 advance
-                parse_method "instance"
+                parse_method "instance" "normal"
+                ;;
+            "rawMethod:")
+                advance
+                parse_method "instance" "raw"
                 ;;
             "classMethod:")
                 advance
-                parse_method "class"
+                parse_method "class" "normal"
+                ;;
+            "rawClassMethod:")
+                advance
+                parse_method "class" "raw"
                 ;;
             "NEWLINE")
                 advance
@@ -346,6 +491,7 @@ parse_instance_vars() {
 
 parse_method() {
     local method_type="$1"  # "instance" or "class"
+    local method_mode="${2:-normal}"  # "normal" or "raw"
 
     # Parse method signature
     local method_name=""
@@ -384,72 +530,43 @@ parse_method() {
 
     skip_newlines
 
-    # Expect method body in brackets
+    # Expect method body in brackets - get position of opening bracket
     expect "LBRACKET"
 
-    # Parse method body - reconstruct as readable text
-    local body=""
-    local bracket_depth=1
-    local line=""
+    # Get the position right after the opening bracket
+    local body_start=$(current_token_pos)
 
+    # Skip through tokens to find matching closing bracket, tracking depth
+    local bracket_depth=1
     while ((bracket_depth > 0)); do
         local token=$(current_token)
-
         case "$token" in
-            "LBRACKET")
-                line+="["
-                ((bracket_depth++))
-                ;;
-            "RBRACKET")
-                ((bracket_depth--))
-                if ((bracket_depth > 0)); then
-                    line+="]"
-                fi
-                ;;
-            "NEWLINE")
-                body+="$line"$'\n'
-                line=""
-                ;;
-            "PIPE")
-                line+="|"
-                ;;
-            "CARET")
-                line+="^"
-                ;;
-            "ASSIGN")
-                line+=" := "
-                ;;
-            "DOT")
-                line+="."
-                ;;
-            STRING:*)
-                local str="${token#STRING:}"
-                # Convert single quotes to double quotes for bash
-                str="${str//\'/\"}"
-                line+="$str"
-                ;;
-            NUMBER:*)
-                line+="${token#NUMBER:}"
-                ;;
-            *)
-                if [[ -n "$line" && ! "$line" =~ [[:space:]]$ && "$token" != ":" ]]; then
-                    line+=" "
-                fi
-                line+="$token"
-                ;;
+            "LBRACKET") ((bracket_depth++)) ;;
+            "RBRACKET") ((bracket_depth--)) ;;
         esac
-        advance
+        if ((bracket_depth > 0)); then
+            advance
+        fi
     done
 
-    # Add any remaining line content
-    if [[ -n "$line" ]]; then
-        body+="$line"$'\n'
-    fi
+    # Get position of closing bracket
+    local body_end=$(current_token_pos)
+    advance  # Move past the closing bracket
+
+    # Extract raw body from source text
+    local body_length=$((body_end - body_start))
+    local body="${SOURCE_TEXT:body_start:body_length}"
+
+    # Trim leading/trailing whitespace from body while preserving internal structure
+    # Remove leading newline if present
+    body="${body#$'\n'}"
+    # Remove trailing whitespace
+    body="${body%"${body##*[![:space:]]}"}"
 
     # Store method info
     # Replace newlines with a placeholder since read stops at newlines
     local encoded_body="${body//$'\n'/__NL__}"
-    local method_info="${method_name}"$'\x1f'"${method_args[*]}"$'\x1f'"${encoded_body}"
+    local method_info="${method_name}"$'\x1f'"${method_args[*]}"$'\x1f'"${encoded_body}"$'\x1f'"${method_mode}"
 
     if [[ "$method_type" == "class" ]]; then
         CLASS_CLASS_METHODS+=("$method_info")
@@ -467,9 +584,22 @@ generate_bash() {
     local parent="${CLASS_AST[parent]}"
     local instance_vars="${CLASS_AST[instanceVars]}"
     local traits="${CLASS_AST[traits]}"
+    local is_trait="${CLASS_AST[is_trait]:-0}"
+    local requires="${CLASS_AST[requires]}"
 
     # Header
-    cat << EOF
+    if [[ "$is_trait" == "1" ]]; then
+        cat << EOF
+#!/bin/bash
+# Generated by Trashtalk Compiler - DO NOT EDIT
+# Source: $class_name.trash (trait)
+# Generated: $(date -Iseconds)
+
+__${class_name}__is_trait="1"
+
+EOF
+    else
+        cat << EOF
 #!/bin/bash
 # Generated by Trashtalk Compiler - DO NOT EDIT
 # Source: $class_name.trash
@@ -480,17 +610,27 @@ __${class_name}__instanceVars="$instance_vars"
 __${class_name}__traits="$traits"
 
 EOF
+    fi
+
+    # Source required files
+    if [[ -n "$requires" ]]; then
+        echo "# Required dependencies"
+        while IFS= read -r req_path; do
+            [[ -n "$req_path" ]] && echo "source \"$req_path\""
+        done <<< "$requires"
+        echo ""
+    fi
 
     # Generate instance methods
     for method_info in "${CLASS_METHODS[@]}"; do
-        IFS=$'\x1f' read -r method_name method_args method_body <<< "$method_info"
-        generate_method "$class_name" "$method_name" "$method_args" "$method_body" "instance"
+        IFS=$'\x1f' read -r method_name method_args method_body method_mode <<< "$method_info"
+        generate_method "$class_name" "$method_name" "$method_args" "$method_body" "instance" "${method_mode:-normal}"
     done
 
     # Generate class methods
     for method_info in "${CLASS_CLASS_METHODS[@]}"; do
-        IFS=$'\x1f' read -r method_name method_args method_body <<< "$method_info"
-        generate_method "$class_name" "$method_name" "$method_args" "$method_body" "class"
+        IFS=$'\x1f' read -r method_name method_args method_body method_mode <<< "$method_info"
+        generate_method "$class_name" "$method_name" "$method_args" "$method_body" "class" "${method_mode:-normal}"
     done
 }
 
@@ -500,6 +640,7 @@ generate_method() {
     local method_args="$3"
     local method_body="$4"
     local method_type="$5"
+    local method_mode="${6:-normal}"
 
     # Decode newlines in body
     method_body="${method_body//__NL__/$'\n'}"
@@ -520,15 +661,60 @@ generate_method() {
         ((i++))
     done
 
-    # Transform method body to bash
+    # Transform method body to bash (skip for raw methods)
     local bash_body
-    bash_body=$(transform_body "$method_body")
-
-    # Indent body
-    echo "$bash_body" | sed 's/^/  /'
+    if [[ "$method_mode" == "raw" ]]; then
+        # Raw method - pass through unchanged, NO indentation (heredocs are whitespace-sensitive)
+        echo "$method_body"
+    else
+        # Normal method - apply DSL transformations
+        bash_body=$(transform_body "$method_body")
+        # Indent body
+        echo "$bash_body" | sed 's/^/  /'
+    fi
 
     echo "}"
     echo ""
+}
+
+# Transform keyword message send to positional call
+# @ Receiver key1: arg1 key2: arg2 → @ Receiver key1_key2 arg1 arg2
+transform_keyword_message() {
+    local receiver="$1"
+    local msg="$2"
+
+    local method_name=""
+    local args=""
+    local remaining="$msg"
+
+    # Parse keyword: arg pairs
+    while [[ "$remaining" =~ ^([a-zA-Z_][a-zA-Z0-9_]*):[[:space:]]*([^[:space:]]+|\"[^\"]*\"|\'[^\']*\')[[:space:]]*(.*) ]]; do
+        local keyword="${BASH_REMATCH[1]}"
+        local arg="${BASH_REMATCH[2]}"
+        remaining="${BASH_REMATCH[3]}"
+
+        if [[ -n "$method_name" ]]; then
+            method_name+="_$keyword"
+        else
+            method_name="$keyword"
+        fi
+
+        if [[ -n "$args" ]]; then
+            args+=" $arg"
+        else
+            args="$arg"
+        fi
+    done
+
+    # Handle any remaining non-keyword args
+    if [[ -n "$remaining" ]]; then
+        remaining="${remaining#"${remaining%%[![:space:]]*}"}"
+        if [[ -n "$remaining" ]]; then
+            args+=" $remaining"
+        fi
+    fi
+
+    echo "@ $receiver $method_name $args"
 }
 
 # Transform method body from DSL to bash
@@ -543,14 +729,14 @@ transform_body() {
         # Skip empty lines
         [[ -z "$line" ]] && continue
 
-        # Trim leading/trailing whitespace
-        line="${line#"${line%%[![:space:]]*}"}"
-        line="${line%"${line##*[![:space:]]}"}"
+        # Trim leading/trailing whitespace for pattern matching
+        local trimmed="${line#"${line%%[![:space:]]*}"}"
+        trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
 
-        [[ -z "$line" ]] && continue
+        [[ -z "$trimmed" ]] && continue
 
         # Handle local variable declarations: | var1 var2 |
-        if [[ "$line" =~ ^\|(.+)\|$ ]]; then
+        if [[ "$trimmed" =~ ^\|(.+)\|$ ]]; then
             local vars="${BASH_REMATCH[1]}"
             # Trim leading/trailing spaces from vars
             vars="${vars#"${vars%%[![:space:]]*}"}"
@@ -560,7 +746,7 @@ transform_body() {
         fi
 
         # Handle return: ^ expr
-        if [[ "$line" =~ ^\^[[:space:]]*(.+)$ ]]; then
+        if [[ "$trimmed" =~ ^\^[[:space:]]*(.+)$ ]]; then
             local retval="${BASH_REMATCH[1]}"
             # Replace self with $_RECEIVER
             retval="${retval//self/\$_RECEIVER}"
@@ -568,43 +754,54 @@ transform_body() {
             continue
         fi
 
-        # Handle @ self message: pattern
-        # @ self selector: arg  →  @ "$_RECEIVER" selector "arg"
-        if [[ "$line" =~ ^@[[:space:]]+self[[:space:]]+(.+)$ ]]; then
-            local msg="${BASH_REMATCH[1]}"
-            # Parse keyword message: selector: arg
-            if [[ "$msg" =~ ^([a-zA-Z]+):[[:space:]]*(.+)$ ]]; then
-                local selector="${BASH_REMATCH[1]}"
-                local arg="${BASH_REMATCH[2]}"
-                result+="@ \"\$_RECEIVER\" $selector \"$arg\""$'\n'
+        # Handle @ message sends (both self and other receivers)
+        if [[ "$trimmed" =~ ^@[[:space:]]+([^[:space:]]+)[[:space:]]+(.+)$ ]]; then
+            local receiver="${BASH_REMATCH[1]}"
+            local msg="${BASH_REMATCH[2]}"
+
+            # Replace self with $_RECEIVER
+            if [[ "$receiver" == "self" ]]; then
+                receiver='"$_RECEIVER"'
+            fi
+
+            # Check if it's a keyword message (contains word:)
+            if [[ "$msg" =~ [a-zA-Z_][a-zA-Z0-9_]*: ]]; then
+                local transformed
+                transformed=$(transform_keyword_message "$receiver" "$msg")
+                result+="$transformed"$'\n'
             else
-                # Unary message
-                result+="@ \"\$_RECEIVER\" $msg"$'\n'
+                # Unary or positional message - pass through
+                result+="@ $receiver $msg"$'\n'
             fi
             continue
         fi
 
         # Handle assignment: var := expr
-        if [[ "$line" =~ ^([a-zA-Z_][a-zA-Z0-9_]*)[[:space:]]*:=[[:space:]]*(.+)$ ]]; then
+        if [[ "$trimmed" =~ ^([a-zA-Z_][a-zA-Z0-9_]*)[[:space:]]*:=[[:space:]]*(.+)$ ]]; then
             local var="${BASH_REMATCH[1]}"
             local expr="${BASH_REMATCH[2]}"
+            # Check if the expression contains a keyword message
+            if [[ "$expr" =~ ^\$\(@[[:space:]]+([^[:space:]]+)[[:space:]]+(.+)\)$ ]]; then
+                local inner_receiver="${BASH_REMATCH[1]}"
+                local inner_msg="${BASH_REMATCH[2]}"
+                if [[ "$inner_receiver" == "self" ]]; then
+                    inner_receiver='"$_RECEIVER"'
+                fi
+                if [[ "$inner_msg" =~ [a-zA-Z_][a-zA-Z0-9_]*: ]]; then
+                    local transformed
+                    transformed=$(transform_keyword_message "$inner_receiver" "$inner_msg")
+                    expr="\$($transformed)"
+                fi
+            fi
             # Replace self with $_RECEIVER in expression
             expr="${expr//self/\$_RECEIVER}"
             result+="$var=$expr"$'\n'
             continue
         fi
 
-        # Handle standalone function calls: _func args
-        if [[ "$line" =~ ^_[a-zA-Z_]+[[:space:]]*.* ]]; then
-            # Replace self with $_RECEIVER
-            line="${line//self/\$_RECEIVER}"
-            result+="$line"$'\n'
-            continue
-        fi
-
-        # Default: pass through with self replacement
-        line="${line//self/\$_RECEIVER}"
-        result+="$line"$'\n'
+        # Default: pass through with self replacement (use trimmed for consistent indentation)
+        trimmed="${trimmed//self/\$_RECEIVER}"
+        result+="$trimmed"$'\n'
     done <<< "$body"
 
     echo "$result"
@@ -622,6 +819,9 @@ compile_file() {
         echo "Error: Source file not found: $source_file" >&2
         return 1
     fi
+
+    # Set source file for error messages
+    SOURCE_FILE="$source_file"
 
     # Read source
     local source

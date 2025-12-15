@@ -1,0 +1,48 @@
+# Debuggable trait - provides debugging capabilities to objects
+
+debug() {
+    # Only output debug messages if TRASH_DEBUG is not set to 0
+    [[ "${TRASH_DEBUG:-1}" == "0" ]] && return 0
+
+    local message="$*"
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    echo "[$timestamp] DEBUG ($_RECEIVER): $message" >&2
+}
+
+trace() {
+    local method="$1"
+    shift
+    local args="$*"
+    debug "Calling $method with args: $args"
+}
+
+inspect() {
+    echo "Object: $_RECEIVER"
+    echo "Class: $_SUPERCLASS"
+    echo "Methods:"
+    get_fcn_list "$(receiver_path $_RECEIVER)" | sed 's/^/  /'
+}
+
+# Show the inheritance chain
+ancestry() {
+    local current_class="$_RECEIVER"
+    echo "Inheritance chain for $_RECEIVER:"
+    
+    while [[ -n "$current_class" ]]; do
+        echo "  $current_class"
+        
+        if [[ -f "$TRASHDIR/$current_class" ]]; then
+            # Get the superclass from the file
+            local super=$(grep "^is_a" "$TRASHDIR/$current_class" | awk '{print $2}')
+            current_class="$super"
+            
+            # Prevent infinite loops
+            if [[ "$current_class" == "Object" ]]; then
+                echo "  Object"
+                break
+            fi
+        else
+            break
+        fi
+    done
+}

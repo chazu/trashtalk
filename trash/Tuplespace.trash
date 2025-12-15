@@ -1,0 +1,136 @@
+# Tuplespace - Trash object wrapper for tuplespace.bash functionality
+# Provides message-passing API for coordinated event-driven programming
+Tuplespace subclass: Object
+  include: Debuggable
+  requires: '$SCRIPT_DIR/vendor/tuplespace/tuplespace.bash'
+
+  # Initialize the tuplespace system
+  method: init [
+    [[ "${TRASH_DEBUG:-1}" != "0" ]] && debug "Initializing tuplespace system"
+    ts_init
+    echo "Tuplespace initialized at $TUPLESPACE_DIR"
+  ]
+
+  # Put a tuple into the space
+  method: put: tuple_type args: args [
+    [[ "${TRASH_DEBUG:-1}" != "0" ]] && debug "Putting tuple of type: $tuple_type"
+    ts_put "$tuple_type" $args
+  ]
+
+  # Get tuples matching criteria (read without removing)
+  method: get: tuple_type key: key value: value [
+    [[ "${TRASH_DEBUG:-1}" != "0" ]] && debug "Getting tuples of type: $tuple_type"
+    ts_get "$tuple_type" "$key" "$value"
+  ]
+
+  # Take tuples matching criteria (read and remove)
+  method: take: tuple_type key: key value: value [
+    [[ "${TRASH_DEBUG:-1}" != "0" ]] && debug "Taking tuples of type: $tuple_type"
+    ts_take "$tuple_type" "$key" "$value"
+  ]
+
+  # Wait for tuples matching criteria
+  method: wait: tuple_type key: key value: value timeout: timeout [
+    [[ "${TRASH_DEBUG:-1}" != "0" ]] && debug "Waiting for tuples of type: $tuple_type (timeout: $timeout)"
+    ts_wait "$tuple_type" "$key" "$value" "$timeout"
+  ]
+
+  # Listen for events on tuples of a specific type
+  method: listen: tuple_type command: command [
+    [[ "${TRASH_DEBUG:-1}" != "0" ]] && debug "Setting up listener for type: $tuple_type"
+    ts_listen "$tuple_type" "$command"
+  ]
+
+  # Stop a listener
+  method: stopListener: tuple_type process: process_id [
+    [[ "${TRASH_DEBUG:-1}" != "0" ]] && debug "Stopping listener for type: $tuple_type, process: $process_id"
+    ts_stop_listener "$tuple_type" "$process_id"
+  ]
+
+  # Extract field from tuple record
+  method: field: tuple_record name: field_name [
+    ts_field "$tuple_record" "$field_name"
+  ]
+
+  # List all tuples in the space
+  method: list [
+    [[ "${TRASH_DEBUG:-1}" != "0" ]] && debug "Listing all tuples"
+    ts_list
+  ]
+
+  # Count tuples by type
+  method: count: tuple_type [
+    if [[ -n "$tuple_type" ]]; then
+      debug "Counting tuples of type: $tuple_type"
+    else
+      debug "Counting all tuples"
+    fi
+    ts_count "$tuple_type"
+  ]
+
+  # Clear all tuples from the space
+  method: clear [
+    debug "Clearing all tuples from tuplespace"
+    ts_clear
+  ]
+
+  # Put a key-value pair
+  method: putKV: key value: value [
+    debug "Putting key-value: $key = $value"
+    ts_kv_put "$key" "$value"
+  ]
+
+  # Get value by key
+  method: getKV: key [
+    debug "Getting value for key: $key"
+    ts_kv_get "$key"
+  ]
+
+  # Put an event
+  method: putEvent: event_name data: data [
+    debug "Putting event: $event_name"
+    ts_event_put "$event_name" "$data"
+  ]
+
+  # System information
+  method: info [
+    echo "=== Tuplespace System Information ==="
+    echo "Directory: $TUPLESPACE_DIR"
+    echo "Database: $TUPLESPACE_DB"
+    echo "Events Dir: $TUPLESPACE_EVENTS_DIR"
+    echo "Listeners Dir: $TUPLESPACE_LISTENERS_DIR"
+    echo "Total tuples: $(ts_count)"
+    echo ""
+    echo "Tuple types:"
+    if [[ -s "$TUPLESPACE_DB" ]]; then
+      recsel "$TUPLESPACE_DB" | grep "^Type:" | sort | uniq -c | sed 's/^/  /'
+    else
+      echo "  (no tuples)"
+    fi
+  ]
+
+  # Show help
+  method: help [
+    echo "=== Tuplespace Commands ==="
+    echo "Basic Operations:"
+    echo "  @ Tuplespace put <type> <key1> <value1> ...  - Put tuple"
+    echo "  @ Tuplespace get <type> [key] [value]        - Get tuples"
+    echo "  @ Tuplespace take <type> [key] [value]       - Take tuples"
+    echo "  @ Tuplespace wait <type> [key] [value] [timeout] - Wait for tuple"
+    echo ""
+    echo "Event System:"
+    echo "  @ Tuplespace listen <type> <command>         - Listen for events"
+    echo "  @ Tuplespace stopListener <type> <pid>       - Stop listener"
+    echo ""
+    echo "Convenience Methods:"
+    echo "  @ Tuplespace putKV <key> <value>             - Put key-value"
+    echo "  @ Tuplespace getKV <key>                     - Get value"
+    echo "  @ Tuplespace putEvent <name> [data]          - Put event"
+    echo ""
+    echo "Utility:"
+    echo "  @ Tuplespace list                            - List all tuples"
+    echo "  @ Tuplespace count [type]                    - Count tuples"
+    echo "  @ Tuplespace clear                           - Clear all tuples"
+    echo "  @ Tuplespace info                            - System info"
+    echo "  @ Tuplespace init                            - Initialize system"
+  ]

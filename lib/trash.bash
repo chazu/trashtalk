@@ -528,6 +528,10 @@ function send {
   local result
   local exit_code
 
+  # Save the calling class BEFORE we determine the target class
+  # This is used for private method enforcement
+  local calling_class="${_CLASS:-}"
+
   # Push stack frame if stack tracing is enabled
   if [[ "${TRASH_STACK_FRAMES:-0}" == "1" ]]; then
     frame_id=$(_push_stack_frame receiver="$_RECEIVER" selector="$_SELECTOR" args="$*")
@@ -554,6 +558,17 @@ function send {
     # For class-level calls, _CLASS is the receiver, no instance
     export _CLASS="$_RECEIVER"
     export _INSTANCE=""
+  fi
+
+  # Private method enforcement: methods starting with _ can only be called from same class
+  if [[ "$_SELECTOR" == _* ]]; then
+    # Private method - check if caller is from the same class
+    if [[ -z "$calling_class" || "$calling_class" != "$class_name" ]]; then
+      echo "Error: Cannot call private method '$_SELECTOR' on $class_name from outside the class" >&2
+      [[ -n "$frame_id" ]] && _pop_stack_frame >/dev/null
+      return 1
+    fi
+    msg_debug "Private method $_SELECTOR allowed (called from same class: $calling_class)"
   fi
 
   # Check for compiled version first (prevents namespace pollution)
