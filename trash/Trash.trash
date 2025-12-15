@@ -18,7 +18,7 @@ Trash subclass: Object
   method: listObjects [
     find "$TRASHDIR" -maxdepth 1 -type f ! -path "*/traits/*" | while read -r file; do
       basename "$file"
-    done | sort
+    done | grep -v '\.trash$' | grep -v '\.legacy$' | sort
   ]
 
   # List all available traits
