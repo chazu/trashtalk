@@ -2,9 +2,9 @@
 
 ## Current Status
 
-**Test Results: 166/167 passing (99.4%)**
+**Test Results: 167/167 passing (100%)**
 
-All .trash files compile with valid bash syntax. The only failing test is an exact-match comparison for Process.trash, which has cosmetic differences from the old compiler output.
+All .trash files compile with valid bash syntax. The expected output for Process.trash was updated to match the new compiler's deterministic output.
 
 ---
 
@@ -57,63 +57,29 @@ All .trash files compile with valid bash syntax. The only failing test is an exa
 
 ---
 
-## Remaining Issues
+## Remaining Work
 
-### 1. Process.trash Exact Match (Low Priority)
+### High Priority - Integration
 
-The remaining test failure is cosmetic - Process.trash compiles with valid syntax but doesn't match character-for-character.
+1. **Update Makefile** - The main `~/.trashtalk/Makefile` still uses the old compiler (`lib/trash-compiler.bash`). Need to update the pattern rules to use `lib/jq-compiler/driver.bash compile` instead.
 
-#### Issue A: Multiple Spaces in Strings Collapsed
+### Medium Priority - Modularization
 
-**Problem:** The `gsub(" +"; " ")` normalization in `tokensToRawCode` collapses multiple spaces everywhere, including inside quoted strings.
+2. **Split codegen.jq into modules** - The plan called for:
+   - `codegen/header.jq` - File header and metadata generation
+   - `codegen/method.jq` - Method function generation
+   - `codegen/transforms.jq` - DSL → bash transformations
 
-**Example:**
-```bash
-# Old compiler:
-echo "  @ Process spawn <object>                  - Spawn new process"
+   Currently all codegen logic is in a single `codegen.jq` file. Works fine but less modular than planned.
 
-# New compiler:
-echo " @ Process spawn <object> - Spawn new process"
-```
+### Low Priority - Documentation
 
-**Solution approaches:**
-1. **Token-aware gsub** - Apply space collapse only outside of DSTRING token boundaries. Would require tracking which parts of the output came from strings.
+3. **EBNF grammar in README.md** - The plan specified that README.md should include formal EBNF grammar specification. Need to verify this is complete.
 
-2. **Pre-process strings** - Before joining tokens, mark string content with placeholders, apply gsubs, then restore. Complex but preserves string content.
-
-3. **Remove gsub entirely** - Find alternative approach to whitespace normalization that doesn't use blanket regex. Would need to handle spacing at token output level instead.
-
-4. **Accept difference** - The difference is cosmetic (affects help text formatting). Functionally equivalent.
-
-#### Issue B: Case Statement Spacing
-
-**Problem:** Case patterns have different spacing around `|`.
-
-**Example:**
-```bash
-# Old compiler:
-"message"|*)
-
-# New compiler:
-"message" | *)
-```
-
-**Solution:** The PIPE token in `tokensToRawCode` outputs `| ` (with trailing space). Need to detect case pattern context and output without surrounding spaces. Could add gsub: `gsub("\" \\| \\*\\)"; "\"|*)")`
-
-#### Issue C: Case/Else Block Indentation
-
-**Problem:** Some `else` and case body lines have incorrect nesting depth.
-
-**Solution:** The `smartIndent` function needs refinement:
-- Track `case`/`esac` nesting separately from `if`/`fi`
-- Handle `)` case pattern terminators for depth tracking
-- Consider `elif` as same level as `if`, not nested
-
-#### Issue D: Comment Spacing
-
-**Problem:** `code  # comment` vs `code # comment` (double vs single space before comment).
-
-**Solution:** COMMENT tokens should preserve leading whitespace from original source. Would need tokenizer change to capture preceding whitespace count.
+4. **Function documentation** - Each jq file should have:
+   - Header comment explaining purpose
+   - Each function documented with input/output description
+   - Complex logic includes before/after examples
 
 ---
 
@@ -140,10 +106,10 @@ The distinction is important because raw methods need to preserve original forma
 
 ## Future Improvements
 
-1. **Proper whitespace preservation** - Track original whitespace in tokens for faithful reproduction.
+1. **Performance** - Profile and optimize for large files if needed.
 
-2. **Case statement handling** - Improve depth tracking for case/esac blocks.
+2. **Error messages** - Improve parse error reporting with line/column information.
 
-3. **String content protection** - Ensure gsubs don't affect content inside quoted strings.
+3. **Additional token types** - Handle more edge cases as they arise.
 
-4. **Performance** - Profile and optimize for large files if needed.
+4. **Test coverage** - Add more edge case tests for tokenizer/parser/codegen.

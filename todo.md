@@ -2,6 +2,11 @@
 
 ## High Priority
 
+### Fix Global Variable Usage in Runtime
+`$_RECEIVER` and `$_CLASS` are global variables that get corrupted by nested message sends. Example: calling `@ $c getValue` inside a method changes `$_RECEIVER`, breaking subsequent `@ self` calls.
+
+**Solution:** Use stack frames (already partially implemented with `_push_stack_frame`/`_pop_stack_frame`) to save/restore receiver context around each message send. Each `@` call should push a frame, execute, then pop.
+
 ### Better Compiler Error Messages
 - Track line numbers during tokenization
 - Show context around errors
@@ -34,6 +39,14 @@ method: increment [
 ## Medium Priority
 
 ### Simple Test Framework
+**Blocked by:** Global variable issue (see High Priority) and instance method inheritance
+
+Prototype exists in `TestCounter.trash` but requires workarounds:
+- Must use `rawMethod:` and manually save `$_RECEIVER`
+- Can't inherit from TestCase base class
+- Each test class must duplicate assertion methods
+
+Once global vars are fixed, can have proper `TestCase` base class:
 ```smalltalk
 TestCounter subclass: TestCase
   method: testIncrement [
@@ -52,17 +65,17 @@ TestCounter subclass: TestCase
 - Extract comments from `.trash` files
 - Generate markdown API docs automatically
 
-### Method Aliasing
-```smalltalk
-alias: size for: count
-alias: length for: count
-```
-
 ### Lazy Loading of Compiled Classes
 - Only source class files when first accessed
 - Reduces startup time for large systems
 
 ## Lower Priority
+
+### Method Aliasing
+```smalltalk
+alias: size for: count
+alias: length for: count
+```
 
 ### Caching Layer
 Every getter does a full `db_get`, every setter does `db_get` + `db_put`. Could cache instance data during a method call chain to reduce DB round-trips.
@@ -199,4 +212,4 @@ Added `findAll`, `find`, `count`, `save`, `delete`, `asJson`, `exists` to Object
 
 ---
 
-*Last updated: 2024-12-14*
+*Last updated: 2024-12-15*

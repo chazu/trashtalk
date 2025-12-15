@@ -1,0 +1,93 @@
+# TestCase - Simple test framework for Trashtalk
+# Subclass this and add methods starting with "test"
+# Run with: @ YourTestClass runAll
+TestCase subclass: Object
+  instanceVars: passed:0 failed:0 currentTest:unknown
+
+  method: new [
+    | id |
+    id := $(_generate_instance_id TestCase)
+    _create_instance TestCase $id
+    ^ $id
+  ]
+
+  rawMethod: setUp [
+    :
+  ]
+
+  rawMethod: tearDown [
+    :
+  ]
+
+  rawMethod: assert: actual equals: expected [
+    if [[ "$actual" == "$expected" ]]; then
+      @ "$_RECEIVER" _pass
+    else
+      @ "$_RECEIVER" _fail: "Expected '$expected' but got '$actual'"
+    fi
+  ]
+
+  rawMethod: assertTrue: condition [
+    if [[ "$condition" == "true" || "$condition" == "1" || -n "$condition" ]]; then
+      @ "$_RECEIVER" _pass
+    else
+      @ "$_RECEIVER" _fail: "Assertion failed - expected truthy value"
+    fi
+  ]
+
+  rawMethod: assertFalse: condition [
+    if [[ "$condition" == "false" || "$condition" == "0" || -z "$condition" ]]; then
+      @ "$_RECEIVER" _pass
+    else
+      @ "$_RECEIVER" _fail: "Expected false but got '$condition'"
+    fi
+  ]
+
+  rawMethod: fail: message [
+    @ "$_RECEIVER" _fail: "$message"
+  ]
+
+  method: _pass [
+    | count |
+    count := $(@ self getPassed)
+    @ self setPassed: $((count + 1))
+  ]
+
+  rawMethod: _fail: message [
+    local count test
+    count=$(@ "$_RECEIVER" getFailed)
+    test=$(@ "$_RECEIVER" getCurrentTest)
+    @ "$_RECEIVER" setFailed: $((count + 1))
+    echo "  FAIL: $test - $message" >&2
+  ]
+
+  rawMethod: runTest: methodName [
+    @ "$_RECEIVER" setCurrentTest: "$methodName"
+    @ "$_RECEIVER" setUp
+    @ "$_RECEIVER" "$methodName"
+    @ "$_RECEIVER" tearDown
+  ]
+
+  rawClassMethod: runAll [
+    local instance passed failed total
+    instance=$(@ $_CLASS new)
+
+    # Find and run all test methods
+    for method in $(declare -F | grep "__${_CLASS}__test" | sed "s/.*__${_CLASS}__//"); do
+      echo "  Running: $method"
+      @ "$instance" runTest: "$method"
+    done
+
+    passed=$(@ "$instance" getPassed)
+    failed=$(@ "$instance" getFailed)
+    total=$((passed + failed))
+
+    echo ""
+    if [[ "$failed" -eq 0 ]]; then
+      echo "All $total assertions passed"
+    else
+      echo "$passed passed, $failed failed (of $total assertions)"
+    fi
+
+    echo "$failed"
+  ]
