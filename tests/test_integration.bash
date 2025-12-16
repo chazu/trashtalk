@@ -44,9 +44,9 @@ val=$(@ $counter getValue)
 [[ "$val" == "1" ]] && pass "After increment: 1" || fail "After increment: $val, expected 1"
 
 echo "  Incrementing by 5..."
-@ $counter increment 5
+@ $counter incrementBy 5
 val=$(@ $counter getValue)
-[[ "$val" == "6" ]] && pass "After increment 5: 6" || fail "After increment 5: $val, expected 6"
+[[ "$val" == "6" ]] && pass "After incrementBy 5: 6" || fail "After incrementBy 5: $val, expected 6"
 
 echo "  Decrementing..."
 @ $counter decrement

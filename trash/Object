@@ -1,6 +1,5 @@
-is_a Object
-
 # Object - Base class for all Trashtalk objects
+# This is the root class - no superclass
 # Provides persistence methods inherited by all subclasses
 
 # ============================================
