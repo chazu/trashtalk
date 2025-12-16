@@ -2,11 +2,6 @@
 
 ## High Priority
 
-### Fix Global Variable Usage in Runtime
-`$_RECEIVER` and `$_CLASS` are global variables that get corrupted by nested message sends. Example: calling `@ $c getValue` inside a method changes `$_RECEIVER`, breaking subsequent `@ self` calls.
-
-**Solution:** Use stack frames (already partially implemented with `_push_stack_frame`/`_pop_stack_frame`) to save/restore receiver context around each message send. Each `@` call should push a frame, execute, then pop.
-
 ### Better Compiler Error Messages
 - Track line numbers during tokenization
 - Show context around errors
@@ -39,14 +34,9 @@ method: increment [
 ## Medium Priority
 
 ### Simple Test Framework
-**Blocked by:** Global variable issue (see High Priority) and instance method inheritance
+**Status:** Unblocked - global variable issue is now fixed
 
-Prototype exists in `TestCounter.trash` but requires workarounds:
-- Must use `rawMethod:` and manually save `$_RECEIVER`
-- Can't inherit from TestCase base class
-- Each test class must duplicate assertion methods
-
-Once global vars are fixed, can have proper `TestCase` base class:
+Prototype exists in `TestCounter.trash`. Can now have proper `TestCase` base class:
 ```smalltalk
 TestCounter subclass: TestCase
   method: testIncrement [
@@ -104,6 +94,9 @@ Validate on set, reject invalid types.
 Handle upgrades to instance structure over time. What happens when you add a new instance_var to a class with existing instances?
 
 ### Before/After Hooks (Method Advice)
+**Status:** Basic infrastructure implemented via `_add_before_advice`, `_add_after_advice`, `_remove_advice`
+
+DSL syntax still needed:
 ```smalltalk
 before: save do: [@ self validate]
 after: delete do: [@ self notifyObservers]
@@ -130,6 +123,9 @@ Support for passing blocks of code:
 ```
 
 ### Exception Handling
+**Status:** Basic infrastructure implemented via `_throw`, `_on_error`, `_ensure`, `_pop_handler`
+
+DSL syntax still needed:
 ```smalltalk
 method: riskyOperation [
   try: [
@@ -165,7 +161,42 @@ category: "arithmetic"
 
 ---
 
+## Known Issues
+
+### Tuplespace Vendor Path
+The `Tuplespace.trash` file references a wrong path:
+```
+/Users/chazu/.trashtalk/lib/vendor/tuplespace/vendor/tuplespace/tuplespace.bash
+```
+Should be:
+```
+/Users/chazu/.trashtalk/lib/vendor/tuplespace/tuplespace.bash
+```
+
+### Find Predicate Query Syntax
+The `@ Trash find` predicate queries (e.g., `"value > 5"`) are not working correctly in tests. The query parsing in `Object.find()` may need revision.
+
+### Instance _vars Array in Inheritance
+When checking inherited instance variables via the `_vars` JSON array, jq parsing fails in some test scenarios. The inheritance merging logic may need review.
+
+---
+
 ## Recently Completed
+
+### Context Stack System & Global Variable Fix (2024-12-15)
+**Problem:** `$_RECEIVER`, `$_CLASS`, `$_INSTANCE`, `$_SELECTOR` were global/exported variables that got corrupted by nested message sends.
+
+**Solution:** Changed from `export` to `local` variables in `send()`. Bash's dynamic scoping means called methods see the local values, and nested `send()` calls get their own copies that are automatically restored on return.
+
+**Added infrastructure:**
+- **Call stack tracking:** `_CALL_STACK` array with `_print_stack_trace()` for debugging
+- **Ensure handlers:** `_ensure "cleanup_cmd"` registers cleanup code that runs when frame exits
+- **Error handling:** `_throw`, `_on_error`, `_pop_handler`, `_clear_error` for exception-like handling
+- **Method advice:** `_add_before_advice`, `_add_after_advice`, `_remove_advice` for AOP-style hooks
+
+**Also fixed:**
+- Removed `is_a Object` from Object class (was causing infinite loop in `hierarchyFor`)
+- Fixed test bug: `@ $counter increment 5` → `@ $counter incrementBy 5`
 
 ### Quick Wins Batch (2024-12-14)
 - **Makefile**: Build workflow with `make compile`, `make test`, `make watch`, `make single CLASS=Name`
@@ -212,4 +243,4 @@ Added `findAll`, `find`, `count`, `save`, `delete`, `asJson`, `exists` to Object
 
 ---
 
-*Last updated: 2024-12-15*
+*Last updated: 2024-12-15 (Context stack system completed)*
