@@ -460,3 +460,70 @@ run_test "case statement preserved" "true" \
 
 run_test "esac preserved" "true" \
     "$(compile_contains "$INPUT_CASE" 'esac')"
+
+# ------------------------------------------------------------------------------
+# Nested DSL in Subshell Tests
+# ------------------------------------------------------------------------------
+
+echo -e "\n  Nested DSL in Subshells:"
+
+# Test self transformation inside subshell
+INPUT_NESTED_SELF='Counter subclass: Object
+  method: test [
+    | x |
+    x := $(@ self getValue)
+    ^ $x
+  ]'
+
+run_test "nested: self in subshell" "true" \
+    "$(compile_contains "$INPUT_NESTED_SELF" '$(@ $_RECEIVER getValue)')"
+
+# Test single keyword method inside subshell
+INPUT_NESTED_SINGLE='Counter subclass: Object
+  method: test [
+    | x |
+    x := $(@ Store get: key)
+    ^ $x
+  ]'
+
+run_test "nested: single keyword in subshell" "true" \
+    "$(compile_contains "$INPUT_NESTED_SINGLE" '$(@ Store get key)')"
+
+# Test single keyword with quoted arg
+INPUT_NESTED_QUOTED='Counter subclass: Object
+  method: test [
+    | x |
+    x := $(@ Store getClass: "$id")
+    ^ $x
+  ]'
+
+run_test "nested: keyword with quoted arg" "true" \
+    "$(compile_contains "$INPUT_NESTED_QUOTED" '$(@ Store getClass "$id")')"
+
+# Test 2-keyword method inside subshell
+INPUT_NESTED_MULTI='Counter subclass: Object
+  method: test [
+    | x |
+    x := $(@ self get: key from: dict)
+    ^ $x
+  ]'
+
+run_test "nested: 2-keyword method in subshell" "true" \
+    "$(compile_contains "$INPUT_NESTED_MULTI" '$(@ $_RECEIVER get_from key dict)')"
+
+# Test nested subshells (subshell within subshell)
+INPUT_NESTED_DEEP='Counter subclass: Object
+  method: test [
+    | x |
+    x := $(@ self at: 1 put: "$(@ self get: key from: dict)")
+    ^ $x
+  ]'
+
+run_test "nested: outer 2-keyword method" "true" \
+    "$(compile_contains "$INPUT_NESTED_DEEP" 'at_put 1')"
+
+run_test "nested: inner 2-keyword method" "true" \
+    "$(compile_contains "$INPUT_NESTED_DEEP" 'get_from key dict')"
+
+run_test "nested: self transformed in both" "true" \
+    "$(compile_contains "$INPUT_NESTED_DEEP" '$(@ $_RECEIVER at_put')"

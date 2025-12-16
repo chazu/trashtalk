@@ -201,6 +201,49 @@ INVALID_RESULT=$("$DRIVER" compile "$TMPFILE" 2>&1 || true)
 run_test "invalid syntax handled" "true" "true"  # Verify no crash
 
 # ------------------------------------------------------------------------------
+# Bash Syntax Validation Tests
+# ------------------------------------------------------------------------------
+
+echo -e "\n  Bash Syntax Validation (bash -n):"
+
+# Helper to check if compiled output is valid bash syntax
+validates_bash_syntax() {
+    local trash_file="$1"
+    local compiled
+    compiled=$("$DRIVER" compile "$trash_file" 2>/dev/null)
+
+    if [[ -z "$compiled" ]]; then
+        echo "empty"
+        return
+    fi
+
+    # Use bash -n to check syntax without executing
+    if bash -n <<<"$compiled" 2>/dev/null; then
+        echo "true"
+    else
+        echo "false"
+    fi
+}
+
+# Test all .trash files in trash directory
+for trash_file in "$TRASH_DIR"/*.trash; do
+    if [[ -f "$trash_file" ]]; then
+        basename=$(basename "$trash_file" .trash)
+        run_test "$basename.trash has valid bash syntax" "true" \
+            "$(validates_bash_syntax "$trash_file")"
+    fi
+done
+
+# Test traits
+for trash_file in "$TRASH_DIR"/traits/*.trash; do
+    if [[ -f "$trash_file" ]]; then
+        basename=$(basename "$trash_file" .trash)
+        run_test "traits/$basename.trash has valid bash syntax" "true" \
+            "$(validates_bash_syntax "$trash_file")"
+    fi
+done
+
+# ------------------------------------------------------------------------------
 # Performance Tests (basic sanity check)
 # ------------------------------------------------------------------------------
 

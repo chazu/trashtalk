@@ -75,6 +75,7 @@ Commands:
 
 Options:
   -o, --output <file>   Write output to file instead of stdout
+  -c, --check           Validate compiled output with bash -n
   -v, --verbose         Show intermediate steps
   -h, --help            Show this help message
 
@@ -82,6 +83,7 @@ Examples:
   ./driver.bash tokenize Counter.trash
   ./driver.bash parse Counter.trash | jq .
   ./driver.bash compile Counter.trash -o Counter.bash
+  ./driver.bash compile Counter.trash --check
   ./driver.bash ast Process.trash
 
 EOF
@@ -127,9 +129,15 @@ cmd_parse() {
     # Check for parse errors in the result
     if echo "$ast" | jq -e '.error == true' >/dev/null 2>&1; then
         echo -e "${RED}Parse errors:${NC}" >&2
-        echo "$ast" | jq -r '.errors[] | "  \(.line):\(.col): \(.message)"' >&2
+        echo "$ast" | jq -r '.errors[]? | "  \(.token.line):\(.token.col): \(.message)"' >&2
         echo "$ast" | jq '.partial // {}'
         exit 1
+    fi
+
+    # Check for warnings (non-fatal errors)
+    if echo "$ast" | jq -e '.warnings | length > 0' >/dev/null 2>&1; then
+        echo -e "${YELLOW}Parse warnings:${NC}" >&2
+        echo "$ast" | jq -r '.warnings[] | "  \(.token.line):\(.token.col): \(.message) [\(.type)]"' >&2
     fi
 
     echo "$ast"
@@ -153,6 +161,7 @@ cmd_ast() {
 cmd_compile() {
     local source_file="$1"
     local output_file="${2:-}"
+    local check_syntax="${3:-false}"
 
     if [[ ! -f "$source_file" ]]; then
         error "Source file not found: $source_file"
@@ -171,12 +180,24 @@ cmd_compile() {
         exit 1
     fi
 
-    # Generate code
+    # Generate code (strip warnings field before codegen)
     local output
-    output=$(echo "$ast" | jq -r -f "$CODEGEN")
+    output=$(echo "$ast" | jq 'del(.warnings)' | jq -r -f "$CODEGEN")
 
     if [[ $? -ne 0 ]]; then
         error "Code generation failed"
+    fi
+
+    # Optionally validate bash syntax
+    if [[ "$check_syntax" == "true" ]]; then
+        local syntax_errors
+        syntax_errors=$(bash -n <<<"$output" 2>&1)
+        if [[ $? -ne 0 ]]; then
+            echo -e "${RED}Syntax errors in compiled output:${NC}" >&2
+            echo "$syntax_errors" >&2
+            exit 1
+        fi
+        info "Syntax check passed"
     fi
 
     # Output result
@@ -229,6 +250,7 @@ main() {
             fi
             local source_file="$1"
             local output_file=""
+            local check_syntax="false"
             shift
 
             # Parse options
@@ -241,13 +263,17 @@ main() {
                         output_file="$2"
                         shift 2
                         ;;
+                    -c|--check)
+                        check_syntax="true"
+                        shift
+                        ;;
                     *)
                         error "Unknown option: $1"
                         ;;
                 esac
             done
 
-            cmd_compile "$source_file" "$output_file"
+            cmd_compile "$source_file" "$output_file" "$check_syntax"
             ;;
 
         -h|--help|help)
