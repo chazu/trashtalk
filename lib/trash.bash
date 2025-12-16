@@ -39,6 +39,156 @@ TRASH_VERSION="0.1.0"
 TRASH_AUTHOR="Chaz Straney"
 TRASH_DESCRIPTION="Smalltalk-inspired message-passing system for Bash"
 
+# ============================================
+# Context Stack System
+# ============================================
+# Lightweight in-memory stacks for context management.
+# Uses indexed arrays with depth counters for Bash 3.2 compatibility.
+
+# Call stack for debugging/introspection (opt-in via TRASH_DEBUG)
+declare -a _CALL_STACK=()
+_CALL_DEPTH=0
+
+# Ensure stack for cleanup handlers (always active)
+declare -a _ENSURE_STACK=()
+_ENSURE_DEPTH=0
+
+# Error handler stack for exception handling
+declare -a _HANDLER_STACK=()
+_HANDLER_DEPTH=0
+
+# Current error state (set by _throw)
+_ERROR_TYPE=""
+_ERROR_MSG=""
+_ERROR_ORIGIN=""
+
+# Advice registries
+declare -a _BEFORE_ADVICE=()
+declare -a _AFTER_ADVICE=()
+
+# Print stack trace
+_print_stack_trace() {
+  local i
+  echo "Stack trace:" >&2
+  for ((i = _CALL_DEPTH - 1; i >= 0; i--)); do
+    echo "  at ${_CALL_STACK[i]}" >&2
+  done
+}
+
+# Throw an error (sets error state and returns 1)
+# Usage: _throw "ErrorType" "Error message"
+_throw() {
+  _ERROR_TYPE="$1"
+  _ERROR_MSG="$2"
+  _ERROR_ORIGIN="${_CALL_STACK[_CALL_DEPTH - 1]:-unknown}"
+  return 1
+}
+
+# Clear error state
+_clear_error() {
+  _ERROR_TYPE=""
+  _ERROR_MSG=""
+  _ERROR_ORIGIN=""
+}
+
+# Register an ensure handler (cleanup that runs on frame exit)
+# Usage: _ensure "cleanup_command"
+_ensure() {
+  _ENSURE_STACK[_ENSURE_DEPTH]="$1"
+  ((_ENSURE_DEPTH++))
+}
+
+# Register an error handler for the current frame
+# Usage: _on_error "ErrorType" "handler_function"
+# Use "*" as ErrorType to catch all errors
+_on_error() {
+  local pattern="$1"
+  local handler="$2"
+  _HANDLER_STACK[_HANDLER_DEPTH]="$pattern|$handler"
+  ((_HANDLER_DEPTH++))
+}
+
+# Pop an error handler (call when leaving protected region)
+_pop_handler() {
+  if ((_HANDLER_DEPTH > 0)); then
+    ((_HANDLER_DEPTH--))
+  fi
+}
+
+# Add before advice
+# Usage: _add_before_advice "Class" "selector" "handler_function"
+# Use "*" for class or selector to match all
+_add_before_advice() {
+  local class="$1" selector="$2" handler="$3"
+  _BEFORE_ADVICE+=("$class:$selector:$handler")
+}
+
+# Add after advice
+# Usage: _add_after_advice "Class" "selector" "handler_function"
+_add_after_advice() {
+  local class="$1" selector="$2" handler="$3"
+  _AFTER_ADVICE+=("$class:$selector:$handler")
+}
+
+# Remove all advice for a class/selector
+_remove_advice() {
+  local class="$1" selector="$2"
+  local new_before=() new_after=()
+  local advice
+
+  for advice in "${_BEFORE_ADVICE[@]}"; do
+    IFS=: read -r adv_class adv_sel handler <<< "$advice"
+    if [[ "$adv_class" != "$class" || "$adv_sel" != "$selector" ]]; then
+      new_before+=("$advice")
+    fi
+  done
+  _BEFORE_ADVICE=("${new_before[@]}")
+
+  for advice in "${_AFTER_ADVICE[@]}"; do
+    IFS=: read -r adv_class adv_sel handler <<< "$advice"
+    if [[ "$adv_class" != "$class" || "$adv_sel" != "$selector" ]]; then
+      new_after+=("$advice")
+    fi
+  done
+  _AFTER_ADVICE=("${new_after[@]}")
+}
+
+# Run before advice handlers
+_run_before_advice() {
+  local class="$1" selector="$2"
+  shift 2
+  local advice
+  for advice in "${_BEFORE_ADVICE[@]}"; do
+    IFS=: read -r adv_class adv_sel handler <<< "$advice"
+    if [[ ("$adv_class" == "$class" || "$adv_class" == "*") && \
+          ("$adv_sel" == "$selector" || "$adv_sel" == "*") ]]; then
+      "$handler" "$class" "$selector" "$@"
+    fi
+  done
+}
+
+# Run after advice handlers
+_run_after_advice() {
+  local class="$1" selector="$2" exit_code="$3"
+  shift 3
+  local advice
+  for advice in "${_AFTER_ADVICE[@]}"; do
+    IFS=: read -r adv_class adv_sel handler <<< "$advice"
+    if [[ ("$adv_class" == "$class" || "$adv_class" == "*") && \
+          ("$adv_sel" == "$selector" || "$adv_sel" == "*") ]]; then
+      "$handler" "$class" "$selector" "$exit_code" "$@"
+    fi
+  done
+}
+
+# Export context functions for subshells
+export -f _throw _clear_error _ensure _on_error _pop_handler
+export -f _print_stack_trace
+export -f _add_before_advice _add_after_advice _remove_advice
+export -f _run_before_advice _run_after_advice
+
+# ============================================
+
 function wrapped_readlink {
   if command -v greadlink >/dev/null 2>&1; then
     greadlink "$@"
@@ -517,59 +667,80 @@ declare -gA _SOURCED_COMPILED_CLASSES
 
 function send {
   msg_debug "Send: $*"
-  local _INVOCATION=$*
-  export _RECEIVER=$1; shift
-  export _SELECTOR=$1; shift
+
+  # ============================================
+  # Context variables - LOCAL for proper nesting
+  # ============================================
+  # Using local instead of export means each send() call has its own
+  # context. Bash's dynamic scoping ensures called methods see these
+  # values, and when nested send() calls return, the caller's values
+  # are automatically restored.
+
+  # IMPORTANT: Capture calling_class BEFORE declaring local _CLASS,
+  # because local declaration shadows the parent's variable immediately.
+  local calling_class="${_CLASS:-}"
+
+  local _RECEIVER="$1"; shift
+  local _SELECTOR="$1"; shift
+  local _CLASS=""
+  local _INSTANCE=""
 
   local class_file
   local class_name
   local compiled_file
-  local frame_id=""
-  local result
-  local exit_code
+  local exit_code=0
 
-  # Save the calling class BEFORE we determine the target class
-  # This is used for private method enforcement
-  local calling_class="${_CLASS:-}"
-
-  # Push stack frame if stack tracing is enabled
-  if [[ "${TRASH_STACK_FRAMES:-0}" == "1" ]]; then
-    frame_id=$(_push_stack_frame receiver="$_RECEIVER" selector="$_SELECTOR" args="$*")
-  fi
+  # ============================================
+  # Stack tracking for debugging
+  # ============================================
+  # Record frame boundaries for ensures and handlers
+  local frame_ensure_start=$_ENSURE_DEPTH
+  local frame_handler_start=$_HANDLER_DEPTH
 
   # Check if receiver is an instance or a class
   if _is_instance "$_RECEIVER"; then
-    # Instance: look up its class
     class_name=$(_get_instance_class "$_RECEIVER")
     if [[ -z "$class_name" ]]; then
       echo "Error: Cannot determine class for instance $_RECEIVER" >&2
-      [[ -n "$frame_id" ]] && _pop_stack_frame >/dev/null
       return 1
     fi
     class_file=$(receiver_path "$class_name")
     msg_debug "Instance $_RECEIVER is of class $class_name"
-    # Export class context for methods that need it
-    export _CLASS="$class_name"
-    export _INSTANCE="$_RECEIVER"
+    _CLASS="$class_name"
+    _INSTANCE="$_RECEIVER"
   else
-    # Assume it's a class name
     class_name="$_RECEIVER"
     class_file=$(receiver_path "$_RECEIVER")
-    # For class-level calls, _CLASS is the receiver, no instance
-    export _CLASS="$_RECEIVER"
-    export _INSTANCE=""
+    _CLASS="$_RECEIVER"
+    _INSTANCE=""
   fi
 
-  # Private method enforcement: methods starting with _ can only be called from same class
+  # Push to call stack for debugging (lightweight, always on)
+  _CALL_STACK[_CALL_DEPTH]="$_CLASS.$_SELECTOR"
+  ((_CALL_DEPTH++))
+
+  # ============================================
+  # Before advice
+  # ============================================
+  if [[ ${#_BEFORE_ADVICE[@]} -gt 0 ]]; then
+    _run_before_advice "$_CLASS" "$_SELECTOR" "$@"
+  fi
+
+  # ============================================
+  # Private method enforcement
+  # ============================================
   if [[ "$_SELECTOR" == _* ]]; then
-    # Private method - check if caller is from the same class
     if [[ -z "$calling_class" || "$calling_class" != "$class_name" ]]; then
       echo "Error: Cannot call private method '$_SELECTOR' on $class_name from outside the class" >&2
-      [[ -n "$frame_id" ]] && _pop_stack_frame >/dev/null
+      _send_cleanup $frame_ensure_start $frame_handler_start 1
       return 1
     fi
     msg_debug "Private method $_SELECTOR allowed (called from same class: $calling_class)"
   fi
+
+  # ============================================
+  # Method dispatch
+  # ============================================
 
   # Check for compiled version first (prevents namespace pollution)
   compiled_file="$TRASHDIR/.compiled/$class_name"
@@ -585,42 +756,36 @@ function send {
       # Set up instance variables from compiled class metadata
       local vars_var="__${class_name}__instanceVars"
       if [[ -n "${!vars_var}" ]]; then
-        # Get superclass from compiled class
         local super_var="__${class_name}__superclass"
         if [[ -n "${!super_var}" ]]; then
           _SUPERCLASS="${!super_var}"
         fi
-
-        # Call instance_vars to generate accessors
-        # This also sets _CURRENT_CLASS_VARS/_CURRENT_CLASS_DEFAULTS for _create_instance
         instance_vars ${!vars_var}
         msg_debug "Generated accessors for compiled class $class_name: ${!vars_var}"
       fi
     fi
 
-    # Build namespaced function name: __ClassName__selector
+    # Try namespaced instance method
     local namespaced_func="__${class_name}__${_SELECTOR}"
-
-    # Check if the namespaced function exists
     if declare -F "$namespaced_func" >/dev/null 2>&1; then
       msg_debug "Calling namespaced function: $namespaced_func"
       "$namespaced_func" "$@"
       exit_code=$?
-      [[ -n "$frame_id" ]] && _pop_stack_frame >/dev/null
+      _send_cleanup $frame_ensure_start $frame_handler_start $exit_code
       return $exit_code
     fi
 
-    # Check for class method: __ClassName__class__selector
+    # Try class method
     local class_method_func="__${class_name}__class__${_SELECTOR}"
     if declare -F "$class_method_func" >/dev/null 2>&1; then
       msg_debug "Calling class method: $class_method_func"
       "$class_method_func" "$@"
       exit_code=$?
-      [[ -n "$frame_id" ]] && _pop_stack_frame >/dev/null
+      _send_cleanup $frame_ensure_start $frame_handler_start $exit_code
       return $exit_code
     fi
 
-    # Check for generated accessor
+    # Try generated accessor
     if declare -F "$_SELECTOR" >/dev/null 2>&1; then
       shopt -s extdebug
       local defined_in=$(declare -F "$_SELECTOR" | awk '{print $NF}')
@@ -629,46 +794,36 @@ function send {
         msg_debug "Calling generated accessor: $_SELECTOR"
         "$_SELECTOR" "$@"
         exit_code=$?
-        [[ -n "$frame_id" ]] && _pop_stack_frame >/dev/null
+        _send_cleanup $frame_ensure_start $frame_handler_start $exit_code
         return $exit_code
       fi
     fi
 
-    # Fall through to inheritance chain lookup
     msg_debug "Method $_SELECTOR not in compiled $class_name, checking inheritance"
   fi
 
-  # Legacy mode: source class file directly (for non-compiled classes)
-  # Validate class file exists
+  # Legacy mode: source class file directly
   if [[ ! -f "$class_file" ]]; then
     echo "Error: Class file not found: $class_file" >&2
-    [[ -n "$frame_id" ]] && _pop_stack_frame >/dev/null
+    _send_cleanup $frame_ensure_start $frame_handler_start 1
     return 1
   fi
 
-  # Load the function context of receiver unit
   source "$class_file"
 
-  # Check if function is available and appropriate to call
-  # - If defined in this class file: call it
-  # - If it's a generated accessor (defined in trash.bash): call it
-  # - Otherwise: try method_missing for inheritance lookup
   if file_defines_function "$class_file" "$_SELECTOR"; then
     msg_debug "Function $_SELECTOR found in $class_file, calling it"
     "$_SELECTOR" "$@"
     exit_code=$?
   elif declare -F "$_SELECTOR" >/dev/null 2>&1; then
-    # Function exists - check if it's a generated accessor (from trash.bash)
     shopt -s extdebug
     local defined_in=$(declare -F "$_SELECTOR" | awk '{print $NF}')
     shopt -u extdebug
     if [[ "$defined_in" == *"trash.bash" ]]; then
-      # Generated accessor - safe to call
       msg_debug "Function $_SELECTOR is generated accessor, calling it"
       "$_SELECTOR" "$@"
       exit_code=$?
     else
-      # Function from another class file - use method_missing
       msg_debug "Function $_SELECTOR from other class, trying method_missing"
       method_missing "$@"
       exit_code=$?
@@ -679,11 +834,67 @@ function send {
     exit_code=$?
   fi
 
-  # Pop stack frame if we pushed one
-  [[ -n "$frame_id" ]] && _pop_stack_frame >/dev/null
-
+  _send_cleanup $frame_ensure_start $frame_handler_start $exit_code
   return $exit_code
 }
+
+# Internal cleanup function for send()
+# Handles: ensures, error handlers, after advice, call stack
+_send_cleanup() {
+  local frame_ensure_start=$1
+  local frame_handler_start=$2
+  local exit_code=$3
+
+  # ============================================
+  # Error handling
+  # ============================================
+  if [[ $exit_code -ne 0 && -n "$_ERROR_TYPE" ]]; then
+    # Error was thrown - look for a handler in this frame
+    local i handled=0
+    for ((i = _HANDLER_DEPTH - 1; i >= frame_handler_start; i--)); do
+      IFS='|' read -r pattern handler <<< "${_HANDLER_STACK[i]}"
+      if [[ "$_ERROR_TYPE" == $pattern || "$pattern" == "*" ]]; then
+        msg_debug "Error '$_ERROR_TYPE' caught by handler at depth $i"
+        "$handler" "$_ERROR_TYPE" "$_ERROR_MSG"
+        handled=1
+        _clear_error
+        exit_code=0
+        break
+      fi
+    done
+
+    # If not handled and we're at depth 1, print stack trace
+    if [[ $handled -eq 0 && $_CALL_DEPTH -eq 1 ]]; then
+      echo "Unhandled error: $_ERROR_TYPE: $_ERROR_MSG" >&2
+      _print_stack_trace
+    fi
+  fi
+
+  # ============================================
+  # Run ensure handlers (cleanup) for this frame
+  # ============================================
+  while ((_ENSURE_DEPTH > frame_ensure_start)); do
+    ((_ENSURE_DEPTH--))
+    msg_debug "Running ensure: ${_ENSURE_STACK[_ENSURE_DEPTH]}"
+    eval "${_ENSURE_STACK[_ENSURE_DEPTH]}"
+  done
+
+  # Reset handler stack for this frame
+  _HANDLER_DEPTH=$frame_handler_start
+
+  # ============================================
+  # After advice
+  # ============================================
+  if [[ ${#_AFTER_ADVICE[@]} -gt 0 ]]; then
+    _run_after_advice "$_CLASS" "$_SELECTOR" "$exit_code" "$@"
+  fi
+
+  # Pop call stack
+  ((_CALL_DEPTH--))
+}
+
+# Export send helper for subshells
+export -f _send_cleanup
 
 function receiver_path {
   local receiver="$1"
