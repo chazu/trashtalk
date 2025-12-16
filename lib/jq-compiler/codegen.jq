@@ -123,47 +123,56 @@ def transformMethodBody($className; $isRaw):
     gsub("(?<pre>@ [^ )\"']+ )(?<m>[a-zA-Z_][a-zA-Z0-9_]*): (?<arg>\"[^\"]*\")";
       "\(.pre)\(.m) \(.arg)");
 
-  # Helper to convert token array to string, applying transformations
-  def tokensToCode:
-    # Group tokens by line for processing
+  # Unified token-to-string converter
+  # $raw: if true, preserve bash code (minimal transformation); if false, transform DSL
+  def tokensToString($raw):
+    # Token conversion phase
     reduce .[] as $tok ("";
       . + (
         if $tok.type == "NEWLINE" then "\n"
-        elif $tok.type == "PIPE" then "| "  # Pipe with trailing space only
+        # Comment handling (raw only)
+        elif $tok.type == "COMMENT" then (if $raw then $tok.value else "" end)
+        # DSL tokens (normal only)
+        elif $tok.type == "AT" then (if $raw then $tok.value + " " else "@ " end)
+        elif $tok.type == "ASSIGN" then (if $raw then $tok.value + " " else " := " end)
         elif $tok.type == "CARET" then "^"
-        elif $tok.type == "AT" then "@ "
-        elif $tok.type == "ASSIGN" then " := "
+        # Brackets
+        elif $tok.type == "PIPE" then "| "
         elif $tok.type == "LBRACKET" then "["
         elif $tok.type == "RBRACKET" then "]"
-        elif $tok.type == "DLBRACKET" then "[[ "  # [[ with trailing space
-        elif $tok.type == "DRBRACKET" then " ]]"  # ]] with leading space
+        elif $tok.type == "DLBRACKET" then "[[ "
+        elif $tok.type == "DRBRACKET" then " ]]"
         elif $tok.type == "LPAREN" then "("
-        elif $tok.type == "RPAREN" then ")"
+        elif $tok.type == "RPAREN" then (if $raw then ") " else ")" end)
+        # Subshell - transform in normal mode, preserve in raw
         elif $tok.type == "SUBSHELL" then
-          # Transform DSL inside subshells recursively
-          ($tok.value | transformSubshellContents)
-        elif $tok.type == "VARIABLE" then $tok.value + " "  # Keep $var with space
-        elif $tok.type == "ARITHMETIC" then $tok.value  # Keep $((...)) as-is
-        elif $tok.type == "DSTRING" then $tok.value + " "  # Keep "string" with space
-        elif $tok.type == "STRING" then $tok.value + " "  # Keep 'string' with space
-        elif $tok.type == "NUMBER" then $tok.value + " "  # Number with space
+          (if $raw then $tok.value else ($tok.value | transformSubshellContents) end)
+        # Arithmetic
+        elif $tok.type == "ARITHMETIC" then $tok.value
+        elif $tok.type == "ARITH_CMD" then $tok.value
+        # Values with trailing space
+        elif $tok.type == "VARIABLE" then $tok.value + " "
+        elif $tok.type == "DSTRING" then $tok.value + " "
+        elif $tok.type == "STRING" then $tok.value + " "
+        elif $tok.type == "NUMBER" then $tok.value + " "
         elif $tok.type == "KEYWORD" then $tok.value + " "
-        # Bash operators and punctuation
-        elif $tok.type == "SEMI" then "; "  # Semicolon with trailing space
-        elif $tok.type == "AND" then " && "  # && with spaces
-        elif $tok.type == "OR" then " || "  # || with spaces
-        elif $tok.type == "REDIRECT" then $tok.value  # >&, >>, etc. as-is
+        elif $tok.type == "PATH" then $tok.value + " "
+        # Operators
+        elif $tok.type == "SEMI" then "; "
+        elif $tok.type == "AND" then " && "
+        elif $tok.type == "OR" then " || "
+        elif $tok.type == "REDIRECT" then $tok.value
         elif $tok.type == "GT" then " >"
         elif $tok.type == "LT" then " <"
         elif $tok.type == "HEREDOC" then "<<"
-        elif $tok.type == "MATCH" then " =~ "  # =~ with spaces
-        elif $tok.type == "EQ" then " == "  # == with spaces
-        elif $tok.type == "NE" then " != "  # != with spaces
-        elif $tok.type == "EQUALS" then "="  # Plain = no spaces (assignment)
-        elif $tok.type == "BANG" then "! "  # Negation
-        elif $tok.type == "AMP" then " &"  # Background
+        elif $tok.type == "MATCH" then " =~ "
+        elif $tok.type == "EQ" then " == "
+        elif $tok.type == "NE" then " != "
+        elif $tok.type == "EQUALS" then (if $raw then "= " else "=" end)
+        elif $tok.type == "BANG" then "! "
+        elif $tok.type == "AMP" then " &"
+        # Punctuation
         elif $tok.type == "DOT" then "."
-        # Additional punctuation and operators
         elif $tok.type == "SLASH" then "/"
         elif $tok.type == "QUESTION" then "?"
         elif $tok.type == "PLUS" then "+"
@@ -172,38 +181,54 @@ def transformMethodBody($className; $isRaw):
         elif $tok.type == "TILDE" then "~"
         elif $tok.type == "PERCENT" then "%"
         elif $tok.type == "BACKSLASH" then "\\"
-        elif $tok.type == "LITERAL" then $tok.value  # Pass through unknown chars
-        elif $tok.type == "PATH" then $tok.value + " "  # File path with space
-        elif $tok.type == "CARET" then "^"  # Caret (for regexes)
+        elif $tok.type == "LITERAL" then $tok.value
         else $tok.value + " "
         end
       )
     ) |
-    # Normalize whitespace: collapse multiple spaces (but not newlines), fix spacing around punctuation
-    gsub(" +"; " ") |                  # Collapse multiple spaces to one
+    # Post-processing: normalization gsubs
+    # Common normalizations for both modes
+    gsub(" +"; " ") |                  # Collapse multiple spaces
     gsub(" ;"; ";") |                  # Remove space before semicolon
     gsub(" \\]\\]"; " ]]") |           # Keep space before ]]
     gsub("\\[\\[ "; "[[ ") |           # Keep space after [[
-    gsub(" \\| "; " | ") |             # Normalize pipe spacing
-    # Fix regex quantifiers: remove space before ?, +, * when preceded by regex atoms
-    gsub("\\] \\?"; "]?") |            # ]? pattern
-    gsub("\\] \\+"; "]+") |            # ]+ pattern
-    gsub("\\] \\*"; "]*") |            # ]* pattern
-    gsub("\\$ \\?"; "$?") |            # $? pattern (regex end anchor + quantifier)
-    gsub("- \\?"; "-?") |              # -? pattern (optional minus in regex)
-    gsub("\\) \\?"; ")?") |            # )? pattern (optional group)
-    # Fix file paths: normalize spacing around slashes in path-like contexts
-    gsub("(?<pre>[a-zA-Z0-9_]) /(?<post>[a-zA-Z])"; "\(.pre)/\(.post)") |  # word / word -> word/word
-    gsub("> ?/"; ">/") |               # Redirect to path
-    gsub("2> ?/"; "2>/") |             # Stderr redirect to path
-    # Fix assignment spacing - only for var=value patterns, not jq expressions like = "
-    gsub(" =(?<c>[a-zA-Z0-9_$])"; "=\(.c)") |  # Remove space before = when followed by word char
-    # Fix char class ranges like [0-9]
-    gsub("(?<a>[0-9]) -(?<b>[0-9])"; "\(.a)-\(.b)") |  # digit-space-dash-digit -> digit-dash-digit
+    gsub("(?<a>[0-9]) -(?<b>[0-9])"; "\(.a)-\(.b)") |  # Fix char class ranges like [0-9]
     gsub("(?<a>[a-zA-Z0-9]) \\](?<b>[^\\]])"; "\(.a)]\(.b)") |  # Remove space before ] not followed by ]
-    # Fix number before redirect: 2> not 2 >
-    gsub("(?<n>[0-9]) >"; "\(.n)>")
+    gsub("(?<n>[0-9]) >"; "\(.n)>") |  # Fix number before redirect: 2> not 2 >
+    # Mode-specific normalizations
+    (if $raw then
+      # Raw mode: minimal normalization
+      gsub("; ;"; ";;") |              # Fix double semicolon
+      gsub("(?<a>[a-zA-Z0-9]) \\](?<b>[+*?$])"; "\(.a)]\(.b)") |  # Remove space before ] when followed by quantifier
+      gsub("(?<a>[a-zA-Z0-9]) \\](?<b> \\]\\])"; "\(.a)]\(.b)") |  # Remove space before ] when followed by ]]
+      gsub(" \\)"; ")") |              # Remove space before )
+      gsub("\\( "; "(") |              # Remove space after (
+      gsub("> /"; ">/") |              # Remove space after > before path
+      gsub("< (?<c>[^<])"; "<\(.c)") |  # Remove space after < unless followed by < (process substitution)
+      gsub("(?<a>[a-zA-Z0-9_]) = (?<c>[0-9\"'$])"; "\(.a)=\(.c)") |  # Fix assignments
+      gsub("(?<a>[a-zA-Z0-9_]) = (?<c>[a-zA-Z])"; "\(.a)= \(.c)")   # Keep space for env var assignments
+    else
+      # Normal mode: full DSL normalization
+      gsub(" \\| "; " | ") |           # Normalize pipe spacing
+      # Fix regex quantifiers
+      gsub("\\] \\?"; "]?") |
+      gsub("\\] \\+"; "]+") |
+      gsub("\\] \\*"; "]*") |
+      gsub("\\$ \\?"; "$?") |
+      gsub("- \\?"; "-?") |
+      gsub("\\) \\?"; ")?") |
+      # Fix file paths
+      gsub("(?<pre>[a-zA-Z0-9_]) /(?<post>[a-zA-Z])"; "\(.pre)/\(.post)") |
+      gsub("> ?/"; ">/") |
+      gsub("2> ?/"; "2>/") |
+      # Fix assignment spacing
+      gsub(" =(?<c>[a-zA-Z0-9_$])"; "=\(.c)")
+    end)
     ;
+
+  # Convenience wrappers for backwards compatibility
+  def tokensToCode: tokensToString(false);
+  def tokensToRawCode: tokensToString(true);
 
   # Transform keyword method calls: @ recv key1: arg1 key2: arg2 → @ recv key1_key2 arg1 arg2
   def transformKeywordMethod:
@@ -289,64 +314,6 @@ def transformMethodBody($className; $isRaw):
     until(length == 0 or (.[0] | test("^\\s*$") | not); .[1:]) |
     # Remove trailing empty/whitespace-only lines
     until(length == 0 or (.[-1] | test("^\\s*$") | not); .[:-1]);
-
-  # Convert tokens to code for raw methods - minimal transformation
-  def tokensToRawCode:
-    reduce .[] as $tok ("";
-      . + (
-        if $tok.type == "NEWLINE" then "\n"
-        elif $tok.type == "COMMENT" then $tok.value
-        elif $tok.type == "PIPE" then "| "
-        elif $tok.type == "LBRACKET" then "["
-        elif $tok.type == "RBRACKET" then "]"
-        elif $tok.type == "DLBRACKET" then "[[ "
-        elif $tok.type == "DRBRACKET" then " ]]"
-        elif $tok.type == "LPAREN" then "("
-        elif $tok.type == "RPAREN" then ") "
-        elif $tok.type == "SEMI" then "; "
-        elif $tok.type == "AND" then " && "
-        elif $tok.type == "OR" then " || "
-        elif $tok.type == "GT" then " >"
-        elif $tok.type == "LT" then " <"
-        elif $tok.type == "REDIRECT" then $tok.value
-        elif $tok.type == "MATCH" then " =~ "
-        elif $tok.type == "EQ" then " == "
-        elif $tok.type == "NE" then " != "
-        elif $tok.type == "EQUALS" then "= "
-        elif $tok.type == "BANG" then "! "
-        elif $tok.type == "AMP" then " &"
-        elif $tok.type == "SLASH" then "/"
-        elif $tok.type == "QUESTION" then "?"
-        elif $tok.type == "PLUS" then "+"
-        elif $tok.type == "STAR" then "*"
-        elif $tok.type == "CARET" then "^"
-        elif $tok.type == "SUBSHELL" then $tok.value
-        elif $tok.type == "VARIABLE" then $tok.value + " "
-        elif $tok.type == "ARITHMETIC" then $tok.value
-        elif $tok.type == "ARITH_CMD" then $tok.value
-        elif $tok.type == "DSTRING" then $tok.value + " "
-        elif $tok.type == "STRING" then $tok.value + " "
-        elif $tok.type == "NUMBER" then $tok.value + " "
-        elif $tok.type == "PATH" then $tok.value + " "
-        else $tok.value + " "
-        end
-      )
-    ) |
-    # Minimal normalization for raw methods
-    gsub(" +"; " ") |              # Collapse multiple spaces
-    gsub(" ;"; ";") |              # Fix semicolon spacing
-    gsub("; ;"; ";;") |            # Fix double semicolon
-    gsub("(?<a>[0-9]) -(?<b>[0-9])"; "\(.a)-\(.b)") |  # Fix char class ranges like [0-9]
-    gsub("(?<a>[a-zA-Z0-9]) \\](?<b>[+*?$])"; "\(.a)]\(.b)") |  # Remove space before ] when followed by quantifier
-    gsub("(?<a>[a-zA-Z0-9]) \\](?<b> \\]\\])"; "\(.a)]\(.b)") |  # Remove space before ] when followed by ]]
-    gsub(" \\)"; ")") |            # Remove space before )
-    gsub("\\( "; "(") |            # Remove space after (
-    gsub("(?<n>[0-9]) >"; "\(.n)>") |  # Remove space before > only after digits (for 2>)
-    gsub("> /"; ">/") |            # Remove space after > before path
-    gsub("< (?<c>[^<])"; "<\(.c)") |  # Remove space after < unless followed by < (process substitution)
-    gsub("(?<a>[a-zA-Z0-9_]) = (?<c>[0-9\"'$])"; "\(.a)=\(.c)") |  # Fix assignments: remove spaces around = when followed by value
-    gsub("(?<a>[a-zA-Z0-9_]) = (?<c>[a-zA-Z])"; "\(.a)= \(.c)")   # Keep space after = for env var assignments (IFS= read)
-    ;
 
   # Smart indentation for raw methods - tracks nesting, continuation, and heredocs
   def smartIndent:
