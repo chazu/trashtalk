@@ -328,7 +328,7 @@ def parseMethod:
 
 # Parse class body elements
 def parseClassBody:
-  {instanceVars: [], traits: [], requires: [], methods: [], state: .} |
+  {instanceVars: [], traits: [], requires: [], methods: [], errors: [], state: .} |
   until((.state | atEnd);
     .state |= skipNewlines |
     if (.state | atEnd) then
@@ -339,7 +339,14 @@ def parseClassBody:
         .instanceVars = ($r.result.vars // []) |
         .state = $r
       else
-        .state |= advance  # Skip problematic token
+        # Record error: failed to parse instanceVars
+        .errors += [{
+          type: "parse_error",
+          message: "Failed to parse instanceVars declaration",
+          token: (.state | current),
+          context: "instanceVars"
+        }] |
+        .state |= advance
       end
     elif (.state | current.value) == "include:" then
       (.state | parseInclude) as $r |
@@ -347,6 +354,12 @@ def parseClassBody:
         .traits += [$r.result.trait] |
         .state = $r
       else
+        .errors += [{
+          type: "parse_error",
+          message: "Failed to parse include declaration",
+          token: (.state | current),
+          context: "include"
+        }] |
         .state |= advance
       end
     elif (.state | current.value) == "requires:" then
@@ -355,6 +368,12 @@ def parseClassBody:
         .requires += [$r.result.path] |
         .state = $r
       else
+        .errors += [{
+          type: "parse_error",
+          message: "Failed to parse requires declaration",
+          token: (.state | current),
+          context: "requires"
+        }] |
         .state |= advance
       end
     elif (.state | current.value) == "method:" or
@@ -366,10 +385,27 @@ def parseClassBody:
         .methods += [$r.result] |
         .state = $r
       else
+        .errors += [{
+          type: "parse_error",
+          message: "Failed to parse method declaration",
+          token: (.state | current),
+          context: "method"
+        }] |
         .state |= advance
       end
     else
-      .state |= advance  # Skip unknown tokens
+      # Record unknown token (only if not a common ignorable token)
+      (if (.state | current.type) == "NEWLINE" or (.state | current.type) == "COMMENT" then
+        .
+      else
+        .errors += [{
+          type: "unknown_token",
+          message: "Unexpected token in class body",
+          token: (.state | current),
+          context: "class_body"
+        }]
+      end) |
+      .state |= advance
     end
   ) |
   {
@@ -378,7 +414,8 @@ def parseClassBody:
     requires: .requires,
     methods: .methods
   } as $body |
-  .state | .result = $body;
+  .errors as $errors |
+  .state | .errors = (.errors + $errors) | .result = $body;
 
 # ==============================================================================
 # Main Parser
@@ -406,7 +443,12 @@ def parseClass:
 {tokens: ., pos: 0, result: null, errors: []} |
 parseClass |
 if .result != null then
-  .result
+  # Include warnings if there were non-fatal errors during parsing
+  if (.errors | length) > 0 then
+    .result + {warnings: .errors}
+  else
+    .result
+  end
 else
-  {error: true, message: "Parse failed", pos: .pos}
+  {error: true, message: "Parse failed", pos: .pos, errors: .errors}
 end

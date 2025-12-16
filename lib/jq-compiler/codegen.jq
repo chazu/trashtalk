@@ -67,6 +67,62 @@ def generateRequires:
 # Transform a sequence of tokens into bash code
 # This processes the raw tokens from the method body
 def transformMethodBody($className; $isRaw):
+  # Transform a single @ message send (handles multi-keyword methods)
+  # Input: string like "@ recv key1: arg1 key2: arg2"
+  # Output: string like "@ recv key1_key2 arg1 arg2"
+  def transformMessageSend:
+    if test("^@ [^ ]+ [a-zA-Z_][a-zA-Z0-9_]*:") then
+      # Multi-keyword method: @ recv key1: arg1 key2: arg2 → @ recv key1_key2 arg1 arg2
+      capture("^(?<prefix>@ [^ ]+ )(?<rest>.*)") |
+      .prefix as $prefix |
+      .rest |
+      {keywords: [], args: [], remaining: .} |
+      until(
+        (.remaining | test("^[a-zA-Z_][a-zA-Z0-9_]*:") | not);
+        if (.remaining | test("^[a-zA-Z_][a-zA-Z0-9_]*: ")) then
+          . as $state |
+          ($state.remaining | capture("^(?<kw>[a-zA-Z_][a-zA-Z0-9_]*): (?<arg>[^ \"']+|\"[^\"]*\"|'[^']*') *(?<rest>.*)")) |
+          {
+            keywords: ($state.keywords + [.kw]),
+            args: ($state.args + [.arg]),
+            remaining: .rest
+          }
+        else
+          .remaining = ""
+        end
+      ) |
+      if (.keywords | length) > 0 then
+        $prefix + (.keywords | join("_")) + " " + (.args | join(" ")) + (if .remaining != "" then " " + .remaining else "" end)
+      else
+        $prefix + .remaining
+      end
+    elif test("^@ [^ ]+ [a-zA-Z_][a-zA-Z0-9_]*$") then
+      # Unary method - already correct
+      .
+    else
+      .
+    end;
+
+  # Transform DSL constructs inside a subshell
+  # Handles: self → $_RECEIVER, keyword methods (including multi-keyword)
+  def transformSubshellContents:
+    # Replace self with $_RECEIVER
+    gsub("\\bself\\b"; "$_RECEIVER") |
+    # Transform multi-keyword methods by finding patterns and merging selectors
+    # Pattern: @ recv key1: arg1 key2: arg2 → @ recv key1_key2 arg1 arg2
+    # First, handle 2-keyword methods with simple args
+    gsub("(?<pre>@ [^ )\"']+ )(?<k1>[a-zA-Z_][a-zA-Z0-9_]*): (?<a1>[^ )\"':]+) (?<k2>[a-zA-Z_][a-zA-Z0-9_]*): (?<a2>[^ )\"':]+)(?<end>[)\"]|$)";
+      "\(.pre)\(.k1)_\(.k2) \(.a1) \(.a2)\(.end)") |
+    # Handle 2-keyword with quoted second arg
+    gsub("(?<pre>@ [^ )\"']+ )(?<k1>[a-zA-Z_][a-zA-Z0-9_]*): (?<a1>[^ )\"':]+) (?<k2>[a-zA-Z_][a-zA-Z0-9_]*): (?<a2>\"[^\"]*\")";
+      "\(.pre)\(.k1)_\(.k2) \(.a1) \(.a2)") |
+    # Handle single keyword method: @ recv method: arg → @ recv method arg
+    gsub("(?<pre>@ [^ )\"']+ )(?<m>[a-zA-Z_][a-zA-Z0-9_]*): (?<arg>[^ )\"':]+)(?<end>[) \"]|$)";
+      "\(.pre)\(.m) \(.arg)\(.end)") |
+    # Handle single keyword with quoted arg: @ recv method: "arg" → @ recv method "arg"
+    gsub("(?<pre>@ [^ )\"']+ )(?<m>[a-zA-Z_][a-zA-Z0-9_]*): (?<arg>\"[^\"]*\")";
+      "\(.pre)\(.m) \(.arg)");
+
   # Helper to convert token array to string, applying transformations
   def tokensToCode:
     # Group tokens by line for processing
@@ -84,9 +140,8 @@ def transformMethodBody($className; $isRaw):
         elif $tok.type == "LPAREN" then "("
         elif $tok.type == "RPAREN" then ")"
         elif $tok.type == "SUBSHELL" then
-          # Transform DSL inside subshells: only transform keyword method calls (after @)
-          # Pattern: @ receiver keyword: becomes @ receiver keyword
-          ($tok.value | gsub("(?<prefix>@ [^ ]+ )(?<m>[a-zA-Z_][a-zA-Z0-9_]*): "; "\(.prefix)\(.m) "))
+          # Transform DSL inside subshells recursively
+          ($tok.value | transformSubshellContents)
         elif $tok.type == "VARIABLE" then $tok.value + " "  # Keep $var with space
         elif $tok.type == "ARITHMETIC" then $tok.value  # Keep $((...)) as-is
         elif $tok.type == "DSTRING" then $tok.value + " "  # Keep "string" with space
@@ -145,7 +200,7 @@ def transformMethodBody($className; $isRaw):
     gsub(" =(?<c>[a-zA-Z0-9_$])"; "=\(.c)") |  # Remove space before = when followed by word char
     # Fix char class ranges like [0-9]
     gsub("(?<a>[0-9]) -(?<b>[0-9])"; "\(.a)-\(.b)") |  # digit-space-dash-digit -> digit-dash-digit
-    gsub("(?<a>[0-9]) \\](?<b>[^\\]])"; "\(.a)]\(.b)") |  # Remove space before ] not followed by ]
+    gsub("(?<a>[a-zA-Z0-9]) \\](?<b>[^\\]])"; "\(.a)]\(.b)") |  # Remove space before ] not followed by ]
     # Fix number before redirect: 2> not 2 >
     gsub("(?<n>[0-9]) >"; "\(.n)>")
     ;
@@ -282,12 +337,13 @@ def transformMethodBody($className; $isRaw):
     gsub(" ;"; ";") |              # Fix semicolon spacing
     gsub("; ;"; ";;") |            # Fix double semicolon
     gsub("(?<a>[0-9]) -(?<b>[0-9])"; "\(.a)-\(.b)") |  # Fix char class ranges like [0-9]
-    gsub("(?<a>[0-9]) \\](?<b>[+*?$])"; "\(.a)]\(.b)") |  # Remove space before ] when followed by quantifier
+    gsub("(?<a>[a-zA-Z0-9]) \\](?<b>[+*?$])"; "\(.a)]\(.b)") |  # Remove space before ] when followed by quantifier
+    gsub("(?<a>[a-zA-Z0-9]) \\](?<b> \\]\\])"; "\(.a)]\(.b)") |  # Remove space before ] when followed by ]]
     gsub(" \\)"; ")") |            # Remove space before )
     gsub("\\( "; "(") |            # Remove space after (
     gsub("(?<n>[0-9]) >"; "\(.n)>") |  # Remove space before > only after digits (for 2>)
     gsub("> /"; ">/") |            # Remove space after > before path
-    gsub("< "; "<") |              # Remove space after <
+    gsub("< (?<c>[^<])"; "<\(.c)") |  # Remove space after < unless followed by < (process substitution)
     gsub("(?<a>[a-zA-Z0-9_]) = (?<c>[0-9\"'$])"; "\(.a)=\(.c)") |  # Fix assignments: remove spaces around = when followed by value
     gsub("(?<a>[a-zA-Z0-9_]) = (?<c>[a-zA-Z])"; "\(.a)= \(.c)")   # Keep space after = for env var assignments (IFS= read)
     ;
