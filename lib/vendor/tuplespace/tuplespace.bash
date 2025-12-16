@@ -2,14 +2,14 @@
 # Simple Tuplespace Implementation for Bash
 # Uses recutils for structured storage and file watching for events
 
-# Source dependencies
-SCRIPT_DIR="$(dirname "${BASH_SOURCE[0]}")"
-PARENT_DIR="$(dirname "$SCRIPT_DIR")"
-if [[ -f "$PARENT_DIR/kv-bash" ]]; then
-    source "$PARENT_DIR/kv-bash"
+# Source dependencies (use prefixed vars to avoid colliding with SCRIPT_DIR)
+_TUPLESPACE_DIR="$(dirname "${BASH_SOURCE[0]}")"
+_TUPLESPACE_PARENT="$(dirname "$_TUPLESPACE_DIR")"
+if [[ -f "$_TUPLESPACE_PARENT/kv-bash" ]]; then
+    source "$_TUPLESPACE_PARENT/kv-bash"
 fi
-if [[ -f "$PARENT_DIR/fun.sh" ]]; then
-    source "$PARENT_DIR/fun.sh"
+if [[ -f "$_TUPLESPACE_PARENT/fun.sh" ]]; then
+    source "$_TUPLESPACE_PARENT/fun.sh"
 fi
 
 # Tuplespace configuration

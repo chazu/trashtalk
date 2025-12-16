@@ -6,44 +6,44 @@ Tuplespace subclass: Object
 
   # Initialize the tuplespace system
   method: init [
-    [[ "${TRASH_DEBUG:-1}" != "0" ]] && debug "Initializing tuplespace system"
+    @ "$_RECEIVER" debug "Initializing tuplespace system"
     ts_init
     echo "Tuplespace initialized at $TUPLESPACE_DIR"
   ]
 
-  # Put a tuple into the space
-  method: put: tuple_type args: args [
-    [[ "${TRASH_DEBUG:-1}" != "0" ]] && debug "Putting tuple of type: $tuple_type"
-    ts_put "$tuple_type" $args
+  # Put a tuple into the space (varargs: type key1 val1 key2 val2 ...)
+  rawMethod: put [
+    @ "$_RECEIVER" debug "Putting tuple of type: $1"
+    ts_put "$@"
   ]
 
   # Get tuples matching criteria (read without removing)
-  method: get: tuple_type key: key value: value [
-    [[ "${TRASH_DEBUG:-1}" != "0" ]] && debug "Getting tuples of type: $tuple_type"
-    ts_get "$tuple_type" "$key" "$value"
+  rawMethod: get [
+    @ "$_RECEIVER" debug "Getting tuples of type: $1"
+    ts_get "$@"
   ]
 
   # Take tuples matching criteria (read and remove)
-  method: take: tuple_type key: key value: value [
-    [[ "${TRASH_DEBUG:-1}" != "0" ]] && debug "Taking tuples of type: $tuple_type"
-    ts_take "$tuple_type" "$key" "$value"
+  rawMethod: take [
+    @ "$_RECEIVER" debug "Taking tuples of type: $1"
+    ts_take "$@"
   ]
 
   # Wait for tuples matching criteria
-  method: wait: tuple_type key: key value: value timeout: timeout [
-    [[ "${TRASH_DEBUG:-1}" != "0" ]] && debug "Waiting for tuples of type: $tuple_type (timeout: $timeout)"
-    ts_wait "$tuple_type" "$key" "$value" "$timeout"
+  rawMethod: wait [
+    @ "$_RECEIVER" debug "Waiting for tuples of type: $1"
+    ts_wait "$@"
   ]
 
   # Listen for events on tuples of a specific type
   method: listen: tuple_type command: command [
-    [[ "${TRASH_DEBUG:-1}" != "0" ]] && debug "Setting up listener for type: $tuple_type"
+    @ "$_RECEIVER" debug "Setting up listener for type: $tuple_type"
     ts_listen "$tuple_type" "$command"
   ]
 
   # Stop a listener
   method: stopListener: tuple_type process: process_id [
-    [[ "${TRASH_DEBUG:-1}" != "0" ]] && debug "Stopping listener for type: $tuple_type, process: $process_id"
+    @ "$_RECEIVER" debug "Stopping listener for type: $tuple_type, process: $process_id"
     ts_stop_listener "$tuple_type" "$process_id"
   ]
 
@@ -54,42 +54,66 @@ Tuplespace subclass: Object
 
   # List all tuples in the space
   method: list [
-    [[ "${TRASH_DEBUG:-1}" != "0" ]] && debug "Listing all tuples"
+    @ "$_RECEIVER" debug "Listing all tuples"
     ts_list
   ]
 
-  # Count tuples by type
-  method: count: tuple_type [
+  # Count tuples by type (optional type argument)
+  rawMethod: count [
+    local tuple_type="$1"
     if [[ -n "$tuple_type" ]]; then
-      debug "Counting tuples of type: $tuple_type"
+      @ "$_RECEIVER" debug "Counting tuples of type: $tuple_type"
     else
-      debug "Counting all tuples"
+      @ "$_RECEIVER" debug "Counting all tuples"
     fi
     ts_count "$tuple_type"
   ]
 
   # Clear all tuples from the space
   method: clear [
-    debug "Clearing all tuples from tuplespace"
+    @ "$_RECEIVER" debug "Clearing all tuples from tuplespace"
     ts_clear
   ]
 
   # Put a key-value pair
   method: putKV: key value: value [
-    debug "Putting key-value: $key = $value"
+    @ "$_RECEIVER" debug "Putting key-value: $key = $value"
     ts_kv_put "$key" "$value"
+  ]
+
+  # Simple varargs version of putKV
+  rawMethod: putKV [
+    @ "$_RECEIVER" debug "Putting key-value: $1 = $2"
+    ts_kv_put "$1" "$2"
   ]
 
   # Get value by key
   method: getKV: key [
-    debug "Getting value for key: $key"
+    @ "$_RECEIVER" debug "Getting value for key: $key"
     ts_kv_get "$key"
+  ]
+
+  # Simple varargs version of getKV
+  rawMethod: getKV [
+    @ "$_RECEIVER" debug "Getting value for key: $1"
+    ts_kv_get "$1"
   ]
 
   # Put an event
   method: putEvent: event_name data: data [
-    debug "Putting event: $event_name"
+    @ "$_RECEIVER" debug "Putting event: $event_name"
     ts_event_put "$event_name" "$data"
+  ]
+
+  # Simple varargs version of putEvent
+  rawMethod: putEvent [
+    @ "$_RECEIVER" debug "Putting event: $1"
+    ts_event_put "$1" "$2"
+  ]
+
+  # Run the demo/test suite
+  method: test [
+    ts_demo
   ]
 
   # System information
