@@ -2,7 +2,7 @@
 
 ## Current Status
 
-**Test Results: 183/183 passing (100%)**
+**Test Results: 243/243 passing (100%)**
 
 All .trash files compile with valid bash syntax. The expected output for Process.trash was updated to match the new compiler's deterministic output.
 
@@ -49,17 +49,29 @@ This is pragmatic given Bash's complex, context-sensitive grammar.
    - Works with nested subshells: `$(@ self at: 1 put: "$(@ self get: key from: dict)")`
    - Added 7 new tests for nested DSL in subshells
 
-4. **Consolidate token reconstruction** - Merge `tokensToCode` and `tokensToRawCode`
-   - Create single parameterized function: `tokensToString($options)`
-   - Options: `preserveSpacing`, `transformDSL`
+4. **~~Consolidate token reconstruction~~** - DONE
+   - Created `tokensToString($raw)` - unified function with boolean parameter
+   - `$raw=false`: Transform DSL constructs (normal methods)
+   - `$raw=true`: Preserve bash code (raw methods)
+   - Added convenience wrappers: `tokensToCode` and `tokensToRawCode`
+   - Reduced codegen.jq from ~470 lines to 438 lines (~32 lines saved)
 
-5. **Add AST-level unit tests** - Not just end-to-end baseline comparisons
-   - Test individual parser rules (parseMethodSig, parseInstanceVars, etc.)
-   - Verify AST structure for keyword methods, traits, inheritance
+5. **~~Add AST-level unit tests~~** - DONE
+   - Added 37 new parser tests (72 total, up from 35)
+   - AST structure validation: type, name, parent, arrays
+   - Method signature edge cases: 3-keyword methods, underscores, multi-method
+   - Instance variable edge cases: mixed defaults, no defaults
+   - Trait/inheritance: full traits with methods, multiple traits
+   - Parser warnings: unknown tokens generate warnings
+   - Method body tokens: verify PIPE, ASSIGN, CARET, SUBSHELL, VARIABLE preserved
 
-6. **Implement synchronization points** for error recovery
-   - On parse error, skip to next `method:`, `classMethod:`, `instanceVars:`, etc.
-   - Prevents single error from cascading
+6. **~~Implement synchronization points~~** - DONE
+   - Added `isSyncPoint` function to detect class-level keywords
+   - Added `synchronize` function that skips tokens to next sync point
+   - Updated `parseClassBody` to use synchronization on errors
+   - Fixed infinite loop bug in `parseInstanceVarsSimple` for unknown tokens
+   - Added 13 new tests for error recovery scenarios
+   - Parser now gracefully recovers from: garbage tokens, bad method declarations, syntax errors
 
 ### Low Priority
 
@@ -72,8 +84,17 @@ This is pragmatic given Bash's complex, context-sensitive grammar.
    - Potential split: `header.jq`, `transforms.jq`, `method.jq`, `main.jq`
    - jq's `include` requires files in library path
 
-9. **Add source locations to AST nodes** - For better error messages
-   - Include `location: {line, col}` in each AST node
+9. **~~Add source locations to AST nodes~~** - DONE
+   - Added `location: {line, col}` to class, method, instanceVar, include, requires nodes
+   - Locations captured from the defining token (class name, method keyword, etc.)
+   - Added 10 new tests for location info
+   - Enables better error messages with exact source positions
+
+10. **~~Show source context in error messages~~** - DONE
+    - Added `show_error_context()` helper to display source line with caret
+    - Added `show_errors_with_context()` to process multiple errors
+    - Updated `cmd_parse()` to use new context display
+    - Errors now show: line number, message, actual source code, and caret pointing to column
 
 ---
 

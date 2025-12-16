@@ -57,6 +57,21 @@ def map(f):
 def skipNewlines:
   if current.type == "NEWLINE" or current.type == "COMMENT" then advance | skipNewlines else . end;
 
+# Check if current token is a synchronization point (class-level keyword)
+def isSyncPoint:
+  current.value == "method:" or
+  current.value == "rawMethod:" or
+  current.value == "classMethod:" or
+  current.value == "rawClassMethod:" or
+  current.value == "instanceVars:" or
+  current.value == "include:" or
+  current.value == "requires:";
+
+# Synchronization points for error recovery
+# Skips tokens until we find a class-level keyword to resume parsing
+def synchronize:
+  until(atEnd or isSyncPoint; advance);
+
 # Match token type
 def token($t):
   if current.type == $t then
@@ -81,19 +96,21 @@ def literal($v):
 def parseClassHeader:
   skipNewlines |
   if current.type == "IDENTIFIER" then
+    # Capture location from class name token
+    {line: current.line, col: current.col} as $location |
     .result = current.value | advance | skipNewlines |
     .result as $name |
     if current.value == "subclass:" then
       advance | skipNewlines |
       if current.type == "IDENTIFIER" then
-        .result = {type: "class", name: $name, parent: current.value, isTrait: false} |
+        .result = {type: "class", name: $name, parent: current.value, isTrait: false, location: $location} |
         advance
       else
         fail
       end
     elif current.value == "trait" then
       advance |
-      .result = {type: "class", name: $name, parent: null, isTrait: true}
+      .result = {type: "class", name: $name, parent: null, isTrait: true, location: $location}
     else
       fail
     end
@@ -163,34 +180,39 @@ def parseInstanceVarsSimple:
   if current.value == "instanceVars:" then
     advance | skipNewlines |
     # Collect all var specs manually
-    {vars: [], state: .} |
+    {vars: [], state: ., stop: false} |
     until(
+      .stop or
       .state.pos >= (.state.tokens | length) or
       (.state | current.type) == "NEWLINE" or
       (.state | current.value) == "method:" or
       (.state | current.value) == "classMethod:" or
       (.state | current.value) == "rawMethod:" or
       (.state | current.value) == "rawClassMethod:" or
-      (.state | current.value) == "include:";
+      (.state | current.value) == "include:" or
+      (.state | isSyncPoint);
 
       if (.state | current.type) == "KEYWORD" then
-        # name:default
+        # name:default - capture location from keyword token
+        {line: (.state | current.line), col: (.state | current.col)} as $loc |
         (.state | current.value | rtrimstr(":")) as $name |
         .state |= advance |
         .state |= skipNewlines |
         if (.state | current.type) == "NUMBER" then
-          .vars += [{name: $name, default: {type: "number", value: (.state | current.value)}}] |
+          .vars += [{name: $name, default: {type: "number", value: (.state | current.value)}, location: $loc}] |
           .state |= advance |
           .state |= skipNewlines
         elif (.state | current.type) == "STRING" then
-          .vars += [{name: $name, default: {type: "string", value: ((.state | current.value) | ltrimstr("'") | rtrimstr("'"))}}] |
+          .vars += [{name: $name, default: {type: "string", value: ((.state | current.value) | ltrimstr("'") | rtrimstr("'"))}, location: $loc}] |
           .state |= advance |
           .state |= skipNewlines
         else
-          .
+          .vars += [{name: $name, default: null, location: $loc}]
         end
       elif (.state | current.type) == "IDENTIFIER" then
-        .vars += [{name: (.state | current.value), default: null}] |
+        # Capture location from identifier token
+        {line: (.state | current.line), col: (.state | current.col)} as $loc |
+        .vars += [{name: (.state | current.value), default: null, location: $loc}] |
         .state |= advance |
         .state |= skipNewlines
       else
@@ -207,9 +229,11 @@ def parseInstanceVarsSimple:
 # Parse: include: TraitName
 def parseInclude:
   if current.value == "include:" then
+    # Capture location from include: keyword
+    {line: current.line, col: current.col} as $location |
     advance | skipNewlines |
     if current.type == "IDENTIFIER" then
-      .result = {type: "include", trait: current.value} | advance
+      .result = {type: "include", trait: current.value, location: $location} | advance
     else
       fail
     end
@@ -220,9 +244,11 @@ def parseInclude:
 # Parse: requires: 'path'
 def parseRequires:
   if current.value == "requires:" then
+    # Capture location from requires: keyword
+    {line: current.line, col: current.col} as $location |
     advance | skipNewlines |
     if current.type == "STRING" then
-      .result = {type: "requires", path: (current.value | ltrimstr("'") | rtrimstr("'"))} |
+      .result = {type: "requires", path: (current.value | ltrimstr("'") | rtrimstr("'")), location: $location} |
       advance
     else
       fail
@@ -293,6 +319,8 @@ def parseMethodSig:
 # Parse method declaration
 def parseMethod:
   skipNewlines |
+  # Capture location from the method keyword token
+  {line: current.line, col: current.col} as $location |
   # Check for method keyword
   (if current.value == "method:" then {kind: "instance", raw: false}
    elif current.value == "rawMethod:" then {kind: "instance", raw: true}
@@ -314,7 +342,8 @@ def parseMethod:
           selector: $sig.selector,
           keywords: $sig.keywords,
           args: $sig.args,
-          body: .result
+          body: .result,
+          location: $location
         }
       else
         .
@@ -339,14 +368,14 @@ def parseClassBody:
         .instanceVars = ($r.result.vars // []) |
         .state = $r
       else
-        # Record error: failed to parse instanceVars
+        # Record error and synchronize to next declaration
         .errors += [{
           type: "parse_error",
           message: "Failed to parse instanceVars declaration",
           token: (.state | current),
           context: "instanceVars"
         }] |
-        .state |= advance
+        .state |= (advance | synchronize)
       end
     elif (.state | current.value) == "include:" then
       (.state | parseInclude) as $r |
@@ -360,7 +389,7 @@ def parseClassBody:
           token: (.state | current),
           context: "include"
         }] |
-        .state |= advance
+        .state |= (advance | synchronize)
       end
     elif (.state | current.value) == "requires:" then
       (.state | parseRequires) as $r |
@@ -374,7 +403,7 @@ def parseClassBody:
           token: (.state | current),
           context: "requires"
         }] |
-        .state |= advance
+        .state |= (advance | synchronize)
       end
     elif (.state | current.value) == "method:" or
          (.state | current.value) == "rawMethod:" or
@@ -391,21 +420,21 @@ def parseClassBody:
           token: (.state | current),
           context: "method"
         }] |
-        .state |= advance
+        .state |= (advance | synchronize)
       end
     else
-      # Record unknown token (only if not a common ignorable token)
+      # Unknown token - synchronize to next declaration
       (if (.state | current.type) == "NEWLINE" or (.state | current.type) == "COMMENT" then
-        .
+        .state |= advance
       else
         .errors += [{
           type: "unknown_token",
           message: "Unexpected token in class body",
           token: (.state | current),
           context: "class_body"
-        }]
-      end) |
-      .state |= advance
+        }] |
+        .state |= synchronize
+      end)
     end
   ) |
   {

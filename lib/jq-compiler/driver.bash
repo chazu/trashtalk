@@ -59,6 +59,55 @@ success() {
     echo -e "${GREEN}Success:${NC} $1" >&2
 }
 
+# Show source context around an error
+# Args: $1=source_file, $2=line_number, $3=column, $4=message, $5=type (optional)
+show_error_context() {
+    local file="$1"
+    local line_num="$2"
+    local col="$3"
+    local message="$4"
+    local err_type="${5:-}"
+
+    # Print the error location and message
+    if [[ -n "$err_type" ]]; then
+        echo -e "  ${line_num}:${col}: ${message} ${YELLOW}[${err_type}]${NC}" >&2
+    else
+        echo -e "  ${line_num}:${col}: ${message}" >&2
+    fi
+
+    # Get the source line (if file exists and line is valid)
+    if [[ -f "$file" && "$line_num" -gt 0 ]]; then
+        local source_line
+        source_line=$(sed -n "${line_num}p" "$file" 2>/dev/null || echo "")
+
+        if [[ -n "$source_line" ]]; then
+            # Print line number gutter and source line
+            # Gutter format: "    %4s | " = 4 spaces + 4-char field + " | " = 11 chars
+            printf "    %4s | %s\n" "$line_num" "$source_line" >&2
+
+            # Print caret pointing to the column
+            # Gutter width is 11 chars, then add column offset
+            local gutter_width=11
+            local padding=$((gutter_width + col))
+            printf "%${padding}s${RED}^${NC}\n" "" >&2
+        fi
+    fi
+}
+
+# Show multiple errors/warnings with context
+# Args: $1=source_file, $2=json_array of errors/warnings, $3=color (RED/YELLOW)
+show_errors_with_context() {
+    local file="$1"
+    local errors_json="$2"
+    local color="$3"
+
+    # Parse each error and show context
+    echo "$errors_json" | jq -r '.[] | "\(.token.line)\t\(.token.col)\t\(.message)\t\(.type)"' 2>/dev/null | \
+    while IFS=$'\t' read -r line col message err_type; do
+        show_error_context "$file" "$line" "$col" "$message" "$err_type"
+    done
+}
+
 usage() {
     cat << 'EOF'
 Trashtalk jq Compiler
@@ -128,16 +177,20 @@ cmd_parse() {
 
     # Check for parse errors in the result
     if echo "$ast" | jq -e '.error == true' >/dev/null 2>&1; then
-        echo -e "${RED}Parse errors:${NC}" >&2
-        echo "$ast" | jq -r '.errors[]? | "  \(.token.line):\(.token.col): \(.message)"' >&2
+        echo -e "${RED}Parse errors in ${source_file}:${NC}" >&2
+        local errors_json
+        errors_json=$(echo "$ast" | jq '.errors // []')
+        show_errors_with_context "$source_file" "$errors_json" "$RED"
         echo "$ast" | jq '.partial // {}'
         exit 1
     fi
 
     # Check for warnings (non-fatal errors)
     if echo "$ast" | jq -e '.warnings | length > 0' >/dev/null 2>&1; then
-        echo -e "${YELLOW}Parse warnings:${NC}" >&2
-        echo "$ast" | jq -r '.warnings[] | "  \(.token.line):\(.token.col): \(.message) [\(.type)]"' >&2
+        echo -e "${YELLOW}Parse warnings in ${source_file}:${NC}" >&2
+        local warnings_json
+        warnings_json=$(echo "$ast" | jq '.warnings')
+        show_errors_with_context "$source_file" "$warnings_json" "$YELLOW"
     fi
 
     echo "$ast"

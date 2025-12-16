@@ -3,15 +3,46 @@
 ## High Priority
 
 ### Better Compiler Error Messages
-- Track line numbers during tokenization
-- Show context around errors
-- Suggest fixes for common mistakes
+**Status:** Nearly complete in jq-compiler
+
+Done:
+- ✅ Track line numbers during tokenization (all tokens have line/col)
+- ✅ Source locations in AST nodes (class, method, instanceVar, include, requires)
+- ✅ Parser warnings for unknown tokens with location info
+- ✅ Error recovery via synchronization points
+- ✅ bash -n syntax validation with --check flag
+- ✅ Show source context around errors with caret pointing to column
+
+Example output:
+```
+Parse warnings in /tmp/test.trash:
+  2:2: Unexpected token in class body [unknown_token]
+       2 |   unknownKeyword here
+             ^
+```
+
+Remaining:
+- Suggest fixes for common mistakes (e.g., "did you mean method:?")
+- Integrate jq-compiler as default compiler
 
 ### Two-Pass Compiler (AST)
-Refactor compiler to:
-1. Parse source to AST
-2. Generate bash from AST
-Benefits: better error handling, optimization opportunities, easier to extend
+**Status:** ✅ Complete - implemented in `lib/jq-compiler/`
+
+The jq-compiler implements a full two-pass architecture:
+1. **Pass 1:** Tokenizer (bash) → JSON token array with line/col info
+2. **Pass 2:** Parser (jq) → AST → Codegen (jq) → Bash output
+
+Features:
+- 243 tests passing (tokenizer, parser, codegen, integration)
+- Handles all .trash files including complex ones (Process.trash, Trash.trash)
+- Raw method support for heredocs, traps, signals
+- Keyword method transformation (multi-keyword → underscore-joined)
+- Nested DSL transformation in subshells
+- Error recovery and warnings
+
+Remaining:
+- Integrate as default compiler (replace lib/trash-compiler.bash)
+- Performance testing on large files
 
 ### Pure Smalltalk Syntax in Method Bodies
 Currently method bodies use bash syntax with `$()` escapes:
@@ -169,6 +200,16 @@ When `rawMethod:` sections contain heredocs, the compiler indents the `EOF` term
 ---
 
 ## Recently Completed
+
+### jq-compiler Two-Pass AST Compiler (2024-12-16)
+Implemented a complete two-pass compiler in `lib/jq-compiler/`:
+- **Tokenizer** (bash): 35+ token types with line/col tracking
+- **Parser** (jq): PEG-style parser producing JSON AST
+- **Codegen** (jq): AST to bash code generation
+- **243 tests** covering tokenizer, parser, codegen, integration
+- **Features:** Error recovery, source locations, nested DSL in subshells, raw methods
+- **All .trash files compile** with valid bash syntax
+- **Error context display:** Shows source line with caret pointing to error column
 
 ### Known Issues Fixed (2024-12-16)
 **Find Predicate Query Syntax:** Now working correctly. `@ Counter find 'value > 5'` properly filters instances. The `Object.find()` method parses predicates using regex and generates correct SQL queries.
