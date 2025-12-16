@@ -170,6 +170,7 @@ def parseInstanceVarsSimple:
       (.state | current.value) == "method:" or
       (.state | current.value) == "classMethod:" or
       (.state | current.value) == "rawMethod:" or
+      (.state | current.value) == "rawClassMethod:" or
       (.state | current.value) == "include:";
 
       if (.state | current.type) == "KEYWORD" then

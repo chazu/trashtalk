@@ -1,81 +1,46 @@
 # TestCounter - Tests for Counter class
 # Run with: @ TestCounter runAll
-TestCounter subclass: Object
-  instanceVars: passed:0 failed:0
-
-  method: new [
-    | id |
-    id := $(_generate_instance_id TestCounter)
-    _create_instance TestCounter $id
-    ^ $id
-  ]
-
-  rawMethod: assert: actual equals: expected [
-    if [[ "$actual" == "$expected" ]]; then
-      @ "$_RECEIVER" _pass
-    else
-      @ "$_RECEIVER" _fail: "Expected '$expected' but got '$actual'"
-    fi
-  ]
-
-  method: _pass [
-    | count |
-    count := $(@ self getPassed)
-    @ self setPassed: $((count + 1))
-  ]
-
-  rawMethod: _fail: message [
-    local count
-    count=$(@ "$_RECEIVER" getFailed)
-    @ "$_RECEIVER" setFailed: $((count + 1))
-    echo "  FAIL: $message" >&2
-  ]
+TestCounter subclass: TestCase
 
   rawMethod: testIncrement [
-    local _self="$_RECEIVER"
     local c val
     c=$(@ Counter new)
-    @ "$c" increment
+    @ "$c" increment >/dev/null
     val=$(@ "$c" getValue)
-    @ "$_self" assert_equals "$val" 1
+    @ "$_RECEIVER" assert_equals "$val" 1
   ]
 
   rawMethod: testIncrementBy [
-    local _self="$_RECEIVER"
     local c val
     c=$(@ Counter new)
     @ "$c" incrementBy 5
     val=$(@ "$c" getValue)
-    @ "$_self" assert_equals "$val" 5
+    @ "$_RECEIVER" assert_equals "$val" 5
+  ]
+
+  rawMethod: testDecrement [
+    local c val
+    c=$(@ Counter new)
+    @ "$c" setValue 10
+    @ "$c" decrement >/dev/null
+    val=$(@ "$c" getValue)
+    @ "$_RECEIVER" assert_equals "$val" 9
   ]
 
   rawMethod: testReset [
-    local _self="$_RECEIVER"
     local c val
     c=$(@ Counter new)
-    @ "$c" increment
+    @ "$c" increment >/dev/null
     @ "$c" reset
     val=$(@ "$c" getValue)
-    @ "$_self" assert_equals "$val" 0
+    @ "$_RECEIVER" assert_equals "$val" 0
   ]
 
-  rawClassMethod: runAll [
-    local instance passed failed total
-    instance=$(@ TestCounter new)
-
-    for method in $(declare -F | grep "__TestCounter__test" | sed "s/.*__TestCounter__//"); do
-      echo "  Running: $method"
-      @ "$instance" "$method"
-    done
-
-    passed=$(@ "$instance" getPassed)
-    failed=$(@ "$instance" getFailed)
-    total=$((passed + failed))
-
-    echo ""
-    if [[ "$failed" -eq 0 ]]; then
-      echo "All $total assertions passed"
-    else
-      echo "$passed passed, $failed failed (of $total assertions)"
-    fi
+  rawMethod: testStep [
+    local c val
+    c=$(@ Counter new)
+    @ "$c" setStep 5
+    @ "$c" increment >/dev/null
+    val=$(@ "$c" getValue)
+    @ "$_RECEIVER" assert_equals "$val" 5
   ]

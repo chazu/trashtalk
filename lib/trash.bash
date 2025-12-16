@@ -464,15 +464,52 @@ function _create_instance {
   local created_at
   created_at=$(date +%s)
 
+  # Get instance vars from compiled class metadata (preferred)
+  # This avoids using stale global _CURRENT_CLASS_VARS from previous classes
+  local class_vars=""
+  local vars_var="__${class_name}__instanceVars"
+  if [[ -n "${!vars_var}" ]]; then
+    class_vars="${!vars_var}"
+  fi
+
+  # Parse class vars into vars list and defaults
+  local class_var_list=""
+  declare -A class_var_defaults
+  for spec in $class_vars; do
+    local var default_val
+    if [[ "$spec" == *:* ]]; then
+      var="${spec%%:*}"
+      default_val="${spec#*:}"
+    else
+      var="$spec"
+      default_val=""
+    fi
+    class_var_list="$class_var_list $var"
+    class_var_defaults["$var"]="$default_val"
+    _generate_accessor "$var"
+  done
+  class_var_list="${class_var_list# }"
+
   # Collect inherited vars from parent classes
   _collect_inherited_vars "$class_name"
 
-  # Merge inherited vars with current class vars (current class takes precedence)
-  local all_vars="$_CURRENT_CLASS_VARS"
+  # Merge: start with inherited vars, then add/override with class vars
+  local all_vars=""
   declare -A all_defaults
 
-  # First add inherited defaults
+  # First add inherited vars
   for var in $_INHERITED_VARS; do
+    if [[ -z "$all_vars" ]]; then
+      all_vars="$var"
+    else
+      all_vars="$all_vars $var"
+    fi
+    all_defaults["$var"]="${_INHERITED_DEFAULTS[$var]}"
+    _generate_accessor "$var"
+  done
+
+  # Then add/override with current class vars
+  for var in $class_var_list; do
     if [[ " $all_vars " != *" $var "* ]]; then
       if [[ -z "$all_vars" ]]; then
         all_vars="$var"
@@ -480,16 +517,7 @@ function _create_instance {
         all_vars="$all_vars $var"
       fi
     fi
-    # Set inherited default (will be overridden by current class if exists)
-    all_defaults["$var"]="${_INHERITED_DEFAULTS[$var]}"
-
-    # Generate accessor for inherited var
-    _generate_accessor "$var"
-  done
-
-  # Then add/override with current class defaults
-  for var in $_CURRENT_CLASS_VARS; do
-    all_defaults["$var"]="${_CURRENT_CLASS_DEFAULTS[$var]}"
+    all_defaults["$var"]="${class_var_defaults[$var]}"
   done
 
   # Build vars array from merged vars
@@ -598,13 +626,15 @@ method_missing() {
         _SOURCED_COMPILED_CLASSES[$current_class]=1
         msg_debug "Sourced compiled class $current_class in method_missing"
 
-        # Set up instance variables from compiled class metadata
+        # Set up superclass from compiled class metadata (always)
+        local super_var="__${current_class}__superclass"
+        if [[ -n "${!super_var}" ]]; then
+          _SUPERCLASS="${!super_var}"
+        fi
+
+        # Set up instance variables if present
         local vars_var="__${current_class}__instanceVars"
         if [[ -n "${!vars_var}" ]]; then
-          local super_var="__${current_class}__superclass"
-          if [[ -n "${!super_var}" ]]; then
-            _SUPERCLASS="${!super_var}"
-          fi
           instance_vars ${!vars_var}
         fi
       fi
@@ -644,15 +674,15 @@ method_missing() {
         return $?
       fi
 
+      # Stop if we've checked Object (root class)
+      if [[ "$current_class" == "Object" ]]; then
+        break
+      fi
+
       # Move up the inheritance chain
       current_class="$_SUPERCLASS"
     else
       msg_debug "Class file not found: $TRASHDIR/$current_class"
-      break
-    fi
-
-    # Prevent infinite loop if we've hit the top
-    if [[ "$current_class" == "Object" ]]; then
       break
     fi
   done
@@ -682,6 +712,8 @@ function send {
 
   local _RECEIVER="$1"; shift
   local _SELECTOR="$1"; shift
+  # Normalize selector: remove trailing colon (keyword message syntax)
+  _SELECTOR="${_SELECTOR%:}"
   local _CLASS=""
   local _INSTANCE=""
 
@@ -753,16 +785,19 @@ function send {
       _SOURCED_COMPILED_CLASSES[$class_name]=1
       msg_debug "Sourced compiled class $class_name"
 
-      # Set up instance variables from compiled class metadata
+      # Set up instance variables if present (only once)
       local vars_var="__${class_name}__instanceVars"
       if [[ -n "${!vars_var}" ]]; then
-        local super_var="__${class_name}__superclass"
-        if [[ -n "${!super_var}" ]]; then
-          _SUPERCLASS="${!super_var}"
-        fi
         instance_vars ${!vars_var}
         msg_debug "Generated accessors for compiled class $class_name: ${!vars_var}"
       fi
+    fi
+
+    # Set up superclass from compiled class metadata (EVERY call, not just first)
+    local super_var="__${class_name}__superclass"
+    if [[ -n "${!super_var}" ]]; then
+      _SUPERCLASS="${!super_var}"
+      msg_debug "Set superclass for $class_name: $_SUPERCLASS"
     fi
 
     # Try namespaced instance method

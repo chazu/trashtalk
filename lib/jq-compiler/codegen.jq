@@ -292,38 +292,65 @@ def transformMethodBody($className; $isRaw):
     gsub("(?<a>[a-zA-Z0-9_]) = (?<c>[a-zA-Z])"; "\(.a)= \(.c)")   # Keep space after = for env var assignments (IFS= read)
     ;
 
-  # Smart indentation for raw methods - tracks nesting and continuation
+  # Smart indentation for raw methods - tracks nesting, continuation, and heredocs
   def smartIndent:
-    reduce .[] as $line ({lines: [], depth: 0, continuation: false};
+    reduce .[] as $line ({lines: [], depth: 0, continuation: false, heredoc: null};
       ($line | gsub("^\\s+|\\s+$"; "")) as $trimmed |
-      # Calculate indent for this line
-      (if .continuation then .depth + 1 else .depth end) as $effectiveDepth |
-      ("    " + ("    " * $effectiveDepth)) as $indent |
-      # Determine if this line adjusts depth BEFORE indenting
-      (if ($trimmed | test("^(done|fi|esac|;;)")) then .depth - 1 else .depth end) as $preDepth |
-      # Use adjusted depth for dedent lines
-      (if $preDepth < .depth then
-        "    " + ("    " * ([0, $preDepth] | max))
+      # Check if we're ending a heredoc (terminator must be at start of line, unindented)
+      (if .heredoc != null and $trimmed == .heredoc then
+        # This is the heredoc terminator - output without indent and clear heredoc state
+        {
+          lines: (.lines + [$trimmed]),
+          depth: .depth,
+          continuation: false,
+          heredoc: null
+        }
+      elif .heredoc != null then
+        # Inside heredoc - output line as-is without any indentation
+        {
+          lines: (.lines + [$line]),
+          depth: .depth,
+          continuation: .continuation,
+          heredoc: .heredoc
+        }
       else
-        $indent
-      end) as $finalIndent |
-      # Build line with indent
-      (if $trimmed == "" then ""
-       else $finalIndent + $trimmed
-       end) as $indentedLine |
-      # Update depth based on keywords
-      (if ($trimmed | test("\\b(do|then)$")) then .depth + 1
-       elif ($trimmed | test("^case .* in$")) then .depth + 1
-       elif ($trimmed | test("^(done|fi|esac)$")) then [0, .depth - 1] | max
-       else .depth
-       end) as $newDepth |
-      # Check if line ends with continuation
-      ($trimmed | test("\\\\$")) as $isContinuation |
-      {
-        lines: (.lines + [$indentedLine]),
-        depth: $newDepth,
-        continuation: $isContinuation
-      }
+        # Normal processing
+        # Calculate indent for this line
+        (if .continuation then .depth + 1 else .depth end) as $effectiveDepth |
+        ("    " + ("    " * $effectiveDepth)) as $indent |
+        # Determine if this line adjusts depth BEFORE indenting
+        (if ($trimmed | test("^(done|fi|esac|;;)")) then .depth - 1 else .depth end) as $preDepth |
+        # Use adjusted depth for dedent lines
+        (if $preDepth < .depth then
+          "    " + ("    " * ([0, $preDepth] | max))
+        else
+          $indent
+        end) as $finalIndent |
+        # Build line with indent
+        (if $trimmed == "" then ""
+         else $finalIndent + $trimmed
+         end) as $indentedLine |
+        # Update depth based on keywords
+        (if ($trimmed | test("\\b(do|then)$")) then .depth + 1
+         elif ($trimmed | test("^case .* in$")) then .depth + 1
+         elif ($trimmed | test("^(done|fi|esac)$")) then [0, .depth - 1] | max
+         else .depth
+         end) as $newDepth |
+        # Check if line ends with continuation
+        ($trimmed | test("\\\\$")) as $isContinuation |
+        # Check if line starts a heredoc (<<EOF or <<'EOF' or <<"EOF")
+        (if ($trimmed | test("<<-?'?\"?([A-Za-z_][A-Za-z0-9_]*)'?\"?\\s*$")) then
+          $trimmed | capture("<<-?'?\"?(?<term>[A-Za-z_][A-Za-z0-9_]*)'?\"?\\s*$") | .term
+        else
+          null
+        end) as $heredocStart |
+        {
+          lines: (.lines + [$indentedLine]),
+          depth: $newDepth,
+          continuation: $isContinuation,
+          heredoc: $heredocStart
+        }
+      end)
     ) | .lines;
 
   # Process the tokens
