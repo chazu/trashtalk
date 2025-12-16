@@ -62,11 +62,33 @@ counter=$(@ Counter new)           # Create instance
 
 ### Runtime Context Variables
 
-Set by dispatcher during message sends:
+Set by dispatcher during message sends (local to each `send()` frame):
 - `$_RECEIVER` - Object/class receiving the message
 - `$_SELECTOR` - Method name being called
 - `$_CLASS` - Class context
 - `$_INSTANCE` - Instance ID (for instance methods)
+
+These are `local` variables using Bash's dynamic scoping, so nested message sends get their own copies that are automatically restored on return.
+
+### Error Handling & Advice APIs
+
+```bash
+# Error handling
+_throw "ErrorType" "message"      # Signal an error
+_on_error "ErrorType" "handler"   # Register handler (use "*" for catch-all)
+_pop_handler                      # Remove handler when leaving protected region
+_ensure "cleanup_command"         # Register cleanup that runs on frame exit
+
+# Debugging
+_print_stack_trace                # Print call stack to stderr
+_CALL_STACK                       # Array of "Class.selector" entries
+_CALL_DEPTH                       # Current call depth
+
+# Method advice (AOP)
+_add_before_advice "Class" "selector" "handler"  # Run before method
+_add_after_advice "Class" "selector" "handler"   # Run after method
+_remove_advice "Class" "selector"                # Remove advice
+```
 
 ### Instance Persistence
 
@@ -106,8 +128,10 @@ Counter subclass: Object
 
 Requires: `jo`, `jq`, `sqlite3`, `uuidgen`
 
-## Known Limitations
+## Known Issues
 
-- Global context variables (`$_RECEIVER`, etc.) can get corrupted by nested message sends
+- **Tuplespace vendor path**: `Tuplespace.trash` references wrong path to `tuplespace.bash`
+- **Find predicate queries**: `@ Trash find "value > 5"` parsing needs revision
+- **Inherited _vars array**: jq parsing fails in some inheritance test scenarios
 - Test framework (`TestCase.trash`) is partially implemented
 - Two-pass AST-based compiler is in progress (`lib/jq-compiler/`)
