@@ -87,16 +87,24 @@ echo "-------------------------------------------"
 id=$(_generate_instance_id "TestClass")
 test_contains "$id" "testclass_" "generate_instance_id creates prefixed ID"
 
-# Test _create_instance
+# Test _create_instance (current API stores JSON with class field)
 test_id="test_instance_$$"
-_create_instance "TestClass" "$test_id" "initial_value"
+# First need to set up instance vars for TestClass (simulate legacy class setup)
+_CURRENT_CLASS_VARS=""
+declare -gA _CURRENT_CLASS_DEFAULTS
+_create_instance "TestClass" "$test_id"
 TEST_INSTANCES="$TEST_INSTANCES $test_id"
 
-stored_value=$(kvget "$test_id" 2>/dev/null)
-test_eq "initial_value" "$stored_value" "create_instance stores value"
+# Current implementation stores JSON, so verify via db_get
+stored_data=$(db_get "$test_id" 2>/dev/null)
+if [[ "$stored_data" == *'"class":"TestClass"'* ]]; then
+    pass "create_instance stores class in JSON"
+else
+    fail "create_instance stores class in JSON (expected class field, got '$stored_data')"
+fi
 
-stored_type=$(kvget "${test_id}._type" 2>/dev/null)
-test_eq "TestClass" "$stored_type" "create_instance stores type"
+stored_class=$(_get_instance_class "$test_id")
+test_eq "TestClass" "$stored_class" "create_instance stores type (via _get_instance_class)"
 
 # Test _is_instance
 if _is_instance "$test_id"; then

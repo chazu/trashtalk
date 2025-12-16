@@ -18,7 +18,7 @@ TRAIT_SOURCES := $(wildcard $(TRASH_DIR)/traits/*.trash)
 COMPILED := $(patsubst $(TRASH_DIR)/%.trash,$(COMPILED_DIR)/%,$(SOURCES))
 COMPILED_TRAITS := $(patsubst $(TRASH_DIR)/traits/%.trash,$(COMPILED_TRAITS_DIR)/%,$(TRAIT_SOURCES))
 
-.PHONY: all compile compile-traits test test-verbose watch clean help info reload
+.PHONY: all compile compile-traits test test-verbose test-dsl watch clean help info reload
 
 # Default target
 all: compile
@@ -38,17 +38,17 @@ $(COMPILED_DIR):
 $(COMPILED_TRAITS_DIR):
 	@mkdir -p $(COMPILED_TRAITS_DIR)
 
-# Pattern rule for compiling classes
-$(COMPILED_DIR)/%: $(TRASH_DIR)/%.trash $(LIB_DIR)/trash-compiler.bash
+# Pattern rule for compiling classes (using jq-based compiler)
+$(COMPILED_DIR)/%: $(TRASH_DIR)/%.trash $(LIB_DIR)/jq-compiler/driver.bash
 	@echo "Compiling $<..."
-	@source $(LIB_DIR)/trash-compiler.bash && compile_file "$<" 2>/dev/null | grep -v "^Trashtalk Compiler" | grep -v "^Usage:" | grep -v "compile <source" | grep -v "compile-all" > "$@"
+	@$(LIB_DIR)/jq-compiler/driver.bash compile "$<" 2>/dev/null > "$@"
 	@cp "$@" "$(TRASH_DIR)/$*"
 	@echo "  → $@"
 
-# Pattern rule for compiling traits
-$(COMPILED_TRAITS_DIR)/%: $(TRASH_DIR)/traits/%.trash $(LIB_DIR)/trash-compiler.bash
+# Pattern rule for compiling traits (using jq-based compiler)
+$(COMPILED_TRAITS_DIR)/%: $(TRASH_DIR)/traits/%.trash $(LIB_DIR)/jq-compiler/driver.bash
 	@echo "Compiling trait $<..."
-	@source $(LIB_DIR)/trash-compiler.bash && compile_file "$<" 2>/dev/null | grep -v "^Trashtalk Compiler" | grep -v "^Usage:" | grep -v "compile <source" | grep -v "compile-all" > "$@"
+	@$(LIB_DIR)/jq-compiler/driver.bash compile "$<" 2>/dev/null > "$@"
 	@cp "$@" "$(TRAITS_DIR)/$*"
 	@echo "  → $@"
 
@@ -82,6 +82,30 @@ test-verbose:
 			bash -x "$$test"; \
 		fi; \
 	done
+
+# Run DSL tests (Trashtalk test classes)
+test-dsl: compile
+	@echo "Running DSL tests..."
+	@failed=0; passed=0; \
+	source $(LIB_DIR)/trash.bash 2>/dev/null; \
+	for testclass in $(TRASH_DIR)/Test*.trash; do \
+		if [[ -f "$$testclass" ]]; then \
+			classname=$$(basename "$$testclass" .trash); \
+			if [[ "$$classname" != "TestCase" ]]; then \
+				echo ""; \
+				echo "=== $$classname ==="; \
+				if @ "$$classname" runAll 2>&1 | grep -q "failed"; then \
+					((failed++)); \
+				else \
+					((passed++)); \
+				fi; \
+			fi; \
+		fi; \
+	done; \
+	echo ""; \
+	echo "================================"; \
+	echo "Test classes: Passed: $$passed, Failed: $$failed"; \
+	[[ $$failed -eq 0 ]]
 
 # Watch for changes and recompile (requires fswatch on macOS or inotifywait on Linux)
 watch:
@@ -137,7 +161,7 @@ ifndef CLASS
 	@exit 1
 endif
 	@echo "Compiling $(CLASS)..."
-	@source $(LIB_DIR)/trash-compiler.bash && compile_file "$(TRASH_DIR)/$(CLASS).trash" 2>/dev/null | grep -v "^Trashtalk Compiler" | grep -v "^Usage:" | grep -v "compile <source" | grep -v "compile-all" > "$(COMPILED_DIR)/$(CLASS)"
+	@$(LIB_DIR)/jq-compiler/driver.bash compile "$(TRASH_DIR)/$(CLASS).trash" 2>/dev/null > "$(COMPILED_DIR)/$(CLASS)"
 	@cp "$(COMPILED_DIR)/$(CLASS)" "$(TRASH_DIR)/$(CLASS)"
 	@echo "✓ $(CLASS) compiled"
 
@@ -150,8 +174,9 @@ help:
 	@echo "  make              - Compile all .trash files (default)"
 	@echo "  make compile      - Compile all .trash files"
 	@echo "  make single CLASS=Name - Compile a single class"
-	@echo "  make test         - Run all tests"
-	@echo "  make test-verbose - Run tests with verbose output"
+	@echo "  make test         - Run all bash tests"
+	@echo "  make test-dsl     - Run DSL test classes (Test*.trash)"
+	@echo "  make test-verbose - Run bash tests with verbose output"
 	@echo "  make watch        - Watch for changes and auto-recompile"
 	@echo "  make clean        - Remove compiled files"
 	@echo "  make info         - Show project information"

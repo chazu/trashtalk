@@ -163,15 +163,17 @@ category: "arithmetic"
 
 ## Known Issues
 
-### Find Predicate Query Syntax
-The `@ Trash find` predicate queries (e.g., `"value > 5"`) are not working correctly in tests. The query parsing in `Object.find()` may need revision.
-
-### Instance _vars Array in Inheritance
-When checking inherited instance variables via the `_vars` JSON array, jq parsing fails in some test scenarios. The inheritance merging logic may need review.
+### Heredoc Compilation in rawMethod Sections
+When `rawMethod:` sections contain heredocs, the compiler indents the `EOF` terminators, breaking bash syntax. Heredoc terminators must start at column 1. This affects `Trash.trash` methods like `createObject:super:` and `quickCreate:template:`.
 
 ---
 
 ## Recently Completed
+
+### Known Issues Fixed (2024-12-16)
+**Find Predicate Query Syntax:** Now working correctly. `@ Counter find 'value > 5'` properly filters instances. The `Object.find()` method parses predicates using regex and generates correct SQL queries.
+
+**Instance _vars Array in Inheritance:** Fixed. All 6 inheritance tests pass. Child classes correctly inherit instance variables from parents, the `_vars` JSON array includes all inherited and own vars, and setters work for both inherited and own variables.
 
 ### Tuplespace Fixes (2024-12-15)
 **Problem 1:** `tuplespace.bash` overwrote global `$SCRIPT_DIR` variable, causing wrong path lookups.
@@ -243,4 +245,4 @@ Added `findAll`, `find`, `count`, `save`, `delete`, `asJson`, `exists` to Object
 
 ---
 
-*Last updated: 2024-12-15 (Context stack system completed)*
+*Last updated: 2024-12-16 (Known issues fixed, heredoc bug identified)*

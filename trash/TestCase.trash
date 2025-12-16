@@ -4,11 +4,11 @@
 TestCase subclass: Object
   instanceVars: passed:0 failed:0 currentTest:unknown
 
-  method: new [
-    | id |
-    id := $(_generate_instance_id TestCase)
-    _create_instance TestCase $id
-    ^ $id
+  rawClassMethod: new [
+    local id
+    id=$(_generate_instance_id "$_CLASS")
+    _create_instance "$_CLASS" "$id"
+    echo "$id"
   ]
 
   rawMethod: setUp [
@@ -89,5 +89,5 @@ TestCase subclass: Object
       echo "$passed passed, $failed failed (of $total assertions)"
     fi
 
-    echo "$failed"
+    return "$failed"
   ]
