@@ -163,16 +163,6 @@ category: "arithmetic"
 
 ## Known Issues
 
-### Tuplespace Vendor Path
-The `Tuplespace.trash` file references a wrong path:
-```
-/Users/chazu/.trashtalk/lib/vendor/tuplespace/vendor/tuplespace/tuplespace.bash
-```
-Should be:
-```
-/Users/chazu/.trashtalk/lib/vendor/tuplespace/tuplespace.bash
-```
-
 ### Find Predicate Query Syntax
 The `@ Trash find` predicate queries (e.g., `"value > 5"`) are not working correctly in tests. The query parsing in `Object.find()` may need revision.
 
@@ -182,6 +172,16 @@ When checking inherited instance variables via the `_vars` JSON array, jq parsin
 ---
 
 ## Recently Completed
+
+### Tuplespace Fixes (2024-12-15)
+**Problem 1:** `tuplespace.bash` overwrote global `$SCRIPT_DIR` variable, causing wrong path lookups.
+**Solution:** Renamed internal variables to `_TUPLESPACE_DIR`/`_TUPLESPACE_PARENT`.
+
+**Problem 2:** Trait methods not found - dispatcher didn't look in traits for methods like `debug`.
+**Solution:** Added trait method lookup in `send()` dispatcher after class/instance method lookup.
+
+**Problem 3:** Method name mismatches - keyword methods like `put: args:` compiled to `put_args`, but callers expected `put`.
+**Solution:** Added `rawMethod:` wrappers in `Tuplespace.trash` for simple varargs-style API (`put`, `get`, `take`, `count`, `putKV`, `getKV`, `putEvent`, `test`).
 
 ### Context Stack System & Global Variable Fix (2024-12-15)
 **Problem:** `$_RECEIVER`, `$_CLASS`, `$_INSTANCE`, `$_SELECTOR` were global/exported variables that got corrupted by nested message sends.

@@ -785,6 +785,32 @@ function send {
       return $exit_code
     fi
 
+    # Try trait methods
+    local traits_var="__${class_name}__traits"
+    if [[ -n "${!traits_var}" ]]; then
+      local trait_name
+      for trait_name in ${!traits_var}; do
+        # Source trait if not already sourced
+        if [[ -z "${_SOURCED_COMPILED_CLASSES[$trait_name]}" ]]; then
+          local trait_file="$TRASHDIR/traits/$trait_name"
+          if [[ -f "$trait_file" ]]; then
+            source "$trait_file"
+            _SOURCED_COMPILED_CLASSES[$trait_name]=1
+            msg_debug "Sourced trait $trait_name"
+          fi
+        fi
+        # Try trait method
+        local trait_func="__${trait_name}__${_SELECTOR}"
+        if declare -F "$trait_func" >/dev/null 2>&1; then
+          msg_debug "Calling trait method: $trait_func"
+          "$trait_func" "$@"
+          exit_code=$?
+          _send_cleanup $frame_ensure_start $frame_handler_start $exit_code
+          return $exit_code
+        fi
+      done
+    fi
+
     # Try generated accessor
     if declare -F "$_SELECTOR" >/dev/null 2>&1; then
       shopt -s extdebug
