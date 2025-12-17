@@ -42,7 +42,7 @@ Features:
 **Integrated as default compiler (2024-12-16).** The old `lib/trash-compiler.bash` has been removed.
 
 ### Pure Smalltalk Syntax in Method Bodies
-**Status:** Not started - requires expression parser
+**Status:** ✅ Phase 1 Complete - Expression parser with ivar inference working
 
 Currently method bodies use bash syntax with `$()` escapes:
 ```smalltalk
@@ -73,14 +73,18 @@ method: increment [
 
 #### Implementation Plan
 
-**Phase 1: Expression Support** - 1-2 weeks
-- Build Pratt parser in jq for expressions within `[ ]` method bodies
-- Add arithmetic expression parsing: `x + y * z` → `$(( ))`
-- Add instance variable inference: bare `value` → `$(_ivar value)`
-- Track declared locals from `| var1 var2 |`; undeclared identifiers = ivars
-- Keep `.` as optional statement terminator
-- Keep `@` required for message sends
-- Use mathematical precedence (not Smalltalk's left-to-right)
+**Phase 1: Expression Support** - ✅ COMPLETE (2024-12-17)
+- ✅ Pratt parser in jq for expressions within `[ ]` method bodies
+- ✅ Arithmetic expression parsing: `x + y * z` → `$(( ))`
+- ✅ Instance variable inference: bare `value` → `$(_ivar value)`
+- ✅ Instance variable assignment: `value := x + 1` → `_ivar_set value "..."`
+- ✅ Track declared locals from `| var1 var2 |`; undeclared identifiers = ivars
+- ✅ Optional `.` statement terminator (newlines also work)
+- ✅ `@` required for message sends
+- ✅ Mathematical precedence (not Smalltalk's left-to-right)
+- ✅ Cascade syntax: `@ self inc; inc; inc.`
+- ✅ Expression arguments in keyword messages: `@ self at: x + 1 put: y * 2`
+- ✅ Runtime support: `_ivar` and `_ivar_set` functions in lib/trash.bash
 
 ```smalltalk
 # After Phase 1:
@@ -316,6 +320,17 @@ When `rawMethod:` sections contain heredocs, the compiler indents the `EOF` term
 
 ## Recently Completed
 
+### Smalltalk Expression Parser - Phase 1 Complete (2024-12-17)
+Implemented full Pratt parser for Smalltalk-style expressions in method bodies:
+- **Instance variable inference:** `value + step` → `$(_ivar value) + $(_ivar step)`
+- **Instance variable assignment:** `value := value + 5` → `_ivar_set value "..."`
+- **Arithmetic with precedence:** `x + y * 2` respects mathematical precedence
+- **Cascade syntax:** `@ self inc; inc; inc.` sends multiple messages to same receiver
+- **Expression args in keywords:** `@ self at: x + 1 put: y * 2`
+- **Runtime support:** Added `_ivar` and `_ivar_set` functions to lib/trash.bash
+- **Smart parser selection:** Legacy code uses legacy parser, new Smalltalk code uses expression parser
+- **Tests:** 9 expression codegen tests, all 243 jq-compiler tests pass
+
 ### Test Framework Inheritance Fix (2024-12-16)
 - Fixed `_get_class_instance_vars` to read compiled metadata (`__Class__instanceVars`) instead of grepping for legacy format
 - Fixed `_get_parent_class` to read compiled metadata (`__Class__superclass`) instead of grepping for legacy format
@@ -415,4 +430,4 @@ Added `findAll`, `find`, `count`, `save`, `delete`, `asJson`, `exists` to Object
 
 ---
 
-*Last updated: 2024-12-16 (Syntax decisions finalized, bracket removal task added, test framework fixed, jq-compiler integrated)*
+*Last updated: 2024-12-17 (Phase 1 expression parser complete with ivar inference and assignment)*

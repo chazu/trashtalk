@@ -216,7 +216,13 @@ def expr_gen_stmts($locals; $ivars):
       .lines += ["  local \(($stmt.names // []) | join(" "))"] |
       .locals += ($stmt.names // [])
     elif $stmt.type == "assignment" then
-      .lines += ["  \($stmt.target)=\"\($stmt.value | expr_gen($current_locals; $ivars))\""]
+      if expr_is_local($stmt.target; $current_locals) then
+        .lines += ["  \($stmt.target)=\"\($stmt.value | expr_gen($current_locals; $ivars))\""]
+      elif expr_is_ivar($stmt.target; $ivars) then
+        .lines += ["  _ivar_set \($stmt.target) \"\($stmt.value | expr_gen($current_locals; $ivars))\""]
+      else
+        .lines += ["  \($stmt.target)=\"\($stmt.value | expr_gen($current_locals; $ivars))\""]
+      end
     elif $stmt.type == "return" then
       if $stmt.value == null then
         .lines += ["  return"]
@@ -359,6 +365,43 @@ if [[ "$RESULT" == "$EXPECTED" ]]; then
     pass "Return ivar"
 else
     fail "Return ivar" "$EXPECTED" "$RESULT"
+fi
+
+echo ""
+echo "Test 8: Instance variable assignment (value := value + 5)"
+INPUT='{"tokens": [
+  {"type":"IDENTIFIER","value":"value"},
+  {"type":"ASSIGN","value":":="},
+  {"type":"IDENTIFIER","value":"value"},
+  {"type":"PLUS","value":"+"},
+  {"type":"NUMBER","value":"5"}
+], "ivars": ["value"], "args": []}'
+EXPECTED='  _ivar_set value "$(( $(_ivar value) + 5 ))"'
+RESULT=$(echo "$INPUT" | jq -f /tmp/expr_codegen_test.jq -r 2>&1)
+if [[ "$RESULT" == "$EXPECTED" ]]; then
+    pass "Instance variable assignment"
+else
+    fail "Instance variable assignment" "$EXPECTED" "$RESULT"
+fi
+
+echo ""
+echo "Test 9: Local assignment when local declared (| x | x := 5)"
+INPUT='{"tokens": [
+  {"type":"PIPE","value":"|"},
+  {"type":"IDENTIFIER","value":"x"},
+  {"type":"PIPE","value":"|"},
+  {"type":"NEWLINE","value":"\n"},
+  {"type":"IDENTIFIER","value":"x"},
+  {"type":"ASSIGN","value":":="},
+  {"type":"NUMBER","value":"5"}
+], "ivars": ["value"], "args": []}'
+EXPECTED='  local x
+  x="5"'
+RESULT=$(echo "$INPUT" | jq -f /tmp/expr_codegen_test.jq -r 2>&1)
+if [[ "$RESULT" == "$EXPECTED" ]]; then
+    pass "Local assignment with local declaration"
+else
+    fail "Local assignment with local declaration" "$EXPECTED" "$RESULT"
 fi
 
 echo ""
