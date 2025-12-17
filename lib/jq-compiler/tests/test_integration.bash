@@ -262,3 +262,175 @@ if [[ -f "$TRASH_DIR/Store.trash" ]]; then
     "$DRIVER" compile "$TRASH_DIR/Store.trash" >/dev/null 2>&1
     run_test "Store compiles in reasonable time" "true" "true"
 fi
+
+# ------------------------------------------------------------------------------
+# Collection Literals Tests (Symbols, Arrays, Dictionaries)
+# ------------------------------------------------------------------------------
+
+echo -e "\n  Collection Literals:"
+
+# Test 1: Symbol compilation
+SYMBOL_CLASS='SymbolTest subclass: Object
+  method: getStatus [
+    ^ #active
+  ]
+  method: setStatus [
+    | s |
+    s := #pending.
+    ^ s
+  ]'
+
+printf '%s\n' "$SYMBOL_CLASS" > "$TMPFILE"
+COMPILED=$("$DRIVER" compile "$TMPFILE" 2>/dev/null)
+run_test "symbol: compiles" "true" \
+    "$(echo "$COMPILED" | grep -q '__SymbolTest__getStatus()' && echo true || echo false)"
+run_test "symbol: return generates echo" "true" \
+    "$(echo "$COMPILED" | grep -q 'echo "active"' && echo true || echo false)"
+run_test "symbol: assignment without extra quotes" "true" \
+    "$(echo "$COMPILED" | grep -q 's="pending"' && echo true || echo false)"
+run_test "symbol: valid bash syntax" "true" \
+    "$(bash -n <<<"$COMPILED" 2>/dev/null && echo true || echo false)"
+
+# Test 2: Array literal compilation
+ARRAY_CLASS='ArrayTest subclass: Object
+  method: getNumbers [
+    | arr |
+    arr := #(1 2 3).
+    ^ arr
+  ]
+  method: getStrings [
+    | arr |
+    arr := #(hello world test).
+    ^ arr
+  ]
+  method: getSingle [
+    | arr |
+    arr := #(only).
+    ^ arr
+  ]
+  method: getEmpty [
+    | arr |
+    arr := #().
+    ^ arr
+  ]'
+
+printf '%s\n' "$ARRAY_CLASS" > "$TMPFILE"
+COMPILED=$("$DRIVER" compile "$TMPFILE" 2>/dev/null)
+run_test "array: compiles" "true" \
+    "$(echo "$COMPILED" | grep -q '__ArrayTest__getNumbers()' && echo true || echo false)"
+run_test "array: numeric elements" "true" \
+    "$(echo "$COMPILED" | grep -q 'arr=("1" "2" "3")' && echo true || echo false)"
+run_test "array: string elements" "true" \
+    "$(echo "$COMPILED" | grep -q 'arr=("hello" "world" "test")' && echo true || echo false)"
+run_test "array: single element" "true" \
+    "$(echo "$COMPILED" | grep -q 'arr=("only")' && echo true || echo false)"
+run_test "array: empty array" "true" \
+    "$(echo "$COMPILED" | grep -q 'arr=()' && echo true || echo false)"
+run_test "array: valid bash syntax" "true" \
+    "$(bash -n <<<"$COMPILED" 2>/dev/null && echo true || echo false)"
+
+# Test 3: Dictionary literal compilation
+DICT_CLASS='DictTest subclass: Object
+  method: getConfig [
+    | d |
+    d := #{name: app version: 1}.
+    ^ d
+  ]
+  method: getSingle [
+    | d |
+    d := #{key: value}.
+    ^ d
+  ]'
+
+printf '%s\n' "$DICT_CLASS" > "$TMPFILE"
+COMPILED=$("$DRIVER" compile "$TMPFILE" 2>/dev/null)
+run_test "dict: compiles" "true" \
+    "$(echo "$COMPILED" | grep -q '__DictTest__getConfig()' && echo true || echo false)"
+run_test "dict: key-value pairs" "true" \
+    "$(echo "$COMPILED" | grep -q '\[name\]="app"' && echo true || echo false)"
+run_test "dict: multiple pairs" "true" \
+    "$(echo "$COMPILED" | grep -q '\[version\]="1"' && echo true || echo false)"
+run_test "dict: valid bash syntax" "true" \
+    "$(bash -n <<<"$COMPILED" 2>/dev/null && echo true || echo false)"
+
+# Test 4: Runtime execution tests
+echo -e "\n  Collection Literals Runtime:"
+
+# Test symbol runtime - symbol gets assigned and returned correctly
+SYMBOL_RUNTIME='SymbolRuntime subclass: Object
+  method: getSymbol [
+    | s |
+    s := #myStatus.
+    ^ s
+  ]'
+printf '%s\n' "$SYMBOL_RUNTIME" > "$TMPFILE"
+COMPILED=$("$DRIVER" compile "$TMPFILE" 2>/dev/null)
+if bash -n <<<"$COMPILED" 2>/dev/null; then
+    SYMBOL_OUTPUT=$(bash -c "
+        $COMPILED
+        __SymbolRuntime__getSymbol
+    " 2>/dev/null)
+    run_test "runtime: symbol return value" "myStatus" "$SYMBOL_OUTPUT"
+else
+    run_test "runtime: symbol code valid bash" "true" "false"
+fi
+
+# Test array runtime - array assignment produces valid bash array
+ARRAY_RUNTIME='ArrayRuntime subclass: Object
+  method: makeArray [
+    | arr |
+    arr := #(x y z).
+    ^ arr
+  ]'
+printf '%s\n' "$ARRAY_RUNTIME" > "$TMPFILE"
+COMPILED=$("$DRIVER" compile "$TMPFILE" 2>/dev/null)
+# Verify the compiled output contains proper array syntax
+run_test "runtime: array var assignment syntax" "true" \
+    "$(echo "$COMPILED" | grep -q 'arr=("x" "y" "z")' && echo true || echo false)"
+# Verify it's valid bash
+run_test "runtime: array code valid bash" "true" \
+    "$(bash -n <<<"$COMPILED" 2>/dev/null && echo true || echo false)"
+
+# Test dict runtime - dict assignment produces valid associative array syntax
+DICT_RUNTIME='DictRuntime subclass: Object
+  method: makeDict [
+    | d |
+    d := #{name: test count: 42}.
+    ^ d
+  ]'
+printf '%s\n' "$DICT_RUNTIME" > "$TMPFILE"
+COMPILED=$("$DRIVER" compile "$TMPFILE" 2>/dev/null)
+# Verify the compiled output contains proper dict syntax
+run_test "runtime: dict var assignment syntax" "true" \
+    "$(echo "$COMPILED" | grep -q '\[name\]="test"' && echo true || echo false)"
+run_test "runtime: dict code valid bash" "true" \
+    "$(bash -n <<<"$COMPILED" 2>/dev/null && echo true || echo false)"
+
+# Test 5: Mixed usage - collections with local variables (not ivars)
+# Note: Arrays assigned to ivars would need serialization which isn't implemented yet
+MIXED_CLASS='MixedTest subclass: Object
+  method: processItems [
+    | items result |
+    items := #(alpha beta gamma).
+    result := #done.
+    ^ result
+  ]
+
+  method: getConfig [
+    | cfg |
+    cfg := #{debug: true verbose: false}.
+    ^ cfg
+  ]'
+
+printf '%s\n' "$MIXED_CLASS" > "$TMPFILE"
+COMPILED=$("$DRIVER" compile "$TMPFILE" 2>/dev/null)
+run_test "mixed: methods compile" "true" \
+    "$(echo "$COMPILED" | grep -q '__MixedTest__processItems()' && echo true || echo false)"
+run_test "mixed: array in local var" "true" \
+    "$(echo "$COMPILED" | grep -q 'items=("alpha" "beta" "gamma")' && echo true || echo false)"
+run_test "mixed: symbol after array" "true" \
+    "$(echo "$COMPILED" | grep -q 'result="done"' && echo true || echo false)"
+run_test "mixed: dict in method" "true" \
+    "$(echo "$COMPILED" | grep -q '\[debug\]="true"' && echo true || echo false)"
+run_test "mixed: valid bash syntax" "true" \
+    "$(bash -n <<<"$COMPILED" 2>/dev/null && echo true || echo false)"

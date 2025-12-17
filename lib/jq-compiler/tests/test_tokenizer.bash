@@ -188,6 +188,26 @@ run_test "code after comment" "IDENTIFIER" \
     "$(printf '# comment\nfoo\n' | "$TOKENIZER" | jq -r '[.[] | select(.type != "NEWLINE" and .type != "COMMENT")][0].type')"
 
 # ------------------------------------------------------------------------------
+# Symbol and Collection Literal Tests
+# ------------------------------------------------------------------------------
+
+echo -e "\n  Symbols and Collection Literals:"
+run_test "symbol type" "SYMBOL" "$(get_token_type '#foo')"
+run_test "symbol value" "foo" "$(get_token_value '#foo')"
+run_test "symbol with underscore" "testValue" "$(get_token_value '#testValue')"
+run_test "symbol with numbers" "test123" "$(get_token_value '#test123')"
+run_test "array literal start" "HASH_LPAREN" "$(get_token_type '#(')"
+run_test "dict literal start" "HASH_LBRACE" "$(get_token_type '#{')"
+run_test "symbol in assignment" "IDENTIFIER,ASSIGN,SYMBOL" \
+    "$(get_all_types 'x := #active')"
+run_test "array literal tokens" "HASH_LPAREN,NUMBER,NUMBER,RPAREN" \
+    "$(get_all_types '#(1 2)')"
+run_test "dict literal tokens" "HASH_LBRACE,KEYWORD,NUMBER,RBRACE" \
+    "$(get_all_types '#{a: 1}')"
+run_test "brace type" "LBRACE" "$(get_token_type '{')"
+run_test "rbrace type" "RBRACE" "$(get_token_type '}')"
+
+# ------------------------------------------------------------------------------
 # Edge Cases
 # ------------------------------------------------------------------------------
 

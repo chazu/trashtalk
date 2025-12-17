@@ -104,18 +104,42 @@ tokenize() {
                 ;;
 
             # ------------------------------------------------------------------
-            # Comment - capture as COMMENT token
+            # Hash - could be comment, symbol, array literal, or dict literal
             # ------------------------------------------------------------------
             '#')
-                local comment_start=$i
-                local comment_start_col=$col
-                while ((i < len)) && [[ "${input:i:1}" != $'\n' ]]; do
-                    ((i++))
+                if [[ "$next" == "(" ]]; then
+                    # Array literal: #(...)
+                    add_token "HASH_LPAREN" "#(" "$line" "$col"
+                    ((i += 2))
+                    ((col += 2))
+                elif [[ "$next" == "{" ]]; then
+                    # Dictionary literal: #{...}
+                    add_token "HASH_LBRACE" "#{" "$line" "$col"
+                    ((i += 2))
+                    ((col += 2))
+                elif [[ "$next" =~ [a-zA-Z_] ]]; then
+                    # Symbol: #symbolName
+                    local sym_start=$((i + 1))
+                    ((i++))  # skip #
                     ((col++))
-                done
-                local comment="${input:$comment_start:$((i - comment_start))}"
-                add_token "COMMENT" "$comment" "$line" "$comment_start_col"
-                # Don't consume the newline - let it be tokenized
+                    while ((i < len)) && [[ "${input:i:1}" =~ [a-zA-Z0-9_] ]]; do
+                        ((i++))
+                        ((col++))
+                    done
+                    local symbol="${input:$sym_start:$((i - sym_start))}"
+                    add_token "SYMBOL" "$symbol" "$line" "$((col - ${#symbol} - 1))"
+                else
+                    # Comment - capture as COMMENT token
+                    local comment_start=$i
+                    local comment_start_col=$col
+                    while ((i < len)) && [[ "${input:i:1}" != $'\n' ]]; do
+                        ((i++))
+                        ((col++))
+                    done
+                    local comment="${input:$comment_start:$((i - comment_start))}"
+                    add_token "COMMENT" "$comment" "$line" "$comment_start_col"
+                    # Don't consume the newline - let it be tokenized
+                fi
                 ;;
 
             # ------------------------------------------------------------------
@@ -518,6 +542,21 @@ tokenize() {
 
             ')')
                 add_token "RPAREN" ")" "$line" "$col"
+                ((i++))
+                ((col++))
+                ;;
+
+            # ------------------------------------------------------------------
+            # Curly braces - for dictionary literals and bash blocks
+            # ------------------------------------------------------------------
+            '{')
+                add_token "LBRACE" "{" "$line" "$col"
+                ((i++))
+                ((col++))
+                ;;
+
+            '}')
+                add_token "RBRACE" "}" "$line" "$col"
                 ((i++))
                 ((col++))
                 ;;

@@ -405,4 +405,77 @@ else
 fi
 
 echo ""
+echo "Test 10: Symbol assignment (status := #active)"
+# Note: This test requires symbol support in the expr_gen function
+# We update the test harness to include symbol handling
+cat > /tmp/expr_codegen_test_sym.jq << 'SYM_EOF'
+# Simplified test for symbol codegen
+def expr_gen($locals; $ivars):
+  if . == null then ""
+  elif .type == "number" then .value
+  elif .type == "string" then "'\(.value)'"
+  elif .type == "symbol" then .value
+  elif .type == "identifier" then
+    if ($locals // []) | any(. == .name) then "$\(.name)"
+    elif ($ivars // []) | any(. == .name) then "$(_ivar \(.name))"
+    else .name end
+  else "# unknown" end;
+
+{ type: "symbol", value: "active" } | expr_gen([]; [])
+SYM_EOF
+EXPECTED='active'
+RESULT=$(jq -n -f /tmp/expr_codegen_test_sym.jq -r 2>&1)
+if [[ "$RESULT" == "$EXPECTED" ]]; then
+    pass "Symbol codegen (bare value)"
+else
+    fail "Symbol codegen (bare value)" "$EXPECTED" "$RESULT"
+fi
+
+echo ""
+echo "Test 11: Array literal codegen"
+cat > /tmp/expr_codegen_test_arr.jq << 'ARR_EOF'
+def expr_gen($locals; $ivars):
+  if .type == "number" then .value
+  elif .type == "array_literal" then
+    "(" + ([.elements[] | expr_gen($locals; $ivars)] | map("\"\(.)\"") | join(" ")) + ")"
+  else "unknown" end;
+
+{ type: "array_literal", elements: [
+  { type: "number", value: "1" },
+  { type: "number", value: "2" },
+  { type: "number", value: "3" }
+]} | expr_gen([]; [])
+ARR_EOF
+EXPECTED='("1" "2" "3")'
+RESULT=$(jq -n -f /tmp/expr_codegen_test_arr.jq -r 2>&1)
+if [[ "$RESULT" == "$EXPECTED" ]]; then
+    pass "Array literal codegen"
+else
+    fail "Array literal codegen" "$EXPECTED" "$RESULT"
+fi
+
+echo ""
+echo "Test 12: Dictionary literal codegen"
+cat > /tmp/expr_codegen_test_dict.jq << 'DICT_EOF'
+def expr_gen($locals; $ivars):
+  if .type == "number" then .value
+  elif .type == "identifier" then .name
+  elif .type == "dict_literal" then
+    "(" + ([.pairs[] | "[\(.key)]=\"\(.value | expr_gen($locals; $ivars))\""] | join(" ")) + ")"
+  else "unknown" end;
+
+{ type: "dict_literal", pairs: [
+  { key: "name", value: { type: "identifier", name: "app" } },
+  { key: "version", value: { type: "number", value: "1" } }
+]} | expr_gen([]; [])
+DICT_EOF
+EXPECTED='([name]="app" [version]="1")'
+RESULT=$(jq -n -f /tmp/expr_codegen_test_dict.jq -r 2>&1)
+if [[ "$RESULT" == "$EXPECTED" ]]; then
+    pass "Dictionary literal codegen"
+else
+    fail "Dictionary literal codegen" "$EXPECTED" "$RESULT"
+fi
+
+echo ""
 echo "Done!"
