@@ -1,0 +1,33 @@
+# Test cascade compilation
+CascadeTest subclass: Object
+  instanceVars: value:0
+
+  # Unary cascade - should generate 3 separate @ calls
+  method: testUnaryCascade [
+    @ self inc; inc; inc.
+    ^ value
+  ]
+
+  # Keyword cascade - should generate 3 separate @ calls with args
+  method: testKeywordCascade [
+    @ self add: 1; add: 2; add: 3.
+    ^ value
+  ]
+
+  # Mixed cascade
+  method: testMixedCascade [
+    @ self reset; add: 5; inc.
+    ^ value
+  ]
+
+  method: inc [
+    value := value + 1.
+  ]
+
+  method: add: n [
+    value := value + n.
+  ]
+
+  method: reset [
+    value := 0.
+  ]

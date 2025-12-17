@@ -177,8 +177,9 @@ INPUT_SELF='Counter subclass: Object
     ^ self
   ]'
 
+# Note: expression parser may add quotes around $_RECEIVER
 run_test "self becomes _RECEIVER" "true" \
-    "$(compile_contains "$INPUT_SELF" 'echo $_RECEIVER')"
+    "$(compile_contains "$INPUT_SELF" '$_RECEIVER')"
 
 INPUT_SELF_MSG='Counter subclass: Object
   method: test [

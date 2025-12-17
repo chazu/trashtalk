@@ -150,12 +150,17 @@ Implemented enhanced Smalltalk-style expression parsing with instance variable i
    - Method arguments tracked as locals
    - Example: `result := value + step` → `result="$(( $(_ivar value) + $(_ivar step) ))"`
 
-3. **Expression Arguments in Keyword Messages**
+3. **Instance Variable Assignment** - `expr_gen_stmts()`
+   - Direct ivar assignment: `value := value + 5` → `_ivar_set value "$(( $(_ivar value) + 5 ))"`
+   - Distinguishes between local and ivar targets
+   - Runtime support: `_ivar` and `_ivar_set` functions added to `lib/trash.bash`
+
+4. **Expression Arguments in Keyword Messages**
    - `@ self setValue: v + 1` → `@ "$_RECEIVER" setValue $(( $v + 1 ))`
    - `@ self at: x + 1 put: y * 2` → `@ "$_RECEIVER" at_put $(( $x + 1 )) $(( $y * 2 ))`
    - Full expression parsing for each keyword argument
 
-4. **Cascade Syntax**
+5. **Cascade Syntax**
    - `@ self inc; inc; inc.` generates three separate message sends:
      ```bash
      @ "$_RECEIVER" inc
@@ -165,15 +170,15 @@ Implemented enhanced Smalltalk-style expression parsing with instance variable i
    - `@ self add: 5; add: 10; add: 15.` works with keyword messages
    - AST node type: `cascade` with `receiver` and `messages` array
 
-5. **Smart Parser Selection** - `should_use_expr_parser()`
+6. **Smart Parser Selection** - `should_use_expr_parser()`
    - Detects Smalltalk-style patterns: `identifier := identifier`, arithmetic operators
    - Excludes bash constructs: `echo`, `jq`, `if/then/fi`, command pipes
    - Legacy code (Array.trash, Store.trash) continues to use legacy parser
    - New Smalltalk code uses expression parser with ivar inference
 
 #### Test Files
-- `tests/test_expr.trash` - Test class with arithmetic, precedence, assignment, message sends, cascades
-- `tests/test_expr_codegen.bash` - 7 unit tests for expression code generation
+- `tests/test_expr.trash` - Test class with arithmetic, precedence, assignment, message sends, cascades, ivar assignment
+- `tests/test_expr_codegen.bash` - 9 unit tests for expression code generation (including ivar assignment)
 
 #### Key Bug Fixes
 - **Null array handling**: `expr_is_local` and `expr_is_ivar` now handle null arrays with `($locals // [])`

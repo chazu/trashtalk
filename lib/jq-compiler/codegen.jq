@@ -445,7 +445,16 @@ def expr_gen_stmts($locals; $ivars):
       .lines += ["  local \(($stmt.names // []) | join(" "))"] |
       .locals += ($stmt.names // [])
     elif $stmt.type == "assignment" then
-      .lines += ["  \($stmt.target)=\"\($stmt.value | expr_gen($current_locals; $ivars))\""]
+      # If target is a local variable, use regular assignment
+      # If target is an ivar (not local), use _ivar_set
+      if expr_is_local($stmt.target; $current_locals) then
+        .lines += ["  \($stmt.target)=\"\($stmt.value | expr_gen($current_locals; $ivars))\""]
+      elif expr_is_ivar($stmt.target; $ivars) then
+        .lines += ["  _ivar_set \($stmt.target) \"\($stmt.value | expr_gen($current_locals; $ivars))\""]
+      else
+        # Unknown target - treat as regular assignment (could be global/env var)
+        .lines += ["  \($stmt.target)=\"\($stmt.value | expr_gen($current_locals; $ivars))\""]
+      end
     elif $stmt.type == "return" then
       if $stmt.value == null then
         .lines += ["  return"]
@@ -530,11 +539,20 @@ def should_use_expr_parser:
          $tokens[$i + 2].type == "NUMBER" and
          (($tokens[$i + 3].type // null) == "DOT"))
         or
-        # Pattern 3: Arithmetic operator between two IDENTIFIERs (not in subshell)
-        ($tokens[$i].type == "IDENTIFIER" and
+        # Pattern 3: Arithmetic operator between identifiers/numbers (not in subshell)
+        (($tokens[$i].type == "IDENTIFIER" or $tokens[$i].type == "NUMBER") and
          ($tokens[$i + 1].type == "PLUS" or $tokens[$i + 1].type == "STAR" or
           $tokens[$i + 1].type == "MINUS" or $tokens[$i + 1].type == "SLASH") and
          ($tokens[$i + 2].type == "IDENTIFIER" or $tokens[$i + 2].type == "NUMBER"))
+        or
+        # Pattern 4: Cascade syntax - SEMICOLON after identifier (@ self foo; bar)
+        ($tokens[$i].type == "IDENTIFIER" and
+         $tokens[$i + 1].type == "SEMICOLON")
+        or
+        # Pattern 5: Return bare identifier - CARET IDENTIFIER (DOT or NEWLINE or end)
+        ($tokens[$i].type == "CARET" and
+         $tokens[$i + 1].type == "IDENTIFIER" and
+         (($tokens[$i + 2].type // "END") == "DOT" or ($tokens[$i + 2].type // "END") == "NEWLINE" or ($tokens[$i + 2].type // "END") == "END"))
       )
     end
   end;

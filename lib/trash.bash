@@ -602,6 +602,45 @@ function _generate_instance_id {
   echo "${prefix}_$(uuidgen 2>/dev/null || echo "$$_$(date +%s)")"
 }
 
+# Get instance variable value directly (for Smalltalk-style syntax)
+# Usage: _ivar <var_name>
+# Returns the value of the instance variable for $_RECEIVER
+function _ivar {
+  local var="$1"
+  local data
+  data=$(db_get "$_RECEIVER" 2>/dev/null)
+  [[ -n "$data" ]] && echo "$data" | jq -r ".$var // empty"
+}
+
+# Set instance variable value directly (for Smalltalk-style syntax)
+# Usage: _ivar_set <var_name> <value>
+function _ivar_set {
+  local var="$1"
+  local value="$2"
+  local data
+  data=$(db_get "$_RECEIVER" 2>/dev/null)
+
+  if [[ -z "$data" ]]; then
+    echo "Error: Instance $_RECEIVER not found" >&2
+    return 1
+  fi
+
+  # Update the field (handle numeric, JSON, or string)
+  local updated
+  if [[ "$value" =~ ^-?[0-9]+$ ]]; then
+    # Numeric value
+    updated=$(echo "$data" | jq -c ".$var = $value")
+  elif echo "$value" | jq -e . >/dev/null 2>&1; then
+    # Valid JSON - use as raw JSON value
+    updated=$(echo "$data" | jq -c --argjson v "$value" ".$var = \$v")
+  else
+    # String value - use --arg for safe escaping
+    updated=$(echo "$data" | jq -c --arg v "$value" ".$var = \$v")
+  fi
+
+  db_put "$_RECEIVER" "$updated"
+}
+
 # Export instance functions so they're available in subshells (for command substitution)
 export -f instance_vars
 export -f _create_instance
@@ -613,6 +652,8 @@ export -f _get_class_instance_vars
 export -f _get_parent_class
 export -f _collect_inherited_vars
 export -f _generate_accessor
+export -f _ivar
+export -f _ivar_set
 
 # ============================================
 
