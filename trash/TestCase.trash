@@ -2,7 +2,7 @@
 # Subclass this and add methods starting with "test"
 # Run with: @ YourTestClass runAll
 TestCase subclass: Object
-  instanceVars: passed:0 failed:0 currentTest:unknown
+  instanceVars: passed:0 failed:0 currentTest:'unknown'
 
   rawClassMethod: new [
     local id

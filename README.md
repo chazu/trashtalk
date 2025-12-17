@@ -12,8 +12,8 @@ Trashtalk uses a **DSL compiler** that transforms Smalltalk-inspired source file
 ┌─────────────────┐     ┌──────────────┐     ┌─────────────────┐
 │  Source (.trash)│────▶│   Compiler   │────▶│ Compiled (bash) │
 │                 │     │              │     │                 │
-│ Counter subclass│     │ trash-       │     │ __Counter__     │
-│   method: inc   │     │ compiler.bash│     │   increment()   │
+│ Counter subclass│     │  jq-compiler │     │ __Counter__     │
+│   method: inc   │     │              │     │   increment()   │
 └─────────────────┘     └──────────────┘     └─────────────────┘
                                                       │
                                                       ▼
@@ -29,7 +29,7 @@ Trashtalk uses a **DSL compiler** that transforms Smalltalk-inspired source file
 
 ### Key Components
 
-- **DSL Compiler** (`lib/trash-compiler.bash`) - Transforms `.trash` source files into executable Bash
+- **DSL Compiler** (`lib/jq-compiler/`) - jq-based two-pass compiler that transforms `.trash` source files into executable Bash
 - **Dispatcher** (`lib/trash.bash`) - Routes `@` message sends to the appropriate namespaced function
 - **Source Files** (`trash/*.trash`) - Human-readable class definitions
 - **Compiled Files** (`trash/.compiled/`) - Generated Bash code (also copied to `trash/` for runtime)
@@ -179,16 +179,19 @@ Debuggable trait
 Compile a single class:
 
 ```bash
-source lib/trash-compiler.bash
-compile_file trash/MyClass.trash > trash/.compiled/MyClass
-cp trash/.compiled/MyClass trash/MyClass
+make single CLASS=MyClass
 ```
 
 Compile all classes:
 
 ```bash
-source lib/trash-compiler.bash
-compile_all trash/
+make compile
+```
+
+Or use the compiler directly:
+
+```bash
+lib/jq-compiler/driver.bash compile trash/MyClass.trash > trash/.compiled/MyClass
 ```
 
 ## Core Classes
@@ -258,8 +261,11 @@ External tools (install separately):
 ~/.trashtalk/
 ├── lib/
 │   ├── trash.bash           # Main runtime & dispatcher
-│   ├── trash-compiler.bash  # DSL compiler
-│   ├── trash-parser.bash    # Legacy bracket parser
+│   ├── jq-compiler/         # jq-based DSL compiler
+│   │   ├── driver.bash      # CLI entry point
+│   │   ├── tokenizer.bash   # Source → JSON tokens
+│   │   ├── parser.jq        # Tokens → AST
+│   │   └── codegen.jq       # AST → Bash code
 │   └── vendor/              # Vendored dependencies
 ├── trash/
 │   ├── *.trash              # DSL source files
