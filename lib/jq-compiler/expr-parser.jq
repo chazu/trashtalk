@@ -28,6 +28,12 @@
 def infix_bp:
   {
     ":=": [2, 1],       # assignment, right-assoc
+    ">":  [5, 6],       # comparison, left-assoc
+    "<":  [5, 6],       # comparison, left-assoc
+    ">=": [5, 6],       # comparison, left-assoc
+    "<=": [5, 6],       # comparison, left-assoc
+    "==": [5, 6],       # comparison, left-assoc
+    "!=": [5, 6],       # comparison, left-assoc
     "+":  [10, 11],     # addition, left-assoc
     "-":  [10, 11],     # subtraction, left-assoc
     "*":  [20, 21],     # multiplication, left-assoc
@@ -79,7 +85,13 @@ def is_operator_token:
   expr_peek_type == "STAR" or
   expr_peek_type == "PERCENT" or
   expr_peek_type == "SLASH" or
-  expr_peek_type == "ASSIGN";
+  expr_peek_type == "ASSIGN" or
+  expr_peek_type == "GT" or
+  expr_peek_type == "LT" or
+  expr_peek_type == "GE" or
+  expr_peek_type == "LE" or
+  expr_peek_type == "EQ" or
+  expr_peek_type == "NE";
 
 def get_operator_value:
   if expr_peek_type == "PLUS" then "+"
@@ -88,6 +100,12 @@ def get_operator_value:
   elif expr_peek_type == "PERCENT" then "%"
   elif expr_peek_type == "SLASH" then "/"
   elif expr_peek_type == "ASSIGN" then ":="
+  elif expr_peek_type == "GT" then ">"
+  elif expr_peek_type == "LT" then "<"
+  elif expr_peek_type == "GE" then ">="
+  elif expr_peek_type == "LE" then "<="
+  elif expr_peek_type == "EQ" then "=="
+  elif expr_peek_type == "NE" then "!="
   else null
   end;
 
@@ -98,6 +116,7 @@ def get_operator_value:
 # Forward declarations for mutual recursion
 def parse_expr(min_bp): parse_expr_impl(min_bp);
 def parse_message_send: parse_message_send_impl;
+def parse_block: parse_block_impl;
 
 def parse_prefix:
   expr_skip_newlines |
@@ -158,6 +177,10 @@ def parse_prefix:
       { state: ., result: $inner.result, error: "expected )" }
     end
 
+  # Block expression [ ... ]
+  elif $tok.type == "LBRACKET" then
+    parse_block
+
   # Unary minus
   elif $tok.type == "MINUS" then
     (. | expr_advance) |
@@ -209,10 +232,102 @@ def parse_prefix:
 # Infix Loop (for binary operators)
 # ==============================================================================
 
+# Control flow keyword names
+def is_control_flow_keyword:
+  . as $kw |
+  ($kw == "ifTrue:" or $kw == "ifFalse:" or $kw == "ifTrue:ifFalse:" or
+   $kw == "whileTrue:" or $kw == "whileFalse:" or $kw == "timesRepeat:");
+
 def parse_infix_loop(min_bp):
   expr_skip_newlines |
+  # Check if next token is a control flow keyword (higher priority check)
+  if expr_peek_type == "KEYWORD" and (expr_peek.value | is_control_flow_keyword) then
+    .result as $receiver |
+    expr_peek.value as $keyword |
+    (. | expr_advance) |  # consume keyword
+    expr_skip_newlines |
+    # Parse block argument
+    if expr_peek_type == "LBRACKET" then
+      parse_block as $block |
+      if $keyword == "ifTrue:" and ($block.state | expr_peek_type) == "KEYWORD" and
+         ($block.state | expr_peek.value) == "ifFalse:" then
+        # ifTrue:ifFalse: case
+        $block.state | expr_advance | expr_skip_newlines |
+        if expr_peek_type == "LBRACKET" then
+          parse_block as $else_block |
+          {
+            state: $else_block.state,
+            result: {
+              type: "control_flow",
+              kind: "if_else",
+              condition: $receiver,
+              true_block: $block.result,
+              false_block: $else_block.result
+            }
+          }
+        else
+          { state: ., result: null, error: "expected block after ifFalse:" }
+        end
+      elif $keyword == "ifTrue:" then
+        {
+          state: $block.state,
+          result: {
+            type: "control_flow",
+            kind: "if_true",
+            condition: $receiver,
+            block: $block.result
+          }
+        }
+      elif $keyword == "ifFalse:" then
+        {
+          state: $block.state,
+          result: {
+            type: "control_flow",
+            kind: "if_false",
+            condition: $receiver,
+            block: $block.result
+          }
+        }
+      elif $keyword == "whileTrue:" then
+        {
+          state: $block.state,
+          result: {
+            type: "control_flow",
+            kind: "while_true",
+            condition: $receiver,
+            block: $block.result
+          }
+        }
+      elif $keyword == "whileFalse:" then
+        {
+          state: $block.state,
+          result: {
+            type: "control_flow",
+            kind: "while_false",
+            condition: $receiver,
+            block: $block.result
+          }
+        }
+      elif $keyword == "timesRepeat:" then
+        {
+          state: $block.state,
+          result: {
+            type: "control_flow",
+            kind: "times_repeat",
+            count: $receiver,
+            block: $block.result
+          }
+        }
+      else
+        { state: $block.state, result: null, error: "unknown control flow: \($keyword)" }
+      end
+      # Continue looking for more operators
+      | parse_infix_loop(min_bp)
+    else
+      { state: ., result: null, error: "expected block after \($keyword)" }
+    end
   # Check if next token is an infix operator
-  if is_operator_token then
+  elif is_operator_token then
     get_operator_value as $op |
     (infix_bp[$op] // null) as $bp |
     if $bp == null or $bp[0] < min_bp then
@@ -368,6 +483,62 @@ def parse_message_send_impl:
         keywords: $sel.keywords
       }
     }
+  end;
+
+# ==============================================================================
+# Block Parser
+# ==============================================================================
+
+# Parse a block: [ statements ]
+# Blocks can optionally have parameters: [ :arg1 :arg2 | statements ]
+def parse_block_impl:
+  # Consume opening [
+  (. | expr_advance) |
+  expr_skip_newlines |
+  # Check for block parameters (colon-prefixed identifiers followed by |)
+  { state: ., params: [] } |
+  # Look for parameter pattern: :param1 :param2 ... |
+  until((.state | expr_peek_type) != "KEYWORD" or
+        ((.state | expr_peek.value) | startswith(":") | not);
+    (.state | expr_peek.value | ltrimstr(":") | rtrimstr(":")) as $param |
+    .params += [$param] |
+    .state |= expr_advance |
+    .state |= expr_skip_newlines
+  ) |
+  # If we found params, expect a pipe separator
+  if (.params | length) > 0 and (.state | expr_peek_type) == "PIPE" then
+    .state |= expr_advance
+  else .
+  end |
+  .state |= expr_skip_newlines |
+  # Parse body statements until closing ]
+  .state as $s | .params as $params |
+  ($s | { tokens: .tokens, pos: .pos } |
+    { state: ., statements: [] } |
+    until((.state | expr_at_end) or (.state | expr_peek_type) == "RBRACKET";
+      (.state | parse_statement) as $stmt |
+      if $stmt.result != null then
+        .statements += [$stmt.result] |
+        .state = $stmt.state
+      else
+        .state = $stmt.state
+      end |
+      .state |= skip_stmt_terminator
+    )
+  ) as $body |
+  $body.state |
+  # Consume closing ]
+  if expr_peek_type == "RBRACKET" then
+    {
+      state: (. | expr_advance),
+      result: {
+        type: "block",
+        params: $params,
+        body: $body.statements
+      }
+    }
+  else
+    { state: ., result: null, error: "expected ] to close block" }
   end;
 
 # ==============================================================================
