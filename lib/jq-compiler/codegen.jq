@@ -140,6 +140,8 @@ def expr_parse_atom:
     { state: (. | expr_advance), result: { type: "arithmetic", value: $tok.value } }
   elif $tok.type == "PATH" then
     { state: (. | expr_advance), result: { type: "path", value: $tok.value } }
+  elif $tok.type == "SYMBOL" then
+    { state: (. | expr_advance), result: { type: "symbol", value: $tok.value } }
   else
     { state: ., result: null }
   end;
@@ -278,6 +280,53 @@ def expr_parse_expr(min_bp):
     { state: (. | expr_advance), result: { type: "arith_cmd", value: $tok.value } }
   elif $tok.type == "PATH" then
     { state: (. | expr_advance), result: { type: "path", value: $tok.value } }
+  elif $tok.type == "SYMBOL" then
+    { state: (. | expr_advance), result: { type: "symbol", value: $tok.value } }
+  elif $tok.type == "HASH_LPAREN" then
+    # Array literal: #(1 2 3) -> bash array (1 2 3)
+    (. | expr_advance) |
+    { state: ., elements: [] } |
+    until((.state | expr_peek_type) == "RPAREN" or (.state | expr_at_end);
+      .state |= expr_skip_ws |
+      if (.state | expr_peek_type) == "RPAREN" then .
+      else
+        (.state | expr_parse_expr(0)) as $elem |
+        if $elem.result != null then
+          .elements += [$elem.result] | .state = $elem.state
+        else
+          .state |= expr_advance
+        end
+      end
+    ) |
+    # Consume closing paren
+    (if (.state | expr_peek_type) == "RPAREN" then .state |= expr_advance else . end) |
+    { state: .state, result: { type: "array_literal", elements: .elements } }
+  elif $tok.type == "HASH_LBRACE" then
+    # Dictionary literal: #{a: 1 b: 2} -> bash assoc array ([a]=1 [b]=2)
+    (. | expr_advance) |
+    { state: ., pairs: [] } |
+    until((.state | expr_peek_type) == "RBRACE" or (.state | expr_at_end);
+      .state |= expr_skip_ws |
+      if (.state | expr_peek_type) == "RBRACE" then .
+      elif (.state | expr_peek_type) == "KEYWORD" then
+        # Key is a keyword like "foo:"
+        ((.state | expr_peek.value) | rtrimstr(":")) as $key |
+        .state |= expr_advance |
+        .state |= expr_skip_ws |
+        # Parse value
+        (.state | expr_parse_expr(0)) as $val |
+        if $val.result != null then
+          .pairs += [{ key: $key, value: $val.result }] | .state = $val.state
+        else .
+        end
+      else
+        # Skip unknown tokens
+        .state |= expr_advance
+      end
+    ) |
+    # Consume closing brace
+    (if (.state | expr_peek_type) == "RBRACE" then .state |= expr_advance else . end) |
+    { state: .state, result: { type: "dict_literal", pairs: .pairs } }
   elif $tok.type == "LPAREN" then
     (. | expr_advance) | expr_parse_expr(0) as $inner |
     $inner.state |
@@ -541,6 +590,13 @@ def expr_gen($locals; $ivars):
   elif .type == "arithmetic" then .value
   elif .type == "arith_cmd" then .value
   elif .type == "path" then .value
+  elif .type == "symbol" then .value
+  elif .type == "array_literal" then
+    # Bash indexed array: (elem1 elem2 elem3)
+    "(" + ([.elements[] | expr_gen($locals; $ivars)] | map("\"\(.)\"") | join(" ")) + ")"
+  elif .type == "dict_literal" then
+    # Bash associative array: ([key1]=val1 [key2]=val2)
+    "(" + ([.pairs[] | "[\(.key)]=\"\(.value | expr_gen($locals; $ivars))\""] | join(" ")) + ")"
   elif .type == "unary" then
     if .op == "-" then
       "$(( -\(.operand | expr_gen_arith($locals; $ivars)) ))"
@@ -749,13 +805,28 @@ def expr_gen_stmts($locals; $ivars):
     elif $stmt.type == "assignment" then
       # If target is a local variable, use regular assignment
       # If target is an ivar (not local), use _ivar_set
+      # Collection literals (array/dict) shouldn't be quoted
+      ($stmt.value.type == "array_literal" or $stmt.value.type == "dict_literal") as $is_collection |
+      ($stmt.value | expr_gen($current_locals; $ivars)) as $val_code |
       if expr_is_local($stmt.target; $current_locals) then
-        .lines += ["  \($stmt.target)=\"\($stmt.value | expr_gen($current_locals; $ivars))\""]
+        if $is_collection then
+          .lines += ["  \($stmt.target)=\($val_code)"]
+        else
+          .lines += ["  \($stmt.target)=\"\($val_code)\""]
+        end
       elif expr_is_ivar($stmt.target; $ivars) then
-        .lines += ["  _ivar_set \($stmt.target) \"\($stmt.value | expr_gen($current_locals; $ivars))\""]
+        if $is_collection then
+          .lines += ["  _ivar_set \($stmt.target) \($val_code)"]
+        else
+          .lines += ["  _ivar_set \($stmt.target) \"\($val_code)\""]
+        end
       else
         # Unknown target - treat as regular assignment (could be global/env var)
-        .lines += ["  \($stmt.target)=\"\($stmt.value | expr_gen($current_locals; $ivars))\""]
+        if $is_collection then
+          .lines += ["  \($stmt.target)=\($val_code)"]
+        else
+          .lines += ["  \($stmt.target)=\"\($val_code)\""]
+        end
       end
     elif $stmt.type == "return" then
       if $stmt.value == null then
@@ -791,7 +862,12 @@ def should_use_expr_parser:
   . as $tokens |
   if ($tokens | length) < 3 then false
   else
-    # First check for exclusions: bash constructs that shouldn't use expr parser
+    # First, check for strong Smalltalk signals that should always use expr parser
+    # Collection literals are unambiguous Smalltalk syntax
+    (any($tokens[]; .type == "SYMBOL" or .type == "HASH_LPAREN" or .type == "HASH_LBRACE")) as $has_collection_literals |
+    if $has_collection_literals then true
+    else
+    # Check for exclusions: bash constructs that shouldn't use expr parser
     # Bash commands that appear as bare identifiers (not after @)
     def is_bash_command:
       . as $v | ["echo", "printf", "jq", "sed", "awk", "grep", "cat", "ls", "cd",
@@ -868,8 +944,14 @@ def should_use_expr_parser:
           $tokens[$i + 1].type == "GE" or $tokens[$i + 1].type == "LE" or
           $tokens[$i + 1].type == "EQ" or $tokens[$i + 1].type == "NE") and
          ($tokens[$i + 2].type == "IDENTIFIER" or $tokens[$i + 2].type == "NUMBER"))
+        or
+        # Pattern 8: Collection literals - SYMBOL, HASH_LPAREN (#array), HASH_LBRACE (#dict)
+        ($tokens[$i].type == "SYMBOL" or
+         $tokens[$i].type == "HASH_LPAREN" or
+         $tokens[$i].type == "HASH_LBRACE")
       )
     end
+    end  # close if $has_collection_literals
   end;
 
 # Parse and generate method body with expression parser
@@ -1054,6 +1136,11 @@ def transformMethodBody($className; $isRaw):
         elif $tok.type == "PERCENT" then "%"
         elif $tok.type == "BACKSLASH" then "\\"
         elif $tok.type == "LITERAL" then $tok.value
+        elif $tok.type == "SYMBOL" then "\"\($tok.value)\" "
+        elif $tok.type == "HASH_LPAREN" then "#( "
+        elif $tok.type == "HASH_LBRACE" then "#{ "
+        elif $tok.type == "LBRACE" then "{ "
+        elif $tok.type == "RBRACE" then "} "
         else $tok.value + " "
         end
       )

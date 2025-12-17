@@ -2,7 +2,7 @@
 
 ## Current Status
 
-**Test Results: 243/243 passing (100%)**
+**Test Results: 278/278 passing (100%)**
 
 All .trash files compile with valid bash syntax. The expected output for Process.trash was updated to match the new compiler's deterministic output.
 
@@ -80,15 +80,24 @@ This is pragmatic given Bash's complex, context-sensitive grammar.
     - Block passing to methods: `@ collection do: [:each | @ each print]`
     - Common iteration patterns: `do:`, `collect:`, `select:`, `reject:`
 
-12. **Phase 4: Control Flow** (Not started)
+12. **Phase 4: Control Flow** (Partially complete - see control_flow.md)
     - Boolean messages: `ifTrue:`, `ifFalse:`, `ifTrue:ifFalse:`
     - Loops: `whileTrue:`, `timesRepeat:`
     - Example: `(count > 0) ifTrue: [@ self decrement]`
 
-13. **Phase 5: Collection Literals** (Not started)
-    - Array literals: `#(1 2 3)`
-    - Dictionary literals: `#{key: value}`
-    - Symbol syntax: `#symbol`
+13. **Phase 5: Collection Literals** - COMPLETED
+    - Symbol syntax: `#symbol` → `"symbol"` (bare value in assignments/returns)
+    - Array literals: `#(1 2 3)` → `("1" "2" "3")` (bash indexed array)
+    - Dictionary literals: `#{key: value}` → `([key]="value")` (bash associative array)
+    - 24 new tests for collection literals (tokenizer, codegen, integration, runtime)
+    - Limitation: Arrays/dicts can only be assigned to local vars, not ivars (would need serialization)
+
+14. **Phase 5b: Collection Literals in Instance Variables** (Not started)
+    - Allow `data := #(1 2 3)` where `data` is an ivar
+    - Requires serialization to JSON for storage: `_ivar_set data '["1","2","3"]'`
+    - Dictionary ivars: `config := #{a: 1}` → `_ivar_set config '{"a":"1"}'`
+    - May need runtime helpers to deserialize back to bash arrays when accessed
+    - Consider: `_ivar_array data` and `_ivar_dict config` accessors
 
 ### Low Priority
 
