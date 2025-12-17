@@ -199,8 +199,7 @@ EOF
     # Check for trait source
     if [[ -f "$trait_source" ]]; then
       echo "Compiling trait $class_name..."
-      source "$SCRIPT_DIR/lib/trash-compiler.bash"
-      compile_file "$trait_source" > "$TRASHDIR/.compiled/traits/$class_name"
+      "$SCRIPT_DIR/lib/jq-compiler/driver.bash" compile "$trait_source" > "$TRASHDIR/.compiled/traits/$class_name"
       @ "$_RECEIVER" reloadClass "$class_name"
       return $?
     fi
@@ -208,8 +207,7 @@ EOF
     # Check for class source
     if [[ -f "$source_file" ]]; then
       echo "Compiling class $class_name..."
-      source "$SCRIPT_DIR/lib/trash-compiler.bash"
-      compile_file "$source_file" > "$TRASHDIR/.compiled/$class_name"
+      "$SCRIPT_DIR/lib/jq-compiler/driver.bash" compile "$source_file" > "$TRASHDIR/.compiled/$class_name"
       @ "$_RECEIVER" reloadClass "$class_name"
       return $?
     fi

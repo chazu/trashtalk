@@ -267,13 +267,21 @@ _CURRENT_CLASS_VARS=""
 # Key: var_name, Value: default value (or empty for null)
 declare -gA _CURRENT_CLASS_DEFAULTS
 
-# Parse a class file to extract its instance_vars declaration
+# Get instance vars for a class from compiled metadata or legacy file format
 # Usage: _get_class_instance_vars ClassName
 # Returns: space-separated list of var specs (e.g., "count:0 step:5 name")
 function _get_class_instance_vars {
   local class_name="$1"
-  local class_file="$TRASHDIR/$class_name"
 
+  # First check compiled metadata variable (preferred)
+  local vars_var="__${class_name}__instanceVars"
+  if [[ -n "${!vars_var+x}" ]]; then
+    echo "${!vars_var}"
+    return 0
+  fi
+
+  # Fallback: parse legacy file format
+  local class_file="$TRASHDIR/$class_name"
   if [[ ! -f "$class_file" ]]; then
     return 0
   fi
@@ -284,20 +292,24 @@ function _get_class_instance_vars {
   grep -E "^instance_vars " "$class_file" 2>/dev/null | sed 's/^instance_vars //' || true
 }
 
-# Get the parent class of a given class
+# Get the parent class of a given class from compiled metadata or legacy file format
 # Usage: _get_parent_class ClassName
 # Returns: parent class name or empty if none/Object
 function _get_parent_class {
   local class_name="$1"
-  local class_file="$TRASHDIR/$class_name"
+  local parent=""
 
-  if [[ ! -f "$class_file" ]]; then
-    return 0
+  # First check compiled metadata variable (preferred)
+  local super_var="__${class_name}__superclass"
+  if [[ -n "${!super_var+x}" ]]; then
+    parent="${!super_var}"
+  else
+    # Fallback: parse legacy file format
+    local class_file="$TRASHDIR/$class_name"
+    if [[ -f "$class_file" ]]; then
+      parent=$(grep -E "^is_a " "$class_file" 2>/dev/null | head -1 | sed 's/^is_a //' || true)
+    fi
   fi
-
-  # Extract is_a declaration
-  local parent
-  parent=$(grep -E "^is_a " "$class_file" 2>/dev/null | head -1 | sed 's/^is_a //' || true)
 
   # Don't return Object as a parent to traverse (it's the root)
   if [[ "$parent" != "Object" && -n "$parent" ]]; then

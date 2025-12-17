@@ -3,7 +3,7 @@
 ## High Priority
 
 ### Better Compiler Error Messages
-**Status:** Nearly complete in jq-compiler
+**Status:** ✅ Complete (now default in jq-compiler)
 
 Done:
 - ✅ Track line numbers during tokenization (all tokens have line/col)
@@ -21,12 +21,11 @@ Parse warnings in /tmp/test.trash:
              ^
 ```
 
-Remaining:
+Future enhancement:
 - Suggest fixes for common mistakes (e.g., "did you mean method:?")
-- Integrate jq-compiler as default compiler
 
 ### Two-Pass Compiler (AST)
-**Status:** ✅ Complete - implemented in `lib/jq-compiler/`
+**Status:** ✅ Complete & Integrated - `lib/jq-compiler/` is now the default compiler
 
 The jq-compiler implements a full two-pass architecture:
 1. **Pass 1:** Tokenizer (bash) → JSON token array with line/col info
@@ -40,9 +39,7 @@ Features:
 - Nested DSL transformation in subshells
 - Error recovery and warnings
 
-Remaining:
-- Integrate as default compiler (replace lib/trash-compiler.bash)
-- Performance testing on large files
+**Integrated as default compiler (2024-12-16).** The old `lib/trash-compiler.bash` has been removed.
 
 ### Pure Smalltalk Syntax in Method Bodies
 Currently method bodies use bash syntax with `$()` escapes:
@@ -65,17 +62,26 @@ method: increment [
 ## Medium Priority
 
 ### Simple Test Framework
-**Status:** Unblocked - global variable issue is now fixed
+**Status:** ✅ Working - `TestCase` base class with inheritance now functional
 
-Prototype exists in `TestCounter.trash`. Can now have proper `TestCase` base class:
+`TestCounter.trash` demonstrates the pattern:
 ```smalltalk
 TestCounter subclass: TestCase
-  method: testIncrement [
-    | c |
-    c := $(@ Counter new)
-    @ self assert: $(@ $c increment) equals: 1
+  rawMethod: testIncrement [
+    local c val
+    c=$(@ Counter new)
+    @ "$c" increment >/dev/null
+    val=$(@ "$c" getValue)
+    @ "$_RECEIVER" assert_equals "$val" 1
   ]
 ```
+
+Run with: `@ TestCounter runAll` → "All 5 assertions passed"
+
+Future enhancements:
+- DSL syntax for assertions (e.g., `@ self assert: $val equals: 1`)
+- Auto-discovery of test classes
+- Better failure reporting with diffs
 
 ### REPL Improvements
 - Command history
@@ -201,6 +207,20 @@ When `rawMethod:` sections contain heredocs, the compiler indents the `EOF` term
 
 ## Recently Completed
 
+### Test Framework Inheritance Fix (2024-12-16)
+- Fixed `_get_class_instance_vars` to read compiled metadata (`__Class__instanceVars`) instead of grepping for legacy format
+- Fixed `_get_parent_class` to read compiled metadata (`__Class__superclass`) instead of grepping for legacy format
+- Fixed `TestCase.trash` default value parsing (`currentTest:'unknown'`)
+- `@ TestCounter runAll` now passes all 5 assertions
+- Subclasses of `TestCase` now correctly inherit `passed`, `failed`, `currentTest` instance vars
+
+### jq-compiler Integrated as Default (2024-12-16)
+- Removed old `lib/trash-compiler.bash` (882 lines)
+- Updated `Trash.trash` `compileAndReload:` method to use jq-compiler
+- Updated Makefile to ensure traits directory is created before compilation
+- Updated documentation (CLAUDE.md, README.md)
+- All 8 main tests pass, all 243 jq-compiler tests pass
+
 ### jq-compiler Two-Pass AST Compiler (2024-12-16)
 Implemented a complete two-pass compiler in `lib/jq-compiler/`:
 - **Tokenizer** (bash): 35+ token types with line/col tracking
@@ -286,4 +306,4 @@ Added `findAll`, `find`, `count`, `save`, `delete`, `asJson`, `exists` to Object
 
 ---
 
-*Last updated: 2024-12-16 (Known issues fixed, heredoc bug identified)*
+*Last updated: 2024-12-16 (Test framework inheritance fixed, jq-compiler integrated as default)*

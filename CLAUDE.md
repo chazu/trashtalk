@@ -44,7 +44,7 @@ counter=$(@ Counter new)           # Create instance
 .trash source → Tokenizer → Parser → Code Generator → Compiled Bash
 ```
 
-- **Compiler**: `lib/trash-compiler.bash` - tokenizes, parses AST, generates code
+- **Compiler**: `lib/jq-compiler/` - jq-based two-pass compiler (tokenizer → parser → codegen)
 - **Runtime/Dispatcher**: `lib/trash.bash` - routes `@` message sends to functions
 - **Source files**: `trash/*.trash` and `trash/traits/*.trash`
 - **Compiled output**: `trash/.compiled/` (also copied to `trash/` for runtime)
@@ -97,7 +97,7 @@ Instances stored in SQLite (`instances.db`) as JSON. Instance IDs are lowercase 
 ## Key Files
 
 - `lib/trash.bash` - Main dispatcher (`send()` function handles method lookup)
-- `lib/trash-compiler.bash` - DSL compiler (tokenizer lines 41-255, parser lines 329-576)
+- `lib/jq-compiler/` - jq-based compiler (tokenizer.bash, parser.jq, codegen.jq, driver.bash)
 - `lib/vendor/sqlite-json.bash` - Database layer
 - `lib/vendor/tuplespace/` - Process coordination
 
@@ -134,4 +134,3 @@ Requires: `jo`, `jq`, `sqlite3`, `uuidgen`
 - **Find predicate queries**: `@ Trash find "value > 5"` parsing needs revision
 - **Inherited _vars array**: jq parsing fails in some inheritance test scenarios
 - Test framework (`TestCase.trash`) is partially implemented
-- Two-pass AST-based compiler is in progress (`lib/jq-compiler/`)

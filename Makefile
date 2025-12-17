@@ -24,7 +24,7 @@ COMPILED_TRAITS := $(patsubst $(TRASH_DIR)/traits/%.trash,$(COMPILED_TRAITS_DIR)
 all: compile
 
 # Compile all .trash files
-compile: $(COMPILED_DIR) $(COMPILED) $(COMPILED_TRAITS)
+compile: $(COMPILED_DIR) $(COMPILED_TRAITS_DIR) $(COMPILED) $(COMPILED_TRAITS)
 	@echo "✓ All classes compiled"
 
 # Compile traits
