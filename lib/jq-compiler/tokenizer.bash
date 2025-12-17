@@ -338,46 +338,63 @@ tokenize() {
                 ((i++))
                 ((col++))
 
-                # Consume digits and decimal point
-                while ((i < len)) && [[ "${input:i:1}" =~ [0-9.] ]]; do
+                # Consume digits
+                while ((i < len)) && [[ "${input:i:1}" =~ [0-9] ]]; do
                     num+="${input:i:1}"
                     ((i++))
                     ((col++))
                 done
 
+                # Check for decimal point followed by digit (true floating point)
+                if ((i < len)) && [[ "${input:i:1}" == "." ]] && [[ "${input:$((i+1)):1}" =~ [0-9] ]]; then
+                    num+="${input:i:1}"  # consume the dot
+                    ((i++))
+                    ((col++))
+                    # Consume remaining digits
+                    while ((i < len)) && [[ "${input:i:1}" =~ [0-9] ]]; do
+                        num+="${input:i:1}"
+                        ((i++))
+                        ((col++))
+                    done
+                fi
+
                 add_token "NUMBER" "$num" "$line" "$num_start_col"
                 ;;
 
             '-')
-                # Check if this is a negative number
+                # Check if this is a negative number (minus followed by digit with no space)
                 if [[ "$next" =~ [0-9] ]]; then
                     local num_start_col=$col
                     local num="-"
                     ((i++))
                     ((col++))
 
-                    # Consume digits and decimal point
-                    while ((i < len)) && [[ "${input:i:1}" =~ [0-9.] ]]; do
+                    # Consume digits
+                    while ((i < len)) && [[ "${input:i:1}" =~ [0-9] ]]; do
                         num+="${input:i:1}"
                         ((i++))
                         ((col++))
                     done
 
-                    add_token "NUMBER" "$num" "$line" "$num_start_col"
-                else
-                    # Just a minus sign - treat as identifier start
-                    local word_start_col=$col
-                    local word="$char"
-                    ((i++))
-                    ((col++))
-
-                    while ((i < len)) && [[ "${input:i:1}" =~ [a-zA-Z0-9_] ]]; do
-                        word+="${input:i:1}"
+                    # Check for decimal point followed by digit (true floating point)
+                    if ((i < len)) && [[ "${input:i:1}" == "." ]] && [[ "${input:$((i+1)):1}" =~ [0-9] ]]; then
+                        num+="${input:i:1}"  # consume the dot
                         ((i++))
                         ((col++))
-                    done
+                        # Consume remaining digits
+                        while ((i < len)) && [[ "${input:i:1}" =~ [0-9] ]]; do
+                            num+="${input:i:1}"
+                            ((i++))
+                            ((col++))
+                        done
+                    fi
 
-                    add_token "IDENTIFIER" "$word" "$line" "$word_start_col"
+                    add_token "NUMBER" "$num" "$line" "$num_start_col"
+                else
+                    # Minus operator (subtraction or unary minus)
+                    add_token "MINUS" "-" "$line" "$col"
+                    ((i++))
+                    ((col++))
                 fi
                 ;;
 

@@ -1,0 +1,9 @@
+# Minimal test for expression parsing
+MinTest subclass: Object
+  instanceVars: value:10
+
+  method: test [
+    | result |
+    result := value.
+    ^ result
+  ]
