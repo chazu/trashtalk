@@ -73,6 +73,23 @@ This is pragmatic given Bash's complex, context-sensitive grammar.
    - Added 13 new tests for error recovery scenarios
    - Parser now gracefully recovers from: garbage tokens, bad method declarations, syntax errors
 
+### Future Phases - Smalltalk Syntax Roadmap
+
+11. **Phase 3: Block Closures** (Not started)
+    - Block syntax: `[:x | x + 1]`
+    - Block passing to methods: `@ collection do: [:each | @ each print]`
+    - Common iteration patterns: `do:`, `collect:`, `select:`, `reject:`
+
+12. **Phase 4: Control Flow** (Not started)
+    - Boolean messages: `ifTrue:`, `ifFalse:`, `ifTrue:ifFalse:`
+    - Loops: `whileTrue:`, `timesRepeat:`
+    - Example: `(count > 0) ifTrue: [@ self decrement]`
+
+13. **Phase 5: Collection Literals** (Not started)
+    - Array literals: `#(1 2 3)`
+    - Dictionary literals: `#{key: value}`
+    - Symbol syntax: `#symbol`
+
 ### Low Priority
 
 7. **Performance optimization** - Only if profiling shows problems
@@ -115,6 +132,56 @@ gsub("(?<a>[a-zA-Z0-9]) \\](?<b>[^\\]])"; "\(.a)]\(.b)")
 ---
 
 ## Completed Work
+
+### Phase 2: Smalltalk Syntax Enhancements - COMPLETED
+
+Implemented enhanced Smalltalk-style expression parsing with instance variable inference.
+
+#### Features Implemented
+
+1. **Expression Parser (Pratt Parser)** - `codegen.jq` lines 25-338
+   - Binding powers for operators: `:=`, `+`, `-`, `*`, `/`, `%`
+   - Parses Smalltalk-like expressions into AST
+   - Handles: numbers, strings, identifiers, self, subshells, arithmetic, returns
+
+2. **Instance Variable Inference** - `expr_gen()` and `expr_gen_arith()`
+   - Bare identifiers like `value` automatically become `$(_ivar value)`
+   - Local variables (from `| x y |` declarations) become `$x`, `$y`
+   - Method arguments tracked as locals
+   - Example: `result := value + step` → `result="$(( $(_ivar value) + $(_ivar step) ))"`
+
+3. **Expression Arguments in Keyword Messages**
+   - `@ self setValue: v + 1` → `@ "$_RECEIVER" setValue $(( $v + 1 ))`
+   - `@ self at: x + 1 put: y * 2` → `@ "$_RECEIVER" at_put $(( $x + 1 )) $(( $y * 2 ))`
+   - Full expression parsing for each keyword argument
+
+4. **Cascade Syntax**
+   - `@ self inc; inc; inc.` generates three separate message sends:
+     ```bash
+     @ "$_RECEIVER" inc
+     @ "$_RECEIVER" inc
+     @ "$_RECEIVER" inc
+     ```
+   - `@ self add: 5; add: 10; add: 15.` works with keyword messages
+   - AST node type: `cascade` with `receiver` and `messages` array
+
+5. **Smart Parser Selection** - `should_use_expr_parser()`
+   - Detects Smalltalk-style patterns: `identifier := identifier`, arithmetic operators
+   - Excludes bash constructs: `echo`, `jq`, `if/then/fi`, command pipes
+   - Legacy code (Array.trash, Store.trash) continues to use legacy parser
+   - New Smalltalk code uses expression parser with ivar inference
+
+#### Test Files
+- `tests/test_expr.trash` - Test class with arithmetic, precedence, assignment, message sends, cascades
+- `tests/test_expr_codegen.bash` - 7 unit tests for expression code generation
+
+#### Key Bug Fixes
+- **Null array handling**: `expr_is_local` and `expr_is_ivar` now handle null arrays with `($locals // [])`
+- **jq scoping in reduce**: Capture `.locals as $current_locals` before pipes to avoid context issues
+- **Tokenizer decimal handling**: `2.` no longer parsed as float when `.` is statement terminator
+- **Command pipe detection**: Fixed false positives on local var declarations `| a b |`
+
+---
 
 ### Tokenizer Changes (`tokenizer.bash`)
 

@@ -1,0 +1,58 @@
+# Test file for Smalltalk-style expression parsing
+ExprTest subclass: Object
+  instanceVars: value:10 step:2
+
+  # Test arithmetic with instance variable inference
+  method: testArithmetic [
+    | result |
+    result := value + step.
+    ^ result
+  ]
+
+  # Test multiple operations with precedence
+  method: testPrecedence [
+    | result |
+    result := value + step * 2.
+    ^ result
+  ]
+
+  # Test assignment chain
+  method: testAssignment [
+    | a b |
+    a := value.
+    b := a + step.
+    ^ b
+  ]
+
+  # Test message send with expression argument
+  method: testMessageSend [
+    | v |
+    v := value.
+    @ self setValue: v + 1.
+    ^ v
+  ]
+
+  # Test multi-keyword message with expression arguments
+  method: testMultiKeyword [
+    | x y |
+    x := 5.
+    y := 10.
+    @ self at: x + 1 put: y * 2.
+    ^ x
+  ]
+
+  # Test cascade syntax - multiple messages to same receiver
+  method: testCascade [
+    | x |
+    x := 0.
+    @ self inc; inc; inc.
+    ^ x
+  ]
+
+  # Test cascade with arguments
+  method: testCascadeWithArgs [
+    | total |
+    total := 0.
+    @ self add: 5; add: 10; add: 15.
+    ^ total
+  ]
