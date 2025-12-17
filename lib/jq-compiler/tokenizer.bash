@@ -223,6 +223,10 @@ tokenize() {
                     add_token "REDIRECT" ">&" "$line" "$col"
                     ((i += 2))
                     ((col += 2))
+                elif [[ "$next" == "=" ]]; then
+                    add_token "GE" ">=" "$line" "$col"
+                    ((i += 2))
+                    ((col += 2))
                 else
                     add_token "GT" ">" "$line" "$col"
                     ((i++))
@@ -236,6 +240,10 @@ tokenize() {
             '<')
                 if [[ "$next" == "<" ]]; then
                     add_token "HEREDOC" "<<" "$line" "$col"
+                    ((i += 2))
+                    ((col += 2))
+                elif [[ "$next" == "=" ]]; then
+                    add_token "LE" "<=" "$line" "$col"
                     ((i += 2))
                     ((col += 2))
                 else

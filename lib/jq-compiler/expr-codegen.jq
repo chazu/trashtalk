@@ -121,8 +121,78 @@ def gen_expr(ctx):
   elif .type == "keyword" then
     .value
 
+  elif .type == "block" then
+    # Block expression - generate as inline code
+    gen_block(ctx)
+
+  elif .type == "control_flow" then
+    # Control flow construct
+    gen_control_flow(ctx)
+
   else
     "# ERROR: unknown expr type \(.type)"
+  end;
+
+# Generate code for a block (inline)
+def gen_block(ctx):
+  # Add block params to context
+  (.params // []) as $params |
+  (ctx | add_locals($params)) as $block_ctx |
+  # Generate body statements
+  [.body[] | gen_statement($block_ctx).code] | join("; ");
+
+# Generate condition for control flow
+# For comparisons, generate arithmetic condition
+# For blocks, generate command substitution to evaluate
+def gen_condition(ctx):
+  if .type == "binary" then
+    # Comparison - use arithmetic evaluation
+    "\(.left | gen_arithmetic(ctx)) \(.op) \(.right | gen_arithmetic(ctx))"
+  elif .type == "block" then
+    # Block condition - evaluate as command and check result
+    # The block should echo/return something truthy
+    . | gen_block(ctx)
+  elif .type == "identifier" then
+    if ctx | is_local(.name) then
+      "$\(.name)"
+    elif ctx | is_ivar(.name) then
+      "$(_ivar \(.name))"
+    else
+      .name
+    end
+  elif .type == "variable" then
+    .value
+  elif .type == "boolean" then
+    if .value then "1" else "0" end
+  else
+    gen_expr(ctx)
+  end;
+
+# Generate code for control flow constructs
+def gen_control_flow(ctx):
+  if .kind == "if_true" then
+    "if (( \(.condition | gen_condition(ctx)) )); then \(.block | gen_block(ctx)); fi"
+  elif .kind == "if_false" then
+    "if (( !(\(.condition | gen_condition(ctx))) )); then \(.block | gen_block(ctx)); fi"
+  elif .kind == "if_else" then
+    "if (( \(.condition | gen_condition(ctx)) )); then \(.true_block | gen_block(ctx)); else \(.false_block | gen_block(ctx)); fi"
+  elif .kind == "times_repeat" then
+    "for ((_i=0; _i<\(.count | gen_arithmetic(ctx)); _i++)); do \(.block | gen_block(ctx)); done"
+  elif .kind == "while_true" then
+    # If condition is a block, evaluate it each iteration
+    if .condition.type == "block" then
+      "while \(.condition | gen_block(ctx)); do \(.block | gen_block(ctx)); done"
+    else
+      "while (( \(.condition | gen_condition(ctx)) )); do \(.block | gen_block(ctx)); done"
+    end
+  elif .kind == "while_false" then
+    if .condition.type == "block" then
+      "while ! \(.condition | gen_block(ctx)); do \(.block | gen_block(ctx)); done"
+    else
+      "while (( !(\(.condition | gen_condition(ctx))) )); do \(.block | gen_block(ctx)); done"
+    end
+  else
+    "# ERROR: unknown control flow kind \(.kind)"
   end;
 
 # Generate code for arithmetic context (no $(( )) wrapper)
@@ -219,6 +289,13 @@ def gen_statement(ctx):
     # Standalone binary expression (probably for side effects)
     {
       code: gen_expr(ctx),
+      ctx: ctx
+    }
+
+  elif .type == "control_flow" then
+    # Control flow statement
+    {
+      code: gen_control_flow(ctx),
       ctx: ctx
     }
 

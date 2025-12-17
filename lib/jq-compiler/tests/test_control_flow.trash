@@ -1,0 +1,160 @@
+# Test file for Smalltalk-style control flow
+# Tests: ifTrue:, ifFalse:, ifTrue:ifFalse:, timesRepeat:, whileTrue:
+ControlFlowTest subclass: Object
+  instanceVars: count:0 flag:false
+
+  # === SIMPLE IF TESTS ===
+
+  # Basic ifTrue: with simple condition
+  method: testIfTrue [
+    | result |
+    result := 0.
+    (5 > 3) ifTrue: [result := 1].
+    ^ result
+  ]
+
+  # Basic ifFalse: with false condition
+  method: testIfFalse [
+    | result |
+    result := 0.
+    (3 > 5) ifFalse: [result := 1].
+    ^ result
+  ]
+
+  # ifTrue:ifFalse: - true branch
+  method: testIfElseTrue [
+    | result |
+    (10 > 5) ifTrue: [result := 1] ifFalse: [result := 0].
+    ^ result
+  ]
+
+  # ifTrue:ifFalse: - false branch
+  method: testIfElseFalse [
+    | result |
+    (5 > 10) ifTrue: [result := 1] ifFalse: [result := 0].
+    ^ result
+  ]
+
+  # === COMPARISON OPERATORS ===
+
+  # Greater than
+  method: testGreaterThan [
+    | result |
+    result := 0.
+    (10 > 5) ifTrue: [result := 1].
+    ^ result
+  ]
+
+  # Less than
+  method: testLessThan [
+    | result |
+    result := 0.
+    (5 < 10) ifTrue: [result := 1].
+    ^ result
+  ]
+
+  # Greater than or equal
+  method: testGreaterEqual [
+    | a b |
+    a := 0.
+    b := 0.
+    (5 >= 5) ifTrue: [a := 1].
+    (6 >= 5) ifTrue: [b := 1].
+    ^ a + b
+  ]
+
+  # Less than or equal
+  method: testLessEqual [
+    | a b |
+    a := 0.
+    b := 0.
+    (5 <= 5) ifTrue: [a := 1].
+    (4 <= 5) ifTrue: [b := 1].
+    ^ a + b
+  ]
+
+  # Equality
+  method: testEqual [
+    | result |
+    result := 0.
+    (5 == 5) ifTrue: [result := 1].
+    ^ result
+  ]
+
+  # Not equal
+  method: testNotEqual [
+    | result |
+    result := 0.
+    (5 != 3) ifTrue: [result := 1].
+    ^ result
+  ]
+
+  # === TIMES REPEAT ===
+
+  # Basic timesRepeat:
+  method: testTimesRepeat [
+    | sum |
+    sum := 0.
+    5 timesRepeat: [sum := sum + 1].
+    ^ sum
+  ]
+
+  # timesRepeat: with ivar
+  method: testTimesRepeatWithIvar [
+    count := 0.
+    3 timesRepeat: [count := count + 2].
+    ^ count
+  ]
+
+  # === WHILE LOOP ===
+
+  # Basic whileTrue: with counter
+  method: testWhileTrue [
+    | n sum |
+    n := 5.
+    sum := 0.
+    (n > 0) whileTrue: [
+      sum := sum + n.
+      n := n - 1
+    ].
+    ^ sum
+  ]
+
+  # whileFalse: loop
+  method: testWhileFalse [
+    | n |
+    n := 0.
+    (n >= 5) whileFalse: [n := n + 1].
+    ^ n
+  ]
+
+  # === IVAR CONDITIONS ===
+
+  # Condition using ivar
+  method: testIvarCondition [
+    | result |
+    count := 10.
+    result := 0.
+    (count > 5) ifTrue: [result := 1].
+    ^ result
+  ]
+
+  # Nested control flow
+  method: testNested [
+    | x y |
+    x := 0.
+    y := 0.
+    (5 > 3) ifTrue: [
+      x := 1.
+      (10 > 5) ifTrue: [y := 2]
+    ].
+    ^ x + y
+  ]
+
+  # === HELPER METHODS ===
+
+  method: reset [
+    count := 0.
+    flag := false.
+  ]
+

@@ -32,6 +32,12 @@
 def expr_infix_bp:
   {
     ":=": [2, 1],       # assignment, right-assoc
+    ">":  [5, 6],       # comparison, left-assoc
+    "<":  [5, 6],       # comparison, left-assoc
+    ">=": [5, 6],       # comparison, left-assoc
+    "<=": [5, 6],       # comparison, left-assoc
+    "==": [5, 6],       # comparison, left-assoc
+    "!=": [5, 6],       # comparison, left-assoc
     "+":  [10, 11],     # addition, left-assoc
     "-":  [10, 11],     # subtraction, left-assoc
     "*":  [20, 21],     # multiplication, left-assoc
@@ -66,7 +72,10 @@ def expr_is_operator:
   $tok != null and (
     $tok.type == "PLUS" or $tok.type == "MINUS" or
     $tok.type == "STAR" or $tok.type == "PERCENT" or
-    $tok.type == "SLASH" or $tok.type == "ASSIGN"
+    $tok.type == "SLASH" or $tok.type == "ASSIGN" or
+    $tok.type == "GT" or $tok.type == "LT" or
+    $tok.type == "GE" or $tok.type == "LE" or
+    $tok.type == "EQ" or $tok.type == "NE"
   );
 
 def expr_op_value:
@@ -78,8 +87,22 @@ def expr_op_value:
   elif $tok.type == "PERCENT" then "%"
   elif $tok.type == "SLASH" then "/"
   elif $tok.type == "ASSIGN" then ":="
+  elif $tok.type == "GT" then ">"
+  elif $tok.type == "LT" then "<"
+  elif $tok.type == "GE" then ">="
+  elif $tok.type == "LE" then "<="
+  elif $tok.type == "EQ" then "=="
+  elif $tok.type == "NE" then "!="
   else null
   end;
+
+# Check if current token is a control flow keyword
+def expr_is_control_flow:
+  expr_peek as $tok |
+  $tok != null and $tok.type == "KEYWORD" and
+  ($tok.value == "ifTrue:" or $tok.value == "ifFalse:" or
+   $tok.value == "whileTrue:" or $tok.value == "whileFalse:" or
+   $tok.value == "timesRepeat:");
 
 # Check if current token terminates a keyword argument
 # (used to stop expression parsing at message boundaries)
@@ -123,6 +146,31 @@ def expr_parse_atom:
 
 # Mutually recursive expression parsers
 # Message send parsing is inlined in expr_parse_expr to avoid forward reference issues
+
+# Parse block without infix continuation - used for control flow arguments
+def expr_parse_block:
+  expr_skip_ws |
+  if expr_peek_type != "LBRACKET" then
+    { state: ., result: null }
+  else
+    (. | expr_advance) |
+    expr_skip_ws |
+    { state: ., tokens: [], depth: 1 } |
+    until(.depth == 0 or (.state | expr_at_end);
+      (.state | expr_peek) as $t |
+      if $t == null then .
+      elif $t.type == "LBRACKET" then
+        .tokens += [$t] | .depth += 1 | .state |= expr_advance
+      elif $t.type == "RBRACKET" then
+        .depth -= 1 |
+        if .depth > 0 then .tokens += [$t] else . end |
+        .state |= expr_advance
+      else
+        .tokens += [$t] | .state |= expr_advance
+      end
+    ) |
+    { state: .state, result: { type: "block", tokens: .tokens } }
+  end;
 
 def expr_parse_expr(min_bp):
   # Helper: Parse a single message (selector + args) without receiver
@@ -238,6 +286,25 @@ def expr_parse_expr(min_bp):
     else
       { state: ., result: $inner.result }
     end
+  elif $tok.type == "LBRACKET" then
+    # Block expression - collect tokens until RBRACKET, parse later
+    (. | expr_advance) |
+    expr_skip_ws |
+    { state: ., tokens: [], depth: 1 } |
+    until(.depth == 0 or (.state | expr_at_end);
+      (.state | expr_peek) as $t |
+      if $t == null then .
+      elif $t.type == "LBRACKET" then
+        .tokens += [$t] | .depth += 1 | .state |= expr_advance
+      elif $t.type == "RBRACKET" then
+        .depth -= 1 |
+        if .depth > 0 then .tokens += [$t] else . end |
+        .state |= expr_advance
+      else
+        .tokens += [$t] | .state |= expr_advance
+      end
+    ) |
+    { state: .state, result: { type: "block", tokens: .tokens } }
   elif $tok.type == "MINUS" then
     (. | expr_advance) | expr_parse_expr(50) as $operand |
     { state: $operand.state, result: { type: "unary", op: "-", operand: $operand.result } }
@@ -260,10 +327,93 @@ def expr_parse_expr(min_bp):
     $prefix |
     # Infix loop - operates on { state, result } object
     def infix_loop:
-      # Skip whitespace in state, then check for operators
+      # Skip whitespace in state, then check for operators or control flow
       .state |= expr_skip_ws |
+      (.state | expr_is_control_flow) as $is_cf |
       (.state | expr_is_operator) as $is_op |
-      if $is_op then
+      if $is_cf then
+        # Control flow keyword - parse block argument
+        .result as $receiver |
+        (.state | expr_peek.value) as $keyword |
+        .state |= expr_advance |
+        .state |= expr_skip_ws |
+        # Parse block argument (use expr_parse_block to avoid infix continuation)
+        if (.state | expr_peek_type) == "LBRACKET" then
+          (.state | expr_parse_block) as $block |
+          # Check for ifTrue:ifFalse: pattern
+          (if $keyword == "ifTrue:" then
+            ($block.state | expr_skip_ws) as $after_block |
+            if ($after_block | expr_peek_type) == "KEYWORD" and ($after_block | expr_peek.value) == "ifFalse:" then
+              (($after_block | expr_advance | expr_skip_ws) | expr_parse_block) as $else_block |
+              {
+                state: $else_block.state,
+                result: {
+                  type: "control_flow",
+                  kind: "if_else",
+                  condition: $receiver,
+                  true_block: $block.result,
+                  false_block: $else_block.result
+                }
+              }
+            else
+              {
+                state: $block.state,
+                result: {
+                  type: "control_flow",
+                  kind: "if_true",
+                  condition: $receiver,
+                  block: $block.result
+                }
+              }
+            end
+          elif $keyword == "ifFalse:" then
+            {
+              state: $block.state,
+              result: {
+                type: "control_flow",
+                kind: "if_false",
+                condition: $receiver,
+                block: $block.result
+              }
+            }
+          elif $keyword == "whileTrue:" then
+            {
+              state: $block.state,
+              result: {
+                type: "control_flow",
+                kind: "while_true",
+                condition: $receiver,
+                block: $block.result
+              }
+            }
+          elif $keyword == "whileFalse:" then
+            {
+              state: $block.state,
+              result: {
+                type: "control_flow",
+                kind: "while_false",
+                condition: $receiver,
+                block: $block.result
+              }
+            }
+          elif $keyword == "timesRepeat:" then
+            {
+              state: $block.state,
+              result: {
+                type: "control_flow",
+                kind: "times_repeat",
+                count: $receiver,
+                block: $block.result
+              }
+            }
+          else
+            { state: $block.state, result: $receiver }
+          end)
+          | infix_loop
+        else
+          .
+        end
+      elif $is_op then
         (.state | expr_op_value) as $op |
         (expr_infix_bp[$op] // null) as $bp |
         if $bp == null or $bp[0] < min_bp then .
@@ -425,8 +575,160 @@ def expr_gen($locals; $ivars):
     end
   elif .type == "passthrough" then
     .token.value
+  elif .type == "block" then
+    # Generate block body inline - parse tokens if present
+    if .tokens != null then
+      # Parse tokens into statements first
+      ({ tokens: .tokens, pos: 0 } | expr_parse_stmts) as $parsed |
+      [($parsed.body // [])[] | expr_gen($locals; $ivars)] | join("; ")
+    elif .body != null then
+      [(.body // [])[] | expr_gen($locals; $ivars)] | join("; ")
+    else
+      ""
+    end
+  elif .type == "control_flow" then
+    # Inline control flow generation to avoid forward reference
+    # Helper to generate condition
+    (if .condition.type == "binary" then
+      "\(.condition.left | expr_gen_arith($locals; $ivars)) \(.condition.op) \(.condition.right | expr_gen_arith($locals; $ivars))"
+    elif .condition.type == "identifier" then
+      if expr_is_local(.condition.name; $locals) then "$\(.condition.name)"
+      elif expr_is_ivar(.condition.name; $ivars) then "$(_ivar \(.condition.name))"
+      else .condition.name
+      end
+    elif .condition.type == "variable" then .condition.value
+    elif .condition.type == "boolean" then (if .condition.value then "1" else "0" end)
+    else .condition | expr_gen($locals; $ivars)
+    end) as $cond |
+    # Generate block body inline (can't use nested def due to jq scoping)
+    if .kind == "if_true" then
+      (if .block.tokens != null then
+        ({ tokens: .block.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
+        [($parsed.body // [])[] | expr_gen($locals; $ivars)] | join("; ")
+      elif .block.body != null then
+        [(.block.body // [])[] | expr_gen($locals; $ivars)] | join("; ")
+      else "" end) as $block_code |
+      "if (( \($cond) )); then \($block_code); fi"
+    elif .kind == "if_false" then
+      (if .block.tokens != null then
+        ({ tokens: .block.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
+        [($parsed.body // [])[] | expr_gen($locals; $ivars)] | join("; ")
+      elif .block.body != null then
+        [(.block.body // [])[] | expr_gen($locals; $ivars)] | join("; ")
+      else "" end) as $block_code |
+      "if (( !(\($cond)) )); then \($block_code); fi"
+    elif .kind == "if_else" then
+      (if .true_block.tokens != null then
+        ({ tokens: .true_block.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
+        [($parsed.body // [])[] | expr_gen($locals; $ivars)] | join("; ")
+      elif .true_block.body != null then
+        [(.true_block.body // [])[] | expr_gen($locals; $ivars)] | join("; ")
+      else "" end) as $true_code |
+      (if .false_block.tokens != null then
+        ({ tokens: .false_block.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
+        [($parsed.body // [])[] | expr_gen($locals; $ivars)] | join("; ")
+      elif .false_block.body != null then
+        [(.false_block.body // [])[] | expr_gen($locals; $ivars)] | join("; ")
+      else "" end) as $false_code |
+      "if (( \($cond) )); then \($true_code); else \($false_code); fi"
+    elif .kind == "times_repeat" then
+      (if .block.tokens != null then
+        ({ tokens: .block.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
+        [($parsed.body // [])[] | expr_gen($locals; $ivars)] | join("; ")
+      elif .block.body != null then
+        [(.block.body // [])[] | expr_gen($locals; $ivars)] | join("; ")
+      else "" end) as $block_code |
+      "for ((_i=0; _i<\(.count | expr_gen_arith($locals; $ivars)); _i++)); do \($block_code); done"
+    elif .kind == "while_true" then
+      (if .block.tokens != null then
+        ({ tokens: .block.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
+        [($parsed.body // [])[] | expr_gen($locals; $ivars)] | join("; ")
+      elif .block.body != null then
+        [(.block.body // [])[] | expr_gen($locals; $ivars)] | join("; ")
+      else "" end) as $block_code |
+      if .condition.type == "block" then
+        (if .condition.tokens != null then
+          ({ tokens: .condition.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
+          [($parsed.body // [])[] | expr_gen($locals; $ivars)] | join("; ")
+        else "" end) as $cond_code |
+        "while \($cond_code); do \($block_code); done"
+      else
+        "while (( \($cond) )); do \($block_code); done"
+      end
+    elif .kind == "while_false" then
+      (if .block.tokens != null then
+        ({ tokens: .block.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
+        [($parsed.body // [])[] | expr_gen($locals; $ivars)] | join("; ")
+      elif .block.body != null then
+        [(.block.body // [])[] | expr_gen($locals; $ivars)] | join("; ")
+      else "" end) as $block_code |
+      if .condition.type == "block" then
+        (if .condition.tokens != null then
+          ({ tokens: .condition.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
+          [($parsed.body // [])[] | expr_gen($locals; $ivars)] | join("; ")
+        else "" end) as $cond_code |
+        "while ! \($cond_code); do \($block_code); done"
+      else
+        "while (( !(\($cond)) )); do \($block_code); done"
+      end
+    else
+      "# ERROR: unknown control flow kind \(.kind)"
+    end
   else
     "# unknown: \(.type)"
+  end;
+
+# Generate condition for control flow
+def expr_gen_condition($locals; $ivars):
+  if .type == "binary" then
+    "\(.left | expr_gen_arith($locals; $ivars)) \(.op) \(.right | expr_gen_arith($locals; $ivars))"
+  elif .type == "block" then
+    [(.body // [])[] | expr_gen($locals; $ivars)] | join("; ")
+  elif .type == "identifier" then
+    if expr_is_local(.name; $locals) then "$\(.name)"
+    elif expr_is_ivar(.name; $ivars) then "$(_ivar \(.name))"
+    else .name
+    end
+  elif .type == "variable" then .value
+  elif .type == "boolean" then (if .value then "1" else "0" end)
+  else expr_gen($locals; $ivars)
+  end;
+
+# Helper to generate block body (handles both tokens and body array)
+def expr_gen_block_body($locals; $ivars):
+  if .tokens != null then
+    ({ tokens: .tokens, pos: 0 } | expr_parse_stmts) as $parsed |
+    [($parsed.body // [])[] | expr_gen($locals; $ivars)] | join("; ")
+  elif .body != null then
+    [(.body // [])[] | expr_gen($locals; $ivars)] | join("; ")
+  else
+    ""
+  end;
+
+# Generate code for control flow constructs
+def expr_gen_control_flow($locals; $ivars):
+  if .kind == "if_true" then
+    "if (( \(.condition | expr_gen_condition($locals; $ivars)) )); then \(.block | expr_gen_block_body($locals; $ivars)); fi"
+  elif .kind == "if_false" then
+    "if (( !(\(.condition | expr_gen_condition($locals; $ivars))) )); then \(.block | expr_gen_block_body($locals; $ivars)); fi"
+  elif .kind == "if_else" then
+    "if (( \(.condition | expr_gen_condition($locals; $ivars)) )); then \(.true_block | expr_gen_block_body($locals; $ivars)); else \(.false_block | expr_gen_block_body($locals; $ivars)); fi"
+  elif .kind == "times_repeat" then
+    "for ((_i=0; _i<\(.count | expr_gen_arith($locals; $ivars)); _i++)); do \(.block | expr_gen_block_body($locals; $ivars)); done"
+  elif .kind == "while_true" then
+    if .condition.type == "block" then
+      "while \(.condition | expr_gen_block_body($locals; $ivars)); do \(.block | expr_gen_block_body($locals; $ivars)); done"
+    else
+      "while (( \(.condition | expr_gen_condition($locals; $ivars)) )); do \(.block | expr_gen_block_body($locals; $ivars)); done"
+    end
+  elif .kind == "while_false" then
+    if .condition.type == "block" then
+      "while ! \(.condition | expr_gen_block_body($locals; $ivars)); do \(.block | expr_gen_block_body($locals; $ivars)); done"
+    else
+      "while (( !(\(.condition | expr_gen_condition($locals; $ivars))) )); do \(.block | expr_gen_block_body($locals; $ivars)); done"
+    end
+  else
+    "# ERROR: unknown control flow kind \(.kind)"
   end;
 
 # Collect local names from statements
@@ -553,6 +855,19 @@ def should_use_expr_parser:
         ($tokens[$i].type == "CARET" and
          $tokens[$i + 1].type == "IDENTIFIER" and
          (($tokens[$i + 2].type // "END") == "DOT" or ($tokens[$i + 2].type // "END") == "NEWLINE" or ($tokens[$i + 2].type // "END") == "END"))
+        or
+        # Pattern 6: Control flow keywords (ifTrue:, ifFalse:, whileTrue:, timesRepeat:)
+        ($tokens[$i].type == "KEYWORD" and
+         ($tokens[$i].value == "ifTrue:" or $tokens[$i].value == "ifFalse:" or
+          $tokens[$i].value == "whileTrue:" or $tokens[$i].value == "whileFalse:" or
+          $tokens[$i].value == "timesRepeat:"))
+        or
+        # Pattern 7: Comparison operators between identifiers/numbers
+        (($tokens[$i].type == "IDENTIFIER" or $tokens[$i].type == "NUMBER" or $tokens[$i].type == "RPAREN") and
+         ($tokens[$i + 1].type == "GT" or $tokens[$i + 1].type == "LT" or
+          $tokens[$i + 1].type == "GE" or $tokens[$i + 1].type == "LE" or
+          $tokens[$i + 1].type == "EQ" or $tokens[$i + 1].type == "NE") and
+         ($tokens[$i + 2].type == "IDENTIFIER" or $tokens[$i + 2].type == "NUMBER"))
       )
     end
   end;
