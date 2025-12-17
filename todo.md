@@ -42,6 +42,8 @@ Features:
 **Integrated as default compiler (2024-12-16).** The old `lib/trash-compiler.bash` has been removed.
 
 ### Pure Smalltalk Syntax in Method Bodies
+**Status:** Not started - requires expression parser
+
 Currently method bodies use bash syntax with `$()` escapes:
 ```smalltalk
 method: increment [
@@ -59,7 +61,114 @@ method: increment [
 ]
 ```
 
+#### Syntax Decisions (Finalized)
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| `@` for message sends | **Required** | Unambiguous parsing - distinguishes `@ self show` from `echo hello` |
+| Bracket syntax `@ [receiver msg]` | **Drop it** | Unused in .trash files, conflicts with `[ ]` method body delimiters |
+| Nested sends | **Use `$(...)`** | Already works: `$(@ other getValue)` |
+| Statement terminator | **Optional `.`** | Newlines also work |
+| Keyword arg complexity | **Atoms only** | Complex expressions need parens or temp vars |
+
+#### Implementation Plan
+
+**Phase 1: Expression Support** - 1-2 weeks
+- Build Pratt parser in jq for expressions within `[ ]` method bodies
+- Add arithmetic expression parsing: `x + y * z` → `$(( ))`
+- Add instance variable inference: bare `value` → `$(_ivar value)`
+- Track declared locals from `| var1 var2 |`; undeclared identifiers = ivars
+- Keep `.` as optional statement terminator
+- Keep `@` required for message sends
+- Use mathematical precedence (not Smalltalk's left-to-right)
+
+```smalltalk
+# After Phase 1:
+method: increment [
+  | newVal |
+  newVal := value + step.        # Works! Infers ivars
+  @ self setValue: newVal.       # @ required
+  ^ newVal
+]
+
+method: addTo: other [
+  | otherVal sum |
+  otherVal := $(@ other getValue).   # Nested send via subshell
+  sum := value + otherVal.
+  @ self setValue: sum.
+]
+```
+
+**Phase 2: Polish** - ongoing
+- Strict mode opt-in (`#!strict-smalltalk`)
+- Better error messages
+- Performance optimization
+
+#### Scope of Changes
+
+| Component | Effort | Notes |
+|-----------|--------|-------|
+| Tokenizer | Low | Add MINUS operator fix |
+| Parser (method body) | **High** | Currently opaque token blob → need expression AST |
+| Codegen (method body) | **High** | Currently regex transforms → need tree walking |
+| Runtime | None | `@` dispatcher unchanged |
+
+#### Bash Embedding Boundary
+- Keep `rawMethod:` for pure bash methods
+- Preserve `$(...)` subshells in normal methods
+- Arithmetic `$((...))` handled specially
+- Consider `#{...}#` for inline bash blocks
+
+#### Cascades (`;` operator)
+**Effort:** Low (1-2 days) - pure compile-time transform
+
+```smalltalk
+self setValue: x; setName: y; show
+```
+Expands to:
+```bash
+__cascade_recv="$_RECEIVER"
+@ "$__cascade_recv" setValue "$x"
+@ "$__cascade_recv" setName "$y"
+@ "$__cascade_recv" show
+```
+
+Requires: expression parsing (Phase 1), grammar rule for `;` in cascade context.
+
+#### Block Closures
+**Effort:** High (2-4 weeks basic, 4-8 weeks full) - significant runtime work
+
+```smalltalk
+list do: [ :each | self process: each ]
+```
+
+**Challenges:**
+- Bash has no closures; functions don't capture lexical scope
+- Capture by reference requires heap storage (database/files)
+- Non-local returns (`^` inside block returns from enclosing method) need exception-like control flow
+- Block arity tracking and dispatch
+
+**Simpler alternatives (recommended):**
+1. Method-name callbacks: `@ self processAll: 'handleItem'`
+2. `Block` class with eval: `@ Block code: 'echo $((it * 2))'`
+3. Explicit loops in `rawMethod:` bodies (current approach)
+
+**Recommendation:** Defer full closures. The workarounds cover most practical cases. If needed, start with capture-by-value, single-argument blocks, no non-local returns.
+
 ## Medium Priority
+
+### Remove Bracket Message Syntax
+**Status:** Not started - cleanup task
+
+Remove the unused Objective-C style bracket syntax `@ [receiver message]`:
+- Delete `lib/trash-parser.bash` (legacy bracket parser, ~6KB)
+- Update test files that use bracket syntax to use space-separated syntax
+  - `tests/test_trash.bash`
+  - `tests/test_trash_system.bash`
+  - `tests/trash_system_demo.bash`
+- Update any documentation referencing bracket syntax
+
+This syntax conflicts with `[ ]` method body delimiters and is not used in any .trash source files.
 
 ### Simple Test Framework
 **Status:** ✅ Working - `TestCase` base class with inheritance now functional
@@ -306,4 +415,4 @@ Added `findAll`, `find`, `count`, `save`, `delete`, `asJson`, `exists` to Object
 
 ---
 
-*Last updated: 2024-12-16 (Test framework inheritance fixed, jq-compiler integrated as default)*
+*Last updated: 2024-12-16 (Syntax decisions finalized, bracket removal task added, test framework fixed, jq-compiler integrated)*
