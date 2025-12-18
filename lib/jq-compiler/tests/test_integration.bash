@@ -434,3 +434,75 @@ run_test "mixed: dict in method" "true" \
     "$(echo "$COMPILED" | grep -q '\[debug\]="true"' && echo true || echo false)"
 run_test "mixed: valid bash syntax" "true" \
     "$(bash -n <<<"$COMPILED" 2>/dev/null && echo true || echo false)"
+
+# ------------------------------------------------------------------------------
+# Collection Literals as Instance Variables (Phase 5b)
+# ------------------------------------------------------------------------------
+
+echo -e "\n  Collection Literals as Instance Variables:"
+
+# Test: Array ivar generates JSON serialization
+ARRAY_IVAR_CLASS='ArrayIvarTest subclass: Object
+  instanceVars: items
+
+  method: setItems [
+    items := #(one two three).
+  ]
+
+  method: getFirst [
+    ^ $(_ivar_array_at items 0)
+  ]'
+
+printf '%s\n' "$ARRAY_IVAR_CLASS" > "$TMPFILE"
+COMPILED=$("$DRIVER" compile "$TMPFILE" 2>/dev/null)
+run_test "ivar array: compiles" "true" \
+    "$(echo "$COMPILED" | grep -q '__ArrayIvarTest__setItems()' && echo true || echo false)"
+run_test "ivar array: generates JSON" "true" \
+    "$(echo "$COMPILED" | grep -q '_ivar_set items.*\[' && echo true || echo false)"
+run_test "ivar array: JSON has quotes" "true" \
+    "$(echo "$COMPILED" | grep -q '\["one","two","three"\]' && echo true || echo false)"
+run_test "ivar array: valid bash syntax" "true" \
+    "$(bash -n <<<"$COMPILED" 2>/dev/null && echo true || echo false)"
+
+# Test: Dict ivar generates JSON serialization
+DICT_IVAR_CLASS='DictIvarTest subclass: Object
+  instanceVars: config
+
+  method: setConfig [
+    config := #{name: myapp version: 1}.
+  ]
+
+  method: getName [
+    ^ $(_ivar_dict_at config name)
+  ]'
+
+printf '%s\n' "$DICT_IVAR_CLASS" > "$TMPFILE"
+COMPILED=$("$DRIVER" compile "$TMPFILE" 2>/dev/null)
+run_test "ivar dict: compiles" "true" \
+    "$(echo "$COMPILED" | grep -q '__DictIvarTest__setConfig()' && echo true || echo false)"
+run_test "ivar dict: generates JSON" "true" \
+    "$(echo "$COMPILED" | grep -q '_ivar_set config.*{' && echo true || echo false)"
+run_test "ivar dict: JSON has braces" "true" \
+    "$(echo "$COMPILED" | grep -q '{"name":"myapp","version":1}' && echo true || echo false)"
+run_test "ivar dict: valid bash syntax" "true" \
+    "$(bash -n <<<"$COMPILED" 2>/dev/null && echo true || echo false)"
+
+# Test: Mixed local and ivar collections
+MIXED_IVAR_CLASS='MixedIvarTest subclass: Object
+  instanceVars: data
+
+  method: process [
+    | localArr |
+    localArr := #(a b c).
+    data := #(x y z).
+    ^ localArr
+  ]'
+
+printf '%s\n' "$MIXED_IVAR_CLASS" > "$TMPFILE"
+COMPILED=$("$DRIVER" compile "$TMPFILE" 2>/dev/null)
+run_test "mixed ivar: local uses bash syntax" "true" \
+    "$(echo "$COMPILED" | grep -q 'localArr=("a" "b" "c")' && echo true || echo false)"
+run_test "mixed ivar: ivar uses JSON" "true" \
+    "$(echo "$COMPILED" | grep -q '_ivar_set data.*\["x","y","z"\]' && echo true || echo false)"
+run_test "mixed ivar: valid bash syntax" "true" \
+    "$(bash -n <<<"$COMPILED" 2>/dev/null && echo true || echo false)"

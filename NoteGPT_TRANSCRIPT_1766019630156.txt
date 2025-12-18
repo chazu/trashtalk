@@ -1,0 +1,18 @@
+00:00:00
+this video compares the key to traditional shell consoles in traditional shell consoles you can only type demands at the lowest prompt and zicke you can make a prompt anywhere just by typing a dollar sign in traditional shells you can filter command output by piping to grep zicke you can just type any string to incrementally filter down to it and you can delete arbitrary parts of the output just like you would in a text editor the traditional shell way of showing the contents of a directory is to do a CD
+
+00:00:27
+and an LS and Zuki you can just move your cursor down and expand the directory in place then you can filter down or expand other directories and even open files to edit them traditional shell consoles let you clear the screen and scroll around but old commands and their output are frozen and zuki old commands and their output are always editable so you can delete commands you don't care about anymore rearranged commands by copying and pasting run commands again add notes and save them to txt files and open them later to run
+
+00:00:59
+commands again or give the files to friends and team members so they can run the commands with traditional shells people copy and paste commands back and forth from their notes to run them in the Dicky you can run commands right from your notes with traditional shells you often run a few commands in a row copying and pasting or retyping parameters between them in the key you can use a command output like an interactive interface so you can do it a few keystrokes what used to take multiple commands you can use the
+
+00:01:26
+history command control R and the up arrow and traditional shells in zukie you can see the history for command in your specific directory see your favorite ways to run that command and seek common examples for the command Zuki does way more than just run shell commands see the main Kickstarter video for house icky can also navigate file and directory paths run commands underneath directories navigate files and run commands on remote servers search files respond to the mouse interact with the web browser send
+
+00:01:54
+tweets texts and emails try out HTML and CSS make bootstrap layouts get up and running with libraries like 3GS navigate and edit the Dom in the browser make notes with links in Google searches run sequel statements and update the record by editing the output navigate databases and tables make notes with headings and bullet points search and navigate the head of your notes put runnable code examples and notes create commands just by dragging txt Python Ruby and JavaScript files into the commands directory in
+
+00:02:22
+your home directory navigating commands you create in the web browser and even creating commands using the web browser you'll find the main video that shows all of this at the top of the zookie kickstarter page
+

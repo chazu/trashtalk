@@ -312,13 +312,27 @@ tokenize() {
                 ;;
 
             # ------------------------------------------------------------------
-            # Colon - could be := (assign) or part of keyword (handled below)
+            # Colon - could be := (assign), block param (:x), or keyword (handled below)
             # ------------------------------------------------------------------
             ':')
                 if [[ "$next" == "=" ]]; then
                     add_token "ASSIGN" ":=" "$line" "$col"
                     ((i += 2))
                     ((col += 2))
+                elif [[ "$next" =~ ^[a-zA-Z_] ]]; then
+                    # Block parameter like :x or :each
+                    local param_start=$((i + 1))
+                    local param_col=$col
+                    ((i++))  # skip the colon
+                    ((col++))
+                    # Consume the identifier
+                    local param_name=""
+                    while ((i < len)) && [[ "${input:i:1}" =~ ^[a-zA-Z0-9_]$ ]]; do
+                        param_name+="${input:i:1}"
+                        ((i++))
+                        ((col++))
+                    done
+                    add_token "BLOCK_PARAM" "$param_name" "$line" "$param_col"
                 else
                     # Bare colon - this shouldn't happen in valid syntax
                     # but we'll emit it as an error token

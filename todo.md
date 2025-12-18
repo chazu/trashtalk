@@ -1,302 +1,105 @@
-# Trashtalk Roadmap
+# Trashtalk TODO
 
-## High Priority
+**Test Status: 289/289 passing (100%)**
 
-### Better Compiler Error Messages
-**Status:** ✅ Complete (now default in jq-compiler)
+See `completed.md` for finished work.
 
-Done:
-- ✅ Track line numbers during tokenization (all tokens have line/col)
-- ✅ Source locations in AST nodes (class, method, instanceVar, include, requires)
-- ✅ Parser warnings for unknown tokens with location info
-- ✅ Error recovery via synchronization points
-- ✅ bash -n syntax validation with --check flag
-- ✅ Show source context around errors with caret pointing to column
+---
 
-Example output:
-```
-Parse warnings in /tmp/test.trash:
-  2:2: Unexpected token in class body [unknown_token]
-       2 |   unknownKeyword here
-             ^
-```
+## Interactive Environment Features
 
-Future enhancement:
-- Suggest fixes for common mistakes (e.g., "did you mean method:?")
+These enable the "output becomes input" paradigm for the Trashtalk environment.
 
-### Two-Pass Compiler (AST)
-**Status:** ✅ Complete & Integrated - `lib/jq-compiler/` is now the default compiler
+### Canonical Object Printing
+- Define standard printed form: `<Counter:abc123>` or similar
+- Must be: recognizable (regex-matchable), executable, reconstructable
+- Add `printString` method to Object or as protocol
+- Printed form should include type + instance ID at minimum
+- Optional state preview: `<Counter:abc123 value=5>`
 
-The jq-compiler implements a full two-pass architecture:
-1. **Pass 1:** Tokenizer (bash) → JSON token array with line/col info
-2. **Pass 2:** Parser (jq) → AST → Codegen (jq) → Bash output
+### Last Result Variable (`$it`)
+- REPL stores last result in `$it` (or `$_`)
+- Enables fluid exploration: `@ Counter new` → `@ $it increment` → `@ $it increment`
+- Runtime support in workspace/REPL context
+- Compiler may need awareness for `$it` as special variable
 
-Features:
-- 243 tests passing (tokenizer, parser, codegen, integration)
-- Handles all .trash files including complex ones (Process.trash, Trash.trash)
-- Raw method support for heredocs, traps, signals
-- Keyword method transformation (multi-keyword → underscore-joined)
-- Nested DSL transformation in subshells
-- Error recovery and warnings
+### Inspection Protocol
+- Standard `inspect` method returns object state as dictionary
+- Example: `@ obj inspect` → `#{class: Counter id: abc123 value: 5 step: 1}`
+- Powers the Inspector panel in the environment
+- Consider: `instanceVariables` method to list ivar names
 
-**Integrated as default compiler (2024-12-16).** The old `lib/trash-compiler.bash` has been removed.
+---
 
-### Pure Smalltalk Syntax in Method Bodies
-**Status:** ✅ Phase 1 Complete - Expression parser with ivar inference working
+## Language Features - High Priority
 
-Currently method bodies use bash syntax with `$()` escapes:
-```smalltalk
-method: increment [
-  current := $(@ self getValue)      # bash escape
-  newVal := $((current + step))      # bash arithmetic
-]
-```
-Goal: Pure Smalltalk syntax that compiles to bash:
-```smalltalk
-method: increment [
-  current := self getValue.
-  newVal := current + step.
-  self setValue: newVal.
-  ^ newVal
-]
-```
-
-#### Syntax Decisions (Finalized)
-
-| Decision | Choice | Rationale |
-|----------|--------|-----------|
-| `@` for message sends | **Required** | Unambiguous parsing - distinguishes `@ self show` from `echo hello` |
-| Bracket syntax `@ [receiver msg]` | **Drop it** | Unused in .trash files, conflicts with `[ ]` method body delimiters |
-| Nested sends | **Use `$(...)`** | Already works: `$(@ other getValue)` |
-| Statement terminator | **Optional `.`** | Newlines also work |
-| Keyword arg complexity | **Atoms only** | Complex expressions need parens or temp vars |
-
-#### Implementation Plan
-
-**Phase 1: Expression Support** - ✅ COMPLETE (2024-12-17)
-- ✅ Pratt parser in jq for expressions within `[ ]` method bodies
-- ✅ Arithmetic expression parsing: `x + y * z` → `$(( ))`
-- ✅ Instance variable inference: bare `value` → `$(_ivar value)`
-- ✅ Instance variable assignment: `value := x + 1` → `_ivar_set value "..."`
-- ✅ Track declared locals from `| var1 var2 |`; undeclared identifiers = ivars
-- ✅ Optional `.` statement terminator (newlines also work)
-- ✅ `@` required for message sends
-- ✅ Mathematical precedence (not Smalltalk's left-to-right)
-- ✅ Cascade syntax: `@ self inc; inc; inc.`
-- ✅ Expression arguments in keyword messages: `@ self at: x + 1 put: y * 2`
-- ✅ Runtime support: `_ivar` and `_ivar_set` functions in lib/trash.bash
-
-```smalltalk
-# After Phase 1:
-method: increment [
-  | newVal |
-  newVal := value + step.        # Works! Infers ivars
-  @ self setValue: newVal.       # @ required
-  ^ newVal
-]
-
-method: addTo: other [
-  | otherVal sum |
-  otherVal := $(@ other getValue).   # Nested send via subshell
-  sum := value + otherVal.
-  @ self setValue: sum.
-]
-```
-
-**Phase 2: Polish** - ongoing
-- Strict mode opt-in (`#!strict-smalltalk`)
-- Better error messages
-- Performance optimization
-
-#### Scope of Changes
-
-| Component | Effort | Notes |
-|-----------|--------|-------|
-| Tokenizer | Low | Add MINUS operator fix |
-| Parser (method body) | **High** | Currently opaque token blob → need expression AST |
-| Codegen (method body) | **High** | Currently regex transforms → need tree walking |
-| Runtime | None | `@` dispatcher unchanged |
-
-#### Bash Embedding Boundary
-- Keep `rawMethod:` for pure bash methods
-- Preserve `$(...)` subshells in normal methods
-- Arithmetic `$((...))` handled specially
-- Consider `#{...}#` for inline bash blocks
-
-#### Cascades (`;` operator)
-**Effort:** Low (1-2 days) - pure compile-time transform
-
-```smalltalk
-self setValue: x; setName: y; show
-```
-Expands to:
-```bash
-__cascade_recv="$_RECEIVER"
-@ "$__cascade_recv" setValue "$x"
-@ "$__cascade_recv" setName "$y"
-@ "$__cascade_recv" show
-```
-
-Requires: expression parsing (Phase 1), grammar rule for `;` in cascade context.
-
-#### Block Closures
-**Effort:** High (2-4 weeks basic, 4-8 weeks full) - significant runtime work
-
-```smalltalk
-list do: [ :each | self process: each ]
-```
+### Block Closures (Phase 3)
+- Block syntax: `[:x | x + 1]` or `[:x :y | x + y]`
+- Block passing: `@ collection do: [:each | @ each print]`
+- Iteration patterns: `do:`, `collect:`, `select:`, `reject:`
+- Control flow: `ifTrue:`, `ifFalse:`, `ifTrue:ifFalse:`
+- Foundation for callbacks, deferred execution, higher-order programming
 
 **Challenges:**
 - Bash has no closures; functions don't capture lexical scope
 - Capture by reference requires heap storage (database/files)
-- Non-local returns (`^` inside block returns from enclosing method) need exception-like control flow
-- Block arity tracking and dispatch
+- Non-local returns (`^` inside block) need exception-like control flow
 
-**Simpler alternatives (recommended):**
+**Simpler alternatives:**
 1. Method-name callbacks: `@ self processAll: 'handleItem'`
 2. `Block` class with eval: `@ Block code: 'echo $((it * 2))'`
-3. Explicit loops in `rawMethod:` bodies (current approach)
+3. Explicit loops in `rawMethod:` bodies
 
-**Recommendation:** Defer full closures. The workarounds cover most practical cases. If needed, start with capture-by-value, single-argument blocks, no non-local returns.
+### Control Flow (Phase 4)
+- Boolean messages: `ifTrue:`, `ifFalse:`, `ifTrue:ifFalse:`
+- Loops: `whileTrue:`, `timesRepeat:`
+- Example: `(count > 0) ifTrue: [@ self decrement]`
 
-## Medium Priority
+### Object References as Instance Variables - COMPLETE
+Instance IDs are strings and can be stored directly in ivars. Runtime helpers added:
+- `_ivar_ref varname` - Get object reference from ivar (documents intent)
+- `_ivar_ref_valid varname` - Check if reference points to existing instance
+- `_ivar_ref_class varname` - Get class of referenced object
+- `_ivar_send varname method args...` - Send message to object in ivar
 
-### Remove Bracket Message Syntax
-**Status:** Not started - cleanup task
-
-Remove the unused Objective-C style bracket syntax `@ [receiver message]`:
-- Delete `lib/trash-parser.bash` (legacy bracket parser, ~6KB)
-- Update test files that use bracket syntax to use space-separated syntax
-  - `tests/test_trash.bash`
-  - `tests/test_trash_system.bash`
-  - `tests/trash_system_demo.bash`
-- Update any documentation referencing bracket syntax
-
-This syntax conflicts with `[ ]` method body delimiters and is not used in any .trash source files.
-
-### Simple Test Framework
-**Status:** ✅ Working - `TestCase` base class with inheritance now functional
-
-`TestCounter.trash` demonstrates the pattern:
+Example:
 ```smalltalk
-TestCounter subclass: TestCase
-  rawMethod: testIncrement [
-    local c val
-    c=$(@ Counter new)
-    @ "$c" increment >/dev/null
-    val=$(@ "$c" getValue)
-    @ "$_RECEIVER" assert_equals "$val" 1
-  ]
-```
-
-Run with: `@ TestCounter runAll` → "All 5 assertions passed"
-
-Future enhancements:
-- DSL syntax for assertions (e.g., `@ self assert: $val equals: 1`)
-- Auto-discovery of test classes
-- Better failure reporting with diffs
-
-### REPL Improvements
-- Command history
-- Tab completion for class/method names
-- `@ Trash browse Counter` - interactive object browser
-
-### Documentation Generation
-- Extract comments from `.trash` files
-- Generate markdown API docs automatically
-
-### Lazy Loading of Compiled Classes
-- Only source class files when first accessed
-- Reduces startup time for large systems
-
-## Lower Priority
-
-### Method Aliasing
-```smalltalk
-alias: size for: count
-alias: length for: count
-```
-
-### Caching Layer
-Every getter does a full `db_get`, every setter does `db_get` + `db_put`. Could cache instance data during a method call chain to reduce DB round-trips.
-
-### Batch Saves / Dirty Tracking
-- Only write to DB when explicitly saved
-- Track which fields changed
-- Support transactions (all-or-nothing writes)
-
-### Relationships Between Instances
-Instances referencing other instances:
-```bash
-@ $order getCustomer    # Returns another instance ID
-@ $order setCustomer $customer_id
-```
-Maybe with lazy loading and reference integrity.
-
-### Type Validation
-Add type hints to instance_vars:
-```bash
-instanceVars: count:integer items:array name:string
-```
-Validate on set, reject invalid types.
-
-### Schema Versioning
-Handle upgrades to instance structure over time. What happens when you add a new instance_var to a class with existing instances?
-
-### Before/After Hooks (Method Advice)
-**Status:** Basic infrastructure implemented via `_add_before_advice`, `_add_after_advice`, `_remove_advice`
-
-DSL syntax still needed:
-```smalltalk
-before: save do: [@ self validate]
-after: delete do: [@ self notifyObservers]
-```
-
-### Module/Package System
-```smalltalk
-package: MyApp
-  import: 'networking/HttpClient'
-  import: 'data/JsonParser'
-```
-
-## Ambitious / Long-term
-
-### Self-Hosting
-Could more of Trashtalk be written in Trashtalk? The Store object is a start, but what about the parser, method dispatch, etc.?
-
-### Blocks / Closures
-Support for passing blocks of code:
-```smalltalk
-@ $array select: [ :each | each > 5 ]
-@ $array do: [ :each | echo $each ]
-@ $array inject: 0 into: [ :sum :x | $((sum + x)) ]
-```
-
-### Exception Handling
-**Status:** Basic infrastructure implemented via `_throw`, `_on_error`, `_ensure`, `_pop_handler`
-
-DSL syntax still needed:
-```smalltalk
-method: riskyOperation [
-  try: [
-    @ self doSomethingDangerous
-  ] catch: [ :error |
-    @ self log: "Failed: $error"
-  ]
+method: setCustomer: cust [
+  customerId := cust.
+]
+method: getCustomerName [
+  ^ $(_ivar_send customerId getName)
 ]
 ```
 
-### Protocols / Interfaces
-```smalltalk
-Counter implements: Enumerable, Comparable
-```
+Future: Cascading deletes, reference integrity checks on save.
 
-### Class-Side Instance Variables
+### Collection Literals in Instance Variables (Phase 5b) - COMPLETE
+Arrays and dictionaries can now be stored as instance variables via JSON serialization:
+- `data := #(1 2 3)` → `_ivar_set data '["1","2","3"]'`
+- `config := #{a: 1}` → `_ivar_set config '{"a":"1"}'`
+
+Runtime helpers:
+- `_ivar_array varname` - Get array ivar as space-separated quoted values
+- `_ivar_dict varname` - Get dict ivar as bash declare statement
+- `_ivar_array_at varname index` - Get single array element
+- `_ivar_dict_at varname key` - Get single dict value
+
+Local variables still use bash array syntax for efficiency.
+
+---
+
+## Class System Features
+
+### Class Instance Variables
 Variables shared across all instances of a class (like class variables in Smalltalk).
 ```smalltalk
 Counter subclass: Object
-  classVars: instanceCount:0
+  classInstanceVars: instanceCount:0 defaultStep:1
 ```
+- Stored separately from instance ivars
+- Accessible via class methods or special accessor
+- Persisted per-class, not per-instance
 
 ### Method Categories
 Organize methods into categories for better introspection:
@@ -308,126 +111,149 @@ category: "accessing"
 category: "arithmetic"
   method: increment [...]
 ```
+- Compiler tracks category membership
+- `@ Trash methodsIn: Counter category: 'accessing'`
+- Powers browser organization
+
+### Protocols
+Define a set of methods that any class can implement:
+```smalltalk
+protocol: Enumerable
+  requires: do:
+  requires: collect:
+  requires: select:
+
+Counter implements: Enumerable
+```
+- `@ obj conformsTo: #Enumerable` → checks if all required methods exist
+- Not inheritance - any object responding to the methods satisfies the protocol
+- Duck typing with documentation
+
+---
+
+## Module System
+
+### Packages / Namespaces
+```smalltalk
+package: MyApp
+  import: 'networking/HttpClient'
+  import: 'data/JsonParser'
+```
+- Namespace isolation to avoid class name collisions
+- `MyApp::Counter` vs `OtherLib::Counter`
+- Package-level visibility (public/private classes)
+- Dependency declaration and loading order
+
+---
+
+## Medium Priority
+
+### REPL Improvements
+- Command history persistence
+- Tab completion for class/method names
+- `@ Trash browse Counter` - interactive object browser
+- `$it` support (see above)
+
+### Documentation Generation
+- Extract comments from `.trash` files
+- Generate markdown API docs automatically
+- Method signatures with argument names
+
+### Remove Bracket Message Syntax
+- Delete `lib/trash-parser.bash` (legacy, unused)
+- Update test files using bracket syntax
+- Conflicts with `[ ]` method body delimiters
+
+### Lazy Loading of Compiled Classes
+- Only source class files when first accessed
+- Reduces startup time for large systems
+
+---
+
+## Lower Priority
+
+### Method Aliasing
+```smalltalk
+alias: size for: count
+alias: length for: count
+```
+
+### SQLite Index Automation
+- Automatically create indexes for frequently queried instance variables
+- Track query patterns and suggest/create indexes
+- `@ Store ensureIndex: Counter on: #value`
+- Index maintenance on schema changes
+- Consider: automatic index creation when `find:` predicates are used
+
+### Caching Layer
+Every getter does `db_get`, every setter does `db_get` + `db_put`. Could cache instance data during method call chain.
+
+### Batch Saves / Dirty Tracking
+- Only write to DB when explicitly saved
+- Track which fields changed
+- Support transactions
+
+### Type Validation
+```smalltalk
+instanceVars: count:integer items:array name:string
+```
+Validate on set, reject invalid types.
+
+### Schema Versioning
+Handle upgrades when you add new instance_var to class with existing instances.
+
+### Before/After Hooks DSL
+Infrastructure exists (`_add_before_advice`, etc.). Need DSL syntax:
+```smalltalk
+before: save do: [@ self validate]
+after: delete do: [@ self notifyObservers]
+```
+
+### Exception Handling DSL
+Infrastructure exists (`_throw`, `_on_error`, etc.). Need DSL syntax:
+```smalltalk
+try: [
+  @ self doSomethingDangerous
+] catch: [ :error |
+  @ self log: "Failed: $error"
+]
+```
+
+---
+
+## Performance & Maintenance
+
+### Performance Optimization
+- Only if profiling shows problems
+- Bash tokenizer is O(n) per character in some versions
+- Acceptable for files <2000 lines
+- Consider awk/sed for hot paths if needed
+
+### Modularization
+- Split codegen.jq only if it exceeds ~800 lines
+- Potential: `header.jq`, `transforms.jq`, `method.jq`, `main.jq`
+
+---
+
+## Ambitious / Long-term
+
+### Self-Hosting
+Could more of Trashtalk be written in Trashtalk? The Store object is a start. What about parser, method dispatch?
+
+### Windowing Environment
+See `windowing-ideas.md` for research on building an Acme-like terminal environment:
+- Multi-panel tiled layout
+- Text execution (any text is runnable)
+- Structural regular expressions for code queries
+- Trashtalk-aware editing
 
 ---
 
 ## Known Issues
 
-### Heredoc Compilation in rawMethod Sections
-When `rawMethod:` sections contain heredocs, the compiler indents the `EOF` terminators, breaking bash syntax. Heredoc terminators must start at column 1. This affects `Trash.trash` methods like `createObject:super:` and `quickCreate:template:`.
+### Heredoc in rawMethod
+When `rawMethod:` contains heredocs, compiler indents `EOF` terminators, breaking bash syntax. Affects `Trash.trash` methods like `createObject:super:`.
 
 ---
 
-## Recently Completed
-
-### Smalltalk Expression Parser - Phase 1 Complete (2024-12-17)
-Implemented full Pratt parser for Smalltalk-style expressions in method bodies:
-- **Instance variable inference:** `value + step` → `$(_ivar value) + $(_ivar step)`
-- **Instance variable assignment:** `value := value + 5` → `_ivar_set value "..."`
-- **Arithmetic with precedence:** `x + y * 2` respects mathematical precedence
-- **Cascade syntax:** `@ self inc; inc; inc.` sends multiple messages to same receiver
-- **Expression args in keywords:** `@ self at: x + 1 put: y * 2`
-- **Runtime support:** Added `_ivar` and `_ivar_set` functions to lib/trash.bash
-- **Smart parser selection:** Legacy code uses legacy parser, new Smalltalk code uses expression parser
-- **Tests:** 9 expression codegen tests, all 243 jq-compiler tests pass
-
-### Test Framework Inheritance Fix (2024-12-16)
-- Fixed `_get_class_instance_vars` to read compiled metadata (`__Class__instanceVars`) instead of grepping for legacy format
-- Fixed `_get_parent_class` to read compiled metadata (`__Class__superclass`) instead of grepping for legacy format
-- Fixed `TestCase.trash` default value parsing (`currentTest:'unknown'`)
-- `@ TestCounter runAll` now passes all 5 assertions
-- Subclasses of `TestCase` now correctly inherit `passed`, `failed`, `currentTest` instance vars
-
-### jq-compiler Integrated as Default (2024-12-16)
-- Removed old `lib/trash-compiler.bash` (882 lines)
-- Updated `Trash.trash` `compileAndReload:` method to use jq-compiler
-- Updated Makefile to ensure traits directory is created before compilation
-- Updated documentation (CLAUDE.md, README.md)
-- All 8 main tests pass, all 243 jq-compiler tests pass
-
-### jq-compiler Two-Pass AST Compiler (2024-12-16)
-Implemented a complete two-pass compiler in `lib/jq-compiler/`:
-- **Tokenizer** (bash): 35+ token types with line/col tracking
-- **Parser** (jq): PEG-style parser producing JSON AST
-- **Codegen** (jq): AST to bash code generation
-- **243 tests** covering tokenizer, parser, codegen, integration
-- **Features:** Error recovery, source locations, nested DSL in subshells, raw methods
-- **All .trash files compile** with valid bash syntax
-- **Error context display:** Shows source line with caret pointing to error column
-
-### Known Issues Fixed (2024-12-16)
-**Find Predicate Query Syntax:** Now working correctly. `@ Counter find 'value > 5'` properly filters instances. The `Object.find()` method parses predicates using regex and generates correct SQL queries.
-
-**Instance _vars Array in Inheritance:** Fixed. All 6 inheritance tests pass. Child classes correctly inherit instance variables from parents, the `_vars` JSON array includes all inherited and own vars, and setters work for both inherited and own variables.
-
-### Tuplespace Fixes (2024-12-15)
-**Problem 1:** `tuplespace.bash` overwrote global `$SCRIPT_DIR` variable, causing wrong path lookups.
-**Solution:** Renamed internal variables to `_TUPLESPACE_DIR`/`_TUPLESPACE_PARENT`.
-
-**Problem 2:** Trait methods not found - dispatcher didn't look in traits for methods like `debug`.
-**Solution:** Added trait method lookup in `send()` dispatcher after class/instance method lookup.
-
-**Problem 3:** Method name mismatches - keyword methods like `put: args:` compiled to `put_args`, but callers expected `put`.
-**Solution:** Added `rawMethod:` wrappers in `Tuplespace.trash` for simple varargs-style API (`put`, `get`, `take`, `count`, `putKV`, `getKV`, `putEvent`, `test`).
-
-### Context Stack System & Global Variable Fix (2024-12-15)
-**Problem:** `$_RECEIVER`, `$_CLASS`, `$_INSTANCE`, `$_SELECTOR` were global/exported variables that got corrupted by nested message sends.
-
-**Solution:** Changed from `export` to `local` variables in `send()`. Bash's dynamic scoping means called methods see the local values, and nested `send()` calls get their own copies that are automatically restored on return.
-
-**Added infrastructure:**
-- **Call stack tracking:** `_CALL_STACK` array with `_print_stack_trace()` for debugging
-- **Ensure handlers:** `_ensure "cleanup_cmd"` registers cleanup code that runs when frame exits
-- **Error handling:** `_throw`, `_on_error`, `_pop_handler`, `_clear_error` for exception-like handling
-- **Method advice:** `_add_before_advice`, `_add_after_advice`, `_remove_advice` for AOP-style hooks
-
-**Also fixed:**
-- Removed `is_a Object` from Object class (was causing infinite loop in `hierarchyFor`)
-- Fixed test bug: `@ $counter increment 5` → `@ $counter incrementBy 5`
-
-### Quick Wins Batch (2024-12-14)
-- **Makefile**: Build workflow with `make compile`, `make test`, `make watch`, `make single CLASS=Name`
-- **Per-class reload**: `@ Trash reloadClass Counter` and `@ Trash compileAndReload Counter`
-- **Compiler error line numbers**: Parse errors now show file and line number
-- **Private method enforcement**: Methods starting with `_` can only be called from same class
-
-### DSL Class Conversion (2024-12-14)
-Converted all core classes to DSL format:
-- `Store.trash` - SQLite persistence (class methods)
-- `Array.trash` - Dynamic arrays with instance vars
-- `Debuggable.trash` - Trait for debugging
-- `Tuplespace.trash` - Linda-style coordination
-- `Trash.trash` - System introspection (uses rawMethod for heredocs)
-- `Process.trash` - Background processes (uses rawMethod for traps/signals)
-
-Added compiler features:
-- `rawMethod:` / `rawClassMethod:` - Pass-through without transformation
-- `requires:` directive for sourcing dependencies
-- `trait` keyword for trait definitions
-- Keyword message transformation in method bodies
-
-### Namespace Pollution Fix & DSL Compiler (2024-12-14)
-**Problem**: Trash methods like `find()` were polluting the global bash namespace.
-
-**Solution**: Created a compilation pipeline that generates namespaced functions:
-- Methods compile to `__ClassName__methodName` (e.g., `__Counter__increment`)
-- Dispatcher prefers compiled classes
-
-### Instance Method Dispatch Fix (2024-12-14)
-Added `$_CLASS` export to `send()` function for proper instance method dispatch.
-
-### Edit Method on Object (2024-12-13)
-Added `edit` method to Object that opens class definitions in `$EDITOR`.
-
-### Instance Variable Defaults (2024-12-13)
-Added default value syntax: `instanceVars: count:0 step:5 name:hello`
-
-### Inheritance of instance_vars (2024-12-13)
-Child classes automatically inherit instance variables from parent classes.
-
-### Object Persistence Methods (2024-12-13)
-Added `findAll`, `find`, `count`, `save`, `delete`, `asJson`, `exists` to Object.
-
----
-
-*Last updated: 2024-12-17 (Phase 1 expression parser complete with ivar inference and assignment)*
+*Last updated: 2024-12-17*

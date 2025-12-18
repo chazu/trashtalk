@@ -641,6 +641,68 @@ function _ivar_set {
   db_put "$_RECEIVER" "$updated"
 }
 
+# Get instance variable as bash indexed array (for collection ivars stored as JSON)
+# Usage: _ivar_array <var_name>
+# Example: local -a arr; arr=($(_ivar_array items))
+#          for item in "${arr[@]}"; do echo "$item"; done
+function _ivar_array {
+  local var="$1"
+  local data json_arr
+  data=$(db_get "$_RECEIVER" 2>/dev/null)
+  if [[ -n "$data" ]]; then
+    json_arr=$(echo "$data" | jq -r ".$var // empty")
+    if [[ -n "$json_arr" && "$json_arr" != "null" ]]; then
+      # Convert JSON array to space-separated quoted values for bash array assignment
+      echo "$json_arr" | jq -r '.[] | @sh'
+    fi
+  fi
+}
+
+# Get instance variable as bash associative array declaration (for dict ivars stored as JSON)
+# Usage: eval "$(_ivar_dict config)"
+#        echo "${config[name]}"
+# Returns: declare -A statements that can be eval'd
+function _ivar_dict {
+  local var="$1"
+  local data json_obj
+  data=$(db_get "$_RECEIVER" 2>/dev/null)
+  if [[ -n "$data" ]]; then
+    json_obj=$(echo "$data" | jq -r ".$var // empty")
+    if [[ -n "$json_obj" && "$json_obj" != "null" ]]; then
+      # Generate bash associative array assignment
+      # Output: declare -A var; var=([key1]="val1" [key2]="val2")
+      echo "declare -A $var"
+      echo -n "$var=("
+      echo "$json_obj" | jq -r 'to_entries | .[] | "[\(.key)]=\"\(.value)\""' | tr '\n' ' '
+      echo ")"
+    fi
+  fi
+}
+
+# Get a single element from an array ivar by index
+# Usage: _ivar_array_at <var_name> <index>
+function _ivar_array_at {
+  local var="$1"
+  local idx="$2"
+  local data
+  data=$(db_get "$_RECEIVER" 2>/dev/null)
+  if [[ -n "$data" ]]; then
+    echo "$data" | jq -r ".$var[$idx] // empty"
+  fi
+}
+
+# Get a single value from a dict ivar by key
+# Usage: _ivar_dict_at <var_name> <key>
+function _ivar_dict_at {
+  local var="$1"
+  local key="$2"
+  local data
+  data=$(db_get "$_RECEIVER" 2>/dev/null)
+  if [[ -n "$data" ]]; then
+    echo "$data" | jq -r ".$var[\"$key\"] // empty"
+  fi
+}
+
 # Export instance functions so they're available in subshells (for command substitution)
 export -f instance_vars
 export -f _create_instance
@@ -654,6 +716,59 @@ export -f _collect_inherited_vars
 export -f _generate_accessor
 export -f _ivar
 export -f _ivar_set
+export -f _ivar_array
+export -f _ivar_dict
+export -f _ivar_array_at
+export -f _ivar_dict_at
+
+# ============================================
+# Object Reference Helpers
+# ============================================
+
+# Get an ivar that contains an object reference (instance ID)
+# Usage: ref=$(_ivar_ref customerId)
+#        @ $ref someMethod
+# Same as _ivar but documents intent and could add validation later
+function _ivar_ref {
+  _ivar "$1"
+}
+
+# Check if an ivar contains a valid (existing) object reference
+# Usage: if _ivar_ref_valid customerId; then ... fi
+# Returns 0 if reference exists and points to valid instance, 1 otherwise
+function _ivar_ref_valid {
+  local var="$1"
+  local ref
+  ref=$(_ivar "$var")
+  [[ -n "$ref" ]] && _is_instance "$ref"
+}
+
+# Get the class of an object stored in an ivar
+# Usage: class=$(_ivar_ref_class customerId)
+function _ivar_ref_class {
+  local var="$1"
+  local ref
+  ref=$(_ivar "$var")
+  [[ -n "$ref" ]] && _get_instance_class "$ref"
+}
+
+# Send a message to an object stored in an ivar
+# Usage: result=$(_ivar_send customerId getName)
+# Convenience for: @ $(_ivar customerId) getName
+function _ivar_send {
+  local var="$1"
+  shift
+  local ref
+  ref=$(_ivar "$var")
+  if [[ -n "$ref" ]]; then
+    @ "$ref" "$@"
+  fi
+}
+
+export -f _ivar_ref
+export -f _ivar_ref_valid
+export -f _ivar_ref_class
+export -f _ivar_send
 
 # ============================================
 
