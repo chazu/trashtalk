@@ -64,8 +64,10 @@ def isSyncPoint:
   current.value == "classMethod:" or
   current.value == "rawClassMethod:" or
   current.value == "instanceVars:" or
+  current.value == "classInstanceVars:" or
   current.value == "include:" or
-  current.value == "requires:";
+  current.value == "requires:" or
+  current.value == "category:";
 
 # Synchronization points for error recovery
 # Skips tokens until we find a class-level keyword to resume parsing
@@ -226,6 +228,57 @@ def parseInstanceVarsSimple:
     fail
   end;
 
+# Simpler classInstanceVars parser - just collect keywords and identifiers
+def parseClassInstanceVarsSimple:
+  if current.value == "classInstanceVars:" then
+    advance | skipNewlines |
+    # Collect all var specs manually
+    {vars: [], state: ., stop: false} |
+    until(
+      .stop or
+      .state.pos >= (.state.tokens | length) or
+      (.state | current.type) == "NEWLINE" or
+      (.state | current.value) == "method:" or
+      (.state | current.value) == "classMethod:" or
+      (.state | current.value) == "rawMethod:" or
+      (.state | current.value) == "rawClassMethod:" or
+      (.state | current.value) == "include:" or
+      (.state | isSyncPoint);
+
+      if (.state | current.type) == "KEYWORD" then
+        # name:default - capture location from keyword token
+        {line: (.state | current.line), col: (.state | current.col)} as $loc |
+        (.state | current.value | rtrimstr(":")) as $name |
+        .state |= advance |
+        .state |= skipNewlines |
+        if (.state | current.type) == "NUMBER" then
+          .vars += [{name: $name, default: {type: "number", value: (.state | current.value)}, location: $loc}] |
+          .state |= advance |
+          .state |= skipNewlines
+        elif (.state | current.type) == "STRING" then
+          .vars += [{name: $name, default: {type: "string", value: ((.state | current.value) | ltrimstr("'") | rtrimstr("'"))}, location: $loc}] |
+          .state |= advance |
+          .state |= skipNewlines
+        else
+          .vars += [{name: $name, default: null, location: $loc}]
+        end
+      elif (.state | current.type) == "IDENTIFIER" then
+        # Capture location from identifier token
+        {line: (.state | current.line), col: (.state | current.col)} as $loc |
+        .vars += [{name: (.state | current.value), default: null, location: $loc}] |
+        .state |= advance |
+        .state |= skipNewlines
+      else
+        # Unknown token, stop
+        .stop = true
+      end
+    ) |
+    .vars as $vars |
+    .state | .result = {type: "classInstanceVars", vars: $vars}
+  else
+    fail
+  end;
+
 # Parse: include: TraitName
 def parseInclude:
   if current.value == "include:" then
@@ -241,15 +294,27 @@ def parseInclude:
     fail
   end;
 
-# Parse: requires: 'path'
+# Parse: requires: 'path' (file dependency) OR requires: methodSelector (protocol requirement)
 def parseRequires:
   if current.value == "requires:" then
     # Capture location from requires: keyword
     {line: current.line, col: current.col} as $location |
     advance | skipNewlines |
     if current.type == "STRING" then
+      # File dependency: requires: 'path/to/file'
       .result = {type: "requires", path: (current.value | ltrimstr("'") | rtrimstr("'")), location: $location} |
       advance
+    elif current.type == "KEYWORD" then
+      # Protocol method requirement: requires: do: or requires: inject: into:
+      # Collect consecutive KEYWORDs to form the selector (stop at sync points like requires:)
+      {selector: "", state: .} |
+      until((.state | current.type) != "KEYWORD" or (.state | isSyncPoint);
+        .selector = (if .selector == "" then (.state | current.value) else "\(.selector)\(.state | current.value | rtrimstr(":")):" end) |
+        .state |= advance |
+        .state |= skipNewlines
+      ) |
+      .selector as $sel |
+      .state | .result = {type: "methodRequirement", selector: $sel, location: $location}
     else
       fail
     end
@@ -357,11 +422,27 @@ def parseMethod:
 
 # Parse class body elements
 def parseClassBody:
-  {instanceVars: [], traits: [], requires: [], methods: [], errors: [], state: .} |
+  {instanceVars: [], classInstanceVars: [], traits: [], requires: [], methodRequirements: [], methods: [], errors: [], currentCategory: null, state: .} |
   until((.state | atEnd);
     .state |= skipNewlines |
     if (.state | atEnd) then
       .
+    elif (.state | current.value) == "category:" then
+      # Parse category directive: category: "name" or category: 'name'
+      .state |= advance |
+      .state |= skipNewlines |
+      if (.state | current.type) == "STRING" or (.state | current.type) == "DSTRING" then
+        .currentCategory = ((.state | current.value) | ltrimstr("'") | rtrimstr("'") | ltrimstr("\"") | rtrimstr("\"")) |
+        .state |= advance
+      else
+        .errors += [{
+          type: "parse_error",
+          message: "Expected string after category:",
+          token: (.state | current),
+          context: "category"
+        }] |
+        .state |= synchronize
+      end
     elif (.state | current.value) == "instanceVars:" then
       (.state | parseInstanceVarsSimple) as $r |
       if $r.result != null then
@@ -374,6 +455,21 @@ def parseClassBody:
           message: "Failed to parse instanceVars declaration",
           token: (.state | current),
           context: "instanceVars"
+        }] |
+        .state |= (advance | synchronize)
+      end
+    elif (.state | current.value) == "classInstanceVars:" then
+      (.state | parseClassInstanceVarsSimple) as $r |
+      if $r.result != null then
+        .classInstanceVars = ($r.result.vars // []) |
+        .state = $r
+      else
+        # Record error and synchronize to next declaration
+        .errors += [{
+          type: "parse_error",
+          message: "Failed to parse classInstanceVars declaration",
+          token: (.state | current),
+          context: "classInstanceVars"
         }] |
         .state |= (advance | synchronize)
       end
@@ -394,8 +490,17 @@ def parseClassBody:
     elif (.state | current.value) == "requires:" then
       (.state | parseRequires) as $r |
       if $r.result != null then
-        .requires += [$r.result.path] |
-        .state = $r
+        if $r.result.type == "requires" then
+          # File dependency
+          .requires += [$r.result.path] |
+          .state = $r
+        elif $r.result.type == "methodRequirement" then
+          # Protocol method requirement
+          .methodRequirements += [$r.result.selector] |
+          .state = $r
+        else
+          .state = $r
+        end
       else
         .errors += [{
           type: "parse_error",
@@ -409,9 +514,11 @@ def parseClassBody:
          (.state | current.value) == "rawMethod:" or
          (.state | current.value) == "classMethod:" or
          (.state | current.value) == "rawClassMethod:" then
+      .currentCategory as $cat |
       (.state | parseMethod) as $r |
       if $r.result != null then
-        .methods += [$r.result] |
+        # Add category to method if one is set
+        .methods += [if $cat != null then $r.result + {category: $cat} else $r.result end] |
         .state = $r
       else
         .errors += [{
@@ -439,8 +546,10 @@ def parseClassBody:
   ) |
   {
     instanceVars: .instanceVars,
+    classInstanceVars: .classInstanceVars,
     traits: .traits,
     requires: .requires,
+    methodRequirements: .methodRequirements,
     methods: .methods
   } as $body |
   .errors as $errors |
@@ -458,7 +567,7 @@ def parseClass:
     if .result != null then
       .result = ($header + .result)
     else
-      .result = ($header + {instanceVars: [], traits: [], requires: [], methods: []})
+      .result = ($header + {instanceVars: [], classInstanceVars: [], traits: [], requires: [], methodRequirements: [], methods: []})
     end
   else
     .
