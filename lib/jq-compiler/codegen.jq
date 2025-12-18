@@ -336,9 +336,24 @@ def expr_parse_expr(min_bp):
       { state: ., result: $inner.result }
     end
   elif $tok.type == "LBRACKET" then
-    # Block expression - collect tokens until RBRACKET, parse later
+    # Block expression - may have parameters [:x :y | body]
     (. | expr_advance) |
     expr_skip_ws |
+    # First, check for block parameters
+    { state: ., params: [] } |
+    until((.state | expr_peek_type) != "BLOCK_PARAM";
+      (.state | expr_peek) as $p |
+      .params += [$p.value] |
+      .state |= expr_advance |
+      .state |= expr_skip_ws
+    ) |
+    # If we have params, expect a PIPE separator
+    (if (.params | length) > 0 and (.state | expr_peek_type) == "PIPE" then
+      .state |= expr_advance | .state |= expr_skip_ws
+    else . end) |
+    # Now collect the body tokens
+    .params as $params |
+    .state |
     { state: ., tokens: [], depth: 1 } |
     until(.depth == 0 or (.state | expr_at_end);
       (.state | expr_peek) as $t |
@@ -353,7 +368,12 @@ def expr_parse_expr(min_bp):
         .tokens += [$t] | .state |= expr_advance
       end
     ) |
-    { state: .state, result: { type: "block", tokens: .tokens } }
+    # Return block_literal if has params, regular block otherwise
+    if ($params | length) > 0 then
+      { state: .state, result: { type: "block_literal", params: $params, tokens: .tokens } }
+    else
+      { state: .state, result: { type: "block", tokens: .tokens } }
+    end
   elif $tok.type == "MINUS" then
     (. | expr_advance) | expr_parse_expr(50) as $operand |
     { state: $operand.state, result: { type: "unary", op: "-", operand: $operand.result } }
@@ -624,7 +644,22 @@ def expr_gen($locals; $ivars):
       "@ \($recv) \(.selector // "")\($args)"
     ) | join("; "))
   elif .type == "assignment" then
-    "\(.target)=\"\(.value | expr_gen($locals; $ivars))\""
+    # Check if target is ivar - need to use _ivar_set
+    # Note: collection literals in blocks handled by expr_gen_stmts, not here
+    (.value.type == "array_literal" or .value.type == "dict_literal") as $is_collection |
+    (.value | expr_gen($locals; $ivars)) as $val_code |
+    if expr_is_local(.target; $locals) then
+      if $is_collection then "\(.target)=\($val_code)"
+      else "\(.target)=\"\($val_code)\""
+      end
+    elif expr_is_ivar(.target; $ivars) then
+      # For ivars, use _ivar_set (collection literals rare in loop bodies)
+      "_ivar_set \(.target) \"\($val_code)\""
+    else
+      if $is_collection then "\(.target)=\($val_code)"
+      else "\(.target)=\"\($val_code)\""
+      end
+    end
   elif .type == "return" then
     if .value == null then "return"
     else "echo \"\(.value | expr_gen($locals; $ivars))\"; return"
@@ -632,16 +667,88 @@ def expr_gen($locals; $ivars):
   elif .type == "passthrough" then
     .token.value
   elif .type == "block" then
-    # Generate block body inline - parse tokens if present
-    if .tokens != null then
-      # Parse tokens into statements first
+    # Block without explicit parameters - create a Block object with empty params
+    # This allows blocks like [@ self doSomething] to be first-class
+    (if .tokens != null then
       ({ tokens: .tokens, pos: 0 } | expr_parse_stmts) as $parsed |
-      [($parsed.body // [])[] | expr_gen($locals; $ivars)] | join("; ")
+      # Inline expr_collect_locals logic
+      (if $parsed.type == "statements" and $parsed.body != null then
+        [($parsed.body // [])[] | select(.type == "locals") | (.names // [])[]] | unique
+      else [] end) as $declared_locals |
+      # Generate body - wrap last expression in echo if it's just a value
+      (($parsed.body // []) | length) as $stmt_count |
+      if $stmt_count == 0 then ""
+      elif $stmt_count == 1 then
+        ($parsed.body[0]) as $stmt |
+        if $stmt.type == "return" or $stmt.type == "message_send" or $stmt.type == "cascade" then
+          $stmt | expr_gen($declared_locals; $ivars)
+        else
+          "echo \"\($stmt | expr_gen($declared_locals; $ivars))\""
+        end
+      else
+        ([($parsed.body[:-1])[] | expr_gen($declared_locals; $ivars)] | join("; ")) as $init_code |
+        ($parsed.body[-1]) as $last_stmt |
+        (if $last_stmt.type == "return" or $last_stmt.type == "message_send" or $last_stmt.type == "cascade" or $last_stmt.type == "locals" or $last_stmt.type == "assignment" then
+          $last_stmt | expr_gen($declared_locals; $ivars)
+        else
+          "echo \"\($last_stmt | expr_gen($declared_locals; $ivars))\""
+        end) as $last_code |
+        if $init_code == "" then $last_code else "\($init_code); \($last_code)" end
+      end
     elif .body != null then
       [(.body // [])[] | expr_gen($locals; $ivars)] | join("; ")
     else
       ""
-    end
+    end) as $body_code |
+    # Escape single quotes in body for bash string
+    ($body_code | gsub("'"; "'\\''")) as $escaped_body |
+    # Create Block with empty params
+    "$(@ Block params_code_captured '[]' '\($escaped_body)' '{\"_RECEIVER\":\"'\"$_RECEIVER\"'\"}')"
+  elif .type == "block_literal" then
+    # Block literal with parameters: [:x :y | body] -> Block creation
+    # Params become JSON array, body gets compiled, captured vars include _RECEIVER
+    (.params // []) as $block_params |
+    # Compile the block body with params as locals
+    # The last expression in a block should produce output (echo)
+    (if .tokens != null then
+      ({ tokens: .tokens, pos: 0 } | expr_parse_stmts) as $parsed |
+      # Inline expr_collect_locals logic (can't call it due to jq ordering)
+      (if $parsed.type == "statements" and $parsed.body != null then
+        [($parsed.body // [])[] | select(.type == "locals") | (.names // [])[]] | unique
+      else [] end) as $declared_locals |
+      ($declared_locals + $block_params) as $block_locals |
+      # Generate body - wrap last expression in echo if it's just a value
+      (($parsed.body // []) | length) as $stmt_count |
+      if $stmt_count == 0 then ""
+      elif $stmt_count == 1 then
+        # Single statement - wrap in echo if it produces a value
+        ($parsed.body[0]) as $stmt |
+        if $stmt.type == "return" or $stmt.type == "message_send" or $stmt.type == "cascade" then
+          $stmt | expr_gen($block_locals; $ivars)
+        else
+          # Value expression - wrap in echo
+          "echo \"\($stmt | expr_gen($block_locals; $ivars))\""
+        end
+      else
+        # Multiple statements - all but last are normal, last gets echo wrapper if value
+        ([($parsed.body[:-1])[] | expr_gen($block_locals; $ivars)] | join("; ")) as $init_code |
+        ($parsed.body[-1]) as $last_stmt |
+        (if $last_stmt.type == "return" or $last_stmt.type == "message_send" or $last_stmt.type == "cascade" or $last_stmt.type == "locals" or $last_stmt.type == "assignment" then
+          $last_stmt | expr_gen($block_locals; $ivars)
+        else
+          "echo \"\($last_stmt | expr_gen($block_locals; $ivars))\""
+        end) as $last_code |
+        if $init_code == "" then $last_code else "\($init_code); \($last_code)" end
+      end
+    else
+      ""
+    end) as $body_code |
+    # Generate the Block creation call
+    # Escape single quotes in body for bash string
+    ($body_code | gsub("'"; "'\\''")) as $escaped_body |
+    # Build params JSON array: ["x", "y"]
+    ($block_params | map("\"\(.)\"") | join(",")) as $params_json |
+    "$(@ Block params_code_captured '[\($params_json)]' '\($escaped_body)' '{\"_RECEIVER\":\"'\"$_RECEIVER\"'\"}')"
   elif .type == "control_flow" then
     # Inline control flow generation to avoid forward reference
     # Helper to generate condition
@@ -734,6 +841,45 @@ def expr_gen($locals; $ivars):
     "# unknown: \(.type)"
   end;
 
+# Generate JSON for collection literals (used for ivar storage)
+# Arrays: ["elem1", "elem2"]
+# Dicts: {"key1": "val1", "key2": "val2"}
+def expr_gen_json($locals; $ivars):
+  if .type == "array_literal" then
+    "[" + ([.elements[] |
+      if .type == "number" then .value
+      elif .type == "string" then "\"\(.value)\""
+      elif .type == "symbol" then "\"\(.value)\""
+      elif .type == "identifier" then
+        # For identifiers, we need to generate shell that evaluates to JSON
+        # This gets complex - for now just quote the identifier reference
+        if expr_is_local(.name; $locals) then "\"$\(.name)\""
+        elif expr_is_ivar(.name; $ivars) then "\"$(_ivar \(.name))\""
+        else "\"\(.name)\""
+        end
+      else "\"\(. | expr_gen($locals; $ivars))\""
+      end
+    ] | join(",")) + "]"
+  elif .type == "dict_literal" then
+    "{" + ([.pairs[] |
+      "\"\(.key)\":" + (
+        if .value.type == "number" then .value.value
+        elif .value.type == "string" then "\"\(.value.value)\""
+        elif .value.type == "symbol" then "\"\(.value.value)\""
+        elif .value.type == "identifier" then
+          if expr_is_local(.value.name; $locals) then "\"$\(.value.name)\""
+          elif expr_is_ivar(.value.name; $ivars) then "\"$(_ivar \(.value.name))\""
+          else "\"\(.value.name)\""
+          end
+        else "\"\(.value | expr_gen($locals; $ivars))\""
+        end
+      )
+    ] | join(",")) + "}"
+  else
+    # Fallback for non-collection types
+    expr_gen($locals; $ivars)
+  end;
+
 # Generate condition for control flow
 def expr_gen_condition($locals; $ivars):
   if .type == "binary" then
@@ -805,9 +951,12 @@ def expr_gen_stmts($locals; $ivars):
     elif $stmt.type == "assignment" then
       # If target is a local variable, use regular assignment
       # If target is an ivar (not local), use _ivar_set
-      # Collection literals (array/dict) shouldn't be quoted
+      # Collection literals (array/dict) need special handling:
+      #   - For locals: use bash array syntax
+      #   - For ivars: use JSON serialization
       ($stmt.value.type == "array_literal" or $stmt.value.type == "dict_literal") as $is_collection |
       ($stmt.value | expr_gen($current_locals; $ivars)) as $val_code |
+      ($stmt.value | expr_gen_json($current_locals; $ivars)) as $json_code |
       if expr_is_local($stmt.target; $current_locals) then
         if $is_collection then
           .lines += ["  \($stmt.target)=\($val_code)"]
@@ -816,7 +965,8 @@ def expr_gen_stmts($locals; $ivars):
         end
       elif expr_is_ivar($stmt.target; $ivars) then
         if $is_collection then
-          .lines += ["  _ivar_set \($stmt.target) \($val_code)"]
+          # Use JSON serialization for collection ivars
+          .lines += ["  _ivar_set \($stmt.target) '\($json_code)'"]
         else
           .lines += ["  _ivar_set \($stmt.target) \"\($val_code)\""]
         end
