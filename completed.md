@@ -161,4 +161,119 @@ Instance IDs are strings and can be stored directly in ivars. Runtime helpers ad
 
 ---
 
-*Last updated: 2024-12-17*
+## Block Closures (2024-12-17)
+
+Full Block class implementation with variable capture:
+
+**Syntax:**
+- `[:x | x + 1]` - Block with one parameter
+- `[:x :y | x + y]` - Block with two parameters
+- `[@ self doSomething]` - Block with no parameters
+
+**Implementation:**
+- **Tokenizer:** Added `BLOCK_PARAM` token for `:x` syntax in block parameter lists
+- **Parser:** Recognizes `block_literal` (with params) and `block` (no params) AST types
+- **Codegen:** Generates `$(@ Block params_code_captured ...)` expressions
+- **Runtime:** `Block.trash` class with `value`, `valueWith:`, `valueWith:and:` methods
+- Blocks capture `_RECEIVER` for `@ self` references within block body
+- Block body wraps last expression in `echo` for return values
+
+**Array iteration methods added:**
+- `do:` - Execute block for each element
+- `collect:` - Map block over elements, return new Array
+- `select:` - Filter elements where block returns non-empty
+- `inject:into:` - Reduce/fold using block
+
+**Files modified:**
+- `lib/jq-compiler/tokenizer.bash` - BLOCK_PARAM token
+- `lib/jq-compiler/codegen.jq` - block_literal and block handling (~lines 669-724)
+- `trash/Block.trash` - NEW runtime class
+- `trash/Array.trash` - Iteration methods
+
+**Tests:** 9 tests in `lib/jq-compiler/tests/test_blocks.bash`
+
+---
+
+## Control Flow (2024-12-17)
+
+Smalltalk-style control flow with inlined blocks:
+
+**Boolean messages:**
+- `ifTrue:` - Execute block if receiver is truthy
+- `ifFalse:` - Execute block if receiver is falsy
+- `ifTrue:ifFalse:` - Conditional with both branches
+
+**Loop constructs:**
+- `whileTrue:` - Execute block while condition is true
+- `timesRepeat:` - Execute block N times
+
+**Example:**
+```smalltalk
+(count > 0) ifTrue: [@ self decrement]
+[running] whileTrue: [@ self processNext]
+5 timesRepeat: [@ self tick]
+```
+
+**Implementation:** Control flow blocks are inlined at compile time (not Block objects) for efficiency. The codegen generates bash `if`/`while`/`for` constructs directly.
+
+**Tests:** `lib/jq-compiler/tests/test_control_flow.bash`
+
+---
+
+## Runtime Bug Fix: Class Name Path Resolution (2024-12-17)
+
+**Problem:** `_SUPERCLASS` was being set to full path (e.g., `/Users/chazu/.trashtalk/trash/Object`) instead of class name, causing errors like `__/Users/chazu/.trashtalk/trash/Object__instanceVars: invalid variable name`.
+
+**Solution:** Added path sanitization at start of `_get_class_instance_vars` and `_get_parent_class` functions:
+```bash
+class_name="${class_name##*/}"
+```
+
+This extracts just the basename from any path, fixing inheritance and instance variable resolution.
+
+---
+
+## Class Instance Variables (2024-12-18)
+
+Variables shared across all instances of a class, stored in kv-bash.
+
+**Syntax:**
+```smalltalk
+Counter subclass: Object
+  classInstanceVars: instanceCount:0 defaultStep:1
+  instanceVars: value:0
+
+  classMethod: count [
+    ^ instanceCount
+  ]
+
+  method: initialize [
+    instanceCount := instanceCount + 1.
+  ]
+```
+
+**Implementation:**
+- **Parser:** Added `classInstanceVars:` as sync point and parsing case
+- **Codegen:** Generates `__ClassName__classInstanceVars` metadata and `__ClassName__initClassVars()` function
+- **Runtime:** Added `_cvar` and `_cvar_set` functions using kv-bash storage
+- **Expression parser:** Auto-infers cvars like ivars - `counter` → `$(_cvar counter)`, `counter := x` → `_cvar_set counter "$x"`
+
+**Storage:**
+- Keys: `__ClassName__cvar__varname` in kv-bash
+- Initialized on first class access (not re-initialized if already set)
+- No inheritance - each class has its own cvars
+
+**Design decisions:**
+- No cvar inheritance (each class declares its own)
+- No auto-generated accessors (use `_cvar`/`_cvar_set` directly)
+
+**Files modified:**
+- `lib/jq-compiler/parser.jq` - Added `classInstanceVars:` parsing
+- `lib/jq-compiler/codegen.jq` - Added metadata, initializer, cvar inference
+- `lib/trash.bash` - Added `_cvar`, `_cvar_set`, initializer call in send()
+
+**Tests:** 9 tests in `lib/jq-compiler/tests/test_class_instance_vars.bash`
+
+---
+
+*Last updated: 2024-12-18*

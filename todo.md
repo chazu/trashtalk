@@ -1,6 +1,6 @@
 # Trashtalk TODO
 
-**Test Status: 289/289 passing (100%)**
+**Test Status: 112+ tests passing (100%)**
 
 See `completed.md` for finished work.
 
@@ -33,27 +33,11 @@ These enable the "output becomes input" paradigm for the Trashtalk environment.
 
 ## Language Features - High Priority
 
-### Block Closures (Phase 3)
-- Block syntax: `[:x | x + 1]` or `[:x :y | x + y]`
-- Block passing: `@ collection do: [:each | @ each print]`
-- Iteration patterns: `do:`, `collect:`, `select:`, `reject:`
-- Control flow: `ifTrue:`, `ifFalse:`, `ifTrue:ifFalse:`
-- Foundation for callbacks, deferred execution, higher-order programming
+### Block Closures - COMPLETE
+See `completed.md` for implementation details.
 
-**Challenges:**
-- Bash has no closures; functions don't capture lexical scope
-- Capture by reference requires heap storage (database/files)
-- Non-local returns (`^` inside block) need exception-like control flow
-
-**Simpler alternatives:**
-1. Method-name callbacks: `@ self processAll: 'handleItem'`
-2. `Block` class with eval: `@ Block code: 'echo $((it * 2))'`
-3. Explicit loops in `rawMethod:` bodies
-
-### Control Flow (Phase 4)
-- Boolean messages: `ifTrue:`, `ifFalse:`, `ifTrue:ifFalse:`
-- Loops: `whileTrue:`, `timesRepeat:`
-- Example: `(count > 0) ifTrue: [@ self decrement]`
+### Control Flow - COMPLETE
+See `completed.md` for implementation details.
 
 ### Object References as Instance Variables - COMPLETE
 Instance IDs are strings and can be stored directly in ivars. Runtime helpers added:
@@ -91,17 +75,23 @@ Local variables still use bash array syntax for efficiency.
 
 ## Class System Features
 
-### Class Instance Variables
-Variables shared across all instances of a class (like class variables in Smalltalk).
-```smalltalk
-Counter subclass: Object
-  classInstanceVars: instanceCount:0 defaultStep:1
-```
-- Stored separately from instance ivars
-- Accessible via class methods or special accessor
-- Persisted per-class, not per-instance
+### Class Instance Variables - COMPLETE
+See `completed.md` for implementation details.
 
-### Method Categories
+### Protocols - COMPLETE
+Go-style ad-hoc polymorphism. Classes don't declare they implement a protocol; if they have the required methods, they conform.
+```smalltalk
+Enumerable subclass: Protocol
+  requires: do:
+  requires: collect:
+  requires: inject: into:
+
+@ Array conformsTo: Enumerable   "=> true"
+@ Counter conformsTo: Enumerable "=> false"
+```
+See `completed.md` for implementation details.
+
+### Method Categories - COMPLETE
 Organize methods into categories for better introspection:
 ```smalltalk
 category: "accessing"
@@ -111,23 +101,32 @@ category: "accessing"
 category: "arithmetic"
   method: increment [...]
 ```
-- Compiler tracks category membership
-- `@ Trash methodsIn: Counter category: 'accessing'`
-- Powers browser organization
+- Compiler tracks category membership in `__ClassName__methodCategories` metadata
+- `@ Trash categoriesFor ClassName` - list all categories
+- `@ Trash methodsIn_category ClassName categoryName` - list methods in category
+- See `completed.md` for implementation details
 
-### Protocols
-Define a set of methods that any class can implement:
-```smalltalk
-protocol: Enumerable
-  requires: do:
-  requires: collect:
-  requires: select:
+---
 
-Counter implements: Enumerable
-```
-- `@ obj conformsTo: #Enumerable` → checks if all required methods exist
-- Not inheritance - any object responding to the methods satisfies the protocol
-- Duck typing with documentation
+## Concurrency & Coordination
+
+### Process API
+Design and document the Process class API for spawning and managing background processes:
+- `@ Process spawn: ObjectName` - spawn object as background process
+- `@ Process sendTo: processId message: selector` - async message send
+- `@ Process waitFor: processId` - block until process completes
+- Process lifecycle (start, stop, status)
+- Error handling and process supervision
+- Usage patterns and examples
+
+### Tuplespace API & Patterns
+Design and document the Tuplespace coordination primitives:
+- `@ Tuplespace put: tuple` / `@ Tuplespace get: pattern` - basic operations
+- Pattern matching semantics (wildcards, partial matches)
+- Blocking vs non-blocking reads
+- Common patterns: producer/consumer, request/response, pub/sub
+- Integration with Process for inter-process communication
+- Performance considerations and cleanup
 
 ---
 
@@ -158,11 +157,6 @@ package: MyApp
 - Extract comments from `.trash` files
 - Generate markdown API docs automatically
 - Method signatures with argument names
-
-### Remove Bracket Message Syntax
-- Delete `lib/trash-parser.bash` (legacy, unused)
-- Update test files using bracket syntax
-- Conflicts with `[ ]` method body delimiters
 
 ### Lazy Loading of Compiled Classes
 - Only source class files when first accessed
@@ -256,4 +250,4 @@ When `rawMethod:` contains heredocs, compiler indents `EOF` terminators, breakin
 
 ---
 
-*Last updated: 2024-12-17*
+*Last updated: 2024-12-17 - Block closures and control flow complete*
