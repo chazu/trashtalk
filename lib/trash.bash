@@ -273,6 +273,9 @@ declare -gA _CURRENT_CLASS_DEFAULTS
 function _get_class_instance_vars {
   local class_name="$1"
 
+  # Extract just the class name if a path was passed
+  class_name="${class_name##*/}"
+
   # First check compiled metadata variable (preferred)
   local vars_var="__${class_name}__instanceVars"
   if [[ -n "${!vars_var+x}" ]]; then
@@ -298,6 +301,9 @@ function _get_class_instance_vars {
 function _get_parent_class {
   local class_name="$1"
   local parent=""
+
+  # Extract just the class name if a path was passed
+  class_name="${class_name##*/}"
 
   # First check compiled metadata variable (preferred)
   local super_var="__${class_name}__superclass"
@@ -771,6 +777,111 @@ export -f _ivar_ref_class
 export -f _ivar_send
 
 # ============================================
+# Class Instance Variable Helpers
+# ============================================
+# Class instance variables are shared across all instances of a class.
+# They are stored in kv-bash with keys like __ClassName__cvar__varname
+
+# Get class instance variable value
+# Usage: _cvar <var_name>
+# Returns the value of the class instance variable for $_CLASS
+function _cvar {
+  local var="$1"
+  kvget "__${_CLASS}__cvar__${var}"
+}
+
+# Set class instance variable value
+# Usage: _cvar_set <var_name> <value>
+function _cvar_set {
+  local var="$1"
+  local value="$2"
+  kvset "__${_CLASS}__cvar__${var}" "$value"
+}
+
+export -f _cvar
+export -f _cvar_set
+
+# ============================================
+# Protocol Helpers
+# ============================================
+
+# Check if a class has a method (including inherited methods)
+# Usage: _class_has_method ClassName selector
+# Returns 0 (true) if method exists, 1 (false) otherwise
+function _class_has_method {
+  local class_name="$1"
+  local selector="$2"
+
+  # Normalize selector: do: -> do, inject:into: -> inject_into
+  local normalized="${selector%:}"
+  normalized="${normalized//:/_}"
+
+  # Walk the inheritance chain
+  local current_class="$class_name"
+  while [[ -n "$current_class" ]]; do
+    # Ensure class is sourced
+    local compiled_file="$TRASHDIR/.compiled/$current_class"
+    if [[ -f "$compiled_file" && -z "${_SOURCED_COMPILED_CLASSES[$current_class]}" ]]; then
+      source "$compiled_file"
+      _SOURCED_COMPILED_CLASSES[$current_class]=1
+    fi
+
+    # Check for instance method
+    local instance_func="__${current_class}__${normalized}"
+    if declare -f "$instance_func" >/dev/null 2>&1; then
+      return 0
+    fi
+
+    # Check for class method
+    local class_func="__${current_class}__class__${normalized}"
+    if declare -f "$class_func" >/dev/null 2>&1; then
+      return 0
+    fi
+
+    # Move to parent class
+    local super_var="__${current_class}__superclass"
+    current_class="${!super_var:-}"
+  done
+
+  return 1
+}
+
+# Check if an object/class conforms to a protocol
+# Usage: _conforms_to className protocolName
+# Returns "true" or "false"
+function _conforms_to {
+  local class_name="$1"
+  local protocol_name="$2"
+
+  # Ensure protocol is sourced
+  local proto_file="$TRASHDIR/.compiled/$protocol_name"
+  if [[ -f "$proto_file" && -z "${_SOURCED_COMPILED_CLASSES[$protocol_name]}" ]]; then
+    source "$proto_file"
+    _SOURCED_COMPILED_CLASSES[$protocol_name]=1
+  fi
+
+  # Get required methods from protocol metadata
+  local req_var="__${protocol_name}__requires"
+  local required="${!req_var:-}"
+
+  # If no requirements, trivially satisfied
+  [[ -z "$required" ]] && echo "true" && return 0
+
+  # Check each required method
+  for selector in $required; do
+    if ! _class_has_method "$class_name" "$selector"; then
+      echo "false"
+      return 0
+    fi
+  done
+
+  echo "true"
+}
+
+export -f _class_has_method
+export -f _conforms_to
+
+# ============================================
 
 # Traverse inheritance chain looking for method
 # Prefers compiled classes to prevent namespace pollution
@@ -958,6 +1069,13 @@ function send {
       if [[ -n "${!vars_var}" ]]; then
         instance_vars ${!vars_var}
         msg_debug "Generated accessors for compiled class $class_name: ${!vars_var}"
+      fi
+
+      # Initialize class instance variables if present (only once)
+      local init_func="__${class_name}__initClassVars"
+      if declare -F "$init_func" >/dev/null 2>&1; then
+        "$init_func"
+        msg_debug "Initialized class vars for $class_name"
       fi
     fi
 

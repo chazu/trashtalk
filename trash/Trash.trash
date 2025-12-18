@@ -48,6 +48,71 @@ Trash subclass: Object
     fi
   ]
 
+  # Get methods in a specific category for a class
+  rawMethod: methodsIn: class_name category: cat_name [
+    # Get compiled class metadata
+    local compiled_file="$TRASHDIR/.compiled/$class_name"
+    if [[ ! -f "$compiled_file" ]]; then
+      echo "Error: Class $class_name not found"
+      return 1
+    fi
+
+    # Source the class to get metadata
+    source "$compiled_file"
+
+    # Get method categories metadata
+    local cats_var="__${class_name}__methodCategories"
+    local cats="${!cats_var:-}"
+
+    if [[ -z "$cats" ]]; then
+      echo "No categorized methods for $class_name"
+      return 0
+    fi
+
+    # Parse and filter by category
+    echo "Methods in '$cat_name' for $class_name:"
+    for entry in $cats; do
+      local method="${entry%%:*}"
+      local category="${entry#*:}"
+      if [[ "$category" == "$cat_name" ]]; then
+        echo "  $method"
+      fi
+    done
+  ]
+
+  # List all categories for a class
+  rawMethod: categoriesFor: class_name [
+    # Get compiled class metadata
+    local compiled_file="$TRASHDIR/.compiled/$class_name"
+    if [[ ! -f "$compiled_file" ]]; then
+      echo "Error: Class $class_name not found"
+      return 1
+    fi
+
+    # Source the class to get metadata
+    source "$compiled_file"
+
+    # Get method categories metadata
+    local cats_var="__${class_name}__methodCategories"
+    local cats="${!cats_var:-}"
+
+    if [[ -z "$cats" ]]; then
+      echo "No categories for $class_name"
+      return 0
+    fi
+
+    # Extract unique categories
+    echo "Categories for $class_name:"
+    local seen=""
+    for entry in $cats; do
+      local category="${entry#*:}"
+      if [[ ! " $seen " =~ " $category " ]]; then
+        echo "  $category"
+        seen="$seen $category"
+      fi
+    done
+  ]
+
   # Show inheritance hierarchy for an object
   method: hierarchyFor: object_name [
     | object_file |
