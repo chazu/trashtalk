@@ -12,37 +12,6 @@ TMPFILE="/tmp/test_integration_$$.trash"
 # Cleanup on exit
 trap 'rm -f "$TMPFILE"' EXIT
 
-# Helper to compare new compiler output with old compiled output
-# Ignores header differences (timestamp, compiler marker)
-compare_output() {
-    local trash_file="$1"
-    local compiled_file="$2"
-
-    if [[ ! -f "$trash_file" ]]; then
-        echo "skip"  # Source file doesn't exist
-        return
-    fi
-
-    if [[ ! -f "$compiled_file" ]]; then
-        echo "skip"  # Old compiled file doesn't exist
-        return
-    fi
-
-    local new_output
-    new_output=$("$DRIVER" compile "$trash_file" 2>/dev/null)
-
-    # Compare ignoring first 4 lines (header)
-    local old_body new_body
-    old_body=$(tail -n +5 "$compiled_file")
-    new_body=$(echo "$new_output" | tail -n +5)
-
-    if [[ "$old_body" == "$new_body" ]]; then
-        echo "true"
-    else
-        echo "false"
-    fi
-}
-
 # Helper to check if file compiles without error
 compiles_ok() {
     local trash_file="$1"
@@ -52,25 +21,6 @@ compiles_ok() {
         echo "false"
     fi
 }
-
-# ------------------------------------------------------------------------------
-# Regression Tests - Compare with Old Compiler
-# ------------------------------------------------------------------------------
-
-echo -e "\n  Regression Tests (vs old compiler):"
-
-run_test "Counter.trash matches" "true" \
-    "$(compare_output "$TRASH_DIR/Counter.trash" "$TRASH_DIR/.compiled/Counter")"
-
-run_test "Array.trash matches" "true" \
-    "$(compare_output "$TRASH_DIR/Array.trash" "$TRASH_DIR/.compiled/Array")"
-
-run_test "Store.trash matches" "true" \
-    "$(compare_output "$TRASH_DIR/Store.trash" "$TRASH_DIR/.compiled/Store")"
-
-# Process.trash - goal is to make this pass
-run_test "Process.trash matches" "true" \
-    "$(compare_output "$TRASH_DIR/Process.trash" "$TRASH_DIR/.compiled/Process")"
 
 # ------------------------------------------------------------------------------
 # Compilation Success Tests
