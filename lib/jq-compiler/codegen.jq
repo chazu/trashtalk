@@ -567,23 +567,28 @@ def expr_is_local($name; $locals):
 def expr_is_ivar($name; $ivars):
   ($ivars // []) | any(. == $name);
 
+# Check if identifier is a class instance variable
+def expr_is_cvar($name; $cvars):
+  ($cvars // []) | any(. == $name);
+
 # Generate code for arithmetic context (no wrapper)
 # Must be defined before expr_gen since they're mutually recursive
-def expr_gen_arith($locals; $ivars):
+def expr_gen_arith($locals; $ivars; $cvars):
   if . == null then "0"
   elif .type == "number" then .value
   elif .type == "identifier" then
     if expr_is_local(.name; $locals) then "$\(.name)"
     elif expr_is_ivar(.name; $ivars) then "$(_ivar \(.name))"
+    elif expr_is_cvar(.name; $cvars) then "$(_cvar \(.name))"
     else "$\(.name)"
     end
   elif .type == "variable" then .value
   elif .type == "subshell" then .value
   elif .type == "arithmetic" then (.value | gsub("^\\$\\(\\(|\\)\\)$"; ""))
   elif .type == "binary" then
-    "(\(.left | expr_gen_arith($locals; $ivars)) \(.op) \(.right | expr_gen_arith($locals; $ivars)))"
+    "(\(.left | expr_gen_arith($locals; $ivars; $cvars)) \(.op) \(.right | expr_gen_arith($locals; $ivars; $cvars)))"
   elif .type == "unary" and .op == "-" then
-    "(-\(.operand | expr_gen_arith($locals; $ivars)))"
+    "(-\(.operand | expr_gen_arith($locals; $ivars; $cvars)))"
   else
     # For non-arithmetic types, fall through to main generator
     if .type == "self" then "\"$_RECEIVER\""
@@ -594,7 +599,7 @@ def expr_gen_arith($locals; $ivars):
   end;
 
 # Generate code for an expression
-def expr_gen($locals; $ivars):
+def expr_gen($locals; $ivars; $cvars):
   if . == null then ""
   elif .type == "number" then .value
   elif .type == "string" then "'\(.value)'"
@@ -603,6 +608,7 @@ def expr_gen($locals; $ivars):
   elif .type == "identifier" then
     if expr_is_local(.name; $locals) then "$\(.name)"
     elif expr_is_ivar(.name; $ivars) then "$(_ivar \(.name))"
+    elif expr_is_cvar(.name; $cvars) then "$(_cvar \(.name))"
     else .name  # bare identifier (command name, etc.)
     end
   elif .type == "variable" then .value
@@ -613,32 +619,32 @@ def expr_gen($locals; $ivars):
   elif .type == "symbol" then .value
   elif .type == "array_literal" then
     # Bash indexed array: (elem1 elem2 elem3)
-    "(" + ([.elements[] | expr_gen($locals; $ivars)] | map("\"\(.)\"") | join(" ")) + ")"
+    "(" + ([.elements[] | expr_gen($locals; $ivars; $cvars)] | map("\"\(.)\"") | join(" ")) + ")"
   elif .type == "dict_literal" then
     # Bash associative array: ([key1]=val1 [key2]=val2)
-    "(" + ([.pairs[] | "[\(.key)]=\"\(.value | expr_gen($locals; $ivars))\""] | join(" ")) + ")"
+    "(" + ([.pairs[] | "[\(.key)]=\"\(.value | expr_gen($locals; $ivars; $cvars))\""] | join(" ")) + ")"
   elif .type == "unary" then
     if .op == "-" then
-      "$(( -\(.operand | expr_gen_arith($locals; $ivars)) ))"
+      "$(( -\(.operand | expr_gen_arith($locals; $ivars; $cvars)) ))"
     else
-      "\(.op)\(.operand | expr_gen($locals; $ivars))"
+      "\(.op)\(.operand | expr_gen($locals; $ivars; $cvars))"
     end
   elif .type == "binary" then
-    "$(( \(.left | expr_gen_arith($locals; $ivars)) \(.op) \(.right | expr_gen_arith($locals; $ivars)) ))"
+    "$(( \(.left | expr_gen_arith($locals; $ivars; $cvars)) \(.op) \(.right | expr_gen_arith($locals; $ivars; $cvars)) ))"
   elif .type == "message_send" then
-    (.receiver | expr_gen($locals; $ivars)) as $recv |
+    (.receiver | expr_gen($locals; $ivars; $cvars)) as $recv |
     (if ((.args // []) | length) > 0 then
-      " " + ([(.args // [])[] | expr_gen($locals; $ivars)] | join(" "))
+      " " + ([(.args // [])[] | expr_gen($locals; $ivars; $cvars)] | join(" "))
     else ""
     end) as $args |
     "@ \($recv) \(.selector // "")\($args)"
   elif .type == "cascade" then
     # Cascade: send multiple messages to same receiver
     # In expression context, we capture receiver and return last result
-    (.receiver | expr_gen($locals; $ivars)) as $recv |
+    (.receiver | expr_gen($locals; $ivars; $cvars)) as $recv |
     (.messages | map(
       (if ((.args // []) | length) > 0 then
-        " " + ([(.args // [])[] | expr_gen($locals; $ivars)] | join(" "))
+        " " + ([(.args // [])[] | expr_gen($locals; $ivars; $cvars)] | join(" "))
       else ""
       end) as $args |
       "@ \($recv) \(.selector // "")\($args)"
@@ -647,7 +653,7 @@ def expr_gen($locals; $ivars):
     # Check if target is ivar - need to use _ivar_set
     # Note: collection literals in blocks handled by expr_gen_stmts, not here
     (.value.type == "array_literal" or .value.type == "dict_literal") as $is_collection |
-    (.value | expr_gen($locals; $ivars)) as $val_code |
+    (.value | expr_gen($locals; $ivars; $cvars)) as $val_code |
     if expr_is_local(.target; $locals) then
       if $is_collection then "\(.target)=\($val_code)"
       else "\(.target)=\"\($val_code)\""
@@ -655,6 +661,9 @@ def expr_gen($locals; $ivars):
     elif expr_is_ivar(.target; $ivars) then
       # For ivars, use _ivar_set (collection literals rare in loop bodies)
       "_ivar_set \(.target) \"\($val_code)\""
+    elif expr_is_cvar(.target; $cvars) then
+      # For cvars, use _cvar_set
+      "_cvar_set \(.target) \"\($val_code)\""
     else
       if $is_collection then "\(.target)=\($val_code)"
       else "\(.target)=\"\($val_code)\""
@@ -662,7 +671,7 @@ def expr_gen($locals; $ivars):
     end
   elif .type == "return" then
     if .value == null then "return"
-    else "echo \"\(.value | expr_gen($locals; $ivars))\"; return"
+    else "echo \"\(.value | expr_gen($locals; $ivars; $cvars))\"; return"
     end
   elif .type == "passthrough" then
     .token.value
@@ -681,22 +690,22 @@ def expr_gen($locals; $ivars):
       elif $stmt_count == 1 then
         ($parsed.body[0]) as $stmt |
         if $stmt.type == "return" or $stmt.type == "message_send" or $stmt.type == "cascade" then
-          $stmt | expr_gen($declared_locals; $ivars)
+          $stmt | expr_gen($declared_locals; $ivars; $cvars)
         else
-          "echo \"\($stmt | expr_gen($declared_locals; $ivars))\""
+          "echo \"\($stmt | expr_gen($declared_locals; $ivars; $cvars))\""
         end
       else
-        ([($parsed.body[:-1])[] | expr_gen($declared_locals; $ivars)] | join("; ")) as $init_code |
+        ([($parsed.body[:-1])[] | expr_gen($declared_locals; $ivars; $cvars)] | join("; ")) as $init_code |
         ($parsed.body[-1]) as $last_stmt |
         (if $last_stmt.type == "return" or $last_stmt.type == "message_send" or $last_stmt.type == "cascade" or $last_stmt.type == "locals" or $last_stmt.type == "assignment" then
-          $last_stmt | expr_gen($declared_locals; $ivars)
+          $last_stmt | expr_gen($declared_locals; $ivars; $cvars)
         else
-          "echo \"\($last_stmt | expr_gen($declared_locals; $ivars))\""
+          "echo \"\($last_stmt | expr_gen($declared_locals; $ivars; $cvars))\""
         end) as $last_code |
         if $init_code == "" then $last_code else "\($init_code); \($last_code)" end
       end
     elif .body != null then
-      [(.body // [])[] | expr_gen($locals; $ivars)] | join("; ")
+      [(.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
     else
       ""
     end) as $body_code |
@@ -724,19 +733,19 @@ def expr_gen($locals; $ivars):
         # Single statement - wrap in echo if it produces a value
         ($parsed.body[0]) as $stmt |
         if $stmt.type == "return" or $stmt.type == "message_send" or $stmt.type == "cascade" then
-          $stmt | expr_gen($block_locals; $ivars)
+          $stmt | expr_gen($block_locals; $ivars; $cvars)
         else
           # Value expression - wrap in echo
-          "echo \"\($stmt | expr_gen($block_locals; $ivars))\""
+          "echo \"\($stmt | expr_gen($block_locals; $ivars; $cvars))\""
         end
       else
         # Multiple statements - all but last are normal, last gets echo wrapper if value
-        ([($parsed.body[:-1])[] | expr_gen($block_locals; $ivars)] | join("; ")) as $init_code |
+        ([($parsed.body[:-1])[] | expr_gen($block_locals; $ivars; $cvars)] | join("; ")) as $init_code |
         ($parsed.body[-1]) as $last_stmt |
         (if $last_stmt.type == "return" or $last_stmt.type == "message_send" or $last_stmt.type == "cascade" or $last_stmt.type == "locals" or $last_stmt.type == "assignment" then
-          $last_stmt | expr_gen($block_locals; $ivars)
+          $last_stmt | expr_gen($block_locals; $ivars; $cvars)
         else
-          "echo \"\($last_stmt | expr_gen($block_locals; $ivars))\""
+          "echo \"\($last_stmt | expr_gen($block_locals; $ivars; $cvars))\""
         end) as $last_code |
         if $init_code == "" then $last_code else "\($init_code); \($last_code)" end
       end
@@ -753,7 +762,7 @@ def expr_gen($locals; $ivars):
     # Inline control flow generation to avoid forward reference
     # Helper to generate condition
     (if .condition.type == "binary" then
-      "\(.condition.left | expr_gen_arith($locals; $ivars)) \(.condition.op) \(.condition.right | expr_gen_arith($locals; $ivars))"
+      "\(.condition.left | expr_gen_arith($locals; $ivars; $cvars)) \(.condition.op) \(.condition.right | expr_gen_arith($locals; $ivars; $cvars))"
     elif .condition.type == "identifier" then
       if expr_is_local(.condition.name; $locals) then "$\(.condition.name)"
       elif expr_is_ivar(.condition.name; $ivars) then "$(_ivar \(.condition.name))"
@@ -761,58 +770,58 @@ def expr_gen($locals; $ivars):
       end
     elif .condition.type == "variable" then .condition.value
     elif .condition.type == "boolean" then (if .condition.value then "1" else "0" end)
-    else .condition | expr_gen($locals; $ivars)
+    else .condition | expr_gen($locals; $ivars; $cvars)
     end) as $cond |
     # Generate block body inline (can't use nested def due to jq scoping)
     if .kind == "if_true" then
       (if .block.tokens != null then
         ({ tokens: .block.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
-        [($parsed.body // [])[] | expr_gen($locals; $ivars)] | join("; ")
+        [($parsed.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
       elif .block.body != null then
-        [(.block.body // [])[] | expr_gen($locals; $ivars)] | join("; ")
+        [(.block.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
       else "" end) as $block_code |
       "if (( \($cond) )); then \($block_code); fi"
     elif .kind == "if_false" then
       (if .block.tokens != null then
         ({ tokens: .block.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
-        [($parsed.body // [])[] | expr_gen($locals; $ivars)] | join("; ")
+        [($parsed.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
       elif .block.body != null then
-        [(.block.body // [])[] | expr_gen($locals; $ivars)] | join("; ")
+        [(.block.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
       else "" end) as $block_code |
       "if (( !(\($cond)) )); then \($block_code); fi"
     elif .kind == "if_else" then
       (if .true_block.tokens != null then
         ({ tokens: .true_block.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
-        [($parsed.body // [])[] | expr_gen($locals; $ivars)] | join("; ")
+        [($parsed.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
       elif .true_block.body != null then
-        [(.true_block.body // [])[] | expr_gen($locals; $ivars)] | join("; ")
+        [(.true_block.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
       else "" end) as $true_code |
       (if .false_block.tokens != null then
         ({ tokens: .false_block.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
-        [($parsed.body // [])[] | expr_gen($locals; $ivars)] | join("; ")
+        [($parsed.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
       elif .false_block.body != null then
-        [(.false_block.body // [])[] | expr_gen($locals; $ivars)] | join("; ")
+        [(.false_block.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
       else "" end) as $false_code |
       "if (( \($cond) )); then \($true_code); else \($false_code); fi"
     elif .kind == "times_repeat" then
       (if .block.tokens != null then
         ({ tokens: .block.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
-        [($parsed.body // [])[] | expr_gen($locals; $ivars)] | join("; ")
+        [($parsed.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
       elif .block.body != null then
-        [(.block.body // [])[] | expr_gen($locals; $ivars)] | join("; ")
+        [(.block.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
       else "" end) as $block_code |
-      "for ((_i=0; _i<\(.count | expr_gen_arith($locals; $ivars)); _i++)); do \($block_code); done"
+      "for ((_i=0; _i<\(.count | expr_gen_arith($locals; $ivars; $cvars)); _i++)); do \($block_code); done"
     elif .kind == "while_true" then
       (if .block.tokens != null then
         ({ tokens: .block.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
-        [($parsed.body // [])[] | expr_gen($locals; $ivars)] | join("; ")
+        [($parsed.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
       elif .block.body != null then
-        [(.block.body // [])[] | expr_gen($locals; $ivars)] | join("; ")
+        [(.block.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
       else "" end) as $block_code |
       if .condition.type == "block" then
         (if .condition.tokens != null then
           ({ tokens: .condition.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
-          [($parsed.body // [])[] | expr_gen($locals; $ivars)] | join("; ")
+          [($parsed.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
         else "" end) as $cond_code |
         "while \($cond_code); do \($block_code); done"
       else
@@ -821,14 +830,14 @@ def expr_gen($locals; $ivars):
     elif .kind == "while_false" then
       (if .block.tokens != null then
         ({ tokens: .block.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
-        [($parsed.body // [])[] | expr_gen($locals; $ivars)] | join("; ")
+        [($parsed.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
       elif .block.body != null then
-        [(.block.body // [])[] | expr_gen($locals; $ivars)] | join("; ")
+        [(.block.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
       else "" end) as $block_code |
       if .condition.type == "block" then
         (if .condition.tokens != null then
           ({ tokens: .condition.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
-          [($parsed.body // [])[] | expr_gen($locals; $ivars)] | join("; ")
+          [($parsed.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
         else "" end) as $cond_code |
         "while ! \($cond_code); do \($block_code); done"
       else
@@ -844,7 +853,7 @@ def expr_gen($locals; $ivars):
 # Generate JSON for collection literals (used for ivar storage)
 # Arrays: ["elem1", "elem2"]
 # Dicts: {"key1": "val1", "key2": "val2"}
-def expr_gen_json($locals; $ivars):
+def expr_gen_json($locals; $ivars; $cvars):
   if .type == "array_literal" then
     "[" + ([.elements[] |
       if .type == "number" then .value
@@ -857,7 +866,7 @@ def expr_gen_json($locals; $ivars):
         elif expr_is_ivar(.name; $ivars) then "\"$(_ivar \(.name))\""
         else "\"\(.name)\""
         end
-      else "\"\(. | expr_gen($locals; $ivars))\""
+      else "\"\(. | expr_gen($locals; $ivars; $cvars))\""
       end
     ] | join(",")) + "]"
   elif .type == "dict_literal" then
@@ -871,21 +880,21 @@ def expr_gen_json($locals; $ivars):
           elif expr_is_ivar(.value.name; $ivars) then "\"$(_ivar \(.value.name))\""
           else "\"\(.value.name)\""
           end
-        else "\"\(.value | expr_gen($locals; $ivars))\""
+        else "\"\(.value | expr_gen($locals; $ivars; $cvars))\""
         end
       )
     ] | join(",")) + "}"
   else
     # Fallback for non-collection types
-    expr_gen($locals; $ivars)
+    expr_gen($locals; $ivars; $cvars)
   end;
 
 # Generate condition for control flow
-def expr_gen_condition($locals; $ivars):
+def expr_gen_condition($locals; $ivars; $cvars):
   if .type == "binary" then
-    "\(.left | expr_gen_arith($locals; $ivars)) \(.op) \(.right | expr_gen_arith($locals; $ivars))"
+    "\(.left | expr_gen_arith($locals; $ivars; $cvars)) \(.op) \(.right | expr_gen_arith($locals; $ivars; $cvars))"
   elif .type == "block" then
-    [(.body // [])[] | expr_gen($locals; $ivars)] | join("; ")
+    [(.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
   elif .type == "identifier" then
     if expr_is_local(.name; $locals) then "$\(.name)"
     elif expr_is_ivar(.name; $ivars) then "$(_ivar \(.name))"
@@ -893,41 +902,41 @@ def expr_gen_condition($locals; $ivars):
     end
   elif .type == "variable" then .value
   elif .type == "boolean" then (if .value then "1" else "0" end)
-  else expr_gen($locals; $ivars)
+  else expr_gen($locals; $ivars; $cvars)
   end;
 
 # Helper to generate block body (handles both tokens and body array)
-def expr_gen_block_body($locals; $ivars):
+def expr_gen_block_body($locals; $ivars; $cvars):
   if .tokens != null then
     ({ tokens: .tokens, pos: 0 } | expr_parse_stmts) as $parsed |
-    [($parsed.body // [])[] | expr_gen($locals; $ivars)] | join("; ")
+    [($parsed.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
   elif .body != null then
-    [(.body // [])[] | expr_gen($locals; $ivars)] | join("; ")
+    [(.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
   else
     ""
   end;
 
 # Generate code for control flow constructs
-def expr_gen_control_flow($locals; $ivars):
+def expr_gen_control_flow($locals; $ivars; $cvars):
   if .kind == "if_true" then
-    "if (( \(.condition | expr_gen_condition($locals; $ivars)) )); then \(.block | expr_gen_block_body($locals; $ivars)); fi"
+    "if (( \(.condition | expr_gen_condition($locals; $ivars; $cvars)) )); then \(.block | expr_gen_block_body($locals; $ivars; $cvars)); fi"
   elif .kind == "if_false" then
-    "if (( !(\(.condition | expr_gen_condition($locals; $ivars))) )); then \(.block | expr_gen_block_body($locals; $ivars)); fi"
+    "if (( !(\(.condition | expr_gen_condition($locals; $ivars; $cvars))) )); then \(.block | expr_gen_block_body($locals; $ivars; $cvars)); fi"
   elif .kind == "if_else" then
-    "if (( \(.condition | expr_gen_condition($locals; $ivars)) )); then \(.true_block | expr_gen_block_body($locals; $ivars)); else \(.false_block | expr_gen_block_body($locals; $ivars)); fi"
+    "if (( \(.condition | expr_gen_condition($locals; $ivars; $cvars)) )); then \(.true_block | expr_gen_block_body($locals; $ivars; $cvars)); else \(.false_block | expr_gen_block_body($locals; $ivars; $cvars)); fi"
   elif .kind == "times_repeat" then
-    "for ((_i=0; _i<\(.count | expr_gen_arith($locals; $ivars)); _i++)); do \(.block | expr_gen_block_body($locals; $ivars)); done"
+    "for ((_i=0; _i<\(.count | expr_gen_arith($locals; $ivars; $cvars)); _i++)); do \(.block | expr_gen_block_body($locals; $ivars; $cvars)); done"
   elif .kind == "while_true" then
     if .condition.type == "block" then
-      "while \(.condition | expr_gen_block_body($locals; $ivars)); do \(.block | expr_gen_block_body($locals; $ivars)); done"
+      "while \(.condition | expr_gen_block_body($locals; $ivars; $cvars)); do \(.block | expr_gen_block_body($locals; $ivars; $cvars)); done"
     else
-      "while (( \(.condition | expr_gen_condition($locals; $ivars)) )); do \(.block | expr_gen_block_body($locals; $ivars)); done"
+      "while (( \(.condition | expr_gen_condition($locals; $ivars; $cvars)) )); do \(.block | expr_gen_block_body($locals; $ivars; $cvars)); done"
     end
   elif .kind == "while_false" then
     if .condition.type == "block" then
-      "while ! \(.condition | expr_gen_block_body($locals; $ivars)); do \(.block | expr_gen_block_body($locals; $ivars)); done"
+      "while ! \(.condition | expr_gen_block_body($locals; $ivars; $cvars)); do \(.block | expr_gen_block_body($locals; $ivars; $cvars)); done"
     else
-      "while (( !(\(.condition | expr_gen_condition($locals; $ivars))) )); do \(.block | expr_gen_block_body($locals; $ivars)); done"
+      "while (( !(\(.condition | expr_gen_condition($locals; $ivars; $cvars))) )); do \(.block | expr_gen_block_body($locals; $ivars; $cvars)); done"
     end
   else
     "# ERROR: unknown control flow kind \(.kind)"
@@ -941,7 +950,7 @@ def expr_collect_locals:
   end;
 
 # Generate code for all statements
-def expr_gen_stmts($locals; $ivars):
+def expr_gen_stmts($locals; $ivars; $cvars):
   reduce (.body // [])[] as $stmt ({ lines: [], locals: $locals };
     # Capture .locals before any pipes to avoid jq scoping issues
     .locals as $current_locals |
@@ -955,8 +964,8 @@ def expr_gen_stmts($locals; $ivars):
       #   - For locals: use bash array syntax
       #   - For ivars: use JSON serialization
       ($stmt.value.type == "array_literal" or $stmt.value.type == "dict_literal") as $is_collection |
-      ($stmt.value | expr_gen($current_locals; $ivars)) as $val_code |
-      ($stmt.value | expr_gen_json($current_locals; $ivars)) as $json_code |
+      ($stmt.value | expr_gen($current_locals; $ivars; $cvars)) as $val_code |
+      ($stmt.value | expr_gen_json($current_locals; $ivars; $cvars)) as $json_code |
       if expr_is_local($stmt.target; $current_locals) then
         if $is_collection then
           .lines += ["  \($stmt.target)=\($val_code)"]
@@ -970,6 +979,13 @@ def expr_gen_stmts($locals; $ivars):
         else
           .lines += ["  _ivar_set \($stmt.target) \"\($val_code)\""]
         end
+      elif expr_is_cvar($stmt.target; $cvars) then
+        if $is_collection then
+          # Use JSON serialization for collection cvars
+          .lines += ["  _cvar_set \($stmt.target) '\($json_code)'"]
+        else
+          .lines += ["  _cvar_set \($stmt.target) \"\($val_code)\""]
+        end
       else
         # Unknown target - treat as regular assignment (could be global/env var)
         if $is_collection then
@@ -982,23 +998,23 @@ def expr_gen_stmts($locals; $ivars):
       if $stmt.value == null then
         .lines += ["  return"]
       else
-        .lines += ["  echo \"\($stmt.value | expr_gen($current_locals; $ivars))\"; return"]
+        .lines += ["  echo \"\($stmt.value | expr_gen($current_locals; $ivars; $cvars))\"; return"]
       end
     elif $stmt.type == "message_send" then
-      .lines += ["  \($stmt | expr_gen($current_locals; $ivars))"]
+      .lines += ["  \($stmt | expr_gen($current_locals; $ivars; $cvars))"]
     elif $stmt.type == "cascade" then
       # Generate each message on its own line, all to same receiver
-      ($stmt.receiver | expr_gen($current_locals; $ivars)) as $recv |
+      ($stmt.receiver | expr_gen($current_locals; $ivars; $cvars)) as $recv |
       .lines += [
         $stmt.messages[] |
         (if ((.args // []) | length) > 0 then
-          " " + ([(.args // [])[] | expr_gen($current_locals; $ivars)] | join(" "))
+          " " + ([(.args // [])[] | expr_gen($current_locals; $ivars; $cvars)] | join(" "))
         else ""
         end) as $args |
         "  @ \($recv) \(.selector // "")\($args)"
       ]
     else
-      ($stmt | expr_gen($current_locals; $ivars)) as $code |
+      ($stmt | expr_gen($current_locals; $ivars; $cvars)) as $code |
       if $code != "" then
         .lines += ["  \($code)"]
       else .
@@ -1105,7 +1121,7 @@ def should_use_expr_parser:
   end;
 
 # Parse and generate method body with expression parser
-def expr_transform_body($className; $ivars; $args):
+def expr_transform_body($className; $ivars; $cvars; $args):
   . as $tokens |
   # Parse tokens into AST
   { tokens: $tokens, pos: 0 } | expr_parse_stmts |
@@ -1117,7 +1133,7 @@ def expr_transform_body($className; $ivars; $args):
   else
     (($ast | expr_collect_locals) + ($args // [])) | unique | . as $all_locals |
     # Generate code
-    $ast | expr_gen_stmts($all_locals; $ivars)
+    $ast | expr_gen_stmts($all_locals; $ivars; $cvars)
   end;
 
 # ------------------------------------------------------------------------------
@@ -1150,8 +1166,39 @@ def generateMetadata:
   else
     "__\(.name)__superclass=\"\(.parent // "")\"",
     "__\(.name)__instanceVars=\"\(.instanceVars | varsToString)\"",
+    "__\(.name)__classInstanceVars=\"\(.classInstanceVars | varsToString)\"",
     "__\(.name)__traits=\"\(.traits | join(" "))\"",
+    (if (.methodRequirements | length) > 0 then
+      "__\(.name)__requires=\"\(.methodRequirements | join(" "))\""
+    else empty end),
+    # Generate method categories metadata: "selector:category selector:category ..."
+    .name as $className |
+    ([.methods[] | select(.category != null) | "\(.selector):\(.category)"] as $cats |
+    if ($cats | length) > 0 then
+      "__\($className)__methodCategories=\"\($cats | join(" "))\""
+    else empty end),
     ""
+  end;
+
+# Generate class instance variable initializer function
+def generateClassVarsInit:
+  .name as $className |
+  if (.classInstanceVars | length) > 0 then
+    "__\($className)__initClassVars() {",
+    (.classInstanceVars[] |
+      .name as $varName |
+      (if .default then
+        if .default.type == "number" then .default.value
+        elif .default.type == "string" then .default.value
+        else ""
+        end
+      else "" end) as $default |
+      "  [[ -z \"$(kvget '__\($className)__cvar__\($varName)')\" ]] && kvset '__\($className)__cvar__\($varName)' '\($default)'"
+    ),
+    "}",
+    ""
+  else
+    empty
   end;
 
 def generateRequires:
@@ -1501,7 +1548,7 @@ def transformMethodBody($className; $isRaw):
 # Code Generation: Method
 # ------------------------------------------------------------------------------
 
-def generateMethod($className; $ivars):
+def generateMethod($className; $ivars; $cvars):
   # Build function name
   (if .kind == "class" then
     "__\($className)__class__\(.selector)"
@@ -1526,7 +1573,7 @@ def generateMethod($className; $ivars):
     .body | transformMethodBody($className; true)
   elif ((.body.tokens != null) and ((.body.tokens | should_use_expr_parser) // false)) then
     # New Smalltalk-style syntax - use expression parser with ivar inference
-    .body.tokens | expr_transform_body($className; $ivars; $methodArgs)
+    .body.tokens | expr_transform_body($className; $ivars; $cvars; $methodArgs)
   else
     # Legacy bash-style syntax - use existing transformation
     .body | transformMethodBody($className; false)
@@ -1547,11 +1594,14 @@ def generate:
   . as $class |
   # Extract instance variable names for expression parser
   ([.instanceVars[]? | .name] // []) as $ivars |
+  # Extract class instance variable names for expression parser
+  ([.classInstanceVars[]? | .name] // []) as $cvars |
   (
     generateHeader,
     generateMetadata,
+    generateClassVarsInit,
     generateRequires,
-    (.methods[] | generateMethod($class.name; $ivars))
+    (.methods[] | generateMethod($class.name; $ivars; $cvars))
   );
 
 # ==============================================================================
