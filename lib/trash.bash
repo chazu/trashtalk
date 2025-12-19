@@ -1051,10 +1051,36 @@ function send {
 
   local _RECEIVER="$1"; shift
   local _SELECTOR="$1"; shift
-  # Normalize selector: remove trailing colon (keyword message syntax)
-  _SELECTOR="${_SELECTOR%:}"
   local _CLASS=""
   local _INSTANCE=""
+
+  # ============================================
+  # Keyword message parsing
+  # ============================================
+  # Handle Smalltalk keyword syntax: @ obj method: arg1 key2: arg2
+  # Converts to: selector=method_key2, args=(arg1, arg2)
+  local -a _ARGS=()
+  if [[ "$_SELECTOR" == *: ]]; then
+    # First keyword (already have it)
+    _SELECTOR="${_SELECTOR%:}"  # Remove trailing colon
+
+    # Process remaining arguments looking for more keywords
+    while [[ $# -gt 0 ]]; do
+      if [[ "$1" == *: ]]; then
+        # This is a keyword - append to selector
+        local keyword="${1%:}"  # Remove trailing colon
+        _SELECTOR="${_SELECTOR}_${keyword}"
+        shift
+      else
+        # This is a value - add to args
+        _ARGS+=("$1")
+        shift
+      fi
+    done
+    # Replace positional params with extracted args
+    set -- "${_ARGS[@]}"
+  fi
+  msg_debug "Parsed selector: $_SELECTOR, args: $*"
 
   local class_file
   local class_name
