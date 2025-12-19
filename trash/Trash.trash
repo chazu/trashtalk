@@ -541,26 +541,38 @@ EOF
       return 1
     fi
 
-    # Create minimal skeleton
-    cat > "$trash_file" << EOF
-$class_name subclass: Object
-  instanceVars:
-
-  rawClassMethod: new [
-    local id=\$(_generate_instance_id $class_name)
-    _create_instance $class_name "\$id"
-    echo "\$id"
-  ]
-
-  method: example [
-    ^ "Hello from $class_name"
-  ]
-EOF
+    # Create minimal skeleton (using printf to avoid heredoc stdin issues)
+    printf '%s\n' \
+      "$class_name subclass: Object" \
+      "  instanceVars:" \
+      "" \
+      "  rawClassMethod: new [" \
+      "    local id=\$(_generate_instance_id $class_name)" \
+      "    _create_instance $class_name \"\$id\"" \
+      "    echo \"\$id\"" \
+      "  ]" \
+      "" \
+      "  method: example [" \
+      "    ^ \"Hello from $class_name\"" \
+      "  ]" \
+      > "$trash_file"
 
     echo "Created $trash_file"
 
     # Open in editor and compile if saved
-    @ "$_RECEIVER" edit "$class_name"
+    local before_mtime after_mtime
+    before_mtime=$(stat -f "%m" "$trash_file" 2>/dev/null || stat -c "%Y" "$trash_file" 2>/dev/null)
+
+    ${EDITOR:-vi} "$trash_file" </dev/tty >/dev/tty
+
+    after_mtime=$(stat -f "%m" "$trash_file" 2>/dev/null || stat -c "%Y" "$trash_file" 2>/dev/null)
+
+    if [[ "$before_mtime" != "$after_mtime" ]]; then
+      echo "File modified, compiling..."
+      @ "$_RECEIVER" compileAndReload "$class_name"
+    else
+      echo "No changes detected"
+    fi
   ]
 
   # Edit a class source file and recompile if changed
@@ -586,8 +598,8 @@ EOF
     # Get modification time before editing
     before_mtime=$(stat -f "%m" "$file_to_edit" 2>/dev/null || stat -c "%Y" "$file_to_edit" 2>/dev/null)
 
-    # Open in editor
-    ${EDITOR:-vi} "$file_to_edit"
+    # Open in editor (explicit tty to work in subshells)
+    ${EDITOR:-vi} "$file_to_edit" </dev/tty >/dev/tty
 
     # Get modification time after editing
     local after_mtime
