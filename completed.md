@@ -276,4 +276,133 @@ Counter subclass: Object
 
 ---
 
+## Protocols (2024-12-18)
+
+Go-style ad-hoc polymorphism. Classes don't declare they implement a protocol; if they have the required methods, they conform.
+
+```smalltalk
+Enumerable subclass: Protocol
+  requires: do:
+  requires: collect:
+  requires: inject: into:
+
+@ Array conformsTo: Enumerable   "=> true"
+@ Counter conformsTo: Enumerable "=> false"
+```
+
+---
+
+## Method Categories (2024-12-18)
+
+Organize methods into categories for better introspection:
+
+```smalltalk
+category: "accessing"
+  method: getValue [...]
+  method: setValue: val [...]
+
+category: "arithmetic"
+  method: increment [...]
+```
+
+- Compiler tracks category membership in `__ClassName__methodCategories` metadata
+- `@ Trash categoriesFor ClassName` - list all categories
+- `@ Trash methodsIn_category ClassName categoryName` - list methods in category
+
+---
+
+## Interactive Environment Features (2024-12-18)
+
+### Canonical Object Printing
+Objects print as `<ClassName instanceId>`:
+```bash
+@ $counter printString  # => <Counter counter_abc123>
+@ $array printString    # => <Array array_def456>
+```
+
+Object base class (`trash/Object.trash`) provides:
+- `printString` - canonical `<Class id>` format
+- `class` - returns class name
+- `id` - returns instance ID
+- `isKindOf: className` - checks inheritance chain
+- `conformsTo: protocolName` - checks protocol conformance
+
+### Last Result Variable (`$__`)
+Each `@` command stores its result in `$__` (double underscore):
+```bash
+@ Counter new           # => counter_abc123, $__ = counter_abc123
+@ $__ increment         # => 1, $__ = 1
+```
+
+Note: `$_` couldn't be used because it's a bash special variable.
+
+### Inspection Protocol
+Object class (`trash/Object.trash`) provides:
+- `inspect` - detailed inspection showing class, id, and all instance variables
+- `asJson` - returns raw JSON data for the instance
+- `findAll` (class method) - returns all instances of the class
+- `count` (class method) - returns count of instances
+- `find` (class method) - find instances matching a predicate (e.g., `@ Counter find "value > 5"`)
+
+---
+
+## Test Framework - TestCase (2024-12-18)
+
+Full xUnit-style test framework in `trash/TestCase.trash`:
+
+**Assertions:**
+- `assert: actual equals: expected` / `assert_equals` - equality check
+- `assert: actual notEquals: expected` / `assert_not_equals` - inequality
+- `assertTrue:` / `assert_true` - boolean true check
+- `assertFalse:` / `assert_false` - boolean false check
+- `assertNil:` / `assert_nil` - nil/empty check
+- `assertNotNil:` / `assert_not_nil` - non-nil check
+- `assert: haystack contains: needle` / `assert_contains` - string containment
+- `assert: actual matches: pattern` / `assert_matches` - regex matching
+- `assert: actual greaterThan: expected` / `assert_greater_than` - numeric >
+- `assert: actual lessThan: expected` / `assert_less_than` - numeric <
+- `assert: actual greaterOrEqual: expected` - numeric >=
+- `assert: actual lessOrEqual: expected` - numeric <=
+
+**Test Control:**
+- `skip:` / `skip` - skip test with optional reason
+- `pending:` / `pending` - mark test as pending
+- `fail:` / `fail` - explicit failure
+
+**Usage:**
+```smalltalk
+MyTest subclass: TestCase
+  rawMethod: testSomething [
+    @ "$_RECEIVER" assert_equals "hello" "hello"
+    @ "$_RECEIVER" assert_true "1"
+  ]
+
+# Run with:
+@ MyTest runAll
+```
+
+---
+
+## Legacy Code Cleanup (2024-12-18)
+
+All legacy `is_a` + `instance_vars` + function-style syntax has been removed:
+
+**Deleted:**
+- `trash/*.legacy` archive files (Array.legacy, Store.legacy, Trash.legacy, Tuplespace.legacy)
+
+**Updated to modern `.trash` syntax:**
+- `tests/test_instance_var_defaults.bash` - now creates/compiles `.trash` files dynamically
+- `Trash.trash` template methods (`createObject:super:`, `quickCreate:template:`) - now generate `.trash` files and compile them
+- `Trash.trash` introspection methods (`methodsFor:`, `hierarchyFor:`) - now use compiled metadata
+
+**Removed legacy fallbacks from `lib/trash.bash`:**
+- `_get_class_instance_vars()` - no longer parses `instance_vars` from legacy files
+- `_get_parent_class()` - no longer parses `is_a` from legacy files
+
+**Still used (not legacy):**
+- `is_a()` and `instance_vars()` functions - used by runtime for accessor generation from compiled metadata
+- Runtime class files (`trash/ClassName` without extension) - these are compiled output copies
+
+---
+
 *Last updated: 2024-12-18*
