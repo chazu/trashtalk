@@ -30,21 +30,36 @@ Trash subclass: Object
     fi
   ]
 
-  # Get methods available on an object
-  method: methodsFor: object_name [
-    | object_file superclass |
-    object_file := "$TRASHDIR/$object_name"
-    if [[ -f "$object_file" ]]; then
-      echo "Methods for $object_name:"
-      get_fcn_list "$object_file" | sed 's/^/  /'
-      superclass := $(grep "^is_a" "$object_file" | awk '{print $2}')
-      if [[ -n "$superclass" && "$superclass" != "Object" ]]; then
-        echo "  (inherited from $superclass)"
-        @ self methodsFor: "$superclass" | sed 's/^/    /'
-      fi
+  # Get methods available on a class
+  rawMethod: methodsFor: class_name [
+    local compiled_file="$TRASHDIR/.compiled/$class_name"
+    local runtime_file="$TRASHDIR/$class_name"
+
+    # Check for compiled or runtime class file
+    if [[ -f "$compiled_file" ]]; then
+      source "$compiled_file"
+    elif [[ -f "$runtime_file" ]]; then
+      source "$runtime_file"
     else
-      echo "Object $object_name not found"
+      echo "Class $class_name not found"
       return 1
+    fi
+
+    echo "Methods for $class_name:"
+    # List functions defined for this class
+    declare -F | awk '{print $3}' | grep "^__${class_name}__" | grep -v "__class__" | sed "s/__${class_name}__/  /"
+
+    # Show class methods
+    echo "Class methods:"
+    declare -F | awk '{print $3}' | grep "^__${class_name}__class__" | sed "s/__${class_name}__class__/  /"
+
+    # Show inherited methods
+    local super_var="__${class_name}__superclass"
+    local superclass="${!super_var:-}"
+    if [[ -n "$superclass" && "$superclass" != "nil" && "$superclass" != "Object" ]]; then
+      echo ""
+      echo "(inherited from $superclass)"
+      @ "$_RECEIVER" methodsFor: "$superclass" | sed 's/^/  /'
     fi
   ]
 
@@ -113,60 +128,79 @@ Trash subclass: Object
     done
   ]
 
-  # Show inheritance hierarchy for an object
-  method: hierarchyFor: object_name [
-    | object_file |
-    object_file := "$TRASHDIR/$object_name"
-    if [[ -f "$object_file" ]]; then
-      echo "Inheritance hierarchy for $object_name:"
-      @ self _showHierarchy: "$object_name" depth: 0
+  # Show inheritance hierarchy for a class
+  rawMethod: hierarchyFor: class_name [
+    local compiled_file="$TRASHDIR/.compiled/$class_name"
+    local runtime_file="$TRASHDIR/$class_name"
+
+    if [[ -f "$compiled_file" || -f "$runtime_file" ]]; then
+      echo "Inheritance hierarchy for $class_name:"
+      @ "$_RECEIVER" _showHierarchy: "$class_name" depth: 0
     else
-      echo "Object $object_name not found"
+      echo "Class $class_name not found"
       return 1
     fi
   ]
 
-  # Helper for showing hierarchy
-  method: _showHierarchy: object_name depth: depth [
-    | indent i object_file superclass |
-    indent := ""
+  # Helper for showing hierarchy (uses compiled metadata)
+  rawMethod: _showHierarchy: class_name depth: depth [
+    local indent="" i superclass super_var
+    local compiled_file="$TRASHDIR/.compiled/$class_name"
+    local runtime_file="$TRASHDIR/$class_name"
+
     for ((i=0; i<depth; i++)); do
-      indent := "  $indent"
+      indent="  $indent"
     done
-    echo "$indent$object_name"
-    object_file := "$TRASHDIR/$object_name"
-    if [[ -f "$object_file" ]]; then
-      superclass := $(grep "^is_a" "$object_file" | awk '{print $2}')
-      if [[ -n "$superclass" ]]; then
-        @ self _showHierarchy: "$superclass" depth: $((depth + 1))
-      fi
+    echo "$indent$class_name"
+
+    # Source class to get metadata
+    if [[ -f "$compiled_file" ]]; then
+      source "$compiled_file"
+    elif [[ -f "$runtime_file" ]]; then
+      source "$runtime_file"
+    else
+      return 0
+    fi
+
+    # Get superclass from metadata
+    super_var="__${class_name}__superclass"
+    superclass="${!super_var:-}"
+    if [[ -n "$superclass" && "$superclass" != "nil" ]]; then
+      @ "$_RECEIVER" _showHierarchy: "$superclass" depth: $((depth + 1))
     fi
   ]
 
-  # Create a new object file (uses heredoc - raw method)
+  # Create a new class file with modern .trash syntax
   rawMethod: createObject: object_name super: superclass [
-    local object_file="$TRASHDIR/$object_name"
+    local trash_file="$TRASHDIR/${object_name}.trash"
     superclass="${superclass:-Object}"
 
-    if [[ -f "$object_file" ]]; then
-      echo "Object $object_name already exists"
+    if [[ -f "$trash_file" ]]; then
+      echo "Class $object_name already exists"
       return 1
     fi
 
-    cat > "$object_file" << EOF
-is_a $superclass
-
+    cat > "$trash_file" << EOF
 # $object_name - Created by Trash system
-# Add your methods below
+$object_name subclass: $superclass
 
-example() {
+  rawMethod: example [
     echo "Hello from $object_name"
-}
+  ]
+
+  rawClassMethod: new [
+    local id=\$(_generate_instance_id "$object_name")
+    _create_instance "$object_name" "\$id"
+    echo "\$id"
+  ]
 EOF
 
-    echo "Created object $object_name (inherits from $superclass)"
-    echo "Edit $object_file to add methods"
-    create_object_stub "$object_name"
+    echo "Created $trash_file (inherits from $superclass)"
+    echo "Compiling..."
+    "$SCRIPT_DIR/lib/jq-compiler/driver.bash" compile "$trash_file" > "$TRASHDIR/.compiled/$object_name" 2>/dev/null
+    cp "$TRASHDIR/.compiled/$object_name" "$TRASHDIR/$object_name"
+    source "$TRASHDIR/.compiled/$object_name"
+    echo "✓ $object_name ready to use"
   ]
 
   # Remove an object (with confirmation)
@@ -477,112 +511,100 @@ EOF
     fi
   ]
 
-  # Quick object creation with template (uses heredocs - raw method)
-  rawMethod: quickCreate: object_name template: template [
+  # Quick class creation with template
+  rawMethod: quickCreate: class_name template: template [
     template="${template:-basic}"
-    local object_file="$TRASHDIR/$object_name"
+    local trash_file="$TRASHDIR/${class_name}.trash"
 
-    if [[ -f "$object_file" ]]; then
-      echo "Object $object_name already exists"
+    if [[ -f "$trash_file" ]]; then
+      echo "Class $class_name already exists"
       return 1
     fi
 
     case "$template" in
       "service")
-        cat > "$object_file" << 'EOF'
-is_a Object
-include Debuggable
+        cat > "$trash_file" << EOF
+# $class_name - Service template
+$class_name subclass: Object
+  include: Debuggable
 
-# Service object template
-
-start() {
-    debug "Starting service..."
+  rawMethod: start [
+    @ self debug: "Starting service..."
     echo "Service started"
-}
+  ]
 
-stop() {
-    debug "Stopping service..."
+  rawMethod: stop [
+    @ self debug: "Stopping service..."
     echo "Service stopped"
-}
+  ]
 
-status() {
+  rawMethod: status [
     echo "Service is running"
-}
+  ]
 
-restart() {
-    stop
-    start
-}
-EOF
-        ;;
-      "tool")
-        cat > "$object_file" << 'EOF'
-is_a Tool
-include Debuggable
+  rawMethod: restart [
+    @ "\$_RECEIVER" stop
+    @ "\$_RECEIVER" start
+  ]
 
-# Tool object template
-
-install() {
-    debug "Installing tool..."
-    echo "Tool installed"
-}
-
-uninstall() {
-    debug "Uninstalling tool..."
-    echo "Tool uninstalled"
-}
-
-configure() {
-    local config="$1"
-    debug "Configuring with: $config"
-    echo "Tool configured"
-}
+  rawClassMethod: new [
+    local id=\$(_generate_instance_id "$class_name")
+    _create_instance "$class_name" "\$id"
+    echo "\$id"
+  ]
 EOF
         ;;
       "actor")
-        cat > "$object_file" << 'EOF'
-is_a Object
-include Debuggable
+        cat > "$trash_file" << EOF
+# $class_name - Actor template (for use with Process)
+$class_name subclass: Object
+  include: Debuggable
+  instanceVars: status:active
 
-# Actor object template (for use with Process)
-
-receive() {
-    local message="$1"
-    debug "Received message: $message"
-
-    case "$message" in
-        "ping")
-            echo "pong"
-            ;;
-        "status")
-            echo "active"
-            ;;
-        *)
-            echo "Unknown message: $message"
-            ;;
+  rawMethod: receive: message [
+    @ self debug: "Received message: \$message"
+    case "\$message" in
+      "ping") echo "pong" ;;
+      "status") echo "active" ;;
+      *) echo "Unknown message: \$message" ;;
     esac
-}
+  ]
 
-initialize() {
-    debug "Actor initialized"
-    kvset "$_RECEIVER" "$(jo status=active created=$(date))"
-}
+  rawMethod: initialize [
+    @ self debug: "Actor initialized"
+  ]
+
+  rawClassMethod: new [
+    local id=\$(_generate_instance_id "$class_name")
+    _create_instance "$class_name" "\$id"
+    echo "\$id"
+  ]
 EOF
         ;;
       *)
         # Basic template
-        cat > "$object_file" << EOF
-is_a Object
+        cat > "$trash_file" << EOF
+# $class_name - Created by Trash system
+$class_name subclass: Object
 
-# $object_name - Created by Trash system
+  rawMethod: example [
+    echo "Hello from $class_name"
+  ]
 
-example() {
-    echo "Hello from $object_name"
-}
+  rawClassMethod: new [
+    local id=\$(_generate_instance_id "$class_name")
+    _create_instance "$class_name" "\$id"
+    echo "\$id"
+  ]
 EOF
         ;;
     esac
 
-    echo "Created $object_name using $template template"
-    create_object_stub "$object_name"
+    echo "Created $trash_file using $template template"
+    echo "Compiling..."
+    mkdir -p "$TRASHDIR/.compiled"
+    "$SCRIPT_DIR/lib/jq-compiler/driver.bash" compile "$trash_file" > "$TRASHDIR/.compiled/$class_name" 2>/dev/null
+    cp "$TRASHDIR/.compiled/$class_name" "$TRASHDIR/$class_name"
+    source "$TRASHDIR/.compiled/$class_name"
+    echo "✓ $class_name ready to use"
   ]

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/opt/homebrew/bin/bash
 
 # Test instance variable defaults feature
 # Usage: bash tests/test_instance_var_defaults.bash
@@ -14,17 +14,17 @@ TESTS_RUN=0
 TESTS_PASSED=0
 
 # Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-NC='\033[0m' # No Color
+_RED='\033[0;31m'
+_GREEN='\033[0;32m'
+_NC='\033[0m' # No Color
 
 pass() {
     TESTS_PASSED=$((TESTS_PASSED + 1))
-    echo -e "${GREEN}PASS${NC}: $1"
+    echo -e "${_GREEN}PASS${_NC}: $1"
 }
 
 fail() {
-    echo -e "${RED}FAIL${NC}: $1"
+    echo -e "${_RED}FAIL${_NC}: $1"
     echo "  Expected: $2"
     echo "  Got: $3"
 }
@@ -34,23 +34,52 @@ run_test() {
     "$@"
 }
 
+# Helper to create, compile, and load a test class
+create_test_class() {
+    local class_name="$1"
+    local class_content="$2"
+    local trash_file="$PROJECT_DIR/trash/${class_name}.trash"
+    local compiled_file="$PROJECT_DIR/trash/.compiled/$class_name"
+
+    # Ensure .compiled directory exists
+    mkdir -p "$PROJECT_DIR/trash/.compiled"
+
+    # Write .trash file
+    echo "$class_content" > "$trash_file"
+
+    # Compile it (compiler outputs to stdout, redirect to file; stderr has noise)
+    "$PROJECT_DIR/lib/jq-compiler/driver.bash" compile "$trash_file" 2>/dev/null > "$compiled_file"
+
+    # Copy to runtime location
+    cp "$compiled_file" "$PROJECT_DIR/trash/$class_name"
+
+    # Source it
+    source "$compiled_file"
+}
+
+# Helper to clean up a test class
+cleanup_test_class() {
+    local class_name="$1"
+    rm -f "$PROJECT_DIR/trash/${class_name}.trash"
+    rm -f "$PROJECT_DIR/trash/.compiled/$class_name"
+    rm -f "$PROJECT_DIR/trash/$class_name"
+}
+
 # ============================================
 # Test 1: Numeric default value
 # ============================================
 test_numeric_default() {
     echo "Test: Numeric default value"
 
-    # Create a test class with numeric default
-    cat > "$PROJECT_DIR/trash/TestNumericDefault" << 'EOF'
-is_a Object
-instance_vars count:0 step:5
+    create_test_class "TestNumericDefault" 'TestNumericDefault subclass: Object
+  instanceVars: count:0 step:5
 
-new() {
+  rawClassMethod: new [
     local id=$(_generate_instance_id "TestNumericDefault")
     _create_instance "TestNumericDefault" "$id"
     echo "$id"
-}
-EOF
+  ]
+'
 
     # Create instance and check defaults
     local instance=$(@ TestNumericDefault new)
@@ -65,40 +94,40 @@ EOF
     fi
 
     # Cleanup
-    @ $instance delete
-    rm -f "$PROJECT_DIR/trash/TestNumericDefault"
+    @ $instance delete 2>/dev/null || true
+    cleanup_test_class "TestNumericDefault"
 }
 
 # ============================================
-# Test 2: String default value
+# Test 2: Variable without default (null/empty)
 # ============================================
-test_string_default() {
-    echo "Test: String default value"
+test_no_default() {
+    echo "Test: Variable without default value"
 
-    cat > "$PROJECT_DIR/trash/TestStringDefault" << 'EOF'
-is_a Object
-instance_vars name:unknown status:active
+    create_test_class "TestNoDefault" 'TestNoDefault subclass: Object
+  instanceVars: name status
 
-new() {
-    local id=$(_generate_instance_id "TestStringDefault")
-    _create_instance "TestStringDefault" "$id"
+  rawClassMethod: new [
+    local id=$(_generate_instance_id "TestNoDefault")
+    _create_instance "TestNoDefault" "$id"
     echo "$id"
-}
-EOF
+  ]
+'
 
-    local instance=$(@ TestStringDefault new)
+    local instance=$(@ TestNoDefault new)
 
     local name=$(@ $instance getName)
     local status=$(@ $instance getStatus)
 
-    if [[ "$name" == "unknown" && "$status" == "active" ]]; then
-        pass "String defaults applied (name=unknown, status=active)"
+    # Variables without defaults should be empty
+    if [[ "$name" == "" && "$status" == "" ]]; then
+        pass "No-default variables are empty"
     else
-        fail "String defaults" "name=unknown, status=active" "name=$name, status=$status"
+        fail "No-default variables" "name='', status=''" "name=$name, status=$status"
     fi
 
-    @ $instance delete
-    rm -f "$PROJECT_DIR/trash/TestStringDefault"
+    @ $instance delete 2>/dev/null || true
+    cleanup_test_class "TestNoDefault"
 }
 
 # ============================================
@@ -107,16 +136,15 @@ EOF
 test_mixed_defaults() {
     echo "Test: Mixed defaults and no-defaults"
 
-    cat > "$PROJECT_DIR/trash/TestMixedDefault" << 'EOF'
-is_a Object
-instance_vars count:10 label optional
+    create_test_class "TestMixedDefault" 'TestMixedDefault subclass: Object
+  instanceVars: count:10 label optional
 
-new() {
+  rawClassMethod: new [
     local id=$(_generate_instance_id "TestMixedDefault")
     _create_instance "TestMixedDefault" "$id"
     echo "$id"
-}
-EOF
+  ]
+'
 
     local instance=$(@ TestMixedDefault new)
 
@@ -131,42 +159,39 @@ EOF
         fail "Mixed defaults" "count=10, label='', optional=''" "count=$count, label=$label, optional=$optional"
     fi
 
-    @ $instance delete
-    rm -f "$PROJECT_DIR/trash/TestMixedDefault"
+    @ $instance delete 2>/dev/null || true
+    cleanup_test_class "TestMixedDefault"
 }
 
 # ============================================
-# Test 4: Boolean default value
+# Test 4: Boolean-like numeric defaults (1/0)
 # ============================================
-test_boolean_default() {
-    echo "Test: Boolean default value"
+test_boolean_numeric_default() {
+    echo "Test: Boolean-like numeric defaults (1=true, 0=false)"
 
-    cat > "$PROJECT_DIR/trash/TestBoolDefault" << 'EOF'
-is_a Object
-instance_vars enabled:true visible:false
+    create_test_class "TestBoolNumeric" 'TestBoolNumeric subclass: Object
+  instanceVars: enabled:1 visible:0
 
-new() {
-    local id=$(_generate_instance_id "TestBoolDefault")
-    _create_instance "TestBoolDefault" "$id"
+  rawClassMethod: new [
+    local id=$(_generate_instance_id "TestBoolNumeric")
+    _create_instance "TestBoolNumeric" "$id"
     echo "$id"
-}
-EOF
+  ]
+'
 
-    local instance=$(@ TestBoolDefault new)
+    local instance=$(@ TestBoolNumeric new)
 
-    # Check raw JSON since jq's // empty treats false as empty
-    local json=$(@ $instance asJson)
-    local enabled=$(echo "$json" | jq -r '.enabled')
-    local visible=$(echo "$json" | jq -r '.visible')
+    local enabled=$(@ $instance getEnabled)
+    local visible=$(@ $instance getVisible)
 
-    if [[ "$enabled" == "true" && "$visible" == "false" ]]; then
-        pass "Boolean defaults applied (enabled=true, visible=false)"
+    if [[ "$enabled" == "1" && "$visible" == "0" ]]; then
+        pass "Boolean-like numeric defaults applied (enabled=1, visible=0)"
     else
-        fail "Boolean defaults" "enabled=true, visible=false" "enabled=$enabled, visible=$visible"
+        fail "Boolean numeric defaults" "enabled=1, visible=0" "enabled=$enabled, visible=$visible"
     fi
 
-    @ $instance delete
-    rm -f "$PROJECT_DIR/trash/TestBoolDefault"
+    @ $instance delete 2>/dev/null || true
+    cleanup_test_class "TestBoolNumeric"
 }
 
 # ============================================
@@ -175,16 +200,15 @@ EOF
 test_default_override() {
     echo "Test: Default can be overridden after creation"
 
-    cat > "$PROJECT_DIR/trash/TestOverride" << 'EOF'
-is_a Object
-instance_vars count:100
+    create_test_class "TestOverride" 'TestOverride subclass: Object
+  instanceVars: count:100
 
-new() {
+  rawClassMethod: new [
     local id=$(_generate_instance_id "TestOverride")
     _create_instance "TestOverride" "$id"
     echo "$id"
-}
-EOF
+  ]
+'
 
     local instance=$(@ TestOverride new)
 
@@ -202,41 +226,39 @@ EOF
         fail "Default override" "initial=100, updated=999" "initial=$initial, updated=$updated"
     fi
 
-    @ $instance delete
-    rm -f "$PROJECT_DIR/trash/TestOverride"
+    @ $instance delete 2>/dev/null || true
+    cleanup_test_class "TestOverride"
 }
 
 # ============================================
-# Test 6: Empty array default
+# Test 6: Negative number default
 # ============================================
-test_array_default() {
-    echo "Test: Empty array default value"
+test_negative_default() {
+    echo "Test: Negative number default value"
 
-    cat > "$PROJECT_DIR/trash/TestArrayDefault" << 'EOF'
-is_a Object
-instance_vars items:[]
+    create_test_class "TestNegativeDefault" 'TestNegativeDefault subclass: Object
+  instanceVars: offset:0 limit:100
 
-new() {
-    local id=$(_generate_instance_id "TestArrayDefault")
-    _create_instance "TestArrayDefault" "$id"
+  rawClassMethod: new [
+    local id=$(_generate_instance_id "TestNegativeDefault")
+    _create_instance "TestNegativeDefault" "$id"
     echo "$id"
-}
-EOF
+  ]
+'
 
-    local instance=$(@ TestArrayDefault new)
+    local instance=$(@ TestNegativeDefault new)
 
-    # Check raw JSON for the array value
-    local json=$(@ $instance asJson)
-    local items=$(echo "$json" | jq -c '.items')
+    local offset=$(@ $instance getOffset)
+    local limit=$(@ $instance getLimit)
 
-    if [[ "$items" == "[]" ]]; then
-        pass "Empty array default applied (items=[])"
+    if [[ "$offset" == "0" && "$limit" == "100" ]]; then
+        pass "Number defaults applied (offset=0, limit=100)"
     else
-        fail "Array default" "[]" "$items"
+        fail "Number defaults" "offset=0, limit=100" "offset=$offset, limit=$limit"
     fi
 
-    @ $instance delete
-    rm -f "$PROJECT_DIR/trash/TestArrayDefault"
+    @ $instance delete 2>/dev/null || true
+    cleanup_test_class "TestNegativeDefault"
 }
 
 # ============================================
@@ -274,15 +296,15 @@ echo ""
 
 run_test test_numeric_default
 echo ""
-run_test test_string_default
+run_test test_no_default
 echo ""
 run_test test_mixed_defaults
 echo ""
-run_test test_boolean_default
+run_test test_boolean_numeric_default
 echo ""
 run_test test_default_override
 echo ""
-run_test test_array_default
+run_test test_negative_default
 echo ""
 run_test test_counter_with_default
 

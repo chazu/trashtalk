@@ -58,6 +58,25 @@ Example:
 @ Counter find "value > 5"  # => counter_abc123
 ```
 
+### Legacy Code Cleanup - COMPLETE
+All legacy `is_a` + `instance_vars` + function-style syntax has been removed:
+
+**Deleted:**
+- `trash/*.legacy` archive files (Array.legacy, Store.legacy, Trash.legacy, Tuplespace.legacy)
+
+**Updated to modern `.trash` syntax:**
+- `tests/test_instance_var_defaults.bash` - now creates/compiles `.trash` files dynamically
+- `Trash.trash` template methods (`createObject:super:`, `quickCreate:template:`) - now generate `.trash` files and compile them
+- `Trash.trash` introspection methods (`methodsFor:`, `hierarchyFor:`) - now use compiled metadata
+
+**Removed legacy fallbacks from `lib/trash.bash`:**
+- `_get_class_instance_vars()` - no longer parses `instance_vars` from legacy files
+- `_get_parent_class()` - no longer parses `is_a` from legacy files
+
+**Still used (not legacy):**
+- `is_a()` and `instance_vars()` functions - used by runtime for accessor generation from compiled metadata
+- Runtime class files (`trash/ClassName` without extension) - these are compiled output copies
+
 ### Test Framework (TestCase) - COMPLETE
 Full xUnit-style test framework in `trash/TestCase.trash`:
 
@@ -347,6 +366,13 @@ The compiler may mangle arguments when a negative number follows another argumen
 @ obj assert_greater_than 1 0
 ```
 
+### String Defaults in instanceVars
+The compiler strips colons from string default values. For example, `instanceVars: name:unknown status:active` compiles to `name unknown status active` instead of preserving the defaults.
+
+**Impact:** String defaults don't work; only numeric defaults are reliable.
+
+**Workaround:** Use numeric defaults (0, 1, etc.) or leave variables without defaults and initialize in the `new` method.
+
 ---
 
-*Last updated: 2024-12-18 - Inspection protocol, TestCase framework complete*
+*Last updated: 2024-12-18 - Legacy code cleanup complete*
