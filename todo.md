@@ -1,6 +1,6 @@
 # Trashtalk TODO
 
-**Test Status: 112+ tests passing (100%)**
+**Test Status: 7 test suites, 35+ bash tests, 22 TestCase assertions (100% passing)**
 
 See `completed.md` for finished work.
 
@@ -37,11 +37,60 @@ c=$(@ Counter new)
 ```
 Note: `$_` couldn't be used because it's a bash special variable.
 
-### Inspection Protocol
-- Standard `inspect` method returns object state as dictionary
-- Example: `@ obj inspect` → `#{class: Counter id: abc123 value: 5 step: 1}`
-- Powers the Inspector panel in the environment
-- Consider: `instanceVariables` method to list ivar names
+### Inspection Protocol - COMPLETE
+Object class (`trash/Object.trash`) now provides:
+- `inspect` - detailed inspection showing class, id, and all instance variables
+- `asJson` - returns raw JSON data for the instance
+- `findAll` (class method) - returns all instances of the class
+- `count` (class method) - returns count of instances
+- `find` (class method) - find instances matching a predicate (e.g., `@ Counter find "value > 5"`)
+
+Example:
+```bash
+@ $counter inspect
+# a Counter
+#   id: counter_abc123
+#   value: 5
+#   step: 1
+
+@ Counter findAll      # => counter_abc123 counter_def456
+@ Counter count        # => 2
+@ Counter find "value > 5"  # => counter_abc123
+```
+
+### Test Framework (TestCase) - COMPLETE
+Full xUnit-style test framework in `trash/TestCase.trash`:
+
+**Assertions:**
+- `assert: actual equals: expected` / `assert_equals` - equality check
+- `assert: actual notEquals: expected` / `assert_not_equals` - inequality
+- `assertTrue:` / `assert_true` - boolean true check
+- `assertFalse:` / `assert_false` - boolean false check
+- `assertNil:` / `assert_nil` - nil/empty check
+- `assertNotNil:` / `assert_not_nil` - non-nil check
+- `assert: haystack contains: needle` / `assert_contains` - string containment
+- `assert: actual matches: pattern` / `assert_matches` - regex matching
+- `assert: actual greaterThan: expected` / `assert_greater_than` - numeric >
+- `assert: actual lessThan: expected` / `assert_less_than` - numeric <
+- `assert: actual greaterOrEqual: expected` - numeric >=
+- `assert: actual lessOrEqual: expected` - numeric <=
+
+**Test Control:**
+- `skip:` / `skip` - skip test with optional reason
+- `pending:` / `pending` - mark test as pending
+- `fail:` / `fail` - explicit failure
+
+**Usage:**
+```smalltalk
+MyTest subclass: TestCase
+  rawMethod: testSomething [
+    @ "$_RECEIVER" assert_equals "hello" "hello"
+    @ "$_RECEIVER" assert_true "1"
+  ]
+
+# Run with:
+@ MyTest runAll
+```
 
 ---
 
@@ -262,6 +311,42 @@ See `windowing-ideas.md` for research on building an Acme-like terminal environm
 ### Heredoc in rawMethod
 When `rawMethod:` contains heredocs, compiler indents `EOF` terminators, breaking bash syntax. Affects `Trash.trash` methods like `createObject:super:`.
 
+### Method Name Collision (Keyword vs Unary)
+Keyword methods (e.g., `skip:`) and unary methods with the same base name (e.g., `skip`) compile to the same bash function name (`__ClassName__skip`), causing the second definition to overwrite the first.
+
+**Impact:** When both exist, calling the keyword version actually executes the unary version, potentially causing infinite recursion if the unary version delegates to the keyword version.
+
+**Workaround:** Inline implementations in both methods rather than having one delegate to the other:
+```smalltalk
+# BAD - causes infinite loop:
+rawMethod: skip: reason [...]
+rawMethod: skip [
+  @ "$_RECEIVER" skip: "No reason"  # Calls itself!
+]
+
+# GOOD - inline both:
+rawMethod: skip: reason [
+  # ... full implementation ...
+]
+rawMethod: skip [
+  # ... full implementation with default reason ...
+]
+```
+
+**Proper fix:** Compiler should generate distinct function names, e.g., `__ClassName__skip_` for `skip:` and `__ClassName__skip` for `skip`.
+
+### Negative Numbers in Arguments
+The compiler may mangle arguments when a negative number follows another argument. For example, `0 -1` can become `0-1` (single argument instead of two).
+
+**Workaround:** Avoid negative number literals in method calls. Use variables or different test values:
+```smalltalk
+# BAD - may be mangled:
+@ obj assert_greater_than 0 -1
+
+# GOOD - use positive numbers or variables:
+@ obj assert_greater_than 1 0
+```
+
 ---
 
-*Last updated: 2024-12-17 - Block closures and control flow complete*
+*Last updated: 2024-12-18 - Inspection protocol, TestCase framework complete*
