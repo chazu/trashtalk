@@ -1253,14 +1253,33 @@ function receiver_path {
   echo "${TRASHDIR}/${receiver}"
 }
 
+# Last result variable - stores output of most recent @ command
+# Access via $__ in REPL context (double underscore, since $_ is bash special)
+declare -g __=""
+
 # Invoke trash - Send a message
+# Captures output in $__ for REPL chaining: @ Counter new → @ $__ increment
 function @ {
   if [ $# == 1 ]; then
     is_a Object
   fi
 
   msg_debug "Entrypoint: $*"
-  send "$@"
+
+  # Capture output and store in $__
+  local ___result
+  ___result=$(send "$@")
+  local ___exit_code=$?
+
+  # Store in $__ for next command (only if there's output)
+  if [[ -n "$___result" ]]; then
+    __="$___result"
+  fi
+
+  # Still echo the result so it's visible
+  [[ -n "$___result" ]] && echo "$___result"
+
+  return $___exit_code
 }
 
 # Get list of functions defined in $1

@@ -23,11 +23,19 @@ Object base class (`trash/Object.trash`) provides:
 - `isKindOf: className` - checks inheritance chain
 - `conformsTo: protocolName` - checks protocol conformance
 
-### Last Result Variable (`$it`)
-- REPL stores last result in `$it` (or `$_`)
-- Enables fluid exploration: `@ Counter new` → `@ $it increment` → `@ $it increment`
-- Runtime support in workspace/REPL context
-- Compiler may need awareness for `$it` as special variable
+### Last Result Variable (`$__`) - COMPLETE
+Each `@` command stores its result in `$__` (double underscore):
+```bash
+@ Counter new           # => counter_abc123, $__ = counter_abc123
+@ $__ increment         # => 1, $__ = 1
+@ $__ printString       # Error: "1" is not an instance
+
+# For repeated access, save to a variable:
+c=$(@ Counter new)
+@ $c increment          # => 1
+@ $c increment          # => 2
+```
+Note: `$_` couldn't be used because it's a bash special variable.
 
 ### Inspection Protocol
 - Standard `inspect` method returns object state as dictionary
