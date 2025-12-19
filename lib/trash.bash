@@ -296,7 +296,7 @@ function _ensure_class_sourced {
 }
 export -f _ensure_class_sourced
 
-# Get instance vars for a class from compiled metadata or legacy file format
+# Get instance vars for a class from compiled metadata
 # Usage: _get_class_instance_vars ClassName
 # Returns: space-separated list of var specs (e.g., "count:0 step:5 name")
 function _get_class_instance_vars {
@@ -308,26 +308,14 @@ function _get_class_instance_vars {
   # Ensure class is sourced so metadata is available
   _ensure_class_sourced "$class_name"
 
-  # First check compiled metadata variable (preferred)
+  # Get from compiled metadata variable
   local vars_var="__${class_name}__instanceVars"
   if [[ -n "${!vars_var+x}" ]]; then
     echo "${!vars_var}"
-    return 0
   fi
-
-  # Fallback: parse legacy file format
-  local class_file="$TRASHDIR/$class_name"
-  if [[ ! -f "$class_file" ]]; then
-    return 0
-  fi
-
-  # Extract instance_vars line and get the arguments
-  # Handles: instance_vars foo bar baz
-  # Or:      instance_vars count:0 step:5
-  grep -E "^instance_vars " "$class_file" 2>/dev/null | sed 's/^instance_vars //' || true
 }
 
-# Get the parent class of a given class from compiled metadata or legacy file format
+# Get the parent class of a given class from compiled metadata
 # Usage: _get_parent_class ClassName
 # Returns: parent class name or empty if none/Object
 function _get_parent_class {
@@ -340,20 +328,14 @@ function _get_parent_class {
   # Ensure class is sourced so metadata is available
   _ensure_class_sourced "$class_name"
 
-  # First check compiled metadata variable (preferred)
+  # Get from compiled metadata variable
   local super_var="__${class_name}__superclass"
   if [[ -n "${!super_var+x}" ]]; then
     parent="${!super_var}"
-  else
-    # Fallback: parse legacy file format
-    local class_file="$TRASHDIR/$class_name"
-    if [[ -f "$class_file" ]]; then
-      parent=$(grep -E "^is_a " "$class_file" 2>/dev/null | head -1 | sed 's/^is_a //' || true)
-    fi
   fi
 
   # Don't return Object as a parent to traverse (it's the root)
-  if [[ "$parent" != "Object" && -n "$parent" ]]; then
+  if [[ "$parent" != "Object" && "$parent" != "nil" && -n "$parent" ]]; then
     echo "$parent"
   fi
 }
