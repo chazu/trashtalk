@@ -10,12 +10,18 @@ See `completed.md` for finished work.
 
 These enable the "output becomes input" paradigm for the Trashtalk environment.
 
-### Canonical Object Printing
-- Define standard printed form: `<Counter:abc123>` or similar
-- Must be: recognizable (regex-matchable), executable, reconstructable
-- Add `printString` method to Object or as protocol
-- Printed form should include type + instance ID at minimum
-- Optional state preview: `<Counter:abc123 value=5>`
+### Canonical Object Printing - COMPLETE
+Objects print as `<ClassName instanceId>`:
+```bash
+@ $counter printString  # => <Counter counter_abc123>
+@ $array printString    # => <Array array_def456>
+```
+Object base class (`trash/Object.trash`) provides:
+- `printString` - canonical `<Class id>` format
+- `class` - returns class name
+- `id` - returns instance ID
+- `isKindOf: className` - checks inheritance chain
+- `conformsTo: protocolName` - checks protocol conformance
 
 ### Last Result Variable (`$it`)
 - REPL stores last result in `$it` (or `$_`)
