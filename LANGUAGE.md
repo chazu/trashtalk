@@ -249,7 +249,8 @@ task=$(@ Task titled "Write docs")
 ## Development Workflow
 
 ```bash
-@ Trash edit Counter              # Edit Counter.trash in $EDITOR, auto-recompile
+@ Trash new MyClass               # Create new class skeleton and open in $EDITOR
+@ Trash edit Counter              # Edit existing class, auto-recompile on save
 @ Trash compileAndReload Counter  # Manual compile (safe - won't break on errors)
 @ Trash methodsFor Counter        # List methods
 @ $instance inspect               # Show instance details

@@ -464,7 +464,8 @@ EOF
     echo "@ Trash listTraits              - List all traits"
     echo "@ Trash methodsFor <object>     - Show methods for object"
     echo "@ Trash hierarchyFor <object>   - Show inheritance hierarchy"
-    echo "@ Trash createObject <name> [super] - Create new object"
+    echo "@ Trash new <class>              - Create class skeleton and edit"
+    echo "@ Trash createObject <name> [super] - Create new object (no edit)"
     echo "@ Trash removeObject <name>     - Remove object"
     echo "@ Trash reload                  - Reload all object stubs"
     echo "@ Trash reloadClass <class>     - Hot reload a single class"
@@ -529,6 +530,37 @@ EOF
     else
       echo "Persistent state: none"
     fi
+  ]
+
+  # Create a new class with minimal skeleton and open in editor
+  rawMethod: new: class_name [
+    local trash_file="$TRASHDIR/${class_name}.trash"
+
+    if [[ -f "$trash_file" ]]; then
+      echo "Class $class_name already exists. Use '@ Trash edit $class_name' to edit."
+      return 1
+    fi
+
+    # Create minimal skeleton
+    cat > "$trash_file" << EOF
+$class_name subclass: Object
+  instanceVars:
+
+  rawClassMethod: new [
+    local id=\$(_generate_instance_id $class_name)
+    _create_instance $class_name "\$id"
+    echo "\$id"
+  ]
+
+  method: example [
+    ^ "Hello from $class_name"
+  ]
+EOF
+
+    echo "Created $trash_file"
+
+    # Open in editor and compile if saved
+    @ "$_RECEIVER" edit "$class_name"
   ]
 
   # Edit a class source file and recompile if changed
