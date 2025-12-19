@@ -1,0 +1,87 @@
+# TestTestCase - Tests for the TestCase framework itself
+# Run with: @ TestTestCase runAll
+TestTestCase subclass: TestCase
+
+  # ==========================================
+  # Equality Tests
+  # ==========================================
+
+  rawMethod: testAssertEquals [
+    @ "$_RECEIVER" assert_equals "hello" "hello"
+    @ "$_RECEIVER" assert_equals 42 42
+    @ "$_RECEIVER" assert_equals "" ""
+  ]
+
+  rawMethod: testAssertNotEquals [
+    @ "$_RECEIVER" assert_not_equals "hello" "world"
+    @ "$_RECEIVER" assert_not_equals 1 2
+  ]
+
+  # ==========================================
+  # Boolean Tests
+  # ==========================================
+
+  rawMethod: testAssertTrue [
+    @ "$_RECEIVER" assert_true "true"
+    @ "$_RECEIVER" assert_true "1"
+  ]
+
+  rawMethod: testAssertFalse [
+    @ "$_RECEIVER" assert_false "false"
+    @ "$_RECEIVER" assert_false "0"
+    @ "$_RECEIVER" assert_false ""
+  ]
+
+  # ==========================================
+  # Nil Tests
+  # ==========================================
+
+  rawMethod: testAssertNil [
+    @ "$_RECEIVER" assert_nil ""
+    @ "$_RECEIVER" assert_nil "null"
+  ]
+
+  rawMethod: testAssertNotNil [
+    @ "$_RECEIVER" assert_not_nil "something"
+    @ "$_RECEIVER" assert_not_nil "0"
+  ]
+
+  # ==========================================
+  # String Tests
+  # ==========================================
+
+  rawMethod: testAssertContains [
+    @ "$_RECEIVER" assert_contains "hello world" "world"
+    @ "$_RECEIVER" assert_contains "foobar" "oba"
+  ]
+
+  rawMethod: testAssertMatches [
+    @ "$_RECEIVER" assert_matches "hello123" "^hello[0-9]+"
+    @ "$_RECEIVER" assert_matches "test@example.com" "@"
+  ]
+
+  # ==========================================
+  # Numeric Tests
+  # ==========================================
+
+  rawMethod: testAssertGreaterThan [
+    @ "$_RECEIVER" assert_greater_than 10 5
+    @ "$_RECEIVER" assert_greater_than 100 50
+  ]
+
+  rawMethod: testAssertLessThan [
+    @ "$_RECEIVER" assert_less_than 5 10
+    @ "$_RECEIVER" assert_less_than 1 100
+  ]
+
+  # ==========================================
+  # Skip/Pending Tests
+  # ==========================================
+
+  rawMethod: testSkip [
+    @ "$_RECEIVER" skip: "Demonstrating skip functionality"
+  ]
+
+  rawMethod: testPending [
+    @ "$_RECEIVER" pending: "Feature not yet implemented"
+  ]

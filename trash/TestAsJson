@@ -1,0 +1,8 @@
+is_a Object
+instance_vars testVar:42
+
+new() {
+    local id=$(_generate_instance_id "TestAsJson")
+    _create_instance "TestAsJson" "$id"
+    echo "$id"
+}
