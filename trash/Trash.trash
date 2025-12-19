@@ -470,7 +470,6 @@ EOF
     echo "@ Trash reload                  - Reload all object stubs"
     echo "@ Trash reloadClass <class>     - Hot reload a single class"
     echo "@ Trash compileAndReload <class> - Compile and reload from .trash"
-    echo "@ Trash edit <class>            - Edit class source in \$EDITOR"
     echo "@ Trash stats                   - Show system statistics"
     echo "@ Trash cleanup                 - Clean up system"
     echo "@ Trash version                 - Show version information"
@@ -569,45 +568,6 @@ EOF
 
     if [[ "$before_mtime" != "$after_mtime" ]]; then
       echo "File modified, compiling..."
-      @ "$_RECEIVER" compileAndReload "$class_name"
-    else
-      echo "No changes detected"
-    fi
-  ]
-
-  # Edit a class source file and recompile if changed
-  rawMethod: edit: class_name [
-    local source_file="$TRASHDIR/${class_name}.trash"
-    local trait_source="$TRASHDIR/traits/${class_name}.trash"
-    local file_to_edit=""
-    local before_mtime
-
-    # Find source file
-    if [[ -f "$source_file" ]]; then
-      file_to_edit="$source_file"
-    elif [[ -f "$trait_source" ]]; then
-      file_to_edit="$trait_source"
-    else
-      echo "Error: No source file found for $class_name"
-      echo "Searched:"
-      echo "  - $source_file"
-      echo "  - $trait_source"
-      return 1
-    fi
-
-    # Get modification time before editing
-    before_mtime=$(stat -f "%m" "$file_to_edit" 2>/dev/null || stat -c "%Y" "$file_to_edit" 2>/dev/null)
-
-    # Open in editor (explicit tty to work in subshells)
-    ${EDITOR:-vi} "$file_to_edit" </dev/tty >/dev/tty
-
-    # Get modification time after editing
-    local after_mtime
-    after_mtime=$(stat -f "%m" "$file_to_edit" 2>/dev/null || stat -c "%Y" "$file_to_edit" 2>/dev/null)
-
-    # If file was modified, recompile
-    if [[ "$before_mtime" != "$after_mtime" ]]; then
-      echo "File modified, recompiling..."
       @ "$_RECEIVER" compileAndReload "$class_name"
     else
       echo "No changes detected"
