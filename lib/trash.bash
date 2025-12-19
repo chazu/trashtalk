@@ -267,6 +267,35 @@ _CURRENT_CLASS_VARS=""
 # Key: var_name, Value: default value (or empty for null)
 declare -gA _CURRENT_CLASS_DEFAULTS
 
+# Ensure a class is sourced (for accessing its metadata)
+# Usage: _ensure_class_sourced ClassName
+function _ensure_class_sourced {
+  local class_name="$1"
+
+  # Check if already sourced by looking for superclass metadata
+  local super_var="__${class_name}__superclass"
+  if [[ -n "${!super_var+x}" ]]; then
+    return 0
+  fi
+
+  # Try to source the compiled class
+  local compiled_file="$TRASHDIR/.compiled/$class_name"
+  if [[ -f "$compiled_file" ]]; then
+    source "$compiled_file"
+    return 0
+  fi
+
+  # Try the runtime copy
+  local runtime_file="$TRASHDIR/$class_name"
+  if [[ -f "$runtime_file" ]]; then
+    source "$runtime_file"
+    return 0
+  fi
+
+  return 1
+}
+export -f _ensure_class_sourced
+
 # Get instance vars for a class from compiled metadata or legacy file format
 # Usage: _get_class_instance_vars ClassName
 # Returns: space-separated list of var specs (e.g., "count:0 step:5 name")
@@ -275,6 +304,9 @@ function _get_class_instance_vars {
 
   # Extract just the class name if a path was passed
   class_name="${class_name##*/}"
+
+  # Ensure class is sourced so metadata is available
+  _ensure_class_sourced "$class_name"
 
   # First check compiled metadata variable (preferred)
   local vars_var="__${class_name}__instanceVars"
@@ -304,6 +336,9 @@ function _get_parent_class {
 
   # Extract just the class name if a path was passed
   class_name="${class_name##*/}"
+
+  # Ensure class is sourced so metadata is available
+  _ensure_class_sourced "$class_name"
 
   # First check compiled metadata variable (preferred)
   local super_var="__${class_name}__superclass"
@@ -426,22 +461,31 @@ function instance_vars {
 # ============================================
 
 # Generate accessor methods (getter/setter) for a variable
-# Usage: _generate_accessor <var_name>
+# Usage: _generate_accessor <var_name> [class_name]
+# If class_name provided, generates namespaced functions (__ClassName__getFoo)
+# Otherwise generates plain functions (getFoo) - legacy mode
 function _generate_accessor {
   local var="$1"
+  local class_name="${2:-}"
 
   # Capitalize first letter for method names
   local capitalized
   capitalized="$(echo "${var:0:1}" | tr '[:lower:]' '[:upper:]')${var:1}"
 
-  # Generate getter: getFoo()
-  eval "get${capitalized}() {
+  # Determine function name prefix
+  local prefix=""
+  if [[ -n "$class_name" ]]; then
+    prefix="__${class_name}__"
+  fi
+
+  # Generate getter: getFoo() or __ClassName__getFoo()
+  eval "${prefix}get${capitalized}() {
     local data=\$(db_get \"\$_RECEIVER\")
     [[ -n \"\$data\" ]] && echo \"\$data\" | jq -r \".$var // empty\"
   }"
 
-  # Generate setter: setFoo()
-  eval "set${capitalized}() {
+  # Generate setter: setFoo() or __ClassName__setFoo()
+  eval "${prefix}set${capitalized}() {
     local value=\"\$1\"
     local data=\$(db_get \"\$_RECEIVER\")
 
@@ -504,7 +548,7 @@ function _create_instance {
     fi
     class_var_list="$class_var_list $var"
     class_var_defaults["$var"]="$default_val"
-    _generate_accessor "$var"
+    _generate_accessor "$var" "$class_name"
   done
   class_var_list="${class_var_list# }"
 
@@ -523,7 +567,7 @@ function _create_instance {
       all_vars="$all_vars $var"
     fi
     all_defaults["$var"]="${_INHERITED_DEFAULTS[$var]}"
-    _generate_accessor "$var"
+    _generate_accessor "$var" "$class_name"
   done
 
   # Then add/override with current class vars
@@ -600,6 +644,40 @@ function _delete_instance {
   local instance_id="$1"
   db_delete "$instance_id" 2>/dev/null
 }
+
+# Find instances matching a predicate
+# Usage: _find_with_predicate ClassName "field > value"
+# Supports: =, !=, >, <, >=, <=
+function _find_with_predicate {
+  local class_name="$1"
+  local predicate="$2"
+  local field op value sql_predicate
+
+  # Parse predicate: "field op value"
+  if [[ "$predicate" =~ ^([a-zA-Z_][a-zA-Z0-9_]*)[[:space:]]*(!=|>=|<=|=|>|<)[[:space:]]*(.+)$ ]]; then
+    field="${BASH_REMATCH[1]}"
+    op="${BASH_REMATCH[2]}"
+    value="${BASH_REMATCH[3]}"
+
+    # Build SQL predicate with json_extract
+    if [[ "$value" =~ ^-?[0-9]+$ ]]; then
+      # Numeric value
+      sql_predicate="json_extract(data, '\$.$field') $op $value"
+    elif [[ "$value" =~ ^\'.*\'$ ]]; then
+      # Already quoted string
+      sql_predicate="json_extract(data, '\$.$field') $op $value"
+    else
+      # Unquoted string - add quotes
+      sql_predicate="json_extract(data, '\$.$field') $op '$value'"
+    fi
+
+    db_query "class = '$class_name' AND $sql_predicate"
+  else
+    echo "Error: Invalid predicate format. Use: field op value (e.g., 'value > 5')" >&2
+    return 1
+  fi
+}
+export -f _find_with_predicate
 
 # Generate a unique instance ID for a class
 function _generate_instance_id {
@@ -1064,7 +1142,14 @@ function send {
       _SOURCED_COMPILED_CLASSES[$class_name]=1
       msg_debug "Sourced compiled class $class_name"
 
+      # Set up _SUPERCLASS from compiled metadata for inheritance support
+      local super_var="__${class_name}__superclass"
+      if [[ -n "${!super_var}" ]]; then
+        _SUPERCLASS="${!super_var}"
+      fi
+
       # Set up instance variables if present (only once)
+      # This will also generate accessors for inherited vars via _SUPERCLASS
       local vars_var="__${class_name}__instanceVars"
       if [[ -n "${!vars_var}" ]]; then
         instance_vars ${!vars_var}

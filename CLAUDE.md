@@ -130,7 +130,5 @@ Requires: `jo`, `jq`, `sqlite3`, `uuidgen`
 
 ## Known Issues
 
-- **Tuplespace vendor path**: `Tuplespace.trash` references wrong path to `tuplespace.bash`
-- **Find predicate queries**: `@ Trash find "value > 5"` parsing needs revision
-- **Inherited _vars array**: jq parsing fails in some inheritance test scenarios
-- Test framework (`TestCase.trash`) is partially implemented
+- **Method name collision**: Keyword methods (e.g., `skip:`) and unary methods with the same base name (e.g., `skip`) compile to the same bash function, causing the second definition to overwrite the first. Workaround: inline implementations in both methods rather than delegating.
+- **Negative numbers in arguments**: The compiler may mangle arguments like `0 -1` into `0-1`. Avoid negative number literals in method calls.
