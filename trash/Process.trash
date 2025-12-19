@@ -27,7 +27,7 @@ Process subclass: Object
         "pid" "" >/dev/null
 
     # Start the process message loop in background with all output suppressed
-    (@ "$_RECEIVER" _messageLoop_object "$process_id" "$object_name") >/dev/null 2>&1 &
+    (__Process___runLoop "$process_id" "$object_name") >/dev/null 2>&1 &
     local bg_pid=$!
 
     # Update process with actual PID and running status
@@ -46,12 +46,16 @@ Process subclass: Object
   ]
 
   # Tuplespace-based message loop for spawned processes
-  rawMethod: _messageLoop: process_id object: object_name [
+  # Called directly as __Process___runLoop to avoid keyword method issues
+  rawMethod: _runLoop [
+    local process_id="$1"
+    local object_name="$2"
+
     # Completely suppress all output in background process
     exec >/dev/null 2>&1
 
     # Set up signal handling for graceful shutdown
-    trap "@ '$_RECEIVER' _cleanupInternal '$process_id'; exit 0" TERM INT
+    trap "__Process___cleanupInternal '$process_id'; exit 0" TERM INT
 
     while true; do
         # Wait for messages directed to this process with timeout
@@ -104,7 +108,7 @@ Process subclass: Object
     done
 
     # Cleanup and exit
-    @ "$_RECEIVER" _cleanupInternal "$process_id"
+    __Process___cleanupInternal "$process_id"
   ]
 
   # Send a message to a spawned process
@@ -253,9 +257,12 @@ Process subclass: Object
     @ "$_RECEIVER" debug "Process $process_id cleanup complete"
   ]
 
-  # Internal cleanup (called from within process)
-  rawMethod: _cleanupInternal: process_id [
-    @ "$_RECEIVER" debug "Internal cleanup for process $process_id"
+  # Internal cleanup (called from within process, not via @ dispatch)
+  rawMethod: _cleanupInternal [
+    local process_id="$1"
+
+    # Note: Can't use @ debug here - we're in a subshell without proper context
+    [[ "${TRASH_DEBUG:-0}" == "1" ]] && echo "Internal cleanup for process $process_id" >&2
 
     # Update process status to stopped
     TRASH_DEBUG=0 @ Tuplespace take_key_value "process" "id" "$process_id" >/dev/null
