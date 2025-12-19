@@ -197,7 +197,7 @@ EOF
 
     echo "Created $trash_file (inherits from $superclass)"
     echo "Compiling..."
-    "$SCRIPT_DIR/lib/jq-compiler/driver.bash" compile "$trash_file" > "$TRASHDIR/.compiled/$object_name" 2>/dev/null
+    "$SCRIPT_DIR/jq-compiler/driver.bash" compile "$trash_file" > "$TRASHDIR/.compiled/$object_name" 2>/dev/null
     cp "$TRASHDIR/.compiled/$object_name" "$TRASHDIR/$object_name"
     source "$TRASHDIR/.compiled/$object_name"
     echo "✓ $object_name ready to use"
@@ -317,7 +317,7 @@ EOF
     fi
 
     # Compile to temp file
-    if ! "$SCRIPT_DIR/lib/jq-compiler/driver.bash" compile "$file_to_compile" > "$temp_file" 2>&1; then
+    if ! "$SCRIPT_DIR/jq-compiler/driver.bash" compile "$file_to_compile" > "$temp_file" 2>&1; then
       echo "Compilation failed:"
       cat "$temp_file"
       rm -f "$temp_file"
@@ -706,7 +706,7 @@ EOF
     echo "Created $trash_file using $template template"
     echo "Compiling..."
     mkdir -p "$TRASHDIR/.compiled"
-    "$SCRIPT_DIR/lib/jq-compiler/driver.bash" compile "$trash_file" > "$TRASHDIR/.compiled/$class_name" 2>/dev/null
+    "$SCRIPT_DIR/jq-compiler/driver.bash" compile "$trash_file" > "$TRASHDIR/.compiled/$class_name" 2>/dev/null
     cp "$TRASHDIR/.compiled/$class_name" "$TRASHDIR/$class_name"
     source "$TRASHDIR/.compiled/$class_name"
     echo "✓ $class_name ready to use"
