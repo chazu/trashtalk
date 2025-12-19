@@ -87,3 +87,38 @@ Object subclass: nil
   rawMethod: asJson [
     db_get "$_RECEIVER"
   ]
+
+  # Edit this class's source file and recompile if changed
+  # Usage: @ Counter edit
+  rawClassMethod: edit [
+    local source_file="$TRASHDIR/${_CLASS}.trash"
+    local trait_source="$TRASHDIR/traits/${_CLASS}.trash"
+    local file_to_edit=""
+
+    # Find source file
+    if [[ -f "$source_file" ]]; then
+      file_to_edit="$source_file"
+    elif [[ -f "$trait_source" ]]; then
+      file_to_edit="$trait_source"
+    else
+      echo "Error: No source file found for $_CLASS"
+      return 1
+    fi
+
+    # Get modification time before editing
+    local before_mtime after_mtime
+    before_mtime=$(stat -f "%m" "$file_to_edit" 2>/dev/null || stat -c "%Y" "$file_to_edit" 2>/dev/null)
+
+    # Open in editor
+    ${EDITOR:-vi} "$file_to_edit" </dev/tty >/dev/tty
+
+    # Check if modified and recompile
+    after_mtime=$(stat -f "%m" "$file_to_edit" 2>/dev/null || stat -c "%Y" "$file_to_edit" 2>/dev/null)
+
+    if [[ "$before_mtime" != "$after_mtime" ]]; then
+      echo "File modified, compiling..."
+      @ Trash compileAndReload "$_CLASS"
+    else
+      echo "No changes detected"
+    fi
+  ]
