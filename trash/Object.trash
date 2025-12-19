@@ -1,0 +1,41 @@
+Object subclass: nil
+
+  # Return a canonical string representation of this object
+  # Format: <ClassName instanceId>
+  rawMethod: printString [
+    echo "<${_CLASS} ${_INSTANCE}>"
+  ]
+
+  # Return the class name of this object
+  rawMethod: class [
+    echo "$_CLASS"
+  ]
+
+  # Return the instance ID of this object
+  rawMethod: id [
+    echo "$_INSTANCE"
+  ]
+
+  # Check if this object is an instance of a given class
+  rawMethod: isKindOf: className [
+    local current="$_CLASS"
+    while [[ -n "$current" ]]; do
+      if [[ "$current" == "$className" ]]; then
+        echo "true"
+        return 0
+      fi
+      local super_var="__${current}__superclass"
+      current="${!super_var:-}"
+    done
+    echo "false"
+  ]
+
+  # Check if this object conforms to a protocol
+  rawMethod: conformsTo: protocolName [
+    _conforms_to "$_CLASS" "$protocolName"
+  ]
+
+  # Delete this object from the database
+  rawMethod: delete [
+    _delete_instance "$_INSTANCE"
+  ]
