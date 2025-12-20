@@ -405,4 +405,33 @@ All legacy `is_a` + `instance_vars` + function-style syntax has been removed:
 
 ---
 
-*Last updated: 2024-12-18*
+## Actor/Process Separation (2024-12-19)
+
+Refactored concurrency architecture to distinguish between internal concurrency and external process management:
+
+**Actor Class** (`trash/Actor.trash`) - Erlang/Go-style concurrency:
+- `@ Actor spawn: ClassName` - spawn isolated actor running a message loop
+- `@ Actor sendTo: id message: selector` - async message send via Tuplespace
+- `@ Actor getFrom: id timeout: seconds` - wait for response
+- `@ Actor terminate: id` - graceful shutdown
+- `@ Actor status: id`, `listActors`, `listRunning`, `cleanupAll`, `stats`
+- Actors run in separate bash subshells, communicate only via Tuplespace
+- No shared state, one message processed at a time
+
+**Process Class** (`trash/Process.trash`) - External OS process management:
+- `@ Process for: "command"` - create managed process wrapper
+- Instance methods: `run`, `start`, `wait`, `isRunning`, `terminate`, `kill`, `signal:`
+- Output capture: `output`, `errors`, `exitCode`, `succeeded`
+- Class methods for quick execution: `exec:`, `run:`, `spawn:`, `waitPid:`, `isRunningPid:`, `killPid:`
+- Similar to Python's subprocess module
+
+**Documentation:**
+- `ACTOR.md` - Complete Actor API reference
+- `PROCESS.md` - Complete Process API reference
+- `TUPLESPACE.md` - Updated to reference Actor for inter-actor communication
+
+**Dispatcher fix:** Added keyword method parsing to build compound selectors from `@ obj method: arg1 key2: arg2` syntax.
+
+---
+
+*Last updated: 2024-12-19*

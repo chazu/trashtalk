@@ -8,23 +8,24 @@ See `completed.md` for finished work.
 
 ## Concurrency & Coordination
 
-### Process API
-Design and document the Process class API for spawning and managing background processes:
-- `@ Process spawn: ObjectName` - spawn object as background process
-- `@ Process sendTo: processId message: selector` - async message send
-- `@ Process waitFor: processId` - block until process completes
-- Process lifecycle (start, stop, status)
-- Error handling and process supervision
-- Usage patterns and examples
+### Actor Supervision ✓ (Actor API implemented, documented in ACTOR.md)
+Build on the Actor concurrency primitive:
+- Supervision trees (restart strategies)
+- Actor linking (linked actors die together)
+- Named actors (lookup by name instead of ID)
+- Actor groups and broadcast messaging
 
-### Tuplespace API & Patterns
-Design and document the Tuplespace coordination primitives:
-- `@ Tuplespace put: tuple` / `@ Tuplespace get: pattern` - basic operations
-- Pattern matching semantics (wildcards, partial matches)
-- Blocking vs non-blocking reads
-- Common patterns: producer/consumer, request/response, pub/sub
-- Integration with Process for inter-process communication
-- Performance considerations and cleanup
+### Process Enhancements ✓ (Process API implemented, documented in PROCESS.md)
+Extend the external process management:
+- Piping between processes
+- Process groups
+- Timeout support for long-running commands
+
+### Tuplespace Patterns ✓ (Tuplespace API documented in TUPLESPACE.md)
+Additional coordination patterns:
+- Pattern matching with wildcards
+- Lease-based expiration
+- Distributed tuplespace (multi-machine)
 
 ---
 

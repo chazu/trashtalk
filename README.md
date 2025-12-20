@@ -203,7 +203,8 @@ lib/jq-compiler/driver.bash compile trash/MyClass.trash > trash/.compiled/MyClas
 | `Store` | SQLite-backed instance persistence |
 | `Array` | Dynamic array with push, pop, map, filter |
 | `Counter` | Simple counter with increment/decrement |
-| `Process` | Background process management via Tuplespace |
+| `Actor` | Erlang/Go-style concurrency via Tuplespace |
+| `Process` | External OS process management (subprocess-like) |
 | `Tuplespace` | Linda-style tuple coordination |
 
 ### Traits

@@ -1,447 +1,271 @@
-# Process - Enhanced process management using Tuplespace
-# Provides event-driven, fault-tolerant process coordination
+# Process - External OS process management
+# Provides an interface to spawn and manage POSIX processes
 Process subclass: Object
   include: Debuggable
+  instanceVars: command pid status exitCode stdout stderr startTime endTime
 
-  # Initialize tuplespace for process management
-  method: _initTuplespace [
-    if ! TRASH_DEBUG=0 @ Tuplespace count >/dev/null 2>&1; then
-      @ self debug: "Initializing tuplespace for process management"
-      TRASH_DEBUG=0 @ Tuplespace init >/dev/null
-    fi
+  # Create a new process wrapper for a command
+  # Usage: proc=$(@ Process for: "curl -s https://example.com")
+  rawClassMethod: for: command [
+    local id=$(_generate_instance_id Process)
+    _create_instance Process "$id"
+    @ "$id" setCommand "$command"
+    @ "$id" setStatus "created"
+    echo "$id"
   ]
 
-  # Spawn a new process running the given object
-  rawMethod: spawn: object_name [
-    local process_id="proc_$(uuidgen 2>/dev/null || echo "$$_$(date +%s)")"
+  # Run the command in the foreground (blocking)
+  # Captures stdout/stderr and exit code
+  rawMethod: run [
+    local cmd=$(_ivar command)
+    local tmp_stdout="/tmp/proc_$$_stdout"
+    local tmp_stderr="/tmp/proc_$$_stderr"
 
-    @ "$_RECEIVER" debug "Spawning process $process_id for object $object_name"
-    @ "$_RECEIVER" _initTuplespace
+    @ "$_RECEIVER" debug "Running command: $cmd"
+    _ivar_set status "running"
+    _ivar_set startTime "$(date +%s)"
 
-    # Register process in tuplespace
-    TRASH_DEBUG=0 @ Tuplespace put_args "process" \
-        "id" "$process_id" \
-        "object" "$object_name" \
-        "status" "starting" \
-        "created" "$(date +%s)" \
-        "pid" "" >/dev/null
+    # Run command, capturing output
+    eval "$cmd" >"$tmp_stdout" 2>"$tmp_stderr"
+    local exit_code=$?
 
-    # Start the process message loop in background with all output suppressed
-    (__Process___runLoop "$process_id" "$object_name") >/dev/null 2>&1 &
+    _ivar_set exitCode "$exit_code"
+    _ivar_set stdout "$(cat "$tmp_stdout" 2>/dev/null)"
+    _ivar_set stderr "$(cat "$tmp_stderr" 2>/dev/null)"
+    _ivar_set endTime "$(date +%s)"
+    _ivar_set status "completed"
+
+    rm -f "$tmp_stdout" "$tmp_stderr"
+
+    echo "$exit_code"
+  ]
+
+  # Start the command in the background (non-blocking)
+  # Returns immediately, use wait or poll to check completion
+  rawMethod: start [
+    local cmd=$(_ivar command)
+    local tmp_stdout="/tmp/proc_${_INSTANCE}_stdout"
+    local tmp_stderr="/tmp/proc_${_INSTANCE}_stderr"
+
+    @ "$_RECEIVER" debug "Starting background command: $cmd"
+    _ivar_set status "running"
+    _ivar_set startTime "$(date +%s)"
+
+    # Run command in background
+    eval "$cmd" >"$tmp_stdout" 2>"$tmp_stderr" &
     local bg_pid=$!
+    _ivar_set pid "$bg_pid"
 
-    # Update process with actual PID and running status
-    TRASH_DEBUG=0 @ Tuplespace take_key_value "process" "id" "$process_id" >/dev/null
-    TRASH_DEBUG=0 @ Tuplespace put_args "process" \
-        "id" "$process_id" \
-        "object" "$object_name" \
-        "status" "running" \
-        "created" "$(date +%s)" \
-        "pid" "$bg_pid" >/dev/null
-
-    # Emit process started event
-    TRASH_DEBUG=0 @ Tuplespace putEvent_data "process_started" "$process_id" >/dev/null
-
-    echo "$process_id"
+    echo "$bg_pid"
   ]
 
-  # Tuplespace-based message loop for spawned processes
-  # Called directly as __Process___runLoop to avoid keyword method issues
-  rawMethod: _runLoop [
-    local process_id="$1"
-    local object_name="$2"
+  # Wait for a background process to complete
+  rawMethod: wait [
+    local proc_pid=$(_ivar pid)
+    local proc_status=$(_ivar status)
 
-    # Completely suppress all output in background process
-    exec >/dev/null 2>&1
+    if [[ "$proc_status" != "running" ]]; then
+      @ "$_RECEIVER" debug "Process not running (status: $proc_status)"
+      echo "$(_ivar exitCode)"
+      return 0
+    fi
 
-    # Set up signal handling for graceful shutdown
-    trap "__Process___cleanupInternal '$process_id'; exit 0" TERM INT
+    if [[ -z "$proc_pid" ]]; then
+      echo "Error: No PID - process was not started in background"
+      return 1
+    fi
 
-    while true; do
-        # Wait for messages directed to this process with timeout
-        local message_tuple
-        message_tuple=$(TRASH_DEBUG=0 @ Tuplespace wait_key_value_timeout "message" "target" "$process_id" 1 2>/dev/null || true)
+    @ "$_RECEIVER" debug "Waiting for PID $proc_pid"
+    wait "$proc_pid" 2>/dev/null
+    local exit_code=$?
 
-        if [[ -n "$message_tuple" ]]; then
-            # Extract message details
-            local message_id sender payload message_type
-            message_id=$(echo "$message_tuple" | TRASH_DEBUG=0 @ Tuplespace field_name - "ID" 2>/dev/null | tail -1 || true)
-            sender=$(echo "$message_tuple" | TRASH_DEBUG=0 @ Tuplespace field_name - "sender" 2>/dev/null | tail -1 || true)
-            payload=$(echo "$message_tuple" | TRASH_DEBUG=0 @ Tuplespace field_name - "payload" 2>/dev/null | tail -1 || true)
-            message_type=$(echo "$message_tuple" | TRASH_DEBUG=0 @ Tuplespace field_name - "type" 2>/dev/null | tail -1 || true)
+    # Capture output
+    local tmp_stdout="/tmp/proc_${_INSTANCE}_stdout"
+    local tmp_stderr="/tmp/proc_${_INSTANCE}_stderr"
+    _ivar_set stdout "$(cat "$tmp_stdout" 2>/dev/null)"
+    _ivar_set stderr "$(cat "$tmp_stderr" 2>/dev/null)"
+    rm -f "$tmp_stdout" "$tmp_stderr"
 
-            # Remove the message from the queue
-            TRASH_DEBUG=0 @ Tuplespace take_key_value "message" "ID" "$message_id" >/dev/null 2>&1 || true
+    _ivar_set exitCode "$exit_code"
+    _ivar_set endTime "$(date +%s)"
+    _ivar_set status "completed"
 
-            case "$message_type" in
-                "terminate")
-                    break
-                    ;;
-                "message"|*)
-                    # Execute the message in the context of the object
-                    local result exit_code
-                    result=$(TRASH_DEBUG=0 @ "$object_name" $payload 2>&1 || true)
-                    exit_code=$?
-
-                    # Send response back via tuplespace
-                    TRASH_DEBUG=0 @ Tuplespace put_args "response" \
-                        "request_id" "$message_id" \
-                        "sender" "$process_id" \
-                        "target" "$sender" \
-                        "result" "$result" \
-                        "exit_code" "$exit_code" \
-                        "timestamp" "$(date +%s)" >/dev/null 2>&1 || true
-                    ;;
-            esac
-        fi
-
-        # Check for shutdown signals
-        local shutdown_signal
-        shutdown_signal=$(TRASH_DEBUG=0 @ Tuplespace get_key_value "signal" "target" "$process_id" 2>/dev/null || true)
-        if [[ -n "$shutdown_signal" ]]; then
-            TRASH_DEBUG=0 @ Tuplespace take_key_value "signal" "target" "$process_id" >/dev/null 2>&1 || true
-            break
-        fi
-
-        # Add a small sleep to prevent busy waiting
-        sleep 0.1
-    done
-
-    # Cleanup and exit
-    __Process___cleanupInternal "$process_id"
+    echo "$exit_code"
   ]
 
-  # Send a message to a spawned process
-  rawMethod: sendTo: process_id message: message [
-    @ "$_RECEIVER" debug "Sending message to process $process_id: $message"
-    @ "$_RECEIVER" _initTuplespace
+  # Check if the process is still running
+  rawMethod: isRunning [
+    local proc_pid=$(_ivar pid)
+    local proc_status=$(_ivar status)
 
-    # Check if process exists and is running (suppress debug output)
-    local process_tuple
-    process_tuple=$(TRASH_DEBUG=0 @ Tuplespace get_key_value "process" "id" "$process_id" 2>/dev/null)
-    if [[ -z "$process_tuple" ]]; then
-        echo "Error: Process $process_id not found"
-        return 1
+    if [[ "$proc_status" != "running" ]]; then
+      echo "false"
+      return 1
     fi
 
-    local status
-    status=$(echo "$process_tuple" | TRASH_DEBUG=0 @ Tuplespace field_name - "status" 2>/dev/null | tail -1)
-    if [[ "$status" != "running" ]]; then
-        echo "Error: Process $process_id is not running (status: $status)"
-        return 1
+    if kill -0 "$proc_pid" 2>/dev/null; then
+      echo "true"
+      return 0
+    else
+      # Process finished, update status
+      @ "$_RECEIVER" wait >/dev/null 2>&1
+      echo "false"
+      return 1
     fi
-
-    # Generate unique message ID
-    local message_id="msg_$(uuidgen 2>/dev/null || echo "$$_$(date +%s.%N)")"
-
-    # Put message in tuplespace (suppress debug output)
-    TRASH_DEBUG=0 @ Tuplespace put_args "message" \
-        "ID" "$message_id" \
-        "target" "$process_id" \
-        "sender" "$$" \
-        "payload" "$message" \
-        "type" "message" \
-        "timestamp" "$(date +%s)" >/dev/null 2>&1
-
-    echo "$message_id"
   ]
 
-  # Get result from a process (blocking)
-  rawMethod: getFrom: process_id timeout: timeout [
-    timeout="${timeout:-10}"  # Default 10 second timeout
+  # Send a signal to the process
+  rawMethod: signal: sig [
+    local proc_pid=$(_ivar pid)
 
-    @ "$_RECEIVER" debug "Getting result from process $process_id (timeout: ${timeout}s)"
-    @ "$_RECEIVER" _initTuplespace
-
-    # Check if process exists (suppress debug output)
-    local process_tuple
-    process_tuple=$(TRASH_DEBUG=0 @ Tuplespace get_key_value "process" "id" "$process_id" 2>/dev/null)
-    if [[ -z "$process_tuple" ]]; then
-        echo "Error: Process $process_id not found"
-        return 1
+    if [[ -z "$proc_pid" ]]; then
+      echo "Error: No PID"
+      return 1
     fi
 
-    # Wait for response from the process (suppress debug output)
-    local response_tuple
-    response_tuple=$(TRASH_DEBUG=0 @ Tuplespace wait_key_value_timeout "response" "sender" "$process_id" "$timeout" 2>/dev/null)
-
-    if [[ -z "$response_tuple" ]]; then
-        echo "Error: Timeout waiting for response from process $process_id"
-        return 1
-    fi
-
-    # Extract and return the result (suppress debug output)
-    local result exit_code response_id
-    result=$(echo "$response_tuple" | TRASH_DEBUG=0 @ Tuplespace field_name - "result" 2>/dev/null | tail -1)
-    exit_code=$(echo "$response_tuple" | TRASH_DEBUG=0 @ Tuplespace field_name - "exit_code" 2>/dev/null | tail -1)
-    response_id=$(echo "$response_tuple" | TRASH_DEBUG=0 @ Tuplespace field_name - "ID" 2>/dev/null | tail -1)
-
-    # Remove the response from tuplespace
-    TRASH_DEBUG=0 @ Tuplespace take_key_value "response" "ID" "$response_id" >/dev/null 2>&1
-
-    echo "$result"
-    return "${exit_code:-0}"
+    @ "$_RECEIVER" debug "Sending signal $sig to PID $proc_pid"
+    kill "-$sig" "$proc_pid" 2>/dev/null
   ]
 
-  # Terminate a process gracefully
-  rawMethod: terminate: process_id [
-    @ "$_RECEIVER" debug "Terminating process $process_id"
-    @ "$_RECEIVER" _initTuplespace
+  # Terminate the process (SIGTERM)
+  rawMethod: terminate [
+    @ "$_RECEIVER" signal: "TERM"
+    _ivar_set status "terminated"
+  ]
 
-    # Check if process exists
-    local process_tuple=$(TRASH_DEBUG=0 @ Tuplespace get_key_value "process" "id" "$process_id")
-    if [[ -z "$process_tuple" ]]; then
-        echo "Error: Process $process_id not found"
-        return 1
+  # Kill the process (SIGKILL)
+  rawMethod: kill [
+    @ "$_RECEIVER" signal: "KILL"
+    _ivar_set status "killed"
+  ]
+
+  # Get stdout from the process
+  rawMethod: output [
+    _ivar stdout
+  ]
+
+  # Get stderr from the process
+  rawMethod: errors [
+    _ivar stderr
+  ]
+
+  # Get exit code
+  rawMethod: exitCode [
+    _ivar exitCode
+  ]
+
+  # Check if process succeeded (exit code 0)
+  rawMethod: succeeded [
+    local code=$(_ivar exitCode)
+    if [[ "$code" == "0" ]]; then
+      echo "true"
+      return 0
+    else
+      echo "false"
+      return 1
     fi
+  ]
 
-    local pid=$(echo "$process_tuple" | TRASH_DEBUG=0 @ Tuplespace field_name - "pid")
-    local status=$(echo "$process_tuple" | TRASH_DEBUG=0 @ Tuplespace field_name - "status")
-
-    if [[ "$status" != "running" ]]; then
-        echo "Process $process_id is not running (status: $status)"
-        @ "$_RECEIVER" cleanup "$process_id"
-        return 0
+  # Get process info
+  rawMethod: info [
+    echo "Command: $(_ivar command)"
+    echo "PID: $(_ivar pid)"
+    echo "Status: $(_ivar status)"
+    echo "Exit Code: $(_ivar exitCode)"
+    echo "Started: $(date -r "$(_ivar startTime)" 2>/dev/null || echo "$(_ivar startTime)")"
+    local end=$(_ivar endTime)
+    if [[ -n "$end" ]]; then
+      echo "Ended: $(date -r "$end" 2>/dev/null || echo "$end")"
+      local start=$(_ivar startTime)
+      if [[ -n "$start" ]]; then
+        echo "Duration: $((end - start))s"
+      fi
     fi
+  ]
 
-    # Send termination message
-    TRASH_DEBUG=0 @ Tuplespace put_args "message" \
-        "target" "$process_id" \
-        "sender" "$$" \
-        "payload" "terminate" \
-        "type" "terminate" \
-        "timestamp" "$(date +%s)"
+  # === Class methods for quick execution ===
 
-    # Wait for graceful shutdown
-    local wait_count=0
-    while [[ $wait_count -lt 5 ]]; do
-        if ! kill -0 "$pid" 2>/dev/null; then
-            @ "$_RECEIVER" debug "Process $process_id terminated gracefully"
-            @ "$_RECEIVER" cleanup "$process_id"
-            return 0
-        fi
-        sleep 1
-        ((wait_count++))
-    done
+  # Run a command and return stdout (blocking, simple)
+  # Usage: output=$(@ Process exec: "ls -la")
+  rawClassMethod: exec: command [
+    local tmp_out="/tmp/proc_exec_$$"
+    eval "$command" >"$tmp_out" 2>&1
+    local exit_code=$?
+    cat "$tmp_out"
+    rm -f "$tmp_out"
+    return $exit_code
+  ]
 
-    # Force kill if still running
+  # Run a command and return exit code only
+  # Usage: @ Process run: "make test"
+  rawClassMethod: run: command [
+    eval "$command"
+  ]
+
+  # Run a command in background, return PID
+  # Usage: pid=$(@ Process spawn: "long-running-task")
+  rawClassMethod: spawn: command [
+    eval "$command" >/dev/null 2>&1 &
+    echo $!
+  ]
+
+  # Wait for a PID to complete
+  # Usage: @ Process waitPid: $pid
+  rawClassMethod: waitPid: pid [
+    wait "$pid" 2>/dev/null
+    echo $?
+  ]
+
+  # Check if a PID is running
+  # Usage: @ Process isRunningPid: $pid
+  rawClassMethod: isRunningPid: pid [
     if kill -0 "$pid" 2>/dev/null; then
-        @ "$_RECEIVER" debug "Force killing process $process_id (PID: $pid)"
-        kill -TERM "$pid" 2>/dev/null
-        sleep 1
-        if kill -0 "$pid" 2>/dev/null; then
-            kill -KILL "$pid" 2>/dev/null
-        fi
-    fi
-
-    @ "$_RECEIVER" cleanup "$process_id"
-  ]
-
-  # Clean up process resources (external interface)
-  rawMethod: cleanup: process_id [
-    @ "$_RECEIVER" debug "Cleaning up process $process_id"
-    @ "$_RECEIVER" _initTuplespace
-
-    # Remove process from tuplespace
-    TRASH_DEBUG=0 @ Tuplespace take_key_value "process" "id" "$process_id" >/dev/null
-
-    # Clean up any remaining messages for this process
-    TRASH_DEBUG=0 @ Tuplespace take_key_value "message" "target" "$process_id" >/dev/null 2>&1
-
-    # Clean up any remaining responses from this process
-    TRASH_DEBUG=0 @ Tuplespace take_key_value "response" "sender" "$process_id" >/dev/null 2>&1
-
-    # Emit process stopped event
-    TRASH_DEBUG=0 @ Tuplespace putEvent_data "process_stopped" "$process_id"
-
-    @ "$_RECEIVER" debug "Process $process_id cleanup complete"
-  ]
-
-  # Internal cleanup (called from within process, not via @ dispatch)
-  rawMethod: _cleanupInternal [
-    local process_id="$1"
-
-    # Note: Can't use @ debug here - we're in a subshell without proper context
-    [[ "${TRASH_DEBUG:-0}" == "1" ]] && echo "Internal cleanup for process $process_id" >&2
-
-    # Update process status to stopped
-    TRASH_DEBUG=0 @ Tuplespace take_key_value "process" "id" "$process_id" >/dev/null
-    TRASH_DEBUG=0 @ Tuplespace put_args "process" \
-        "id" "$process_id" \
-        "status" "stopped" \
-        "stopped" "$(date +%s)"
-
-    # Emit process stopped event
-    TRASH_DEBUG=0 @ Tuplespace putEvent_data "process_stopped" "$process_id"
-  ]
-
-  # List all processes (running and stopped)
-  rawMethod: listProcesses [
-    @ "$_RECEIVER" debug "Listing all processes"
-    @ "$_RECEIVER" _initTuplespace
-
-    TRASH_DEBUG=0 @ Tuplespace get_key_value "process" "" "" | while IFS= read -r line; do
-        if [[ "$line" =~ ^ID: ]]; then
-            local process_id=$(echo "$line" | sed 's/^ID: //')
-            local process_tuple=$(TRASH_DEBUG=0 @ Tuplespace get_key_value "process" "id" "$process_id")
-
-            if [[ -n "$process_tuple" ]]; then
-                local object_name=$(echo "$process_tuple" | TRASH_DEBUG=0 @ Tuplespace field_name - "object")
-                local status=$(echo "$process_tuple" | TRASH_DEBUG=0 @ Tuplespace field_name - "status")
-                local pid=$(echo "$process_tuple" | TRASH_DEBUG=0 @ Tuplespace field_name - "pid")
-
-                if [[ "$status" == "running" ]]; then
-                    # Verify process is actually running
-                    if kill -0 "$pid" 2>/dev/null; then
-                        echo "$process_id: $object_name (PID: $pid, status: $status)"
-                    else
-                        # Process died, clean it up
-                        @ "$_RECEIVER" debug "Found dead process $process_id, cleaning up"
-                        @ "$_RECEIVER" cleanup "$process_id"
-                    fi
-                else
-                    echo "$process_id: $object_name (status: $status)"
-                fi
-            fi
-        fi
-    done
-  ]
-
-  # List only running processes
-  rawMethod: listRunning [
-    @ "$_RECEIVER" debug "Listing running processes"
-    @ "$_RECEIVER" _initTuplespace
-
-    TRASH_DEBUG=0 @ Tuplespace get_key_value "process" "status" "running" | while IFS= read -r line; do
-        if [[ "$line" =~ ^ID: ]]; then
-            local process_id=$(echo "$line" | sed 's/^ID: //')
-            local process_tuple=$(TRASH_DEBUG=0 @ Tuplespace get_key_value "process" "id" "$process_id")
-
-            if [[ -n "$process_tuple" ]]; then
-                local object_name=$(echo "$process_tuple" | TRASH_DEBUG=0 @ Tuplespace field_name - "object")
-                local pid=$(echo "$process_tuple" | TRASH_DEBUG=0 @ Tuplespace field_name - "pid")
-
-                # Verify process is actually running
-                if kill -0 "$pid" 2>/dev/null; then
-                    echo "$process_id: $object_name (PID: $pid)"
-                else
-                    # Process died, clean it up
-                    @ "$_RECEIVER" cleanup "$process_id"
-                fi
-            fi
-        fi
-    done
-  ]
-
-  # Get process status
-  rawMethod: status: process_id [
-    if [[ -z "$process_id" ]]; then
-        echo "Usage: @ Process status <process_id>"
-        return 1
-    fi
-
-    @ "$_RECEIVER" debug "Getting status for process $process_id"
-    @ "$_RECEIVER" _initTuplespace
-
-    # Get process tuple (suppress debug output)
-    local process_tuple
-    process_tuple=$(TRASH_DEBUG=0 @ Tuplespace get_key_value "process" "id" "$process_id" 2>/dev/null)
-    if [[ -z "$process_tuple" ]]; then
-        echo "Process $process_id not found"
-        return 1
-    fi
-
-    # Extract fields (suppress debug output)
-    local object_name status_val pid created
-    object_name=$(echo "$process_tuple" | TRASH_DEBUG=0 @ Tuplespace field_name - "object" 2>/dev/null | tail -1)
-    status_val=$(echo "$process_tuple" | TRASH_DEBUG=0 @ Tuplespace field_name - "status" 2>/dev/null | tail -1)
-    pid=$(echo "$process_tuple" | TRASH_DEBUG=0 @ Tuplespace field_name - "pid" 2>/dev/null | tail -1)
-    created=$(echo "$process_tuple" | TRASH_DEBUG=0 @ Tuplespace field_name - "created" 2>/dev/null | tail -1)
-
-    echo "Process ID: $process_id"
-    echo "Object: $object_name"
-    echo "Status: $status_val"
-    echo "PID: $pid"
-    echo "Created: $(date -r "$created" 2>/dev/null || echo "$created")"
-
-    if [[ "$status_val" == "running" ]]; then
-        if kill -0 "$pid" 2>/dev/null; then
-            echo "Process is alive"
-        else
-            echo "Process appears dead (cleaning up)"
-            @ "$_RECEIVER" cleanup "$process_id"
-        fi
+      echo "true"
+    else
+      echo "false"
     fi
   ]
 
-  # Clean up all dead processes
-  rawMethod: cleanupAll [
-    @ "$_RECEIVER" debug "Cleaning up all dead processes"
-    @ "$_RECEIVER" _initTuplespace
-
-    local cleaned=0
-    TRASH_DEBUG=0 @ Tuplespace get_key_value "process" "status" "running" | while IFS= read -r line; do
-        if [[ "$line" =~ ^ID: ]]; then
-            local process_id=$(echo "$line" | sed 's/^ID: //')
-            local process_tuple=$(TRASH_DEBUG=0 @ Tuplespace get_key_value "process" "id" "$process_id")
-
-            if [[ -n "$process_tuple" ]]; then
-                local pid=$(echo "$process_tuple" | TRASH_DEBUG=0 @ Tuplespace field_name - "pid")
-
-                if ! kill -0 "$pid" 2>/dev/null; then
-                    @ "$_RECEIVER" debug "Cleaning up dead process: $process_id"
-                    @ "$_RECEIVER" cleanup "$process_id"
-                    ((cleaned++))
-                fi
-            fi
-        fi
-    done
-
-    echo "Cleaned up $cleaned dead processes"
-  ]
-
-  # Show system statistics
-  rawMethod: stats [
-    @ "$_RECEIVER" debug "Getting process statistics"
-    @ "$_RECEIVER" _initTuplespace
-
-    local total running messages responses
-    total=$(TRASH_DEBUG=0 @ Tuplespace count "process")
-    running=$(TRASH_DEBUG=0 @ Tuplespace count "process" | grep -c "running" || echo "0")
-    messages=$(TRASH_DEBUG=0 @ Tuplespace count "message")
-    responses=$(TRASH_DEBUG=0 @ Tuplespace count "response")
-
-    echo "=== Process System Statistics ==="
-    echo "Total processes: $total"
-    echo "Running processes: $running"
-    echo "Pending messages: $messages"
-    echo "Pending responses: $responses"
-    echo "Tuplespace location: $(TRASH_DEBUG=0 @ Tuplespace info | grep "Directory:" | cut -d: -f2 | xargs)"
+  # Kill a PID
+  # Usage: @ Process killPid: $pid
+  rawClassMethod: killPid: pid [
+    kill -TERM "$pid" 2>/dev/null
   ]
 
   # Show help
   method: help [
-    echo "=== Process Management Commands ==="
-    echo "Basic Operations:"
-    echo "  @ Process spawn <object>                  - Spawn new process"
-    echo "  @ Process sendTo <id> message: <msg>      - Send message to process"
-    echo "  @ Process getFrom <id> timeout: [timeout] - Get response from process"
-    echo "  @ Process terminate <id>                  - Terminate process"
+    echo "=== Process Management ==="
     echo ""
-    echo "Process Management:"
-    echo "  @ Process listProcesses                   - List all processes"
-    echo "  @ Process listRunning                     - List running processes only"
-    echo "  @ Process status <id>                     - Get process status"
-    echo "  @ Process cleanupAll                      - Clean up dead processes"
+    echo "Instance Methods (for managed processes):"
+    echo "  proc=\$(@ Process for: \"command\")   - Create process wrapper"
+    echo "  @ \$proc run                          - Run blocking, capture output"
+    echo "  @ \$proc start                        - Run in background"
+    echo "  @ \$proc wait                         - Wait for background completion"
+    echo "  @ \$proc isRunning                    - Check if still running"
+    echo "  @ \$proc terminate                    - Send SIGTERM"
+    echo "  @ \$proc kill                         - Send SIGKILL"
+    echo "  @ \$proc output                       - Get stdout"
+    echo "  @ \$proc errors                       - Get stderr"
+    echo "  @ \$proc exitCode                     - Get exit code"
+    echo "  @ \$proc succeeded                    - Check if exit code is 0"
+    echo "  @ \$proc info                         - Show process info"
     echo ""
-    echo "System Information:"
-    echo "  @ Process stats                           - Show system statistics"
-    echo "  @ Process help                            - Show this help"
+    echo "Class Methods (for quick execution):"
+    echo "  @ Process exec: \"cmd\"                - Run, return stdout"
+    echo "  @ Process run: \"cmd\"                 - Run, return exit code"
+    echo "  @ Process spawn: \"cmd\"               - Run in background, return PID"
+    echo "  @ Process waitPid: \$pid              - Wait for PID"
+    echo "  @ Process isRunningPid: \$pid         - Check if PID is running"
+    echo "  @ Process killPid: \$pid              - Kill PID"
     echo ""
     echo "Examples:"
-    echo "  process_id=\$(@ Process spawn Tool)"
-    echo "  @ Process sendTo \$process_id message: install"
-    echo "  result=\$(@ Process getFrom \$process_id timeout: 10)"
-    echo "  @ Process terminate \$process_id"
+    echo "  # Quick execution"
+    echo "  files=\$(@ Process exec: \"ls -la\")"
+    echo ""
+    echo "  # Managed process"
+    echo "  proc=\$(@ Process for: \"curl -s https://api.example.com\")"
+    echo "  @ \$proc run"
+    echo "  if @ \$proc succeeded; then"
+    echo "    echo \"Response: \$(@ \$proc output)\""
+    echo "  fi"
   ]
-

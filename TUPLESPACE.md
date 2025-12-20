@@ -211,15 +211,15 @@ Tuplespace uses recutils for storage:
 - Events directory: `~/.tuplespace/events/`
 - Requires `recsel` and `recdel` commands (install via `brew install recutils`)
 
-## Integration with Process
+## Integration with Actor
 
-The Process class uses Tuplespace internally for:
-- Process registration (`type: "process"`)
+The Actor class uses Tuplespace internally for:
+- Actor registration (`type: "actor"`)
 - Message passing (`type: "message"`)
 - Response handling (`type: "response"`)
 - Lifecycle events (`type: "event"`)
 
-See `@ Process help` for process management commands.
+See `@ Actor help` for actor management commands.
 
 ## Quick Reference
 
