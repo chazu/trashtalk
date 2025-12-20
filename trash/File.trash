@@ -1,0 +1,295 @@
+# File - File system operations
+# Provides an interface for reading, writing, and managing files
+File subclass: Object
+  include: Debuggable
+  instanceVars: path
+
+  # Create a File object for a given path
+  # Usage: file=$(@ File at: "/tmp/foo.txt")
+  rawClassMethod: at: filepath [
+    local id=$(_generate_instance_id File)
+    _create_instance File "$id"
+    @ "$id" setPath "$filepath"
+    echo "$id"
+  ]
+
+  # Create a temporary file with optional prefix
+  # Usage: file=$(@ File temp)
+  # Usage: file=$(@ File tempWithPrefix: "st-inspect-")
+  rawClassMethod: temp [
+    local tmpfile
+    tmpfile=$(mktemp)
+    local id=$(_generate_instance_id File)
+    _create_instance File "$id"
+    @ "$id" setPath "$tmpfile"
+    echo "$id"
+  ]
+
+  rawClassMethod: tempWithPrefix: prefix [
+    local tmpfile
+    tmpfile=$(mktemp -t "${prefix}XXXXXX")
+    local id=$(_generate_instance_id File)
+    _create_instance File "$id"
+    @ "$id" setPath "$tmpfile"
+    echo "$id"
+  ]
+
+  # Create a named pipe (FIFO)
+  # Usage: fifo=$(@ File mkfifo: "/tmp/myfifo")
+  rawClassMethod: mkfifo: filepath [
+    mkfifo "$filepath" 2>/dev/null
+    local id=$(_generate_instance_id File)
+    _create_instance File "$id"
+    @ "$id" setPath "$filepath"
+    echo "$id"
+  ]
+
+  # Get the file path
+  rawMethod: path [
+    _ivar path
+  ]
+
+  # Check if file exists
+  rawMethod: exists [
+    local p=$(_ivar path)
+    if [[ -e "$p" ]]; then
+      echo "true"
+    else
+      echo "false"
+    fi
+  ]
+
+  # Check if it's a regular file
+  rawMethod: isFile [
+    local p=$(_ivar path)
+    if [[ -f "$p" ]]; then
+      echo "true"
+    else
+      echo "false"
+    fi
+  ]
+
+  # Check if it's a directory
+  rawMethod: isDirectory [
+    local p=$(_ivar path)
+    if [[ -d "$p" ]]; then
+      echo "true"
+    else
+      echo "false"
+    fi
+  ]
+
+  # Check if it's a FIFO
+  rawMethod: isFifo [
+    local p=$(_ivar path)
+    if [[ -p "$p" ]]; then
+      echo "true"
+    else
+      echo "false"
+    fi
+  ]
+
+  # Read entire file contents
+  rawMethod: read [
+    local p=$(_ivar path)
+    if [[ -f "$p" ]]; then
+      cat "$p"
+    else
+      echo ""
+    fi
+  ]
+
+  # Read file as lines (one per line)
+  rawMethod: readLines [
+    local p=$(_ivar path)
+    if [[ -f "$p" ]]; then
+      cat "$p"
+    else
+      echo ""
+    fi
+  ]
+
+  # Write contents to file (overwrites)
+  rawMethod: write: contents [
+    local p=$(_ivar path)
+    printf '%s' "$contents" > "$p"
+  ]
+
+  # Write contents with newline
+  rawMethod: writeLine: contents [
+    local p=$(_ivar path)
+    printf '%s\n' "$contents" > "$p"
+  ]
+
+  # Append contents to file
+  rawMethod: append: contents [
+    local p=$(_ivar path)
+    printf '%s' "$contents" >> "$p"
+  ]
+
+  # Append contents with newline
+  rawMethod: appendLine: contents [
+    local p=$(_ivar path)
+    printf '%s\n' "$contents" >> "$p"
+  ]
+
+  # Delete the file
+  rawMethod: delete [
+    local p=$(_ivar path)
+    rm -f "$p"
+  ]
+
+  # Get file size in bytes
+  rawMethod: size [
+    local p=$(_ivar path)
+    if [[ -f "$p" ]]; then
+      stat -f%z "$p" 2>/dev/null || stat -c%s "$p" 2>/dev/null || echo "0"
+    else
+      echo "0"
+    fi
+  ]
+
+  # Get parent directory
+  rawMethod: directory [
+    local p=$(_ivar path)
+    dirname "$p"
+  ]
+
+  # Get basename (filename without directory)
+  rawMethod: basename [
+    local p=$(_ivar path)
+    basename "$p"
+  ]
+
+  # Get file extension
+  rawMethod: extension [
+    local p=$(_ivar path)
+    local base
+    base=$(basename "$p")
+    if [[ "$base" == *.* ]]; then
+      echo "${base##*.}"
+    else
+      echo ""
+    fi
+  ]
+
+  # Get filename without extension
+  rawMethod: stem [
+    local p=$(_ivar path)
+    local base
+    base=$(basename "$p")
+    echo "${base%.*}"
+  ]
+
+  # Copy file to destination
+  rawMethod: copyTo: destPath [
+    local p=$(_ivar path)
+    cp "$p" "$destPath"
+  ]
+
+  # Move/rename file
+  rawMethod: moveTo: destPath [
+    local p=$(_ivar path)
+    mv "$p" "$destPath"
+    _ivar_set path "$destPath"
+  ]
+
+  # Touch file (create empty or update timestamp)
+  rawMethod: touch [
+    local p=$(_ivar path)
+    touch "$p"
+  ]
+
+  # Get modification time as unix timestamp
+  rawMethod: modificationTime [
+    local p=$(_ivar path)
+    if [[ -e "$p" ]]; then
+      stat -f%m "$p" 2>/dev/null || stat -c%Y "$p" 2>/dev/null || echo "0"
+    else
+      echo "0"
+    fi
+  ]
+
+  # Print file info
+  rawMethod: info [
+    local p=$(_ivar path)
+    echo "Path: $p"
+    echo "Exists: $(@ "$_RECEIVER" exists)"
+    if [[ -e "$p" ]]; then
+      echo "Size: $(@ "$_RECEIVER" size) bytes"
+      echo "Type: $(file -b "$p" 2>/dev/null || echo "unknown")"
+    fi
+  ]
+
+  # String representation
+  rawMethod: printString [
+    local p=$(_ivar path)
+    echo "<File $p>"
+  ]
+
+  # === Class methods for quick operations ===
+
+  # Quick read
+  rawClassMethod: read: filepath [
+    cat "$filepath" 2>/dev/null
+  ]
+
+  # Quick write
+  rawClassMethod: write: contents to: filepath [
+    printf '%s' "$contents" > "$filepath"
+  ]
+
+  # Quick exists check
+  rawClassMethod: exists: filepath [
+    if [[ -e "$filepath" ]]; then
+      echo "true"
+    else
+      echo "false"
+    fi
+  ]
+
+  # Quick delete
+  rawClassMethod: delete: filepath [
+    rm -f "$filepath"
+  ]
+
+  # Show help
+  rawMethod: help [
+    echo "=== File Operations ==="
+    echo ""
+    echo "Creating File objects:"
+    echo "  file=\$(@ File at: \"/path/to/file\")   - Reference existing/new file"
+    echo "  file=\$(@ File temp)                   - Create temp file"
+    echo "  file=\$(@ File tempWithPrefix: \"st-\") - Temp with prefix"
+    echo "  fifo=\$(@ File mkfifo: \"/tmp/pipe\")   - Create named pipe"
+    echo ""
+    echo "Reading:"
+    echo "  @ \$file read                          - Read entire contents"
+    echo "  @ \$file readLines                     - Read as lines"
+    echo ""
+    echo "Writing:"
+    echo "  @ \$file write: \"content\"              - Write (overwrite)"
+    echo "  @ \$file writeLine: \"content\"          - Write with newline"
+    echo "  @ \$file append: \"more\"                - Append"
+    echo "  @ \$file appendLine: \"more\"            - Append with newline"
+    echo ""
+    echo "Queries:"
+    echo "  @ \$file exists                        - Check existence"
+    echo "  @ \$file isFile / isDirectory / isFifo - Type checks"
+    echo "  @ \$file size                          - Size in bytes"
+    echo "  @ \$file path / directory / basename   - Path info"
+    echo "  @ \$file extension / stem              - Filename parts"
+    echo "  @ \$file modificationTime              - Unix timestamp"
+    echo ""
+    echo "Operations:"
+    echo "  @ \$file delete                        - Remove file"
+    echo "  @ \$file copyTo: \"/dest\"               - Copy"
+    echo "  @ \$file moveTo: \"/dest\"               - Move/rename"
+    echo "  @ \$file touch                         - Create/update timestamp"
+    echo ""
+    echo "Quick class methods:"
+    echo "  @ File read: \"/path\"                  - Read file directly"
+    echo "  @ File write: \"x\" to: \"/path\"         - Write directly"
+    echo "  @ File exists: \"/path\"                - Check directly"
+    echo "  @ File delete: \"/path\"                - Delete directly"
+  ]

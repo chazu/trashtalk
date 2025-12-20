@@ -1,123 +1,286 @@
-## Path B: Smalltalk Inside twterm + Message Passing
+# Twin Integration Guide
 
-The idea is to use Twin as your window manager and terminal multiplexer, with your Smalltalk living inside a terminal window and spawning/coordinating other windows via shell commands.
+Twin is a text-mode window manager that provides tiled terminal windows. Trashtalk integrates with Twin to create a Smalltalk-like development environment with multiple interactive panes.
 
-### Basic Architecture
+## Prerequisites
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                    twin (server)                         │
-│  ┌─────────────────┐  ┌──────────────┐  ┌────────────┐  │
-│  │ twterm          │  │ twterm       │  │ twterm     │  │
-│  │ ┌─────────────┐ │  │ ┌──────────┐ │  │ ┌────────┐ │  │
-│  │ │ bash        │ │  │ │ inspector│ │  │ │ workspace│ │  │
-│  │ │ smalltalk   │ │  │ │ helper   │ │  │ │ $EDITOR │ │  │
-│  │ │ REPL        │ │  │ └──────────┘ │  │ └────────┘ │  │
-│  │ └─────────────┘ │  └──────────────┘  └────────────┘  │
-│  └─────────────────┘                                     │
-│         │                    ▲              ▲            │
-│         │ twsendmsg          │ fifo/socket  │            │
-│         └────────────────────┴──────────────┘            │
-└─────────────────────────────────────────────────────────┘
-```
-
-### How twsendmsg Works
-
-Twin's message system lets clients talk to each other. The key commands:
+Install Twin from source or your package manager:
 
 ```bash
-# Open a new terminal running a command
-twsendmsg "twin" open "vim /tmp/scratch.st"
+# From source (https://github.com/cosmos72/twin)
+git clone https://github.com/cosmos72/twin.git
+cd twin
+./configure && make && sudo make install
 
-# Send to twterm's message port (if one exists)
-twsendmsg "twterm" open   # opens a new shell window
-
-# Built-in control codes:
-#   quit (0), restart (1), open (2)
+# Verify installation
+which twin twsendmsg
 ```
 
-The `"twin"` message port is built into the server. When you send `open "command"`, it spawns a new twterm running that command.
-
-### Concrete Workflow
-
-**1. Start Twin and your Smalltalk REPL:**
+Add to your PATH if needed:
 ```bash
-$ twin
-# Inside twin, a terminal opens. Run:
-$ st  # your bash smalltalk
+export PATH="/usr/local/bin:$PATH"  # or wherever twin is installed
 ```
 
-**2. From Smalltalk, open an inspector window:**
-```smalltalk
-" In your Smalltalk, define something like: "
-Object inspect: anObject [
-    | tmpfile |
-    tmpfile := '/tmp/st-inspect-' , (Date now asUnixTime asString).
-    anObject printRepresentationTo: tmpfile.
-    System run: 'twsendmsg "twin" open "less ' , tmpfile , '"'.
-]
-```
+## Quick Start
 
-**3. Open a workspace/editor:**
-```smalltalk
-Workspace open [
-    | file |
-    file := '/tmp/st-workspace-' , (self nextId asString) , '.st'.
-    '' writeTo: file.
-    System run: 'twsendmsg "twin" open "$EDITOR ' , file , '; st-eval ' , file , '"'.
-]
-```
+### 1. Start Twin
 
-**4. For richer communication - spawn a helper with a FIFO:**
-```smalltalk
-Inspector openOn: anObject [
-    | fifoPath |
-    fifoPath := '/tmp/st-inspector-' , (self nextId asString).
-    System run: 'mkfifo ' , fifoPath.
-
-    " Spawn inspector UI in new window, reading from FIFO "
-    System run: 'twsendmsg "twin" open "st-inspector-ui ' , fifoPath , '"'.
-
-    " Now we can stream updates to it "
-    self streamObject: anObject to: fifoPath.
-]
-```
-
-### What This Gets You
-
-**Pros:**
-- Zero C code to start
-- Twin handles all window management, mouse, resize, etc.
-- Each "tool" window is just a terminal process - easy to iterate
-- Attach/detach works (leave twin running, reconnect later)
-- Can mix in any CLI tool (vim, less, fzf, etc.)
-
-**Cons:**
-- Your Smalltalk isn't drawing directly - it's inside a terminal
-- Communication is via shell commands + files/fifos (not instant)
-- Can't create custom widgets (buttons, etc.) without Path A
-- Each window is a separate process (vs. objects in one image)
-
-### Quick Test You Can Do Now
-
-If you have Twin installed:
+Twin needs direct terminal control, so start it from bash (not via `@`):
 
 ```bash
-# Start twin
-twin --hw=tty   # or just 'twin' if X11 is available
-
-# In the terminal that appears:
-twsendmsg "twin" open "htop"      # spawns htop in new window
-twsendmsg "twin" open "vim"       # spawns vim in another
+# From your terminal
+TERM=xterm-256color twin --hw=tty
 ```
 
-Drag windows around, see how it feels. If this model works for your dev workflow, you can build on it incrementally - adding richer inspector UIs, browser windows, etc. as separate helper scripts.
+Or add a helper function to your `~/.bashrc`:
 
-### Graduating to Path A Later
+```bash
+twin-start() { TERM=xterm-256color twin --hw=tty; }
+```
 
-The nice thing is this isn't a dead end. If you find yourself wanting:
-- Custom drawing (syntax-highlighted code panes)
-- Real widgets (clickable class browsers)
-- Lower-latency updates
+Then just run `twin-start`.
 
-...you can write a single `st-ui-bridge` that speaks libtw, and your Smalltalk talks to *that* instead of spawning twterms. The conceptual model stays the same, just the rendering gets richer.
+### 2. Load Trashtalk Inside Twin
+
+In the terminal window that appears inside Twin:
+
+```bash
+source ~/.trashtalk/lib/trash.bash
+```
+
+### 3. Open Additional Windows
+
+Now you can spawn new windows:
+
+```bash
+@ Twin open: "htop"                      # System monitor
+@ Twin open: "vim ~/.trashtalk/todo.md"  # Edit a file
+@ Twin openTerminal                      # Empty shell
+```
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      Twin Server                             │
+│  ┌─────────────────┐  ┌──────────────┐  ┌────────────────┐  │
+│  │ Terminal 1      │  │ Terminal 2   │  │ Terminal 3     │  │
+│  │ ┌─────────────┐ │  │ ┌──────────┐ │  │ ┌────────────┐ │  │
+│  │ │ Trashtalk   │ │  │ │ vim      │ │  │ │ htop       │ │  │
+│  │ │ REPL        │ │  │ │          │ │  │ │            │ │  │
+│  │ └─────────────┘ │  │ └──────────┘ │  │ └────────────┘ │  │
+│  └─────────────────┘  └──────────────┘  └────────────────┘  │
+│         │                    ▲              ▲               │
+│         │ twsendmsg          │ fifo         │               │
+│         └────────────────────┴──────────────┘               │
+└─────────────────────────────────────────────────────────────┘
+```
+
+- **Twin Server**: Manages all windows, handles keyboard/mouse, draws UI
+- **twsendmsg**: Command-line tool to send messages to Twin
+- **Trashtalk**: Runs in one terminal, spawns others via `@ Twin open:`
+
+## Window Operations
+
+### Opening Windows
+
+```bash
+# Run a command in a new window
+@ Twin open: "command args"
+
+# Open empty terminal
+@ Twin openTerminal
+
+# Open file in editor
+@ Twin edit: "/path/to/file.txt"
+
+# View command output (opens in less)
+@ Twin view: "ls -la /etc"
+
+# System monitor
+@ Twin monitor   # Opens htop or top
+```
+
+### Object Inspector
+
+Inspect any Trashtalk object in a new window:
+
+```bash
+counter=$(@ Counter new)
+@ $counter setValue 42
+
+# Opens inspection in a new less window
+@ Twin inspect: $counter
+```
+
+The inspector shows:
+```
+a Counter
+  id: counter_abc123
+  value: 42
+  step: 1
+```
+
+### Workspace
+
+Open a scratch workspace for experimenting:
+
+```bash
+workspace=$(@ Twin workspace)
+# Opens $EDITOR with a temp file
+# Write code, save, and source it
+```
+
+## Streaming Data
+
+For live-updating displays (logs, metrics, etc.), use FIFO-based streaming:
+
+```bash
+# Open a stream window
+fifo=$(@ Twin openStream: "Application Logs")
+
+# Send data to it (from your code)
+@ Twin sendTo: $fifo data: "$(date): Server started"
+@ Twin sendTo: $fifo data: "$(date): Processing request..."
+
+# When done, close the stream
+@ Twin closeStream: $fifo
+```
+
+The stream window shows data as it arrives, similar to `tail -f`.
+
+## Session Management
+
+### Detach and Reattach
+
+Twin supports detaching (like tmux/screen):
+
+```bash
+# Detach: Usually Ctrl+Alt+D or close terminal
+
+# Reattach later:
+@ Twin attach
+```
+
+## Example Workflows
+
+### Development Session
+
+```bash
+# Start Twin
+@ Twin start
+
+# In Twin, load Trashtalk
+source ~/.trashtalk/lib/trash.bash
+
+# Open your project
+@ Twin open: "vim ~/myproject/main.trash"
+@ Twin open: "cd ~/myproject && make watch"
+@ Twin openTerminal  # For testing
+
+# Create and inspect objects
+obj=$(@ MyClass new)
+@ Twin inspect: $obj
+```
+
+### Debugging Session
+
+```bash
+# Open log viewer
+@ Twin open: "tail -f /var/log/myapp.log"
+
+# Open REPL for inspecting objects
+@ Twin openTerminal
+
+# In the REPL:
+source ~/.trashtalk/lib/trash.bash
+counter=$(@ Counter findAll | head -1)
+@ $counter inspect
+```
+
+### Live Dashboard
+
+```bash
+# Create streaming windows
+logs=$(@ Twin openStream: "Logs")
+metrics=$(@ Twin openStream: "Metrics")
+
+# Send updates
+@ Twin sendTo: $logs data: "$(date): Started"
+@ Twin sendTo: $metrics data: "CPU: 45%"
+```
+
+## Keyboard Shortcuts (Twin defaults)
+
+| Key | Action |
+|-----|--------|
+| Alt+Arrow | Move between windows |
+| Alt+Enter | Maximize/restore window |
+| Alt+F4 | Close window |
+| Ctrl+Alt+D | Detach session |
+
+(Check Twin documentation for full list)
+
+## Troubleshooting
+
+### Twin hangs or doesn't display (Ghostty, iTerm2, etc.)
+
+Some terminals use custom TERM values that Twin doesn't recognize. The `@ Twin start` command handles this automatically, but if running manually:
+
+```bash
+TERM=xterm-256color twin --hw=tty
+```
+
+### Twin not found
+
+```bash
+@ Twin isAvailable  # => "false"
+```
+
+Solution: Add Twin to your PATH in `.bashrc` or `.zshrc`.
+
+### twsendmsg fails silently
+
+Make sure you're running *inside* Twin. The `twsendmsg` command only works when Twin is the active window manager.
+
+### Windows don't open
+
+Test directly:
+```bash
+twsendmsg "twin" open "echo test && sleep 5"
+```
+
+## Quick Reference
+
+**Starting Twin** (run directly, not via @):
+```bash
+TERM=xterm-256color twin --hw=tty
+```
+
+**Inside Twin** (via @):
+
+| Method | Description |
+|--------|-------------|
+| `@ Twin howToStart` | Show startup instructions |
+| `@ Twin isAvailable` | Check if Twin is installed |
+| `@ Twin open: "cmd"` | Open window with command |
+| `@ Twin openTerminal` | Open empty terminal |
+| `@ Twin edit: "path"` | Edit file in $EDITOR |
+| `@ Twin inspect: $obj` | Inspect object in window |
+| `@ Twin workspace` | Open code workspace |
+| `@ Twin view: "cmd"` | View command output |
+| `@ Twin monitor` | Open htop/top |
+| `@ Twin openStream: "title"` | Create stream window |
+| `@ Twin sendTo: $f data: "msg"` | Send to stream |
+| `@ Twin closeStream: $f` | Close stream |
+
+## Future Enhancements
+
+As the integration matures, potential additions include:
+
+- **Custom inspector UI**: A dedicated inspector tool with navigation
+- **Class browser**: Browse classes and methods in a separate pane
+- **Debugger integration**: Step through code with visual feedback
+- **libtw bridge**: Direct drawing for richer widgets (buttons, trees, etc.)
+
+The current shell-based approach is intentionally simple - each tool is just a terminal process, easy to iterate on.
