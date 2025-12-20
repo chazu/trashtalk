@@ -1,0 +1,805 @@
+The most common issue when adapting ImTUI is that ImGui fundamentally works in floating-point pixel coordinates, not character cells. If you're just rendering ImTUI's output to a texture without quantizing to a grid, you get something that feels like a stretched terminal screenshot rather than actual terminal rendering.
+
+The cleaner approach might actually be to skip ImTUI's architecture entirely and build a proper cell-grid renderer that you then drive with ImGui's input/state logic:
+
+ImGui handles: input, focus, widget state machine
+You handle: cell buffer (glyph + fg/bg per cell), grid rendering to texture
+
+That gives you pixel-perfect cell alignment because you control the rasterization entirely. The "immediate mode" part of ImGui is still valuable — you just don't use its draw list output.
+
+What did your adaptation look like? Did you modify the ncurses backend, or try rendering ImGui's draw lists to a cell grid?
+
+So imtui has three backends. Text, emsxripten and curses. Which is best to adapt for my purpose
+6:36 PM
+
+The user is asking about which of ImTUI's three backends would be best to adapt for rendering to an OpenGL texture/grid for their game engine.
+
+Let me think about what each backend does:
+
+    Text backend - This is probably the simplest, outputs plain text. Likely just dumps characters to stdout or a buffer.
+    Emscripten backend - This is for web/browser rendering. It probably renders to a canvas element, possibly using HTML/CSS or maybe a canvas 2D context to draw the cells.
+    Curses backend - Uses ncurses to render to a real terminal.
+
+For adapting to OpenGL rendering in a game engine:
+
+Text backend - Could be interesting because it's probably the simplest abstraction. It likely just produces a stream of characters or a 2D buffer of characters. You could intercept this and render to your own cell grid. However, it might not handle colors/attributes well.
+
+Emscripten backend - This is actually interesting because it's already NOT rendering to a terminal. It's rendering to something visual in a browser. The rendering logic might be more directly adaptable since it's already dealing with pixel-based output in some sense. But it might have a lot of web-specific code (DOM manipulation, canvas APIs) that would be useless.
+
+Curses backend - This is the most feature-complete probably, handling colors, attributes, mouse input, etc. But it's tied to ncurses APIs which are terminal-specific.
+
+I should probably suggest looking at the Emscripten backend first because:
+
+    It's already rendering to a non-terminal target
+    It has to handle the cell grid → visual pixels conversion
+    The rendering part might be more directly replaceable with OpenGL calls
+
+But actually, the text backend might be even better because:
+
+    It's probably the simplest/most minimal
+    It likely just maintains a cell buffer that it then dumps
+    You could take that cell buffer and render it however you want
+    The core requirements are straightforward: a cell buffer with glyphs, colors, and attributes
+    This makes it ideal for custom OpenGL rendering
+
+I'll focus on extracting the most adaptable cell buffer representation. The text backend seems most promising for its simplicity and direct buffer approach. By examining its internal structure, I can identify how to translate the cell data into an OpenGL-compatible texture format.
+
+The text backend is probably your best starting point. Here's why:
+
+Text backend — Likely the thinnest abstraction. It probably just maintains a cell buffer and dumps it. You can intercept that buffer and render it yourself. Minimal cruft to strip out.
+
+Emscripten backend — Interesting because it's already rendering to a non-terminal target (canvas/DOM). But it's probably full of web-specific code (JS interop, canvas 2D API calls, DOM manipulation) that you'd have to gut entirely. The logic of how it maps ImGui to cells might be useful as reference though.
+
+Curses backend — Most feature-complete (colors, attributes, mouse) but deeply entangled with ncurses APIs (mvaddch, wattr_set, etc.). You'd be replacing every single ncurses call, which is more surgery than starting from the simpler text backend.
+
+My suggested approach:
+
+    Start with text backend, understand how it builds its cell buffer
+    Reference emscripten backend for how they handle color/attribute mapping without ncurses
+    Write a new backend that:
+        Maintains a Cell[width * height] buffer (glyph, fg, bg, attributes)
+        Exposes it for your OpenGL renderer to consume
+        Handles input by translating your engine's input events into what ImTUI expects
+
+The actual OpenGL rendering is then completely separate — instanced quads, texture atlas lookup, whatever fits your PS1 aesthetic. You could even add CRT curvature and scanlines at that stage.
+
+Want me to look up the actual ImTUI source structure to see what the text backend exposes?
+
+Yeah. And sketch out what a bgfx backend would look like
+6:37 PM
+
+I'm having trouble fetching the actual imtui source code directly. Let me instead clone and look at it, or just write out what I know from my training about the imtui architecture and provide a sensible bgfx backend sketch.
+
+From what I can see:
+
+    ImTUI has a TScreen structure that holds the cell buffer
+    ImTui_ImplText_Init() sets up the text/cell conversion layer
+    ImTui_ImplText_NewFrame() prepares a frame
+    ImTui_ImplText_RenderDrawData(ImGui::GetDrawData(), screen) converts ImGui draw data to cells
+
+The text backend is the core conversion layer - it takes ImGui's draw lists and converts them to a cell grid. The ncurses and emscripten backends are display backends that take that cell grid and render it to their respective targets.
+
+So the architecture is:
+
+    ImGui logic produces draw data
+    Text impl converts draw data → cell buffer (TScreen)
+    Display backend (ncurses/emscripten) renders cell buffer
+
+For a bgfx backend, I need to replace step 3. I can use the TScreen cell buffer and render it with bgfx.
+
+Let me provide a solid sketch for this.
+
+Based on what I can piece together from the examples and architecture, ImTUI has a two-layer backend system:
+
+Layer 1: Text impl (imtui-impl-text) — Converts ImGui draw data → cell buffer (TScreen) Layer 2: Display impl (ncurses/emscripten) — Renders cell buffer to output
+
+The key insight is that TScreen is your cell buffer — it's what you want to intercept. The text impl does the hard work of converting ImGui's floating-point vertex data to discrete character cells. You just need to replace the display layer.
+
+Here's a bgfx backend sketch:
+cpp
+
+// imtui-impl-bgfx.h
+#pragma once
+
+#include "imtui/imtui.h"
+#include <bgfx/bgfx.h>
+
+struct ImTui_ImplBgfx_Config {
+    int cellWidth  = 8;   // pixels per cell
+    int cellHeight = 16;
+    int cols       = 80;
+    int rows       = 25;
+    bgfx::TextureHandle fontAtlas = BGFX_INVALID_HANDLE;
+};
+
+ImTui::TScreen* ImTui_ImplBgfx_Init(const ImTui_ImplBgfx_Config& config);
+void ImTui_ImplBgfx_Shutdown();
+void ImTui_ImplBgfx_NewFrame();
+
+// Call after ImTui_ImplText_RenderDrawData()
+// Renders the TScreen to a bgfx view
+void ImTui_ImplBgfx_Render(ImTui::TScreen* screen, bgfx::ViewId viewId);
+
+// Get the framebuffer texture for compositing into your scene
+bgfx::TextureHandle ImTui_ImplBgfx_GetTexture();
+
+cpp
+
+// imtui-impl-bgfx.cpp
+#include "imtui-impl-bgfx.h"
+#include <vector>
+
+// CP437 or your preferred TUI font atlas
+// Each glyph is cellWidth x cellHeight in the atlas
+// Arranged in a 16x16 grid (256 glyphs)
+
+struct BgfxBackendData {
+    ImTui_ImplBgfx_Config config;
+
+    bgfx::FrameBufferHandle framebuffer;
+    bgfx::TextureHandle     renderTexture;
+    bgfx::ProgramHandle     program;
+    bgfx::UniformHandle     u_fontAtlas;
+    bgfx::UniformHandle     u_params;  // cellSize, atlasSize, etc.
+
+    bgfx::VertexBufferHandle  vbh;
+    bgfx::IndexBufferHandle   ibh;
+    bgfx::VertexLayout        layout;
+
+    // Instance buffer for cells (or just dynamic vertex buffer)
+    std::vector<float> vertexData;
+};
+
+static BgfxBackendData* g_bd = nullptr;
+
+// Vertex: position (2), texcoord (2), fg color (4), bg color (4)
+struct CellVertex {
+    float x, y;
+    float u, v;
+    uint32_t fg;
+    uint32_t bg;
+};
+
+ImTui::TScreen* ImTui_ImplBgfx_Init(const ImTui_ImplBgfx_Config& config) {
+    g_bd = new BgfxBackendData();
+    g_bd->config = config;
+
+    // Create render target
+    uint16_t texW = config.cols * config.cellWidth;
+    uint16_t texH = config.rows * config.cellHeight;
+
+    g_bd->renderTexture = bgfx::createTexture2D(
+        texW, texH, false, 1,
+        bgfx::TextureFormat::RGBA8,
+        BGFX_TEXTURE_RT
+    );
+
+    g_bd->framebuffer = bgfx::createFrameBuffer(
+        1, &g_bd->renderTexture, true
+    );
+
+    // Create shader program (you'll need vs_tui_cell / fs_tui_cell)
+    // g_bd->program = loadProgram("vs_tui_cell", "fs_tui_cell");
+
+    g_bd->u_fontAtlas = bgfx::createUniform("s_fontAtlas", bgfx::UniformType::Sampler);
+    g_bd->u_params    = bgfx::createUniform("u_params", bgfx::UniformType::Vec4, 2);
+
+    // Vertex layout
+    g_bd->layout
+        .begin()
+        .add(bgfx::Attrib::Position,  2, bgfx::AttribType::Float)
+        .add(bgfx::Attrib::TexCoord0, 2, bgfx::AttribType::Float)
+        .add(bgfx::Attrib::Color0,    4, bgfx::AttribType::Uint8, true)
+        .add(bgfx::Attrib::Color1,    4, bgfx::AttribType::Uint8, true)
+        .end();
+
+    // Create TScreen (ImTUI's cell buffer)
+    auto* screen = new ImTui::TScreen();
+    screen->resize(config.cols, config.rows);
+
+    return screen;
+}
+
+void ImTui_ImplBgfx_Render(ImTui::TScreen* screen, bgfx::ViewId viewId) {
+    if (!g_bd || !screen) return;
+
+    const auto& cfg = g_bd->config;
+    int cols = screen->nx;
+    int rows = screen->ny;
+
+    // Build vertex data from cell buffer
+    g_bd->vertexData.clear();
+    g_bd->vertexData.reserve(cols * rows * 6 * 8); // 6 verts, 8 floats each
+
+    for (int y = 0; y < rows; y++) {
+        for (int x = 0; x < cols; x++) {
+            const auto& cell = screen->data[y * cols + x];
+
+            // Cell position in pixels
+            float px = x * cfg.cellWidth;
+            float py = y * cfg.cellHeight;
+            float pw = cfg.cellWidth;
+            float ph = cfg.cellHeight;
+
+            // Glyph UV in atlas (16x16 grid of 256 glyphs)
+            int glyphIdx = cell.ch & 0xFF;
+            int gx = glyphIdx % 16;
+            int gy = glyphIdx / 16;
+            float u0 = gx / 16.0f;
+            float v0 = gy / 16.0f;
+            float u1 = (gx + 1) / 16.0f;
+            float v1 = (gy + 1) / 16.0f;
+
+            uint32_t fg = imtuiColorToRGBA(cell.fg);
+            uint32_t bg = imtuiColorToRGBA(cell.bg);
+
+            // Two triangles per cell
+            // First, draw background quad (use a solid glyph or separate draw)
+            // Then draw foreground glyph
+
+            auto pushVert = [&](float vx, float vy, float vu, float vv) {
+                CellVertex v;
+                v.x = vx; v.y = vy;
+                v.u = vu; v.v = vv;
+                v.fg = fg; v.bg = bg;
+                // Push to vertex buffer...
+            };
+
+            // Quad verts
+            pushVert(px,      py,      u0, v0);
+            pushVert(px + pw, py,      u1, v0);
+            pushVert(px + pw, py + ph, u1, v1);
+            pushVert(px,      py,      u0, v0);
+            pushVert(px + pw, py + ph, u1, v1);
+            pushVert(px,      py + ph, u0, v1);
+        }
+    }
+
+    // Set view to render to framebuffer
+    bgfx::setViewFrameBuffer(viewId, g_bd->framebuffer);
+    bgfx::setViewRect(viewId, 0, 0,
+        cols * cfg.cellWidth, rows * cfg.cellHeight);
+    bgfx::setViewClear(viewId, BGFX_CLEAR_COLOR, 0x000000FF);
+
+    // Create transient vertex buffer and submit
+    // bgfx::TransientVertexBuffer tvb;
+    // ...
+
+    bgfx::setTexture(0, g_bd->u_fontAtlas, g_bd->config.fontAtlas);
+    bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
+                   BGFX_STATE_BLEND_ALPHA);
+    bgfx::submit(viewId, g_bd->program);
+}
+
+bgfx::TextureHandle ImTui_ImplBgfx_GetTexture() {
+    return g_bd ? g_bd->renderTexture : BGFX_INVALID_HANDLE;
+}
+
+The fragment shader needs to handle both foreground (glyph) and background (cell fill):
+glsl
+
+// fs_tui_cell.sc
+$input v_texcoord0, v_color0, v_color1
+
+SAMPLER2D(s_fontAtlas, 0);
+
+void main() {
+    vec4 glyph = texture2D(s_fontAtlas, v_texcoord0);
+
+    // Glyph alpha determines blend between bg and fg
+    vec4 fg = v_color0;
+    vec4 bg = v_color1;
+
+    gl_FragColor = mix(bg, fg, glyph.a);
+}
+
+Usage in your game loop:
+cpp
+
+ImTui::TScreen* screen = ImTui_ImplBgfx_Init(config);
+ImTui_ImplText_Init();
+
+while (running) {
+    ImTui_ImplText_NewFrame();
+    ImTui_ImplBgfx_NewFrame();
+    ImGui::NewFrame();
+
+    // Your ImGui/ImTUI UI code
+    ImGui::Begin("Ship Console");
+    // ...
+    ImGui::End();
+
+    ImGui::Render();
+    ImTui_ImplText_RenderDrawData(ImGui::GetDrawData(), screen);
+    ImTui_ImplBgfx_Render(screen, VIEW_TUI);
+
+    // Now composite ImTui_ImplBgfx_GetTexture() into your 3D scene
+    // as a textured quad on an in-game monitor
+}
+
+The trickiest parts will be:
+
+    Color mapping — ImTUI uses terminal color indices (0-255), you need to map to RGBA
+    Font atlas — Get or generate a CP437/Unicode bitmap font atlas
+    Box drawing characters — Make sure your atlas has the full Unicode box drawing range or map them
+
+Want me to dig into any of these specifically?
+
+yes please outline your advice for all of these
+8:43 PM
+
+The user wants me to detail advice for all three tricky parts:
+
+    Color mapping (terminal color indices to RGBA)
+    Font atlas generation/acquisition
+    Box drawing characters handling
+
+Let me provide comprehensive guidance on each.
+1. Color Mapping
+
+ImTUI uses ncurses-style color pairs. The TScreen cell stores foreground/background as indices into a 256-color palette (the standard xterm-256 palette).
+cpp
+
+// imtui_colors.h
+
+#include <cstdint>
+
+// The xterm-256 color palette
+// Colors 0-15: Standard ANSI (bright variants at 8-15)
+// Colors 16-231: 6x6x6 color cube
+// Colors 232-255: Grayscale ramp
+
+constexpr uint32_t XTERM_256[256] = {
+    // 0-15: Standard ANSI colors
+    0x000000FF, // 0  Black
+    0x800000FF, // 1  Red
+    0x008000FF, // 2  Green
+    0x808000FF, // 3  Yellow
+    0x000080FF, // 4  Blue
+    0x800080FF, // 5  Magenta
+    0x008080FF, // 6  Cyan
+    0xC0C0C0FF, // 7  White
+    0x808080FF, // 8  Bright Black (Gray)
+    0xFF0000FF, // 9  Bright Red
+    0x00FF00FF, // 10 Bright Green
+    0xFFFF00FF, // 11 Bright Yellow
+    0x0000FFFF, // 12 Bright Blue
+    0xFF00FFFF, // 13 Bright Magenta
+    0x00FFFFFF, // 14 Bright Cyan
+    0xFFFFFFFF, // 15 Bright White
+
+    // 16-231: 6x6x6 color cube (generated below)
+    // 232-255: Grayscale (generated below)
+};
+
+inline uint32_t xtermIndexToRGBA(uint8_t idx) {
+    if (idx < 16) {
+        return XTERM_256[idx];
+    }
+    else if (idx < 232) {
+        // 6x6x6 color cube
+        int n = idx - 16;
+        int b = n % 6;
+        int g = (n / 6) % 6;
+        int r = n / 36;
+
+        // Each component: 0, 95, 135, 175, 215, 255
+        auto component = [](int v) -> uint8_t {
+            return v == 0 ? 0 : 55 + v * 40;
+        };
+
+        return (component(r) << 24) |
+               (component(g) << 16) |
+               (component(b) << 8)  | 0xFF;
+    }
+    else {
+        // Grayscale: 24 shades from 8 to 238
+        uint8_t gray = 8 + (idx - 232) * 10;
+        return (gray << 24) | (gray << 16) | (gray << 8) | 0xFF;
+    }
+}
+
+For your PS1 aesthetic, you might want to quantize this further to a smaller palette:
+cpp
+
+// Optional: CRT phosphor-style palette with limited colors
+// Gives that authentic low-color-depth terminal look
+
+struct RetroTerminalPalette {
+    // Amber monochrome
+    static constexpr uint32_t AMBER_BG = 0x1A1000FF;
+    static constexpr uint32_t AMBER_FG = 0xFFB000FF;
+    static constexpr uint32_t AMBER_DIM = 0x805800FF;
+
+    // Green phosphor
+    static constexpr uint32_t GREEN_BG = 0x001A00FF;
+    static constexpr uint32_t GREEN_FG = 0x00FF00FF;
+    static constexpr uint32_t GREEN_DIM = 0x008000FF;
+
+    // Map 256 colors to your limited palette
+    static uint32_t quantize(uint32_t rgba, int paletteSize = 16) {
+        // Extract components
+        uint8_t r = (rgba >> 24) & 0xFF;
+        uint8_t g = (rgba >> 16) & 0xFF;
+        uint8_t b = (rgba >> 8) & 0xFF;
+
+        // Quantize to N levels per channel
+        int levels = (paletteSize == 16) ? 2 : 4; // 2^3=8 or 4^3=64
+        r = (r / (256 / levels)) * (255 / (levels - 1));
+        g = (g / (256 / levels)) * (255 / (levels - 1));
+        b = (b / (256 / levels)) * (255 / (levels - 1));
+
+        return (r << 24) | (g << 16) | (b << 8) | 0xFF;
+    }
+};
+
+2. Font Atlas
+
+You need a bitmap font atlas where each glyph occupies the same cell size. Three approaches:
+Option A: Use an existing CP437 bitmap font
+
+Classic DOS fonts are perfect for this aesthetic:
+cpp
+
+// Popular choices (all public domain or freely usable):
+// - IBM VGA 8x16 (the DOS font)
+// - Terminus (modern, clean, many sizes)
+// - Unscii (fantasy console style)
+// - Perfect DOS VGA 437 (common in retro projects)
+
+// Font atlas layout: 16 columns x 16 rows = 256 glyphs
+// Texture size for 8x16 font: 128x256 pixels
+
+Download sources:
+
+    int10h.org — Massive archive of DOS bitmap fonts as PNGs
+    Terminus — Available as BDF, convert to atlas
+    Unscii — Specifically designed for retro games
+
+Option B: Generate at runtime with stb_truetype
+cpp
+
+#define STB_TRUETYPE_IMPLEMENTATION
+#include "stb_truetype.h"
+
+struct FontAtlas {
+    bgfx::TextureHandle texture;
+    int cellWidth;
+    int cellHeight;
+    int atlasWidth;   // 16 * cellWidth
+    int atlasHeight;  // 16 * cellHeight
+
+    // UV rect for a given codepoint
+    void getGlyphUV(uint32_t codepoint, float& u0, float& v0,
+                    float& u1, float& v1) {
+        int idx = codepoint & 0xFF; // Simple: just use low byte
+        int gx = idx % 16;
+        int gy = idx / 16;
+
+        u0 = (float)gx / 16.0f;
+        v0 = (float)gy / 16.0f;
+        u1 = (float)(gx + 1) / 16.0f;
+        v1 = (float)(gy + 1) / 16.0f;
+    }
+};
+
+FontAtlas createFontAtlas(const char* ttfPath, int cellW, int cellH) {
+    FontAtlas atlas;
+    atlas.cellWidth = cellW;
+    atlas.cellHeight = cellH;
+    atlas.atlasWidth = cellW * 16;
+    atlas.atlasHeight = cellH * 16;
+
+    // Load TTF
+    std::vector<uint8_t> ttfData = loadFile(ttfPath);
+    stbtt_fontinfo font;
+    stbtt_InitFont(&font, ttfData.data(), 0);
+
+    // Scale to fit cell height
+    float scale = stbtt_ScaleForPixelHeight(&font, cellH);
+
+    // Allocate atlas
+    std::vector<uint8_t> atlasPixels(atlas.atlasWidth * atlas.atlasHeight, 0);
+
+    // Render each glyph (ASCII + box drawing)
+    for (int i = 0; i < 256; i++) {
+        int gx = (i % 16) * cellW;
+        int gy = (i / 16) * cellH;
+
+        // Map index to codepoint
+        uint32_t codepoint = cp437ToUnicode(i); // See section 3
+
+        int glyphIdx = stbtt_FindGlyphIndex(&font, codepoint);
+        if (glyphIdx == 0 && codepoint != 0) continue;
+
+        int x0, y0, x1, y1;
+        stbtt_GetGlyphBitmapBox(&font, glyphIdx, scale, scale,
+                                &x0, &y0, &x1, &y1);
+
+        int w = x1 - x0;
+        int h = y1 - y0;
+
+        // Center glyph in cell
+        int ox = gx + (cellW - w) / 2;
+        int oy = gy + cellH + y0; // y0 is negative (ascent)
+
+        stbtt_MakeGlyphBitmap(&font,
+            atlasPixels.data() + oy * atlas.atlasWidth + ox,
+            w, h, atlas.atlasWidth, scale, scale, glyphIdx);
+    }
+
+    // Create bgfx texture
+    const bgfx::Memory* mem = bgfx::copy(
+        atlasPixels.data(), atlasPixels.size());
+
+    atlas.texture = bgfx::createTexture2D(
+        atlas.atlasWidth, atlas.atlasHeight, false, 1,
+        bgfx::TextureFormat::R8,
+        BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT,
+        mem
+    );
+
+    return atlas;
+}
+
+Option C: Bake a specific atlas offline
+
+Create a simple tool that renders your chosen font to a PNG:
+cpp
+
+// build_atlas.cpp - offline tool
+// Generates a 256-glyph atlas PNG from a TTF
+
+int main(int argc, char** argv) {
+    const char* ttfPath = argv[1];
+    const char* outPath = argv[2];
+    int cellW = 8, cellH = 16;
+
+    // ... render to buffer as above ...
+
+    stbi_write_png(outPath, atlasW, atlasH, 1, pixels.data(), atlasW);
+}
+
+3. Box Drawing Characters
+
+This is where most terminal-to-graphics ports fail. ImTUI relies heavily on box drawing for window borders, scrollbars, etc.
+The problem
+
+ImTUI outputs Unicode box drawing characters (U+2500–U+257F), but:
+
+    Your font might not have them
+    CP437 has them at different codepoints (0xB3, 0xC4, etc.)
+    Alignment is critical — a 1-pixel offset ruins the effect
+
+Solution: CP437 mapping table
+cpp
+
+// Map Unicode box drawing to CP437 indices
+// This lets you use a CP437 font atlas while ImTUI outputs Unicode
+
+uint8_t unicodeToCP437(uint32_t codepoint) {
+    // Fast path: ASCII
+    if (codepoint < 128) return (uint8_t)codepoint;
+
+    // Box drawing (most critical for TUI)
+    switch (codepoint) {
+        // Single lines
+        case 0x2500: return 0xC4; // ─ horizontal
+        case 0x2502: return 0xB3; // │ vertical
+        case 0x250C: return 0xDA; // ┌ top-left
+        case 0x2510: return 0xBF; // ┐ top-right
+        case 0x2514: return 0xC0; // └ bottom-left
+        case 0x2518: return 0xD9; // ┘ bottom-right
+        case 0x251C: return 0xC3; // ├ left tee
+        case 0x2524: return 0xB4; // ┤ right tee
+        case 0x252C: return 0xC2; // ┬ top tee
+        case 0x2534: return 0xC1; // ┴ bottom tee
+        case 0x253C: return 0xC5; // ┼ cross
+
+        // Double lines
+        case 0x2550: return 0xCD; // ═
+        case 0x2551: return 0xBA; // ║
+        case 0x2554: return 0xC9; // ╔
+        case 0x2557: return 0xBB; // ╗
+        case 0x255A: return 0xC8; // ╚
+        case 0x255D: return 0xBC; // ╝
+        case 0x2560: return 0xCC; // ╠
+        case 0x2563: return 0xB9; // ╣
+        case 0x2566: return 0xCB; // ╦
+        case 0x2569: return 0xCA; // ╩
+        case 0x256C: return 0xCE; // ╬
+
+        // Mixed single/double (common in ImTUI)
+        case 0x2552: return 0xD5; // ╒
+        case 0x2553: return 0xD6; // ╓
+        case 0x2555: return 0xB8; // ╕
+        case 0x2556: return 0xB7; // ╖
+        case 0x2558: return 0xD4; // ╘
+        case 0x2559: return 0xD3; // ╙
+        case 0x255B: return 0xBE; // ╛
+        case 0x255C: return 0xBD; // ╜
+        case 0x255E: return 0xC6; // ╞
+        case 0x255F: return 0xC7; // ╟
+        case 0x2561: return 0xB5; // ╡
+        case 0x2562: return 0xB6; // ╢
+        case 0x2564: return 0xD1; // ╤
+        case 0x2565: return 0xD2; // ╥
+        case 0x2567: return 0xCF; // ╧
+        case 0x2568: return 0xD0; // ╨
+        case 0x256A: return 0xD7; // ╪ (not in CP437, approximate)
+        case 0x256B: return 0xD8; // ╫ (not in CP437, approximate)
+
+        // Block elements (scrollbars, progress bars)
+        case 0x2588: return 0xDB; // █ full block
+        case 0x2584: return 0xDC; // ▄ lower half
+        case 0x258C: return 0xDD; // ▌ left half
+        case 0x2590: return 0xDE; // ▐ right half
+        case 0x2580: return 0xDF; // ▀ upper half
+        case 0x2591: return 0xB0; // ░ light shade
+        case 0x2592: return 0xB1; // ▒ medium shade
+        case 0x2593: return 0xB2; // ▓ dark shade
+
+        // Arrows
+        case 0x2190: return 0x1B; // ←
+        case 0x2191: return 0x18; // ↑
+        case 0x2192: return 0x1A; // →
+        case 0x2193: return 0x19; // ↓
+        case 0x2194: return 0x1D; // ↔
+        case 0x2195: return 0x12; // ↕
+
+        // Misc symbols ImTUI might use
+        case 0x25B2: return 0x1E; // ▲
+        case 0x25BC: return 0x1F; // ▼
+        case 0x25BA: return 0x10; // ►
+        case 0x25C4: return 0x11; // ◄
+        case 0x2022: return 0x07; // • bullet
+        case 0x00B7: return 0xFA; // · middle dot
+
+        default: return '?'; // Unknown
+    }
+}
+
+// Reverse mapping for runtime atlas generation
+uint32_t cp437ToUnicode(uint8_t idx) {
+    static const uint32_t TABLE[256] = {
+        // 0x00-0x1F: Control characters mapped to symbols
+        0x0000, 0x263A, 0x263B, 0x2665, 0x2666, 0x2663, 0x2660, 0x2022,
+        0x25D8, 0x25CB, 0x25D9, 0x2642, 0x2640, 0x266A, 0x266B, 0x263C,
+        0x25BA, 0x25C4, 0x2195, 0x203C, 0x00B6, 0x00A7, 0x25AC, 0x21A8,
+        0x2191, 0x2193, 0x2192, 0x2190, 0x221F, 0x2194, 0x25B2, 0x25BC,
+        // 0x20-0x7E: Standard ASCII
+        0x0020, 0x0021, 0x0022, /* ... etc ... */
+        // 0x80-0xFF: Extended CP437
+        // ... full table omitted for brevity ...
+    };
+    return TABLE[idx];
+}
+
+Alternative: Procedural box drawing
+
+Instead of relying on font glyphs, render box-drawing characters procedurally in the shader:
+glsl
+
+// fs_tui_cell.sc
+
+$input v_texcoord0, v_color0, v_color1, v_cellinfo
+
+SAMPLER2D(s_fontAtlas, 0);
+
+// v_cellinfo.x = glyph index
+// v_cellinfo.y = flags (is_box_drawing, etc.)
+
+void main() {
+    vec4 fg = v_color0;
+    vec4 bg = v_color1;
+
+    int glyphIdx = int(v_cellinfo.x);
+    vec2 cellUV = fract(v_texcoord0 * 16.0); // Position within cell [0,1]
+
+    float alpha;
+
+    // Check if box drawing character (CP437 0xB3-0xDA range)
+    if (glyphIdx >= 0xB0 && glyphIdx <= 0xDF) {
+        alpha = drawBoxChar(glyphIdx, cellUV);
+    } else {
+        alpha = texture2D(s_fontAtlas, v_texcoord0).r;
+    }
+
+    gl_FragColor = mix(bg, fg, alpha);
+}
+
+float drawBoxChar(int idx, vec2 uv) {
+    float lineWidth = 0.15; // Thickness of lines
+    float cx = 0.5, cy = 0.5;
+
+    // Horizontal line
+    bool hLine = abs(uv.y - cy) < lineWidth;
+    // Vertical line
+    bool vLine = abs(uv.x - cx) < lineWidth;
+
+    // Decode which segments are present based on glyph
+    // This is a simplified version
+
+    if (idx == 0xC4) { // ─
+        return hLine ? 1.0 : 0.0;
+    }
+    if (idx == 0xB3) { // │
+        return vLine ? 1.0 : 0.0;
+    }
+    if (idx == 0xDA) { // ┌
+        return (hLine && uv.x > cx) || (vLine && uv.y > cy) ? 1.0 : 0.0;
+    }
+    if (idx == 0xBF) { // ┐
+        return (hLine && uv.x < cx) || (vLine && uv.y > cy) ? 1.0 : 0.0;
+    }
+    if (idx == 0xC0) { // └
+        return (hLine && uv.x > cx) || (vLine && uv.y < cy) ? 1.0 : 0.0;
+    }
+    if (idx == 0xD9) { // ┘
+        return (hLine && uv.x < cx) || (vLine && uv.y < cy) ? 1.0 : 0.0;
+    }
+    if (idx == 0xC5) { // ┼
+        return (hLine || vLine) ? 1.0 : 0.0;
+    }
+    // ... etc for all box chars
+
+    // Block elements
+    if (idx == 0xDB) return 1.0; // █ full
+    if (idx == 0xDC) return uv.y > 0.5 ? 1.0 : 0.0; // ▄ lower
+    if (idx == 0xDF) return uv.y < 0.5 ? 1.0 : 0.0; // ▀ upper
+    if (idx == 0xDD) return uv.x < 0.5 ? 1.0 : 0.0; // ▌ left
+    if (idx == 0xDE) return uv.x > 0.5 ? 1.0 : 0.0; // ▐ right
+
+    // Shades (dithered)
+    if (idx == 0xB0) return fract(sin(dot(uv, vec2(12.9, 78.2))) * 43758.5) > 0.75 ? 1.0 : 0.0;
+    if (idx == 0xB1) return fract(sin(dot(uv, vec2(12.9, 78.2))) * 43758.5) > 0.50 ? 1.0 : 0.0;
+    if (idx == 0xB2) return fract(sin(dot(uv, vec2(12.9, 78.2))) * 43758.5) > 0.25 ? 1.0 : 0.0;
+
+    return 0.0;
+}
+
+This gives you pixel-perfect box drawing regardless of font quality, and you can tweak line thickness for your PS1 aesthetic.
+Putting It Together
+cpp
+
+// In your render loop:
+
+void renderTUIConsole(ImTui::TScreen* screen, bgfx::ViewId viewId) {
+    const auto& cfg = g_tuiConfig;
+
+    for (int y = 0; y < screen->ny; y++) {
+        for (int x = 0; x < screen->nx; x++) {
+            const auto& cell = screen->data[y * screen->nx + x];
+
+            // Get the character - ImTUI stores Unicode
+            uint32_t codepoint = cell.ch;
+
+            // Map to atlas index
+            uint8_t atlasIdx = unicodeToCP437(codepoint);
+
+            // Map colors
+            uint32_t fg = xtermIndexToRGBA(cell.fg);
+            uint32_t bg = xtermIndexToRGBA(cell.bg);
+
+            // Optional: apply PS1 color quantization
+            fg = RetroTerminalPalette::quantize(fg, 16);
+            bg = RetroTerminalPalette::quantize(bg, 16);
+
+            // Push to vertex buffer
+            pushCellQuad(x, y, atlasIdx, fg, bg);
+        }
+    }
+
+    submitDrawCall(viewId);
+}
+
+For the authentic tartan PS1-terminal aesthetic, I'd suggest:
+
+    Use an 8x16 CP437 font (IBM VGA or similar)
+    Quantize to 16 colors or go full amber/green monochrome
+    Render to a low-res framebuffer (320x200 or 640x400)
+    Add scanlines and slight CRT curvature in a post-process pass
+    Use the procedural box drawing for guaranteed pixel-perfect lines
+
+
+Claude is AI and can make mistakes. Please double-check responses.
