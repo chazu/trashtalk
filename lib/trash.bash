@@ -1179,6 +1179,19 @@ function send {
       msg_debug "Set superclass for $class_name: $_SUPERCLASS"
     fi
 
+    # For class calls (no instance), try class methods FIRST
+    # This prevents instance method `exists` from shadowing class method `exists:`
+    if [[ -z "$_INSTANCE" ]]; then
+      local class_method_func="__${class_name}__class__${_SELECTOR}"
+      if declare -F "$class_method_func" >/dev/null 2>&1; then
+        msg_debug "Calling class method: $class_method_func"
+        "$class_method_func" "$@"
+        exit_code=$?
+        _send_cleanup $frame_ensure_start $frame_handler_start $exit_code
+        return $exit_code
+      fi
+    fi
+
     # Try namespaced instance method
     local namespaced_func="__${class_name}__${_SELECTOR}"
     if declare -F "$namespaced_func" >/dev/null 2>&1; then
@@ -1189,7 +1202,7 @@ function send {
       return $exit_code
     fi
 
-    # Try class method
+    # Try class method (for instance calls that might fall through)
     local class_method_func="__${class_name}__class__${_SELECTOR}"
     if declare -F "$class_method_func" >/dev/null 2>&1; then
       msg_debug "Calling class method: $class_method_func"
@@ -1358,6 +1371,21 @@ function @ {
   fi
 
   msg_debug "Entrypoint: $*"
+
+  # Pre-source the receiver's class before entering subshell
+  # This ensures class methods are available in the parent shell
+  local ___receiver="$1"
+  if [[ -n "$___receiver" ]]; then
+    # For instance IDs, extract class name
+    if [[ "$___receiver" == *_* && "$___receiver" =~ ^[a-z] ]]; then
+      local ___class="${___receiver%%_*}"
+      ___class="${___class^}"  # Capitalize first letter
+      _ensure_class_sourced "$___class"
+    else
+      # Direct class name
+      _ensure_class_sourced "$___receiver"
+    fi
+  fi
 
   # Capture output and store in $__
   local ___result

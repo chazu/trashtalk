@@ -6,23 +6,32 @@ See `completed.md` for finished work.
 
 ---
 
+## Twin Windowing Environment
+
+### Twin Configuration & Startup
+- Figure out socket server configuration (had to start manually)
+- Create ergonomic startup script (`trashwin`? `trashsh`? `trash-ui`?)
+- Document Ghostty/terminal compatibility (TERM=xterm-256color workaround)
+- Investigate why `@ Twin start` can't work (command substitution limitation)
+
+---
+
 ## Concurrency & Coordination
 
-### Actor Supervision ✓ (Actor API implemented, documented in ACTOR.md)
-Build on the Actor concurrency primitive:
+Base APIs implemented - see ACTOR.md, PROCESS.md, TUPLESPACE.md
+
+### Actor Enhancements
 - Supervision trees (restart strategies)
 - Actor linking (linked actors die together)
 - Named actors (lookup by name instead of ID)
 - Actor groups and broadcast messaging
 
-### Process Enhancements ✓ (Process API implemented, documented in PROCESS.md)
-Extend the external process management:
+### Process Enhancements
 - Piping between processes
 - Process groups
 - Timeout support for long-running commands
 
-### Tuplespace Patterns ✓ (Tuplespace API documented in TUPLESPACE.md)
-Additional coordination patterns:
+### Tuplespace Enhancements
 - Pattern matching with wildcards
 - Lease-based expiration
 - Distributed tuplespace (multi-machine)
@@ -50,7 +59,6 @@ package: MyApp
 - Command history persistence
 - Tab completion for class/method names
 - `@ Trash browse Counter` - interactive object browser
-- `$it` support (see above)
 
 ### Documentation Generation
 - Extract comments from `.trash` files
@@ -192,4 +200,4 @@ The compiler strips colons from string default values. For example, `instanceVar
 
 ---
 
-*Last updated: 2024-12-18 - Moved completed items to completed.md*
+*Last updated: 2024-12-19 - Actor/Process/Tuplespace base APIs completed*

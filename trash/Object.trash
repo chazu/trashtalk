@@ -54,6 +54,13 @@ Object subclass: nil
     fi
   ]
 
+  # Write inspection output to a file
+  # Usage: @ $obj inspectTo: "/tmp/inspect.txt"
+  rawMethod: inspectTo: filepath [
+    @ "$_RECEIVER" inspect > "$filepath"
+    echo "$filepath"
+  ]
+
   # Return all instance IDs for this class
   # Usage: @ Counter findAll
   rawClassMethod: findAll [

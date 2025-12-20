@@ -434,4 +434,37 @@ Refactored concurrency architecture to distinguish between internal concurrency 
 
 ---
 
+## File Class & Twin Integration (2024-12-19)
+
+Built foundational classes for Twin windowing environment:
+
+**File Class** (`trash/File.trash`) - File system operations:
+- Instance methods: `read`, `write:`, `writeLine:`, `append:`, `appendLine:`
+- Queries: `exists`, `isFile`, `isDirectory`, `isFifo`, `size`, `modificationTime`
+- Path operations: `path`, `directory`, `basename`, `extension`, `stem`
+- Operations: `delete`, `copyTo:`, `moveTo:`, `touch`, `info`
+- Class methods for quick ops: `@ File read:`, `@ File write:to:`, `@ File exists:`, `@ File delete:`
+- Temp files: `@ File temp`, `@ File tempWithPrefix:`
+- FIFOs: `@ File mkfifo:`
+
+**Twin Class** (`trash/Twin.trash`) - Window manager integration:
+- `@ Twin open: "command"` - Open terminal running command
+- `@ Twin edit: "/path"` - Open file in $EDITOR
+- `@ Twin inspect: $obj` - Open object inspector window
+- `@ Twin workspace` - Open code workspace
+- `@ Twin openStream:` / `sendTo:data:` / `closeStream:` - FIFO-based streaming
+- `@ Twin isAvailable` - Check if Twin is installed
+
+**Object Enhancements:**
+- Added `inspectTo:` method for writing inspection to a file
+
+**Runtime Fixes:**
+- Fixed class method dispatch priority: when receiver is a class (not instance), class methods are now checked BEFORE instance methods. This fixes `@ File exists: "/path"` calling the class method instead of the shadowing instance method.
+- Fixed class pre-sourcing in `@` function to ensure classes are loaded before dispatch.
+
+**Documentation:**
+- `FILE.md` - Complete File API reference
+
+---
+
 *Last updated: 2024-12-19*
