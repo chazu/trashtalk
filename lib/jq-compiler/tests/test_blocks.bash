@@ -8,6 +8,26 @@ TRASHTALK_ROOT="$SCRIPT_DIR/../../.."
 # Source the runtime for runtime tests (tests 6-8)
 source "$TRASHTALK_ROOT/lib/trash.bash" 2>/dev/null
 
+# Test counters
+PASSED=0
+FAILED=0
+SKIPPED=0
+
+pass() {
+    echo -e "  \e[32m✓\e[0m $1"
+    ((PASSED++)) || true
+}
+
+fail() {
+    echo -e "  \e[31m✗\e[0m $1"
+    ((FAILED++)) || true
+}
+
+skip() {
+    echo -e "  \e[33m⊘\e[0m $1 (SKIPPED: $2)"
+    ((SKIPPED++)) || true
+}
+
 echo "Block Closure Tests"
 echo "==================="
 echo ""
@@ -27,9 +47,9 @@ EOF
 
 output=$("$DRIVER" compile /tmp/test_block1.trash 2>/dev/null)
 if echo "$output" | grep -q 'Block params_code_captured.*\["x"\]'; then
-    echo "  [32m✓[0m Block literal generates Block creation"
+    pass "Block literal generates Block creation"
 else
-    echo "  [31m✗[0m Block literal should generate Block creation"
+    fail "Block literal should generate Block creation"
     echo "  Got: $(echo "$output" | grep -A2 'makeAdder')"
 fi
 
@@ -48,9 +68,9 @@ EOF
 
 output=$("$DRIVER" compile /tmp/test_block2.trash 2>/dev/null)
 if echo "$output" | grep -q 'Block params_code_captured.*\["x","y"\]'; then
-    echo "  [32m✓[0m Two-param block generates correct params"
+    pass "Two-param block generates correct params"
 else
-    echo "  [31m✗[0m Two-param block should have [\"x\",\"y\"] params"
+    fail "Two-param block should have [\"x\",\"y\"] params"
     echo "  Got: $(echo "$output" | grep -A2 'makeAdder')"
 fi
 
@@ -59,9 +79,9 @@ echo ""
 echo "Test 3: Block body wraps value in echo"
 output=$("$DRIVER" compile /tmp/test_block1.trash 2>/dev/null)
 if echo "$output" | grep -q 'echo "\$'; then
-    echo "  [32m✓[0m Block body wraps arithmetic in echo"
+    pass "Block body wraps arithmetic in echo"
 else
-    echo "  [31m✗[0m Block body should wrap arithmetic in echo"
+    fail "Block body should wrap arithmetic in echo"
 fi
 
 # Test 4: Block with no parameters creates Block object
@@ -79,9 +99,9 @@ EOF
 
 output=$("$DRIVER" compile /tmp/test_block3.trash 2>/dev/null)
 if echo "$output" | grep -q 'Block params_code_captured.*\[\]'; then
-    echo "  [32m✓[0m No-param block creates Block with empty params"
+    pass "No-param block creates Block with empty params"
 else
-    echo "  [31m✗[0m No-param block should create Block with empty params"
+    fail "No-param block should create Block with empty params"
     echo "  Got: $(echo "$output" | grep -A2 'noParamBlock')"
 fi
 
@@ -90,9 +110,9 @@ echo ""
 echo "Test 5: Block captures _RECEIVER in context"
 output=$("$DRIVER" compile /tmp/test_block1.trash 2>/dev/null)
 if echo "$output" | grep -q '_RECEIVER'; then
-    echo "  [32m✓[0m Block captures _RECEIVER"
+    pass "Block captures _RECEIVER"
 else
-    echo "  [31m✗[0m Block should capture _RECEIVER"
+    fail "Block should capture _RECEIVER"
 fi
 
 # Test 6: Runtime execution (if Block class is compiled)
@@ -102,29 +122,29 @@ if [[ -f "$TRASHTALK_ROOT/trash/.compiled/Block" ]]; then
     # Create a block directly using the class method
     block_id=$(@ Block params_code_captured '["x"]' 'echo $(( $x + 1 ))' '{}' 2>/dev/null)
     if [[ "$block_id" =~ ^block_ ]]; then
-        echo "  [32m✓[0m Block created: $block_id"
+        pass "Block created: $block_id"
 
         # Execute the block with an argument
         result=$(@ "$block_id" valueWith 5 2>/dev/null)
         if [[ "$result" == "6" ]]; then
-            echo "  [32m✓[0m Block valueWith: returned correct result (6)"
+            pass "Block valueWith: returned correct result (6)"
         else
-            echo "  [31m✗[0m Block valueWith: expected 6, got '$result'"
+            fail "Block valueWith: expected 6, got '$result'"
         fi
     else
-        echo "  [31m✗[0m Failed to create Block instance (got: $block_id)"
+        fail "Failed to create Block instance (got: $block_id)"
     fi
 else
-    echo "  [33m![0m Block class not compiled, skipping runtime test"
+    skip "Runtime block execution" "Block class not compiled"
 fi
 
 # Test 7: Array do: with blocks
 echo ""
 echo "Test 7: Array do: iteration"
-if [[ -f "$TRASHTALK_ROOT/trash/.compiled/Array" ]]; then
+if [[ -f "$TRASHTALK_ROOT/trash/.compiled/Array" ]] && [[ -f "$TRASHTALK_ROOT/trash/.compiled/Block" ]]; then
     arr=$(@ Array new)
     if [[ ! "$arr" =~ ^array_ ]]; then
-        echo "  [31m✗[0m Array new failed: $arr"
+        fail "Array new failed: $arr"
     else
         @ $arr push 1 >/dev/null 2>&1
         @ $arr push 2 >/dev/null 2>&1
@@ -134,20 +154,20 @@ if [[ -f "$TRASHTALK_ROOT/trash/.compiled/Array" ]]; then
         output=$(@ $arr do $block)
 
         if echo "$output" | grep -q "item" ; then
-            echo "  [32m✓[0m Array do: iterates over all elements"
+            pass "Array do: iterates over all elements"
         else
-            echo "  [31m✗[0m Array do: should iterate over elements"
+            fail "Array do: should iterate over elements"
             echo "  Got: $output"
         fi
     fi
 else
-    echo "  [33m![0m Array class not compiled, skipping test"
+    skip "Array do: iteration" "Array or Block class not compiled"
 fi
 
 # Test 8: Array collect: with blocks
 echo ""
 echo "Test 8: Array collect: mapping"
-if [[ -f "$TRASHTALK_ROOT/trash/.compiled/Array" ]]; then
+if [[ -f "$TRASHTALK_ROOT/trash/.compiled/Array" ]] && [[ -f "$TRASHTALK_ROOT/trash/.compiled/Block" ]]; then
     arr=$(@ Array new 2>/dev/null)
     @ $arr push 1 >/dev/null 2>&1
     @ $arr push 2 >/dev/null 2>&1
@@ -159,14 +179,18 @@ if [[ -f "$TRASHTALK_ROOT/trash/.compiled/Array" ]]; then
     # Check by showing the doubled array
     items=$(@ $doubled show 2>&1)
     if echo "$items" | grep -qE "[246]"; then
-        echo "  [32m✓[0m Array collect: maps elements through block"
+        pass "Array collect: maps elements through block"
     else
-        echo "  [31m✗[0m Array collect: should map [1,2,3] to [2,4,6]"
+        fail "Array collect: should map [1,2,3] to [2,4,6]"
         echo "  Got: $items (doubled=$doubled)"
     fi
 else
-    echo "  [33m![0m Array class not compiled, skipping test"
+    skip "Array collect: mapping" "Array or Block class not compiled"
 fi
 
 echo ""
-echo "Done!"
+echo "================================"
+echo "Results: $PASSED passed, $FAILED failed, $SKIPPED skipped"
+
+# Exit with failure if any test failed (skipped tests don't count as failures)
+[[ $FAILED -eq 0 ]] || exit 1

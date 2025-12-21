@@ -231,22 +231,22 @@ test_default_override() {
 }
 
 # ============================================
-# Test 6: Negative number default
+# Test 6: Numeric default values
 # ============================================
-test_negative_default() {
-    echo "Test: Negative number default value"
+test_numeric_defaults() {
+    echo "Test: Numeric default values"
 
-    create_test_class "TestNegativeDefault" 'TestNegativeDefault subclass: Object
+    create_test_class "TestNumericDefaults" 'TestNumericDefaults subclass: Object
   instanceVars: offset:0 limit:100
 
   rawClassMethod: new [
-    local id=$(_generate_instance_id "TestNegativeDefault")
-    _create_instance "TestNegativeDefault" "$id"
+    local id=$(_generate_instance_id "TestNumericDefaults")
+    _create_instance "TestNumericDefaults" "$id"
     echo "$id"
   ]
 '
 
-    local instance=$(@ TestNegativeDefault new)
+    local instance=$(@ TestNumericDefaults new)
 
     local offset=$(@ $instance getOffset)
     local limit=$(@ $instance getLimit)
@@ -258,7 +258,7 @@ test_negative_default() {
     fi
 
     @ $instance delete 2>/dev/null || true
-    cleanup_test_class "TestNegativeDefault"
+    cleanup_test_class "TestNumericDefaults"
 }
 
 # ============================================
@@ -304,7 +304,7 @@ run_test test_boolean_numeric_default
 echo ""
 run_test test_default_override
 echo ""
-run_test test_negative_default
+run_test test_numeric_defaults
 echo ""
 run_test test_counter_with_default
 
