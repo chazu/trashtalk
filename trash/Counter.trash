@@ -1,5 +1,5 @@
 # Counter - A simple counter class demonstrating Trashtalk DSL
-# Instance variables are accessed via getters: $(@ self getVarName)
+# Instance variables use Smalltalk-style inference: value -> $(_ivar value)
 Counter subclass: Object
   instanceVars: value:0 step:1
 
@@ -10,33 +10,44 @@ Counter subclass: Object
     ^ $id
   ]
 
+  method: getValue [
+    ^ value + 0
+  ]
+
+  method: getStep [
+    ^ step + 0
+  ]
+
+  method: setValue: val [
+    value := val + 0
+  ]
+
+  method: setStep: val [
+    step := val + 0
+  ]
+
   method: increment [
-    | current step newVal |
-    current := $(@ self getValue)
-    step := $(@ self getStep)
-    newVal := $((current + step))
-    @ self setValue: $newVal
-    ^ $newVal
+    | newVal |
+    newVal := value + step
+    value := newVal + 0
+    ^ newVal + 0
   ]
 
   method: decrement [
-    | current step newVal |
-    current := $(@ self getValue)
-    step := $(@ self getStep)
-    newVal := $((current - step))
-    @ self setValue: $newVal
-    ^ $newVal
+    | newVal |
+    newVal := value - step
+    value := newVal + 0
+    ^ newVal + 0
   ]
 
   method: incrementBy: amount [
-    | current newVal |
-    current := $(@ self getValue)
-    newVal := $((current + amount))
-    @ self setValue: $newVal
+    | newVal |
+    newVal := value + amount
+    value := newVal + 0
   ]
 
   method: reset [
-    @ self setValue: 0
+    value := 0 + 0
   ]
 
   classMethod: description [

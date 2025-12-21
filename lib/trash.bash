@@ -1046,6 +1046,15 @@ function send {
   msg_debug "Send: $*"
 
   # ============================================
+  # Security: Reject dangerous receiver patterns
+  # ============================================
+  local _raw_receiver="$1"
+  if [[ "$_raw_receiver" == *..* ]] || [[ "$_raw_receiver" == /* ]] || [[ "$_raw_receiver" == */* ]]; then
+    echo "Error: Invalid receiver '$_raw_receiver' - path-like receivers are not allowed" >&2
+    return 1
+  fi
+
+  # ============================================
   # Context variables - LOCAL for proper nesting
   # ============================================
   # Using local instead of export means each send() call has its own
@@ -1379,6 +1388,13 @@ function @ {
   fi
 
   msg_debug "Entrypoint: $*"
+
+  # Security: Reject dangerous receiver patterns early
+  local ___check_receiver="$1"
+  if [[ "$___check_receiver" == *..* ]] || [[ "$___check_receiver" == /* ]] || [[ "$___check_receiver" == */* ]]; then
+    echo "Error: Invalid receiver '$___check_receiver' - path-like receivers are not allowed" >&2
+    return 1
+  fi
 
   # Pre-source the receiver's class before entering subshell
   # This ensures class methods are available in the parent shell

@@ -1,6 +1,6 @@
 # Trashtalk TODO
 
-**Test Status: 9 test suites, 48+ bash tests, 22 TestCase assertions (100% passing)**
+**Test Status: All tests passing (127+ tests across 6 suites)**
 
 See `completed.md` for finished work.
 
@@ -97,18 +97,6 @@ Validate on set, reject invalid types.
 ### Schema Versioning
 Handle upgrades when you add new instance_var to class with existing instances.
 
-### Exception Handling DSL
-Infrastructure exists (`_throw`, `_on_error`, etc.). Need DSL syntax:
-```smalltalk
-try: [
-  @ self doSomethingDangerous
-] catch: [ :error |
-  @ self log: "Failed: $error"
-]
-```
-
----
-
 ## Performance & Maintenance
 
 ### Performance Optimization
@@ -187,4 +175,4 @@ The compiler strips colons from string default values. For example, `instanceVar
 
 ---
 
-*Last updated: 2024-12-19 - Actor/Process/Tuplespace base APIs completed*
+*Last updated: 2024-12-20 - All tests passing, exception handling DSL added*
