@@ -102,7 +102,7 @@ def expr_is_control_flow:
   $tok != null and $tok.type == "KEYWORD" and
   ($tok.value == "ifTrue:" or $tok.value == "ifFalse:" or
    $tok.value == "whileTrue:" or $tok.value == "whileFalse:" or
-   $tok.value == "timesRepeat:");
+   $tok.value == "timesRepeat:" or $tok.value == "try:");
 
 # Check if current token terminates a keyword argument
 # (used to stop expression parsing at message boundaries)
@@ -538,6 +538,65 @@ def expr_parse_stmt:
   expr_skip_term |
   if expr_at_end then { state: ., result: null }
   elif expr_peek_type == "PIPE" then expr_parse_locals
+  elif expr_peek_type == "KEYWORD" and expr_peek.value == "try:" then
+    # Parse try: [block] catch: [block] or try: [block] catch: [ :param | block ]
+    expr_advance | expr_skip_ws |
+    if expr_peek_type == "LBRACKET" then
+      expr_parse_block as $try_block |
+      $try_block.state | expr_skip_ws |
+      if expr_peek_type == "KEYWORD" and expr_peek.value == "catch:" then
+        expr_advance | expr_skip_ws |
+        if expr_peek_type == "LBRACKET" then
+          # Parse catch block which may have parameters [ :err | body ]
+          (. | expr_advance) | expr_skip_ws |
+          # Check for block parameters
+          { state: ., params: [] } |
+          until((.state | expr_peek_type) != "BLOCK_PARAM";
+            (.state | expr_peek) as $p |
+            .params += [$p.value] |
+            .state |= expr_advance |
+            .state |= expr_skip_ws
+          ) |
+          # If we have params, expect a PIPE separator
+          (if (.params | length) > 0 and (.state | expr_peek_type) == "PIPE" then
+            .state |= expr_advance | .state |= expr_skip_ws
+          else . end) |
+          .params as $catch_params |
+          # Collect the catch body tokens
+          .state |
+          { state: ., tokens: [], depth: 1 } |
+          until(.depth == 0 or (.state | expr_at_end);
+            (.state | expr_peek) as $t |
+            if $t == null then .
+            elif $t.type == "LBRACKET" then
+              .tokens += [$t] | .depth += 1 | .state |= expr_advance
+            elif $t.type == "RBRACKET" then
+              .depth -= 1 |
+              if .depth > 0 then .tokens += [$t] else . end |
+              .state |= expr_advance
+            else
+              .tokens += [$t] | .state |= expr_advance
+            end
+          ) |
+          {
+            state: .state,
+            result: {
+              type: "control_flow",
+              kind: "try_catch",
+              try_block: $try_block.result,
+              catch_block: { type: "block", tokens: .tokens },
+              error_param: (if ($catch_params | length) > 0 then $catch_params[0] else null end)
+            }
+          }
+        else
+          { state: ., result: null }
+        end
+      else
+        { state: ., result: null }
+      end
+    else
+      { state: ., result: null }
+    end
   else expr_parse_expr(0)
   end;
 
@@ -843,6 +902,27 @@ def expr_gen($locals; $ivars; $cvars):
       else
         "while (( !(\($cond)) )); do \($block_code); done"
       end
+    elif .kind == "try_catch" then
+      # Generate try/catch using bash error handling
+      (if .try_block.tokens != null then
+        ({ tokens: .try_block.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
+        [($parsed.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
+      elif .try_block.body != null then
+        [(.try_block.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
+      else "" end) as $try_code |
+      # Get error parameter name (default to "error")
+      (.error_param // "error") as $error_var |
+      # Generate catch block with error param as local
+      (if .catch_block.tokens != null then
+        ({ tokens: .catch_block.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
+        ([$error_var] + $locals) as $catch_locals |
+        [($parsed.body // [])[] | expr_gen($catch_locals; $ivars; $cvars)] | join("; ")
+      elif .catch_block.body != null then
+        ([$error_var] + $locals) as $catch_locals |
+        [(.catch_block.body // [])[] | expr_gen($catch_locals; $ivars; $cvars)] | join("; ")
+      else "" end) as $catch_code |
+      # Generate: if ! try_code; then error_var="..."; catch_code; _clear_error; fi
+      "if ! { \($try_code); }; then local \($error_var)=\"$_ERROR_TYPE: $_ERROR_MSG\"; \($catch_code); _clear_error; fi"
     else
       "# ERROR: unknown control flow kind \(.kind)"
     end
@@ -938,6 +1018,10 @@ def expr_gen_control_flow($locals; $ivars; $cvars):
     else
       "while (( !(\(.condition | expr_gen_condition($locals; $ivars; $cvars))) )); do \(.block | expr_gen_block_body($locals; $ivars; $cvars)); done"
     end
+  elif .kind == "try_catch" then
+    (.error_param // "error") as $error_var |
+    ([$error_var] + $locals) as $catch_locals |
+    "if ! { \(.try_block | expr_gen_block_body($locals; $ivars; $cvars)); }; then local \($error_var)=\"$_ERROR_TYPE: $_ERROR_MSG\"; \(.catch_block | expr_gen_block_body($catch_locals; $ivars; $cvars)); _clear_error; fi"
   else
     "# ERROR: unknown control flow kind \(.kind)"
   end;
@@ -1029,9 +1113,10 @@ def should_use_expr_parser:
   if ($tokens | length) < 3 then false
   else
     # First, check for strong Smalltalk signals that should always use expr parser
-    # Collection literals are unambiguous Smalltalk syntax
+    # Collection literals and try: are unambiguous Smalltalk syntax
     (any($tokens[]; .type == "SYMBOL" or .type == "HASH_LPAREN" or .type == "HASH_LBRACE")) as $has_collection_literals |
-    if $has_collection_literals then true
+    (any($tokens[]; .type == "KEYWORD" and .value == "try:")) as $has_try_catch |
+    if $has_collection_literals or $has_try_catch then true
     else
     # Check for exclusions: bash constructs that shouldn't use expr parser
     # Bash commands that appear as bare identifiers (not after @)
@@ -1098,11 +1183,11 @@ def should_use_expr_parser:
          $tokens[$i + 1].type == "IDENTIFIER" and
          (($tokens[$i + 2].type // "END") == "DOT" or ($tokens[$i + 2].type // "END") == "NEWLINE" or ($tokens[$i + 2].type // "END") == "END"))
         or
-        # Pattern 6: Control flow keywords (ifTrue:, ifFalse:, whileTrue:, timesRepeat:)
+        # Pattern 6: Control flow keywords (ifTrue:, ifFalse:, whileTrue:, timesRepeat:, try:)
         ($tokens[$i].type == "KEYWORD" and
          ($tokens[$i].value == "ifTrue:" or $tokens[$i].value == "ifFalse:" or
           $tokens[$i].value == "whileTrue:" or $tokens[$i].value == "whileFalse:" or
-          $tokens[$i].value == "timesRepeat:"))
+          $tokens[$i].value == "timesRepeat:" or $tokens[$i].value == "try:"))
         or
         # Pattern 7: Comparison operators between identifiers/numbers
         (($tokens[$i].type == "IDENTIFIER" or $tokens[$i].type == "NUMBER" or $tokens[$i].type == "RPAREN") and

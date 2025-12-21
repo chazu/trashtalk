@@ -542,4 +542,79 @@ Counter subclass: Object
 
 ---
 
+## Exception Handling DSL (2024-12-20)
+
+Structured exception handling with `try:`/`catch:` syntax:
+
+```smalltalk
+Counter subclass: Object
+  classMethod: test [
+    try: [
+      @ self doSomethingDangerous
+    ] catch: [ :err |
+      @ self log: "Failed: $err"
+    ]
+  ]
+```
+
+**Implementation:**
+- **Expression parser:** Added `try:` to `expr_is_control_flow` and `should_use_expr_parser` patterns
+- **Parser:** Added `try:` detection early in expression parsing (like collection literals)
+- **Codegen:** Generates bash if/error-check pattern:
+  ```bash
+  if ! { # try block
+    ...
+  }; then
+    local err="$_ERROR_TYPE: $_ERROR_MSG"
+    # catch block
+    ...
+    _clear_error
+  fi
+  ```
+- Catch block can capture error with parameter (`:err |`)
+- Integrates with existing `_throw`, `_ERROR_TYPE`, `_ERROR_MSG`, `_clear_error` runtime
+
+**Tests:**
+1. Parse try/catch tokenization
+2. Codegen generates if structure
+3. Codegen includes `_clear_error`
+4. Error parameter binding generates `local err=...`
+5. Runtime: successful try block executes (catch skipped)
+6. Runtime: failed try block triggers catch
+7. Runtime: error parameter binding works
+
+**Files modified:**
+- `lib/jq-compiler/codegen.jq` - Added try/catch detection and generation
+
+**Tests:** 7 tests in `lib/jq-compiler/tests/test_exceptions.bash`
+
+---
+
+## Test Suite Fixes (2024-12-20)
+
+Fixed multiple test failures caused by missing accessor methods and security checks:
+
+### Counter Class Accessors
+- Added explicit `getValue`, `getStep`, `setValue:`, `setStep:` methods
+- Updated `increment`, `decrement`, `incrementBy:`, `reset` to use modern ivar syntax
+- Uses expression parser's ivar inference: `value + step` → `$(_ivar value) + $(_ivar step)`
+
+### Array Class Accessors
+- Added `getItems`, `setItems:`, `_getItemsArray` as rawMethods
+- Uses `_ivar`/`_ivar_set` directly for JSON array storage
+
+### Path Traversal Security
+- Added receiver validation in `@` function to reject path-like receivers
+- Rejects patterns: `..`, `/`, paths containing slashes
+- Returns clear error: "Invalid receiver - path-like receivers are not allowed"
+
+**Files modified:**
+- `trash/Counter.trash` - Added accessor methods, modernized syntax
+- `trash/Array.trash` - Added accessor methods as rawMethods
+- `lib/trash.bash` - Added security check in `@` function
+
+**Result:** All tests passing (127+ tests across 6 suites)
+
+---
+
 *Last updated: 2024-12-20*

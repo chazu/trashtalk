@@ -11,11 +11,21 @@ Array subclass: Object
     ^ $array_id
   ]
 
+  # Accessor for items ivar
+  rawMethod: getItems [
+    echo "$(_ivar items)"
+  ]
+
+  # Setter for items ivar
+  rawMethod: setItems: newItems [
+    _ivar_set items "$1"
+  ]
+
   # Private helper - get the raw items JSON array
-  method: _getItemsArray [
-    | items |
-    items := $(@ self getItems)
-    ^ ${items:-[]}
+  rawMethod: _getItemsArray [
+    local items
+    items="$(_ivar items)"
+    echo "${items:-[]}"
   ]
 
   # Get element at index
