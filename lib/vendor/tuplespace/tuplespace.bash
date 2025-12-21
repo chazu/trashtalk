@@ -236,7 +236,10 @@ ts_field() {
 
 # Convenience function: put simple key-value tuple
 # Usage: ts_kv_put <key> <value>
+# Note: This is an upsert - removes existing key before putting new value
 ts_kv_put() {
+    # Remove existing entry with same key (if any)
+    ts_take "kv" "key" "$1" >/dev/null 2>&1 || true
     ts_put "kv" "key" "$1" "value" "$2"
 }
 

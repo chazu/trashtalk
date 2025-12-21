@@ -142,13 +142,43 @@ echo -e "\n  Error Handling:"
 
 # Empty input should produce error or empty output gracefully
 EMPTY_RESULT=$("$DRIVER" compile /dev/null 2>&1 || true)
-run_test "empty input handled" "true" "true"  # Just verify it doesn't crash
+# Verify it either returns empty or contains an error indicator
+if [[ -z "$EMPTY_RESULT" || "$EMPTY_RESULT" == *"error"* || "$EMPTY_RESULT" == *"Error"* ]]; then
+    run_test "empty input produces empty or error" "true" "true"
+else
+    # If it produced non-empty output that's not an error, it should at least be valid bash
+    if bash -n <<<"$EMPTY_RESULT" 2>/dev/null; then
+        run_test "empty input produces valid bash" "true" "true"
+    else
+        run_test "empty input produces valid output" "true" "false"
+    fi
+fi
 
-# Invalid syntax should produce error
+# Invalid syntax should produce error or at least not produce valid bash function definitions
 INVALID='this is not valid trashtalk syntax at all'
 printf '%s\n' "$INVALID" > "$TMPFILE"
 INVALID_RESULT=$("$DRIVER" compile "$TMPFILE" 2>&1 || true)
-run_test "invalid syntax handled" "true" "true"  # Verify no crash
+# For invalid input, we expect either:
+# 1. An error message (contains "error" case-insensitive)
+# 2. No method definitions generated (no __ClassName__method patterns)
+# 3. If output exists, it shouldn't define meaningful functions
+if [[ "$INVALID_RESULT" == *"error"* || "$INVALID_RESULT" == *"Error"* ]]; then
+    run_test "invalid syntax produces error message" "true" "true"
+elif [[ -z "$INVALID_RESULT" ]]; then
+    run_test "invalid syntax produces empty output" "true" "true"
+elif ! echo "$INVALID_RESULT" | grep -q '__.*__.*()'; then
+    run_test "invalid syntax produces no method definitions" "true" "true"
+else
+    run_test "invalid syntax handled gracefully" "true" "false"
+fi
+
+# Test missing file handling
+MISSING_RESULT=$("$DRIVER" compile "/nonexistent/path/file.trash" 2>&1 || true)
+if [[ "$MISSING_RESULT" == *"No such file"* || "$MISSING_RESULT" == *"not found"* || "$MISSING_RESULT" == *"error"* || "$MISSING_RESULT" == *"Error"* ]]; then
+    run_test "missing file produces error" "true" "true"
+else
+    run_test "missing file produces error" "true" "false"
+fi
 
 # ------------------------------------------------------------------------------
 # Bash Syntax Validation Tests
@@ -175,12 +205,34 @@ validates_bash_syntax() {
     fi
 }
 
+# Helper to validate and report with detailed output on failure
+validate_with_details() {
+    local trash_file="$1"
+    local display_name="$2"
+    local result
+    result=$(validates_bash_syntax "$trash_file")
+
+    if [[ "$result" == "true" ]]; then
+        run_test "$display_name has valid bash syntax" "true" "true"
+    elif [[ "$result" == "empty" ]]; then
+        run_test "$display_name compiles (empty output)" "true" "true"
+    else
+        # Get the actual bash syntax error for debugging
+        local compiled
+        compiled=$("$DRIVER" compile "$trash_file" 2>/dev/null)
+        local error_msg
+        error_msg=$(bash -n <<<"$compiled" 2>&1 | head -3)
+        echo "    [Debug] $display_name bash syntax error:"
+        echo "    $error_msg" | sed 's/^/      /'
+        run_test "$display_name has valid bash syntax" "true" "false"
+    fi
+}
+
 # Test all .trash files in trash directory
 for trash_file in "$TRASH_DIR"/*.trash; do
     if [[ -f "$trash_file" ]]; then
         basename=$(basename "$trash_file" .trash)
-        run_test "$basename.trash has valid bash syntax" "true" \
-            "$(validates_bash_syntax "$trash_file")"
+        validate_with_details "$trash_file" "$basename.trash"
     fi
 done
 
@@ -188,8 +240,7 @@ done
 for trash_file in "$TRASH_DIR"/traits/*.trash; do
     if [[ -f "$trash_file" ]]; then
         basename=$(basename "$trash_file" .trash)
-        run_test "traits/$basename.trash has valid bash syntax" "true" \
-            "$(validates_bash_syntax "$trash_file")"
+        validate_with_details "$trash_file" "traits/$basename.trash"
     fi
 done
 

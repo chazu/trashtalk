@@ -355,50 +355,6 @@ EOF
     echo "Cleanup complete"
   ]
 
-  # Find all instances of a class (delegates to Object)
-  method: findAll: class_name [
-    if [[ -z "$class_name" ]]; then
-      echo "Usage: @ Trash findAll <ClassName>"
-      return 1
-    fi
-    @ "$class_name" findAll
-  ]
-
-  # Find instances matching a predicate (delegates to Object)
-  # Keyword syntax: @ Trash find: Counter where: 'value > 5'
-  method: find: class_name where: predicate [
-    if [[ -z "$class_name" ]]; then
-      echo "Usage: @ Trash find <ClassName> [predicate]"
-      return 1
-    fi
-    @ "$class_name" find "$predicate"
-  ]
-
-  # Simple syntax wrapper: @ Trash find Counter 'value > 5'
-  rawClassMethod: find [
-    local class_name="$1"
-    local predicate="$2"
-    if [[ -z "$class_name" ]]; then
-      echo "Usage: @ Trash find <ClassName> [predicate]"
-      return 1
-    fi
-    @ "$class_name" find "$predicate"
-  ]
-
-  # Count instances of a class
-  method: countInstances: class_name [
-    if [[ -z "$class_name" ]]; then
-      echo "Usage: @ Trash countInstances <ClassName>"
-      return 1
-    fi
-    @ "$class_name" count
-  ]
-
-  # List all classes that have instances
-  method: listInstanceTypes [
-    db_list_classes
-  ]
-
   # Show current call stack
   method: showStack [
     | stack count i frame_id frame_data receiver selector args |
@@ -475,11 +431,13 @@ EOF
     echo "@ Trash version                 - Show version information"
     echo "@ Trash inspect <object>        - Detailed object inspection"
     echo ""
-    echo "=== Instance Query Commands ==="
-    echo "@ Trash findAll <Class>         - Find all instances"
-    echo "@ Trash find <Class> [pred]     - Find with predicate"
-    echo "@ Trash countInstances <Class>  - Count instances"
-    echo "@ Trash listInstanceTypes       - List classes with instances"
+    echo "=== Instance Queries (use class methods) ==="
+    echo "@ <Class> findAll               - Find all instances of class"
+    echo "@ <Class> find '<predicate>'    - Find with predicate"
+    echo "@ <Class> count                 - Count instances of class"
+    echo "@ Store listClasses             - List classes with instances"
+    echo ""
+    echo "=== Debugging ==="
     echo "@ Trash showStack               - Show current call stack"
     echo "@ Trash clearStack              - Clear call stack"
   ]

@@ -137,6 +137,34 @@ raw=$(sqlite3 ~/.trashtalk/instances.db "SELECT data FROM instances WHERE id='$c
 echo ""
 
 # ==========================================
+echo "6. Utility Methods"
+# ==========================================
+
+echo "  Testing @ Trash version..."
+result=$(@ Trash version 2>&1)
+[[ "$result" == *"Trash System"* ]] && pass "@ Trash version works" || fail "@ Trash version failed: $result"
+
+echo "  Testing @ Trash listObjects..."
+objects=$(@ Trash listObjects 2>&1)
+[[ -n "$objects" ]] && pass "@ Trash listObjects returns results" || fail "@ Trash listObjects returned empty"
+
+echo ""
+
+# ==========================================
+echo "7. Error Handling"
+# ==========================================
+
+echo "  Testing path traversal rejection..."
+result=$(@ "../etc/passwd" foo 2>&1) || true
+[[ "$result" == *"Invalid receiver"* ]] && pass "Path traversal rejected" || fail "Path traversal was not rejected: $result"
+
+echo "  Testing non-existent class error..."
+result=$(@ NonExistentClass foo 2>&1) || true
+[[ "$result" == *"not found"* ]] && pass "Non-existent class reports error" || fail "Non-existent class did not report error: $result"
+
+echo ""
+
+# ==========================================
 echo "=== Summary ==="
 # ==========================================
 echo "Passed: $PASSED"
