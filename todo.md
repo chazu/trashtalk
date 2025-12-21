@@ -6,15 +6,8 @@ See `completed.md` for finished work.
 
 ---
 
-## Twin Windowing Environment
-
-### Twin Configuration & Startup
-- Figure out socket server configuration (had to start manually)
-- Create ergonomic startup script (`trashwin`? `trashsh`? `trash-ui`?)
-- Document Ghostty/terminal compatibility (TERM=xterm-256color workaround)
-- Investigate why `@ Twin start` can't work (command substitution limitation)
-
----
+## Yutani Windowing Environment
+Pending stabilisation of the yutani project, possible fallback to twin if it turns into a shitshow
 
 ## Concurrency & Coordination
 
@@ -27,9 +20,10 @@ Base APIs implemented - see ACTOR.md, PROCESS.md, TUPLESPACE.md
 - Actor groups and broadcast messaging
 
 ### Process Enhancements
-- Piping between processes
+- Piping between processes (shouldn't this be an actor concern?)
 - Process groups
 - Timeout support for long-running commands
+- generally making sure we dont lose track of processes
 
 ### Tuplespace Enhancements
 - Pattern matching with wildcards
@@ -55,10 +49,11 @@ package: MyApp
 
 ## Medium Priority
 
-### REPL Improvements
+### REPL / @ Improvements
 - Command history persistence
 - Tab completion for class/method names
-- `@ Trash browse Counter` - interactive object browser
+- wrap @ in rlwrap or similar
+- `@ Trash browse Counter` - interactive object browser, possibly with gum
 
 ### Documentation Generation
 - Extract comments from `.trash` files
@@ -87,6 +82,9 @@ Every getter does `db_get`, every setter does `db_get` + `db_put`. Could cache i
 - Only write to DB when explicitly saved
 - Track which fields changed
 - Support transactions
+
+### 'Image' Versioning
+- WAL logs for sqlite - snapshots and implicit version control
 
 ### Type Validation
 ```smalltalk
