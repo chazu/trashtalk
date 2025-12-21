@@ -1587,6 +1587,57 @@ def generateMethod($className; $ivars; $cvars):
   "";
 
 # ------------------------------------------------------------------------------
+# Code Generation: Method Alias
+# ------------------------------------------------------------------------------
+
+def generateAlias($className):
+  # Generate wrapper functions for both instance and class methods
+  # Input: {type: "alias", aliasName: "size", originalMethod: "count"}
+  # Instance method alias
+  "__\($className)__\(.aliasName)() {",
+  "  __\($className)__\(.originalMethod) \"$@\"",
+  "}",
+  "",
+  # Class method alias
+  "__\($className)__class__\(.aliasName)() {",
+  "  __\($className)__class__\(.originalMethod) \"$@\"",
+  "}",
+  "";
+
+# ------------------------------------------------------------------------------
+# Code Generation: Method Advice (Before/After Hooks)
+# ------------------------------------------------------------------------------
+
+def generateAdvice($className; $ivars; $cvars):
+  # Generate a handler function and registration call
+  # Input: {type: "advice", adviceType: "before"|"after", selector: "save", block: {...}}
+  .adviceType as $adviceType |
+  .selector as $selector |
+  # Generate function name: __ClassName__before__selector or __ClassName__after__selector
+  "__\($className)__\($adviceType)__\($selector)" as $funcName |
+  # Compile the block body
+  (if .block.tokens != null then
+    ({ tokens: .block.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
+    (if $parsed.type == "statements" and $parsed.body != null then
+      [($parsed.body // [])[] | select(.type == "locals") | (.names // [])[]] | unique
+    else [] end) as $locals |
+    $parsed | expr_gen_stmts($locals; $ivars; $cvars)
+  else
+    "  : # empty block"
+  end) as $body |
+  # Generate the handler function
+  "\($funcName)() {",
+  "  # Advice handler receives: class selector [args...]",
+  "  local _adv_class=\"$1\" _adv_selector=\"$2\"",
+  "  shift 2",
+  $body,
+  "}",
+  "",
+  # Generate the registration call (will be executed when class is sourced)
+  "_add_\($adviceType)_advice \"\($className)\" \"\($selector)\" \"\($funcName)\"",
+  "";
+
+# ------------------------------------------------------------------------------
 # Main Code Generator
 # ------------------------------------------------------------------------------
 
@@ -1601,7 +1652,9 @@ def generate:
     generateMetadata,
     generateClassVarsInit,
     generateRequires,
-    (.methods[] | generateMethod($class.name; $ivars; $cvars))
+    (.methods[] | generateMethod($class.name; $ivars; $cvars)),
+    ((.aliases // [])[] | generateAlias($class.name)),
+    ((.advice // [])[] | generateAdvice($class.name; $ivars; $cvars))
   );
 
 # ==============================================================================
