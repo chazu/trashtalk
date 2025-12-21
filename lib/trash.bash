@@ -272,9 +272,15 @@ declare -gA _CURRENT_CLASS_DEFAULTS
 function _ensure_class_sourced {
   local class_name="$1"
 
+  # Check if already tracked as sourced
+  if [[ -n "${_SOURCED_COMPILED_CLASSES[$class_name]}" ]]; then
+    return 0
+  fi
+
   # Check if already sourced by looking for superclass metadata
   local super_var="__${class_name}__superclass"
   if [[ -n "${!super_var+x}" ]]; then
+    _SOURCED_COMPILED_CLASSES[$class_name]=1
     return 0
   fi
 
@@ -282,6 +288,7 @@ function _ensure_class_sourced {
   local compiled_file="$TRASHDIR/.compiled/$class_name"
   if [[ -f "$compiled_file" ]]; then
     source "$compiled_file"
+    _SOURCED_COMPILED_CLASSES[$class_name]=1
     return 0
   fi
 
@@ -289,6 +296,7 @@ function _ensure_class_sourced {
   local runtime_file="$TRASHDIR/$class_name"
   if [[ -f "$runtime_file" ]]; then
     source "$runtime_file"
+    _SOURCED_COMPILED_CLASSES[$class_name]=1
     return 0
   fi
 

@@ -467,4 +467,79 @@ Built foundational classes for Twin windowing environment:
 
 ---
 
-*Last updated: 2024-12-19*
+## Method Aliasing (2024-12-20)
+
+Create multiple names for the same method:
+
+```smalltalk
+Counter subclass: Object
+  method: count [^ value]
+
+  alias: size for: count
+  alias: length for: count
+```
+
+**Implementation:**
+- **Parser:** Added `alias:` as sync point, `parseAlias` function parses `alias: newName for: originalMethod`
+- **Codegen:** Generates wrapper functions for both instance and class methods:
+  ```bash
+  __Counter__size() {
+    __Counter__count "$@"
+  }
+  __Counter__class__size() {
+    __Counter__class__count "$@"
+  }
+  ```
+- Aliases work for both instance methods and class methods automatically
+
+**Files modified:**
+- `lib/jq-compiler/parser.jq` - Added alias parsing
+- `lib/jq-compiler/codegen.jq` - Added `generateAlias` function
+
+**Tests:** 6 tests in `lib/jq-compiler/tests/test_aliases.bash`
+
+---
+
+## Before/After Hooks DSL (2024-12-20)
+
+AOP-style method advice with declarative syntax:
+
+```smalltalk
+Counter subclass: Object
+  classInstanceVars: counter:0
+
+  classMethod: doWork [counter := counter + 10]
+
+  before: doWork do: [counter := counter + 1]
+  after: doWork do: [counter := counter + 100]
+```
+
+**Execution order:** before advice runs first, then the method, then after advice.
+
+**Implementation:**
+- **Parser:** Added `before:` and `after:` as sync points, `parseAdvice` function parses `before: selector do: [block]`
+- **Codegen:** Generates handler functions and registration calls:
+  ```bash
+  __Counter__before__doWork() {
+    # Advice handler receives: class selector [args...]
+    local _adv_class="$1" _adv_selector="$2"
+    shift 2
+    _cvar_set counter "$(( $(_cvar counter) + 1 ))"
+  }
+
+  _add_before_advice "Counter" "doWork" "__Counter__before__doWork"
+  ```
+- Uses existing runtime infrastructure (`_add_before_advice`, `_add_after_advice`, `_run_before_advice`, `_run_after_advice`)
+
+**Bug fix:** Fixed `_ensure_class_sourced` to update `_SOURCED_COMPILED_CLASSES` to prevent duplicate file sourcing and duplicate advice registration.
+
+**Files modified:**
+- `lib/jq-compiler/parser.jq` - Added advice parsing
+- `lib/jq-compiler/codegen.jq` - Added `generateAdvice` function
+- `lib/trash.bash` - Fixed `_ensure_class_sourced` to track sourced classes
+
+**Tests:** 8 tests in `lib/jq-compiler/tests/test_advice.bash`
+
+---
+
+*Last updated: 2024-12-20*

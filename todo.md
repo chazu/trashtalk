@@ -1,6 +1,6 @@
 # Trashtalk TODO
 
-**Test Status: 7 test suites, 35+ bash tests, 22 TestCase assertions (100% passing)**
+**Test Status: 9 test suites, 48+ bash tests, 22 TestCase assertions (100% passing)**
 
 See `completed.md` for finished work.
 
@@ -73,12 +73,6 @@ package: MyApp
 
 ## Lower Priority
 
-### Method Aliasing
-```smalltalk
-alias: size for: count
-alias: length for: count
-```
-
 ### SQLite Index Automation
 - Automatically create indexes for frequently queried instance variables
 - Track query patterns and suggest/create indexes
@@ -102,13 +96,6 @@ Validate on set, reject invalid types.
 
 ### Schema Versioning
 Handle upgrades when you add new instance_var to class with existing instances.
-
-### Before/After Hooks DSL
-Infrastructure exists (`_add_before_advice`, etc.). Need DSL syntax:
-```smalltalk
-before: save do: [@ self validate]
-after: delete do: [@ self notifyObservers]
-```
 
 ### Exception Handling DSL
 Infrastructure exists (`_throw`, `_on_error`, etc.). Need DSL syntax:

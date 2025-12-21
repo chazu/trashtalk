@@ -67,7 +67,10 @@ def isSyncPoint:
   current.value == "classInstanceVars:" or
   current.value == "include:" or
   current.value == "requires:" or
-  current.value == "category:";
+  current.value == "category:" or
+  current.value == "alias:" or
+  current.value == "before:" or
+  current.value == "after:";
 
 # Synchronization points for error recovery
 # Skips tokens until we find a class-level keyword to resume parsing
@@ -322,6 +325,88 @@ def parseRequires:
     fail
   end;
 
+# Parse: alias: newName for: existingMethod
+def parseAlias:
+  if current.value == "alias:" then
+    # Capture location from alias: keyword
+    {line: current.line, col: current.col} as $location |
+    advance | skipNewlines |
+    if current.type == "IDENTIFIER" then
+      current.value as $aliasName |
+      advance | skipNewlines |
+      if current.value == "for:" then
+        advance | skipNewlines |
+        if current.type == "IDENTIFIER" then
+          .result = {type: "alias", aliasName: $aliasName, originalMethod: current.value, location: $location} |
+          advance
+        else
+          fail
+        end
+      else
+        fail
+      end
+    else
+      fail
+    end
+  else
+    fail
+  end;
+
+# Parse: before: selector do: [block] OR after: selector do: [block]
+def parseAdvice:
+  if current.value == "before:" or current.value == "after:" then
+    # Capture location and advice type
+    {line: current.line, col: current.col} as $location |
+    (if current.value == "before:" then "before" else "after" end) as $adviceType |
+    advance | skipNewlines |
+    if current.type == "IDENTIFIER" then
+      current.value as $selector |
+      advance | skipNewlines |
+      if current.value == "do:" then
+        advance | skipNewlines |
+        if current.type == "LBRACKET" then
+          # Collect the block tokens
+          advance |
+          {depth: 1, tokens: [], state: .} |
+          until(.depth == 0 or (.state | atEnd);
+            if (.state | current.type) == "LBRACKET" then
+              .depth += 1 |
+              .tokens += [.state | current] |
+              .state |= advance
+            elif (.state | current.type) == "RBRACKET" then
+              .depth -= 1 |
+              if .depth > 0 then
+                .tokens += [.state | current]
+              else
+                .
+              end |
+              .state |= advance
+            else
+              .tokens += [.state | current] |
+              .state |= advance
+            end
+          ) |
+          .tokens as $blockTokens |
+          .state | .result = {
+            type: "advice",
+            adviceType: $adviceType,
+            selector: $selector,
+            block: {type: "block", tokens: $blockTokens},
+            location: $location
+          }
+        else
+          fail
+        end
+      else
+        fail
+      end
+    else
+      fail
+    end
+  else
+    fail
+  end;
+
 # Collect method body tokens between [ and ]
 def collectMethodBody:
   if current.type == "LBRACKET" then
@@ -422,7 +507,7 @@ def parseMethod:
 
 # Parse class body elements
 def parseClassBody:
-  {instanceVars: [], classInstanceVars: [], traits: [], requires: [], methodRequirements: [], methods: [], errors: [], currentCategory: null, state: .} |
+  {instanceVars: [], classInstanceVars: [], traits: [], requires: [], methodRequirements: [], methods: [], aliases: [], advice: [], errors: [], currentCategory: null, state: .} |
   until((.state | atEnd);
     .state |= skipNewlines |
     if (.state | atEnd) then
@@ -510,6 +595,34 @@ def parseClassBody:
         }] |
         .state |= (advance | synchronize)
       end
+    elif (.state | current.value) == "alias:" then
+      (.state | parseAlias) as $r |
+      if $r.result != null then
+        .aliases += [$r.result] |
+        .state = $r
+      else
+        .errors += [{
+          type: "parse_error",
+          message: "Failed to parse alias declaration",
+          token: (.state | current),
+          context: "alias"
+        }] |
+        .state |= (advance | synchronize)
+      end
+    elif (.state | current.value) == "before:" or (.state | current.value) == "after:" then
+      (.state | parseAdvice) as $r |
+      if $r.result != null then
+        .advice += [$r.result] |
+        .state = $r
+      else
+        .errors += [{
+          type: "parse_error",
+          message: "Failed to parse advice declaration",
+          token: (.state | current),
+          context: "advice"
+        }] |
+        .state |= (advance | synchronize)
+      end
     elif (.state | current.value) == "method:" or
          (.state | current.value) == "rawMethod:" or
          (.state | current.value) == "classMethod:" or
@@ -550,7 +663,9 @@ def parseClassBody:
     traits: .traits,
     requires: .requires,
     methodRequirements: .methodRequirements,
-    methods: .methods
+    methods: .methods,
+    aliases: .aliases,
+    advice: .advice
   } as $body |
   .errors as $errors |
   .state | .errors = (.errors + $errors) | .result = $body;
@@ -567,7 +682,7 @@ def parseClass:
     if .result != null then
       .result = ($header + .result)
     else
-      .result = ($header + {instanceVars: [], classInstanceVars: [], traits: [], requires: [], methodRequirements: [], methods: []})
+      .result = ($header + {instanceVars: [], classInstanceVars: [], traits: [], requires: [], methodRequirements: [], methods: [], aliases: [], advice: []})
     end
   else
     .
