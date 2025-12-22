@@ -6,6 +6,10 @@ See `completed.md` for finished work.
 
 ---
 
+## Better `edit`
+- When editing, if you save and theres a syntax error can you run edit again and it'll bring up the code or does it start over from nothing?
+
+
 ## Yutani Windowing Environment
 Pending stabilisation of the yutani project, possible fallback to twin if it turns into a shitshow
 

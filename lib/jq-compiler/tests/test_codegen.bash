@@ -41,7 +41,7 @@ echo -e "\n  Header Generation:"
 INPUT_SIMPLE='Counter subclass: Object'
 
 run_test "generates shebang" "true" \
-    "$(compile_contains "$INPUT_SIMPLE" '#!/bin/bash')"
+    "$(compile_contains "$INPUT_SIMPLE" '#!/usr/bin/env bash')"
 
 run_test "generates DO NOT EDIT" "true" \
     "$(compile_contains "$INPUT_SIMPLE" 'DO NOT EDIT')"

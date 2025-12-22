@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# Trashtalk REPL
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TRASHTALK_DIR="$(dirname "$SCRIPT_DIR")"
+
+# Source the runtime (suppress debug output)
+export TRASH_DEBUG=0
+source "$TRASHTALK_DIR/lib/trash.bash" 2>/dev/null
+
+# Show welcome message
+echo "Trashtalk REPL"
+echo "Type 'help' for commands, 'exit' to quit"
+# Show rlwrap hint only if not already wrapped
+[[ -z "$RLWRAP_COMMAND" ]] && echo "(For history/completion, run: ~/.trashtalk/bin/trash)"
+echo ""
+
+while read -rp "@ " cmd; do
+    # Skip empty lines
+    [[ -z "$cmd" ]] && continue
+
+    # Strip leading @ if user typed it (prompt already shows @)
+    cmd="${cmd#@ }"
+    cmd="${cmd#@}"
+
+    # Handle exit
+    [[ "$cmd" == "exit" || "$cmd" == "quit" || "$cmd" == "q" ]] && break
+
+    # Handle help
+    if [[ "$cmd" == "help" ]]; then
+        echo "Examples:"
+        echo "  Counter new              - Create a counter"
+        echo "  \$counter increment      - Call method on instance"
+        echo "  Trash listObjects        - List all classes"
+        echo "  Trash help               - Full system help"
+        echo ""
+        echo "Commands: help, exit, quit, q"
+        continue
+    fi
+
+    # Check if it's an assignment: var=$(Command args)
+    if [[ "$cmd" =~ ^([a-zA-Z_][a-zA-Z0-9_]*)'=$('(.+)')' ]]; then
+        varname="${BASH_REMATCH[1]}"
+        subcmd="${BASH_REMATCH[2]}"
+        eval "$varname=\$(send $subcmd)"
+        echo "$varname=${!varname}"
+    # Check if it's a simple assignment: var=value
+    elif [[ "$cmd" =~ ^([a-zA-Z_][a-zA-Z0-9_]*)=(.+)$ ]]; then
+        varname="${BASH_REMATCH[1]}"
+        value="${BASH_REMATCH[2]}"
+        eval "$varname=\"$value\""
+    else
+        # Regular command - call send directly (avoids @ subshell capture)
+        eval "send $cmd"
+    fi
+done
+
+echo "Goodbye!"

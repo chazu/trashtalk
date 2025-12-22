@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 drop() {
   command tail -n +$(($1 + 1))

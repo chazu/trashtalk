@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Trashtalk REPL launcher
+# Wraps trash-repl with rlwrap for readline support
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TRASHTALK_DIR="$(dirname "$SCRIPT_DIR")"
+
+# Generate completion words from compiled classes
+COMPLETIONS_FILE="/tmp/trash_completions.$$"
+ls "$TRASHTALK_DIR/trash/.compiled/" 2>/dev/null | grep -v '^traits$' > "$COMPLETIONS_FILE"
+
+# Add common methods
+cat >> "$COMPLETIONS_FILE" << 'EOF'
+new
+help
+info
+version
+listObjects
+findAll
+count
+find
+EOF
+
+# Clean up on exit
+trap "rm -f '$COMPLETIONS_FILE'" EXIT
+
+exec rlwrap -H ~/.trash_history -f "$COMPLETIONS_FILE" "$SCRIPT_DIR/trash-repl"

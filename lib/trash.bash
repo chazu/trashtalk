@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -1403,12 +1403,21 @@ function @ {
     # For instance IDs, extract class name
     if [[ "$___receiver" == *_* && "$___receiver" =~ ^[a-z] ]]; then
       local ___class="${___receiver%%_*}"
-      ___class="${___class^}"  # Capitalize first letter
+      # Capitalize first letter (bash 3 compatible)
+      ___class="$(echo "${___class:0:1}" | tr '[:lower:]' '[:upper:]')${___class:1}"
       _ensure_class_sourced "$___class"
     else
       # Direct class name
       _ensure_class_sourced "$___receiver"
     fi
+  fi
+
+  # Skip subshell capture for interactive methods (like repl)
+  # These need direct terminal I/O
+  local ___selector="$2"
+  if [[ "$___selector" == "repl" ]]; then
+    send "$@"
+    return $?
   fi
 
   # Capture output and store in $__

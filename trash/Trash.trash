@@ -430,6 +430,7 @@ EOF
     echo "@ Trash cleanup                 - Clean up system"
     echo "@ Trash version                 - Show version information"
     echo "@ Trash inspect <object>        - Detailed object inspection"
+    echo "@ Trash repl                    - Launch interactive REPL"
     echo ""
     echo "=== Instance Queries (use class methods) ==="
     echo "@ <Class> findAll               - Find all instances of class"
@@ -449,6 +450,14 @@ EOF
     echo "Description: $TRASH_DESCRIPTION"
     echo "Bash version: $BASH_VERSION"
     echo "System: $(uname -s) $(uname -r)"
+  ]
+
+  # Launch interactive REPL
+  # Note: For rlwrap support (history, completions), run bin/trash directly
+  rawClassMethod: repl [
+    local trashtalk_root
+    trashtalk_root="$(dirname "$TRASHDIR")"
+    "$trashtalk_root/bin/trash-repl"
   ]
 
   # Detailed object inspection
