@@ -1412,10 +1412,11 @@ function @ {
     fi
   fi
 
-  # Skip subshell capture for interactive methods (like repl)
-  # These need direct terminal I/O
+  # Skip subshell capture for methods that need to affect the parent shell
+  # - repl: needs direct terminal I/O
+  # - reloadClass/compileAndReload: need source/unset to affect parent
   local ___selector="$2"
-  if [[ "$___selector" == "repl" ]]; then
+  if [[ "$___selector" == "repl" || "$___selector" == "reloadClass" || "$___selector" == "compileAndReload" ]]; then
     send "$@"
     return $?
   fi
