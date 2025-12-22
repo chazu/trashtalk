@@ -44,9 +44,9 @@ val=$(@ $counter getValue)
 [[ "$val" == "1" ]] && pass "After increment: 1" || fail "After increment: $val, expected 1"
 
 echo "  Incrementing by 5..."
-@ $counter incrementBy 5
+@ $counter incrementBy: 5
 val=$(@ $counter getValue)
-[[ "$val" == "6" ]] && pass "After incrementBy 5: 6" || fail "After incrementBy 5: $val, expected 6"
+[[ "$val" == "6" ]] && pass "After incrementBy: 5: 6" || fail "After incrementBy: 5: $val, expected 6"
 
 echo "  Decrementing..."
 @ $counter decrement
@@ -73,20 +73,20 @@ size=$(@ $arr size)
 [[ "$size" == "0" ]] && pass "Initial size is 0" || fail "Initial size is $size, expected 0"
 
 echo "  Pushing values..."
-@ $arr push hello
-@ $arr push world
-@ $arr push test
+@ $arr push: hello
+@ $arr push: world
+@ $arr push: test
 
 size=$(@ $arr size)
 [[ "$size" == "3" ]] && pass "Size after 3 pushes: 3" || fail "Size is $size, expected 3"
 
 echo "  Getting element at index 1..."
-val=$(@ $arr at 1)
+val=$(@ $arr at: 1)
 [[ "$val" == "world" ]] && pass "Element at 1: world" || fail "Element at 1: $val, expected world"
 
 echo "  Setting element at index 1..."
-@ $arr at_put 1 "replaced"
-val=$(@ $arr at 1)
+@ $arr at: 1 put: "replaced"
+val=$(@ $arr at: 1)
 [[ "$val" == "replaced" ]] && pass "After at_put: replaced" || fail "After at_put: $val, expected replaced"
 
 echo ""
@@ -110,12 +110,12 @@ echo "4. Store Class"
 # ==========================================
 
 echo "  Finding counters by class..."
-counters=$(@ Store findByClass Counter)
-[[ "$counters" == *"$counter"* ]] && pass "findByClass found our counter" || fail "findByClass didn't find counter"
+counters=$(@ Store findByClass: Counter)
+[[ "$counters" == *"$counter"* ]] && pass "findByClass: found our counter" || fail "findByClass: didn't find counter"
 
 echo "  Counting counters..."
-count=$(@ Store countByClass Counter)
-[[ "$count" -ge 1 ]] && pass "countByClass: $count" || fail "countByClass returned $count"
+count=$(@ Store countByClass: Counter)
+[[ "$count" -ge 1 ]] && pass "countByClass: $count" || fail "countByClass: returned $count"
 
 echo "  Listing classes..."
 classes=$(@ Store listClasses)

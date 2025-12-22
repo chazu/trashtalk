@@ -6,10 +6,6 @@ See `completed.md` for finished work.
 
 ---
 
-## Better `edit`
-- When editing, if you save and theres a syntax error can you run edit again and it'll bring up the code or does it start over from nothing?
-
-
 ## Yutani Windowing Environment
 Pending stabilisation of the yutani project, possible fallback to twin if it turns into a shitshow
 
@@ -127,34 +123,17 @@ See `windowing-ideas.md` for research on building an Acme-like terminal environm
 
 ---
 
-## Known Issues
+## Critical: Known Issues (Must Fix for v1.0)
+
+These bugs break expected behavior and should be fixed before Trashtalk is considered complete.
 
 ### Heredoc in rawMethod
 When `rawMethod:` contains heredocs, compiler indents `EOF` terminators, breaking bash syntax. Affects `Trash.trash` methods like `createObject:super:`.
 
-### Method Name Collision (Keyword vs Unary)
-Keyword methods (e.g., `skip:`) and unary methods with the same base name (e.g., `skip`) compile to the same bash function name (`__ClassName__skip`), causing the second definition to overwrite the first.
+### ~~Method Name Collision (Keyword vs Unary)~~ ✓ FIXED
+~~Keyword methods (e.g., `skip:`) and unary methods with the same base name (e.g., `skip`) compile to the same bash function name (`__ClassName__skip`), causing the second definition to overwrite the first.~~
 
-**Impact:** When both exist, calling the keyword version actually executes the unary version, potentially causing infinite recursion if the unary version delegates to the keyword version.
-
-**Workaround:** Inline implementations in both methods rather than having one delegate to the other:
-```smalltalk
-# BAD - causes infinite loop:
-rawMethod: skip: reason [...]
-rawMethod: skip [
-  @ "$_RECEIVER" skip: "No reason"  # Calls itself!
-]
-
-# GOOD - inline both:
-rawMethod: skip: reason [
-  # ... full implementation ...
-]
-rawMethod: skip [
-  # ... full implementation with default reason ...
-]
-```
-
-**Proper fix:** Compiler should generate distinct function names, e.g., `__ClassName__skip_` for `skip:` and `__ClassName__skip` for `skip`.
+**Fixed:** Keyword methods now compile with trailing underscore (e.g., `skip:` → `__Class__skip_`, `skip` → `__Class__skip`). The runtime dispatcher also updated to match.
 
 ### Negative Numbers in Arguments
 The compiler may mangle arguments when a negative number follows another argument. For example, `0 -1` can become `0-1` (single argument instead of two).

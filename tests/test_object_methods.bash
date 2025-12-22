@@ -64,9 +64,9 @@ echo "3. find Class Method with Predicates"
 # ==========================================
 
 echo "  Setting up counters with different values..."
-@ $c1 incrementBy 3
-@ $c2 incrementBy 7
-@ $c3 incrementBy 5
+@ $c1 incrementBy: 3
+@ $c2 incrementBy: 7
+@ $c3 incrementBy: 5
 
 echo "  Testing find with 'value > 4'..."
 found=$(@ Counter find 'value > 4')
