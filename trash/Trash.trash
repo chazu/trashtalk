@@ -241,6 +241,9 @@ EOF
     local trait_file="$TRASHDIR/traits/$class_name"
     local compiled_trait="$TRASHDIR/.compiled/traits/$class_name"
 
+    # Clear the sourcing cache so the class will be re-sourced
+    unset "_SOURCED_COMPILED_CLASSES[$class_name]"
+
     # Check if it's a trait
     if [[ -f "$compiled_trait" ]]; then
       echo "Reloading trait $class_name..."
@@ -250,6 +253,7 @@ EOF
       done < <(declare -F | awk '{print $3}' | grep "^__${class_name}__")
       # Source the compiled trait
       source "$compiled_trait"
+      _SOURCED_COMPILED_CLASSES[$class_name]=1
       cp "$compiled_trait" "$trait_file"
       echo "✓ Trait $class_name reloaded"
       return 0
@@ -264,6 +268,7 @@ EOF
       done < <(declare -F | awk '{print $3}' | grep "^__${class_name}__")
       # Source the compiled class
       source "$compiled_file"
+      _SOURCED_COMPILED_CLASSES[$class_name]=1
       cp "$compiled_file" "$class_file"
       echo "✓ Class $class_name reloaded"
       return 0
@@ -273,6 +278,7 @@ EOF
     if [[ -f "$class_file" ]]; then
       echo "Reloading legacy class $class_name..."
       source "$class_file"
+      _SOURCED_COMPILED_CLASSES[$class_name]=1
       echo "✓ Legacy class $class_name reloaded"
       return 0
     fi
