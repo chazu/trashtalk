@@ -1110,6 +1110,9 @@ function send {
         shift
       fi
     done
+    # Append trailing underscore to distinguish keyword methods from unary
+    # e.g., skip: -> skip_, at:put: -> at_put_
+    _SELECTOR="${_SELECTOR}_"
     # Replace positional params with extracted args
     set -- "${_ARGS[@]}"
   fi

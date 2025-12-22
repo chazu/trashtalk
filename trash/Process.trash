@@ -21,7 +21,7 @@ Process subclass: Object
     local tmp_stdout="/tmp/proc_$$_stdout"
     local tmp_stderr="/tmp/proc_$$_stderr"
 
-    @ "$_RECEIVER" debug "Running command: $cmd"
+    @ "$_RECEIVER" debug: "Running command: $cmd"
     _ivar_set status "running"
     _ivar_set startTime "$(date +%s)"
 
@@ -47,7 +47,7 @@ Process subclass: Object
     local tmp_stdout="/tmp/proc_${_INSTANCE}_stdout"
     local tmp_stderr="/tmp/proc_${_INSTANCE}_stderr"
 
-    @ "$_RECEIVER" debug "Starting background command: $cmd"
+    @ "$_RECEIVER" debug: "Starting background command: $cmd"
     _ivar_set status "running"
     _ivar_set startTime "$(date +%s)"
 
@@ -65,7 +65,7 @@ Process subclass: Object
     local proc_status=$(_ivar status)
 
     if [[ "$proc_status" != "running" ]]; then
-      @ "$_RECEIVER" debug "Process not running (status: $proc_status)"
+      @ "$_RECEIVER" debug: "Process not running (status: $proc_status)"
       echo "$(_ivar exitCode)"
       return 0
     fi
@@ -75,7 +75,7 @@ Process subclass: Object
       return 1
     fi
 
-    @ "$_RECEIVER" debug "Waiting for PID $proc_pid"
+    @ "$_RECEIVER" debug: "Waiting for PID $proc_pid"
     wait "$proc_pid" 2>/dev/null
     local exit_code=$?
 
@@ -123,7 +123,7 @@ Process subclass: Object
       return 1
     fi
 
-    @ "$_RECEIVER" debug "Sending signal $sig to PID $proc_pid"
+    @ "$_RECEIVER" debug: "Sending signal $sig to PID $proc_pid"
     kill "-$sig" "$proc_pid" 2>/dev/null
   ]
 

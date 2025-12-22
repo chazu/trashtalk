@@ -457,10 +457,12 @@ def parseMethodSig:
         .stop = true
       end
     ) |
-    {selector: .selector, keywords: .keywords, args: .args} as $sig |
+    # Append trailing underscore to keyword selectors to distinguish from unary
+    # e.g., skip: -> skip_, at:put: -> at_put_
+    {selector: "\(.selector)_", keywords: .keywords, args: .args} as $sig |
     .state | .result = $sig
   elif current.type == "IDENTIFIER" then
-    # Unary method
+    # Unary method (no trailing underscore)
     .result = {selector: current.value, keywords: [], args: []} | advance
   else
     fail

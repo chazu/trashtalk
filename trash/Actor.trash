@@ -15,7 +15,7 @@ Actor subclass: Object
   rawMethod: spawn: object_name [
     local actor_id="actor_$(uuidgen 2>/dev/null || echo "$$_$(date +%s)")"
 
-    @ "$_RECEIVER" debug "Spawning actor $actor_id for object $object_name"
+    @ "$_RECEIVER" debug: "Spawning actor $actor_id for object $object_name"
     @ "$_RECEIVER" _initTuplespace
 
     # Register actor in tuplespace
@@ -113,7 +113,7 @@ Actor subclass: Object
 
   # Send a message to a spawned actor
   rawMethod: sendTo: actor_id message: message [
-    @ "$_RECEIVER" debug "Sending message to actor $actor_id: $message"
+    @ "$_RECEIVER" debug: "Sending message to actor $actor_id: $message"
     @ "$_RECEIVER" _initTuplespace
 
     # Check if actor exists and is running (suppress debug output)
@@ -150,7 +150,7 @@ Actor subclass: Object
   rawMethod: getFrom: actor_id timeout: timeout [
     timeout="${timeout:-10}"  # Default 10 second timeout
 
-    @ "$_RECEIVER" debug "Getting result from actor $actor_id (timeout: ${timeout}s)"
+    @ "$_RECEIVER" debug: "Getting result from actor $actor_id (timeout: ${timeout}s)"
     @ "$_RECEIVER" _initTuplespace
 
     # Check if actor exists (suppress debug output)
@@ -185,7 +185,7 @@ Actor subclass: Object
 
   # Terminate an actor gracefully
   rawMethod: terminate: actor_id [
-    @ "$_RECEIVER" debug "Terminating actor $actor_id"
+    @ "$_RECEIVER" debug: "Terminating actor $actor_id"
     @ "$_RECEIVER" _initTuplespace
 
     # Check if actor exists
@@ -216,7 +216,7 @@ Actor subclass: Object
     local wait_count=0
     while [[ $wait_count -lt 5 ]]; do
         if ! kill -0 "$pid" 2>/dev/null; then
-            @ "$_RECEIVER" debug "Actor $actor_id terminated gracefully"
+            @ "$_RECEIVER" debug: "Actor $actor_id terminated gracefully"
             @ "$_RECEIVER" cleanup: "$actor_id"
             return 0
         fi
@@ -226,7 +226,7 @@ Actor subclass: Object
 
     # Force kill if still running
     if kill -0 "$pid" 2>/dev/null; then
-        @ "$_RECEIVER" debug "Force killing actor $actor_id (PID: $pid)"
+        @ "$_RECEIVER" debug: "Force killing actor $actor_id (PID: $pid)"
         kill -TERM "$pid" 2>/dev/null
         sleep 1
         if kill -0 "$pid" 2>/dev/null; then
@@ -239,7 +239,7 @@ Actor subclass: Object
 
   # Clean up actor resources (external interface)
   rawMethod: cleanup: actor_id [
-    @ "$_RECEIVER" debug "Cleaning up actor $actor_id"
+    @ "$_RECEIVER" debug: "Cleaning up actor $actor_id"
     @ "$_RECEIVER" _initTuplespace
 
     # Remove actor from tuplespace
@@ -254,7 +254,7 @@ Actor subclass: Object
     # Emit actor stopped event
     TRASH_DEBUG=0 @ Tuplespace putEvent_data "actor_stopped" "$actor_id"
 
-    @ "$_RECEIVER" debug "Actor $actor_id cleanup complete"
+    @ "$_RECEIVER" debug: "Actor $actor_id cleanup complete"
   ]
 
   # Internal cleanup (called from within actor, not via @ dispatch)
@@ -277,7 +277,7 @@ Actor subclass: Object
 
   # List all actors (running and stopped)
   rawMethod: listActors [
-    @ "$_RECEIVER" debug "Listing all actors"
+    @ "$_RECEIVER" debug: "Listing all actors"
     @ "$_RECEIVER" _initTuplespace
 
     TRASH_DEBUG=0 @ Tuplespace get_key_value "actor" "" "" | while IFS= read -r line; do
@@ -296,7 +296,7 @@ Actor subclass: Object
                         echo "$actor_id: $object_name (PID: $pid, status: $status)"
                     else
                         # Actor died, clean it up
-                        @ "$_RECEIVER" debug "Found dead actor $actor_id, cleaning up"
+                        @ "$_RECEIVER" debug: "Found dead actor $actor_id, cleaning up"
                         @ "$_RECEIVER" cleanup: "$actor_id"
                     fi
                 else
@@ -309,7 +309,7 @@ Actor subclass: Object
 
   # List only running actors
   rawMethod: listRunning [
-    @ "$_RECEIVER" debug "Listing running actors"
+    @ "$_RECEIVER" debug: "Listing running actors"
     @ "$_RECEIVER" _initTuplespace
 
     TRASH_DEBUG=0 @ Tuplespace get_key_value "actor" "status" "running" | while IFS= read -r line; do
@@ -340,7 +340,7 @@ Actor subclass: Object
         return 1
     fi
 
-    @ "$_RECEIVER" debug "Getting status for actor $actor_id"
+    @ "$_RECEIVER" debug: "Getting status for actor $actor_id"
     @ "$_RECEIVER" _initTuplespace
 
     # Get actor tuple (suppress debug output)
@@ -376,7 +376,7 @@ Actor subclass: Object
 
   # Clean up all dead actors
   rawMethod: cleanupAll [
-    @ "$_RECEIVER" debug "Cleaning up all dead actors"
+    @ "$_RECEIVER" debug: "Cleaning up all dead actors"
     @ "$_RECEIVER" _initTuplespace
 
     local cleaned=0
@@ -389,7 +389,7 @@ Actor subclass: Object
                 local pid=$(echo "$actor_tuple" | TRASH_DEBUG=0 @ Tuplespace field_name - "pid")
 
                 if ! kill -0 "$pid" 2>/dev/null; then
-                    @ "$_RECEIVER" debug "Cleaning up dead actor: $actor_id"
+                    @ "$_RECEIVER" debug: "Cleaning up dead actor: $actor_id"
                     @ "$_RECEIVER" cleanup: "$actor_id"
                     ((cleaned++))
                 fi
@@ -402,7 +402,7 @@ Actor subclass: Object
 
   # Show system statistics
   rawMethod: stats [
-    @ "$_RECEIVER" debug "Getting actor statistics"
+    @ "$_RECEIVER" debug: "Getting actor statistics"
     @ "$_RECEIVER" _initTuplespace
 
     local total running messages responses

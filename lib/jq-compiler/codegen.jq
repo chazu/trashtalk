@@ -1535,10 +1535,6 @@ def transformMethodBody($className; $isRaw):
     elif test("^@") then
       # Replace self with $_RECEIVER
       gsub("\\bself\\b"; "$_RECEIVER") |
-      # Transform keyword method calls (key1: arg1 key2: arg2 → key1_key2 arg1 arg2)
-      transformKeywordMethod |
-      # For simple method calls, just remove the trailing colon
-      gsub("(?<m>[a-zA-Z_][a-zA-Z0-9_]*): "; "\(.m) ") |
       # Quote $_RECEIVER in @ message sends
       gsub("@ \\$_RECEIVER "; "@ \"$_RECEIVER\" ") |
       "  \(.)"

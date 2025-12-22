@@ -240,17 +240,23 @@ def gen_message_send(ctx):
   .receiver as $recv |
   .selector as $sel |
   .args as $args |
+  .keywords as $keywords |
 
   # Generate receiver
   ($recv | gen_expr(ctx)) as $recv_code |
 
-  # Generate arguments
-  ([$args[] | gen_expr(ctx)] | join(" ")) as $args_code |
-
   # Build message send
-  if ($args | length) > 0 then
+  if ($keywords | length) > 0 then
+    # Keyword message - interleave keywords with args
+    # e.g., keywords=["at","put"], args=[1,"value"] -> "at: 1 put: value"
+    ([range($keywords | length)] | map("\($keywords[.]): \($args[.] | gen_expr(ctx))") | join(" ")) as $kw_args |
+    "@ \($recv_code) \($kw_args)"
+  elif ($args | length) > 0 then
+    # Has args but no keywords (shouldn't happen normally)
+    ([$args[] | gen_expr(ctx)] | join(" ")) as $args_code |
     "@ \($recv_code) \($sel) \($args_code)"
   else
+    # Unary message (no args, no keywords)
     "@ \($recv_code) \($sel)"
   end;
 
