@@ -304,6 +304,22 @@ function _ensure_class_sourced {
 }
 export -f _ensure_class_sourced
 
+# Clear the sourcing cache for a class (used by reloadClass)
+# Usage: _clear_class_cache ClassName
+function _clear_class_cache {
+  local class_name="$1"
+  unset "_SOURCED_COMPILED_CLASSES[$class_name]"
+}
+export -f _clear_class_cache
+
+# Mark a class as sourced in the cache
+# Usage: _mark_class_sourced ClassName
+function _mark_class_sourced {
+  local class_name="$1"
+  _SOURCED_COMPILED_CLASSES[$class_name]=1
+}
+export -f _mark_class_sourced
+
 # Get instance vars for a class from compiled metadata
 # Usage: _get_class_instance_vars ClassName
 # Returns: space-separated list of var specs (e.g., "count:0 step:5 name")
@@ -1415,8 +1431,9 @@ function @ {
   # Skip subshell capture for methods that need to affect the parent shell
   # - repl: needs direct terminal I/O
   # - reloadClass/compileAndReload: need source/unset to affect parent
+  # - edit/new: need tty for editor and call compileAndReload
   local ___selector="$2"
-  if [[ "$___selector" == "repl" || "$___selector" == "reloadClass" || "$___selector" == "compileAndReload" ]]; then
+  if [[ "$___selector" == "repl" || "$___selector" == "reloadClass" || "$___selector" == "compileAndReload" || "$___selector" == "edit" || "$___selector" == "new" ]]; then
     send "$@"
     return $?
   fi
