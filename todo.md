@@ -114,41 +114,32 @@ Handle upgrades when you add new instance_var to class with existing instances.
 ### Self-Hosting
 Could more of Trashtalk be written in Trashtalk? The Store object is a start. What about parser, method dispatch?
 
-### Windowing Environment
-See `windowing-ideas.md` for research on building an Acme-like terminal environment:
-- Multi-panel tiled layout
-- Text execution (any text is runnable)
-- Structural regular expressions for code queries
-- Trashtalk-aware editing
+### Procyon
+Go-based code generator takes output from jq compiler and produces a compiled native object which can interoperate with trashtalk
 
 ---
 
 ## Critical: Known Issues (Must Fix for v1.0)
 
-These bugs break expected behavior and should be fixed before Trashtalk is considered complete.
-
-### ~~Heredoc in rawMethod~~ ✓ FIXED
-~~When `rawMethod:` contains heredocs, compiler indents `EOF` terminators, breaking bash syntax. Affects `Trash.trash` methods like `createObject:super:`.~~
-
-**Fixed:** Added `fixHeredocIndent` function in codegen.jq that tracks heredoc state and strips indentation from heredoc content and terminators. The fix applies to both normal `method:` and `rawMethod:` (rawMethod already had handling via `smartIndent`).
-
-### ~~Method Name Collision (Keyword vs Unary)~~ ✓ FIXED
-~~Keyword methods (e.g., `skip:`) and unary methods with the same base name (e.g., `skip`) compile to the same bash function name (`__ClassName__skip`), causing the second definition to overwrite the first.~~
-
-**Fixed:** Keyword methods now compile with trailing underscore (e.g., `skip:` → `__Class__skip_`, `skip` → `__Class__skip`). The runtime dispatcher also updated to match.
-
-### ~~Negative Numbers in Arguments~~ ✓ FIXED
-~~The compiler may mangle arguments when a negative number follows another argument. For example, `0 -1` can become `0-1` (single argument instead of two).~~
-
-**Fixed:** The codegen's gsub for fixing character class ranges (like `[0-9]`) was too broad and matched any `N -M` pattern. Now the gsub requires `[` before the pattern to ensure it only affects character classes.
-
-### String Defaults in instanceVars
-The compiler strips colons from string default values. For example, `instanceVars: name:unknown status:active` compiles to `name unknown status active` instead of preserving the defaults.
-
-**Impact:** String defaults don't work; only numeric defaults are reliable.
-
-**Workaround:** Use numeric defaults (0, 1, etc.) or leave variables without defaults and initialize in the `new` method.
+*No critical issues currently.*
 
 ---
 
-*Last updated: 2025-12-21 - Heredoc indentation fix*
+*Last updated: 2025-12-22 - String defaults in instanceVars clarified*
+
+## Recently Fixed
+
+### String Defaults in instanceVars (Fixed 2025-12-22)
+**Issue:** `instanceVars: name:unknown status:active` was being parsed incorrectly.
+
+**Resolution:** String defaults must use quotes. The correct syntax is:
+```smalltalk
+instanceVars: name:'unknown' status:'active' count:0
+```
+
+When you write `name:unknown` (without quotes), the parser now:
+1. Treats `name` as a variable with no default
+2. Treats `unknown` as a separate variable with no default
+3. Emits a warning: "Did you mean 'name:'unknown''?"
+
+This makes the language more explicit and avoids ambiguity between string literals and variable references.
