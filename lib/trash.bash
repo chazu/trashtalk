@@ -31,7 +31,7 @@ msg_info() { echo "[INFO] $*" >&2; }
 
 # Set default TRASHDIR if not already set
 TRASHDIR=${TRASHDIR:-~/.trashtalk/trash}
-_SUPERCLASS=$TRASHDIR/Object
+_SUPERCLASS=Object
 _RECEIVER=Object
 
 # System constants
@@ -360,15 +360,6 @@ function _ensure_class_sourced {
   local compiled_file=$(_compiled_path "$class_name")
   if [[ -f "$compiled_file" ]]; then
     source "$compiled_file"
-    _SOURCED_COMPILED_CLASSES[$class_name]=1
-    return 0
-  fi
-
-  # Try the runtime copy (for non-namespaced classes, or source files)
-  local base_class=$(_get_class_name "$class_name")
-  local runtime_file="$TRASHDIR/$base_class"
-  if [[ -f "$runtime_file" ]]; then
-    source "$runtime_file"
     _SOURCED_COMPILED_CLASSES[$class_name]=1
     return 0
   fi
@@ -1114,31 +1105,18 @@ method_missing() {
         current_class="${!super_var}"
         continue
       fi
+    else
+      # No compiled version found
+      msg_debug "No compiled class found for: $current_class"
     fi
 
-    # Fall back to legacy class file if no compiled version
-    local base_class=$(_get_class_name "$current_class")
-    if [[ -f "$TRASHDIR/$base_class" ]]; then
-      source "$TRASHDIR/$base_class"
-
-      # Check if method is defined in this class
-      if file_defines_function "$TRASHDIR/$base_class" "$_SELECTOR"; then
-        msg_info "Found $_SELECTOR in $current_class"
-        "$_SELECTOR" "$@"
-        return $?
-      fi
-
-      # Stop if we've checked Object (root class)
-      if [[ "$current_class" == "Object" ]]; then
-        break
-      fi
-
-      # Move up the inheritance chain
-      current_class="$_SUPERCLASS"
-    else
-      msg_debug "Class file not found: $TRASHDIR/$current_class"
+    # Stop if we've checked Object (root class) or no superclass
+    if [[ "$current_class" == "Object" || -z "$_SUPERCLASS" ]]; then
       break
     fi
+
+    # Move up the inheritance chain
+    current_class="$_SUPERCLASS"
   done
 
   # Method not found anywhere
@@ -1512,9 +1490,8 @@ function receiver_path {
     echo "Error: Invalid receiver name: $receiver" >&2
     return 1
   fi
-  # Extract base class name for file lookup (MyApp::Counter → Counter)
-  local base_class=$(_get_class_name "$receiver")
-  echo "${TRASHDIR}/${base_class}"
+  # Return path to compiled class file
+  _compiled_path "$receiver"
 }
 
 # Last result variable - stores output of most recent @ command

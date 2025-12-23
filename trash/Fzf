@@ -1,9 +1,0 @@
-is_a Tool
-
-Fzf::ensure() {
-  echo "lol"
-}
-
-fooBar() {
-echo "fooBar in Fzf"
-}
