@@ -52,9 +52,9 @@ Object subclass: nil
     if [[ -n "$data" && "$data" != "{}" ]]; then
       echo "DATA FOUND"
       echo "$data" | jq -r 'to_entries | .[] | "  \(.key): \(.value)"'
+    else
+      @ Trash methodsFor $_RECEIVER
     fi
-
-
   ]
 
   # Write inspection output to a file
