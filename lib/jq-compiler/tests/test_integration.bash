@@ -114,7 +114,7 @@ if [[ -n "$COMPILED" ]]; then
         "$(echo "$COMPILED" | grep -q '__TestClass__new()' && echo true || echo false)"
 
     run_test "e2e: generates setValue method" "true" \
-        "$(echo "$COMPILED" | grep -q '__TestClass__setValue()' && echo true || echo false)"
+        "$(echo "$COMPILED" | grep -q '__TestClass__setValue_()' && echo true || echo false)"
 
     run_test "e2e: generates getValue method" "true" \
         "$(echo "$COMPILED" | grep -q '__TestClass__getValue()' && echo true || echo false)"

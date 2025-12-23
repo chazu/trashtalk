@@ -103,7 +103,7 @@ INPUT_KEYWORD='Counter subclass: Object
   ]'
 
 run_test "keyword method name" "true" \
-    "$(compile_contains "$INPUT_KEYWORD" '__Counter__setValue()')"
+    "$(compile_contains "$INPUT_KEYWORD" '__Counter__setValue_()')"
 
 INPUT_MULTI_KW='Store subclass: Object
   method: getField: id field: name [
@@ -111,7 +111,7 @@ INPUT_MULTI_KW='Store subclass: Object
   ]'
 
 run_test "multi-keyword method name" "true" \
-    "$(compile_contains "$INPUT_MULTI_KW" '__Store__getField_field()')"
+    "$(compile_contains "$INPUT_MULTI_KW" '__Store__getField_field_()')"
 
 # ------------------------------------------------------------------------------
 # Argument Binding Tests
@@ -232,17 +232,17 @@ INPUT_MSG_KW='Counter subclass: Object
     @ obj setValue: 5
   ]'
 
-# Note: Arguments are quoted in the output
-run_test "keyword message colon removed" "true" \
-    "$(compile_contains "$INPUT_MSG_KW" '@ obj setValue')"
+# Note: Colons are now preserved for runtime parsing
+run_test "keyword message colon preserved" "true" \
+    "$(compile_contains "$INPUT_MSG_KW" '@ obj setValue: 5')"
 
 INPUT_MSG_MULTI='Counter subclass: Object
   method: test [
     @ obj setX: "1" y: "2"
   ]'
 
-run_test "multi-keyword joined" "true" \
-    "$(compile_contains "$INPUT_MSG_MULTI" '@ obj setX_y')"
+run_test "multi-keyword colons preserved" "true" \
+    "$(compile_contains "$INPUT_MSG_MULTI" '@ obj setX:')"
 
 INPUT_MSG_VAR='Counter subclass: Object
   method: test [
@@ -250,8 +250,8 @@ INPUT_MSG_VAR='Counter subclass: Object
     @ self setValue: $x
   ]'
 
-run_test "var arg unquoted" "true" \
-    "$(compile_contains "$INPUT_MSG_VAR" 'setValue $x')"
+run_test "keyword with var arg" "true" \
+    "$(compile_contains "$INPUT_MSG_VAR" 'setValue: $x')"
 
 # ------------------------------------------------------------------------------
 # Subshell Transformation Tests
@@ -322,6 +322,128 @@ INPUT_PATH='Counter subclass: Object
 
 run_test "path /dev/null" "true" \
     "$(compile_contains "$INPUT_PATH" '>/dev/null')"
+
+# ------------------------------------------------------------------------------
+# Negative Number Argument Tests (Issue: 0 -1 was mangled to 0-1)
+# ------------------------------------------------------------------------------
+
+echo -e "\n  Negative Number Arguments:"
+
+# Test that negative numbers in method arguments are preserved
+INPUT_NEG_ARG='Counter subclass: Object
+  method: test [
+    @ obj compare: 0 -1
+  ]'
+
+run_test "negative arg preserved (0 -1)" "true" \
+    "$(compile_contains "$INPUT_NEG_ARG" '0 -1')"
+
+# Test that negative numbers don't get merged with preceding number
+INPUT_NEG_TWO='Counter subclass: Object
+  method: test [
+    @ obj range: 5 -3
+  ]'
+
+run_test "negative arg preserved (5 -3)" "true" \
+    "$(compile_contains "$INPUT_NEG_TWO" '5 -3')"
+
+# Test that character class ranges still work (the original purpose of the gsub)
+INPUT_CHAR_CLASS='Counter subclass: Object
+  rawMethod: test [
+    if [[ "$x" =~ ^[0-9]+$ ]]; then
+      echo "number"
+    fi
+  ]'
+
+run_test "char class [0-9] preserved" "true" \
+    "$(compile_contains "$INPUT_CHAR_CLASS" '[0-9]')"
+
+# Test negative number in assignment context
+INPUT_NEG_ASSIGN='Counter subclass: Object
+  method: test [
+    | x |
+    x := -5
+    ^ $x
+  ]'
+
+run_test "negative assignment preserved" "true" \
+    "$(compile_contains "$INPUT_NEG_ASSIGN" 'x=-5')"
+
+# ------------------------------------------------------------------------------
+# Heredoc Indentation Tests (Issue: EOF terminators were indented, breaking bash)
+# ------------------------------------------------------------------------------
+
+echo -e "\n  Heredoc Indentation:"
+
+# Helper to check if a line exists at start of line (no indentation)
+compile_has_unindented_line() {
+    local input="$1"
+    local line="$2"
+    local output
+    printf '%s\n' "$input" > "$TMPFILE"
+    output=$("$DRIVER" compile "$TMPFILE" 2>/dev/null)
+    # Check if line exists at start (after newline or start of string)
+    if printf '%s\n' "$output" | grep -qE "^${line}$"; then
+        echo "true"
+    else
+        echo "false"
+    fi
+}
+
+# Test that heredoc terminator is not indented in normal method
+INPUT_HEREDOC_NORMAL='TestHeredoc subclass: Object
+  method: withHeredoc [
+    cat << EOF
+content
+EOF
+  ]'
+
+# The EOF must be at start of line (not indented)
+run_test "heredoc EOF not indented (method)" "true" \
+    "$(compile_has_unindented_line "$INPUT_HEREDOC_NORMAL" 'EOF')"
+
+# Test that heredoc content is not indented
+run_test "heredoc content not indented" "true" \
+    "$(compile_has_unindented_line "$INPUT_HEREDOC_NORMAL" 'content')"
+
+# Test heredoc in rawMethod still works
+INPUT_HEREDOC_RAW='TestHeredoc subclass: Object
+  rawMethod: withHeredoc [
+    cat << MARKER
+raw content
+MARKER
+  ]'
+
+run_test "heredoc MARKER not indented (rawMethod)" "true" \
+    "$(compile_has_unindented_line "$INPUT_HEREDOC_RAW" 'MARKER')"
+
+# Test quoted heredoc marker
+INPUT_HEREDOC_QUOTED='TestHeredoc subclass: Object
+  method: quotedHeredoc [
+    cat << '\''END'\''
+quoted content
+END
+  ]'
+
+run_test "quoted heredoc END not indented" "true" \
+    "$(compile_has_unindented_line "$INPUT_HEREDOC_QUOTED" 'END')"
+
+# Test multiple heredocs in one method
+INPUT_HEREDOC_MULTI='TestHeredoc subclass: Object
+  method: multiHeredoc [
+    cat << A
+first
+A
+    cat << B
+second
+B
+  ]'
+
+run_test "first heredoc A not indented" "true" \
+    "$(compile_has_unindented_line "$INPUT_HEREDOC_MULTI" 'A')"
+
+run_test "second heredoc B not indented" "true" \
+    "$(compile_has_unindented_line "$INPUT_HEREDOC_MULTI" 'B')"
 
 # ------------------------------------------------------------------------------
 # Conditional Bracket Tests
