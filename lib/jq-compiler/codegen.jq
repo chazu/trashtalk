@@ -1233,6 +1233,30 @@ def timestamp:
 def varsToString:
   [.[] | .name + (if .default then ":\(.default.value)" else "" end)] | join(" ");
 
+# Get the fully qualified class name (Package::ClassName or just ClassName)
+# Input: class AST with .package and .name
+def qualifiedName:
+  if .package != null and .package != "" then
+    "\(.package)::\(.name)"
+  else
+    .name
+  end;
+
+# Get the function name prefix (__Package__ClassName or __ClassName)
+# This converts :: to __ for valid bash function names
+# Input: class AST with .package and .name
+def funcPrefix:
+  if .package != null and .package != "" then
+    "__\(.package)__\(.name)"
+  else
+    "__\(.name)"
+  end;
+
+# Get the function name prefix from a pre-computed qualified name string
+# Converts :: to __ for bash function names
+def funcPrefixFromName($name):
+  "__\($name | gsub("::"; "__"))";
+
 # ------------------------------------------------------------------------------
 # Code Generation: Header
 # ------------------------------------------------------------------------------
@@ -1245,31 +1269,36 @@ def generateHeader:
   "";
 
 def generateMetadata:
+  funcPrefix as $prefix |
+  qualifiedName as $qname |
   if .isTrait then
-    "__\(.name)__is_trait=\"1\"",
+    "\($prefix)__is_trait=\"1\"",
     ""
   else
-    "__\(.name)__superclass=\"\(.parent // "")\"",
-    "__\(.name)__instanceVars=\"\(.instanceVars | varsToString)\"",
-    "__\(.name)__classInstanceVars=\"\(.classInstanceVars | varsToString)\"",
-    "__\(.name)__traits=\"\(.traits | join(" "))\"",
+    "\($prefix)__superclass=\"\(.parent // "")\"",
+    "\($prefix)__instanceVars=\"\(.instanceVars | varsToString)\"",
+    "\($prefix)__classInstanceVars=\"\(.classInstanceVars | varsToString)\"",
+    "\($prefix)__traits=\"\(.traits | join(" "))\"",
+    (if .package != null then
+      "\($prefix)__package=\"\(.package)\"",
+      "\($prefix)__qualifiedName=\"\($qname)\""
+    else empty end),
     (if (.methodRequirements | length) > 0 then
-      "__\(.name)__requires=\"\(.methodRequirements | join(" "))\""
+      "\($prefix)__requires=\"\(.methodRequirements | join(" "))\""
     else empty end),
     # Generate method categories metadata: "selector:category selector:category ..."
-    .name as $className |
     ([.methods[] | select(.category != null) | "\(.selector):\(.category)"] as $cats |
     if ($cats | length) > 0 then
-      "__\($className)__methodCategories=\"\($cats | join(" "))\""
+      "\($prefix)__methodCategories=\"\($cats | join(" "))\""
     else empty end),
     ""
   end;
 
 # Generate class instance variable initializer function
 def generateClassVarsInit:
-  .name as $className |
+  funcPrefix as $prefix |
   if (.classInstanceVars | length) > 0 then
-    "__\($className)__initClassVars() {",
+    "\($prefix)__initClassVars() {",
     (.classInstanceVars[] |
       .name as $varName |
       (if .default then
@@ -1278,7 +1307,7 @@ def generateClassVarsInit:
         else ""
         end
       else "" end) as $default |
-      "  [[ -z \"$(kvget '__\($className)__cvar__\($varName)')\" ]] && kvset '__\($className)__cvar__\($varName)' '\($default)'"
+      "  [[ -z \"$(kvget '\($prefix)__cvar__\($varName)')\" ]] && kvset '\($prefix)__cvar__\($varName)' '\($default)'"
     ),
     "}",
     ""
@@ -1658,12 +1687,13 @@ def transformMethodBody($className; $isRaw):
 # Code Generation: Method
 # ------------------------------------------------------------------------------
 
-def generateMethod($className; $ivars; $cvars):
+# $funcPrefix is the bash function prefix (e.g., "__MyApp__Counter" or "__Counter")
+def generateMethod($funcPrefix; $ivars; $cvars):
   # Build function name
   (if .kind == "class" then
-    "__\($className)__class__\(.selector)"
+    "\($funcPrefix)__class__\(.selector)"
   else
-    "__\($className)__\(.selector)"
+    "\($funcPrefix)__\(.selector)"
   end) as $funcName |
 
   # Generate argument bindings for keyword methods
@@ -1675,6 +1705,10 @@ def generateMethod($className; $ivars; $cvars):
 
   # Get method args for local variable tracking
   (.args // []) as $methodArgs |
+
+  # For transformMethodBody we need the class name (without prefix)
+  # Extract from funcPrefix: "__MyApp__Counter" -> "MyApp__Counter" or "__Counter" -> "Counter"
+  ($funcPrefix | ltrimstr("__")) as $className |
 
   # Generate body - use expression parser for non-raw methods with Smalltalk syntax
   .raw as $isRaw |
@@ -1700,17 +1734,17 @@ def generateMethod($className; $ivars; $cvars):
 # Code Generation: Method Alias
 # ------------------------------------------------------------------------------
 
-def generateAlias($className):
+def generateAlias($funcPrefix):
   # Generate wrapper functions for both instance and class methods
   # Input: {type: "alias", aliasName: "size", originalMethod: "count"}
   # Instance method alias
-  "__\($className)__\(.aliasName)() {",
-  "  __\($className)__\(.originalMethod) \"$@\"",
+  "\($funcPrefix)__\(.aliasName)() {",
+  "  \($funcPrefix)__\(.originalMethod) \"$@\"",
   "}",
   "",
   # Class method alias
-  "__\($className)__class__\(.aliasName)() {",
-  "  __\($className)__class__\(.originalMethod) \"$@\"",
+  "\($funcPrefix)__class__\(.aliasName)() {",
+  "  \($funcPrefix)__class__\(.originalMethod) \"$@\"",
   "}",
   "";
 
@@ -1718,13 +1752,13 @@ def generateAlias($className):
 # Code Generation: Method Advice (Before/After Hooks)
 # ------------------------------------------------------------------------------
 
-def generateAdvice($className; $ivars; $cvars):
+def generateAdvice($funcPrefix; $qualifiedName; $ivars; $cvars):
   # Generate a handler function and registration call
   # Input: {type: "advice", adviceType: "before"|"after", selector: "save", block: {...}}
   .adviceType as $adviceType |
   .selector as $selector |
   # Generate function name: __ClassName__before__selector or __ClassName__after__selector
-  "__\($className)__\($adviceType)__\($selector)" as $funcName |
+  "\($funcPrefix)__\($adviceType)__\($selector)" as $funcName |
   # Compile the block body
   (if .block.tokens != null then
     ({ tokens: .block.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
@@ -1744,7 +1778,8 @@ def generateAdvice($className; $ivars; $cvars):
   "}",
   "",
   # Generate the registration call (will be executed when class is sourced)
-  "_add_\($adviceType)_advice \"\($className)\" \"\($selector)\" \"\($funcName)\"",
+  # Use qualified name for the runtime so it can look up the correct class
+  "_add_\($adviceType)_advice \"\($qualifiedName)\" \"\($selector)\" \"\($funcName)\"",
   "";
 
 # ------------------------------------------------------------------------------
@@ -1753,6 +1788,9 @@ def generateAdvice($className; $ivars; $cvars):
 
 def generate:
   . as $class |
+  # Compute the function prefix and qualified name for namespaced classes
+  funcPrefix as $funcPrefix |
+  qualifiedName as $qname |
   # Extract instance variable names for expression parser
   ([.instanceVars[]? | .name] // []) as $ivars |
   # Extract class instance variable names for expression parser
@@ -1762,9 +1800,9 @@ def generate:
     generateMetadata,
     generateClassVarsInit,
     generateRequires,
-    (.methods[] | generateMethod($class.name; $ivars; $cvars)),
-    ((.aliases // [])[] | generateAlias($class.name)),
-    ((.advice // [])[] | generateAdvice($class.name; $ivars; $cvars))
+    (.methods[] | generateMethod($funcPrefix; $ivars; $cvars)),
+    ((.aliases // [])[] | generateAlias($funcPrefix)),
+    ((.advice // [])[] | generateAdvice($funcPrefix; $qname; $ivars; $cvars))
   );
 
 # ==============================================================================
