@@ -1315,6 +1315,30 @@ def generateClassVarsInit:
     empty
   end;
 
+# Generate accessor methods (getters/setters) for instance variables
+# These are generated at compile time so they're available immediately
+def generateAccessors:
+  funcPrefix as $prefix |
+  if (.instanceVars | length) > 0 then
+    (.instanceVars[] |
+      .name as $varName |
+      # Capitalize first letter for method name
+      ($varName | split("") | .[0] |= ascii_upcase | join("")) as $capName |
+      # Getter: getFoo() { echo "$(_ivar foo)"; return; }
+      "\($prefix)__get\($capName)() {",
+      "  echo \"$(_ivar \($varName))\"; return",
+      "}",
+      "",
+      # Setter: setFoo() { _ivar_set foo "$1"; }
+      "\($prefix)__set\($capName)() {",
+      "  _ivar_set \($varName) \"$1\"",
+      "}"
+    ),
+    ""
+  else
+    empty
+  end;
+
 def generateRequires:
   if (.requires | length) > 0 then
     "# Required dependencies",
@@ -1799,6 +1823,7 @@ def generate:
     generateHeader,
     generateMetadata,
     generateClassVarsInit,
+    generateAccessors,
     generateRequires,
     (.methods[] | generateMethod($funcPrefix; $ivars; $cvars)),
     ((.aliases // [])[] | generateAlias($funcPrefix)),
