@@ -1,15 +1,19 @@
-# Trashtalk TODO
+# Trashtalk Roadmap
 
-See `completed.md` for finished work.
-
----
-
-## Yutani Windowing Environment
-Pending stabilisation of the yutani project, possible fallback to twin if it turns into a shitshow
-
-## Concurrency & Coordination
-
-Base APIs implemented - see ACTOR.md, PROCESS.md, TUPLESPACE.md
+## Pre-0.0:
+ - Review collection classes - add set, dictionary as objects
+ - Build out Tool class to wrap external commands
+ - Are we using kv for tuplespace or recfiles?
+ - Work out installation
+ - What other classes are necessary?
+ - Allow ephemeral object instances - don't always save them to db (new vs create)
+ - Completion for bare @ function
+ - Add second path for user classes, separate from built-in classes
+ - Extract comments from `.trash` files
+ - Generate markdown API docs automatically
+ - Method signatures with argument names
+ - Index/maintenance on schema changes
+ - Handle upgrades when you add new instance_var to class with existing instances.
 
 ### Actor Enhancements
 - Supervision trees (restart strategies)
@@ -28,10 +32,13 @@ Base APIs implemented - see ACTOR.md, PROCESS.md, TUPLESPACE.md
 - Lease-based expiration
 - Distributed tuplespace (multi-machine)
 
-## Medium Priority
+## Yutani Windowing Environment
+Pending stabilisation of the yutani project, possible fallback to twin if it turns into a shitshow
+
+### Procyon
+Go-based code generator takes output from jq compiler and produces a compiled native object which can interoperate with trashtalk
 
 ### REPL / @ Improvements
-- Completion for bare @ function
 - Completion for repl when invoked via `@ Trash repl`
 
 ### Documentation Generation
@@ -43,20 +50,17 @@ Base APIs implemented - see ACTOR.md, PROCESS.md, TUPLESPACE.md
 - Only source class files when first accessed
 - Reduces startup time for large systems
 
-## Lower Priority
-
 ### SQLite Index Automation
 - Automatically create indexes for frequently queried instance variables
 - Track query patterns and suggest/create indexes
 - `@ Store ensureIndex: Counter on: #value`
-- Index maintenance on schema changes
+
 - Consider: automatic index creation when `find:` predicates are used
 
 ### Caching Layer
 Every getter does `db_get`, every setter does `db_get` + `db_put`. Could cache instance data during method call chain.
 
 ### Batch Saves / Dirty Tracking
-- Allow ephemeral object instances - don't always save them to db (new vs create)
 - Track which fields changed
 - Support transactions
 
@@ -69,11 +73,6 @@ instanceVars: count:integer items:array name:string
 ```
 Validate on set, reject invalid types.
 
-### Schema Versioning
-Handle upgrades when you add new instance_var to class with existing instances.
-
-## Performance & Maintenance
-
 ### Performance Optimization
 - Only if profiling shows problems
 - Bash tokenizer is O(n) per character in some versions
@@ -84,16 +83,5 @@ Handle upgrades when you add new instance_var to class with existing instances.
 - Split codegen.jq only if it exceeds ~800 lines
 - Potential: `header.jq`, `transforms.jq`, `method.jq`, `main.jq`
 
----
-
-## Ambitious / Long-term
-
 ### Self-Hosting
 Could more of Trashtalk be written in Trashtalk? The Store object is a start. What about parser, method dispatch?
-
-### Procyon
-Go-based code generator takes output from jq compiler and produces a compiled native object which can interoperate with trashtalk
-
----
-
-*Last updated: 2025-12-22 - String defaults in instanceVars clarified*
