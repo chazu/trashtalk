@@ -1053,9 +1053,17 @@ method_missing() {
 
   local original_receiver="$_RECEIVER"
   local current_class="$_SUPERCLASS"
+  local next_class=""
+  local -A visited_classes=()
 
   # Traverse up the inheritance chain
-  while [[ -n "$current_class" ]]; do
+  while [[ -n "$current_class" && "$current_class" != "nil" ]]; do
+    # Prevent infinite loops
+    if [[ -n "${visited_classes[$current_class]:-}" ]]; then
+      break
+    fi
+    visited_classes[$current_class]=1
+
     msg_debug "Checking class: $current_class"
 
     # Compute function prefix for namespaced classes
@@ -1069,18 +1077,8 @@ method_missing() {
         source "$compiled_file"
         _SOURCED_COMPILED_CLASSES[$current_class]=1
         msg_debug "Sourced compiled class $current_class in method_missing"
-
-        # Set up superclass from compiled class metadata (always)
-        local super_var="${current_prefix}__superclass"
-        if [[ -n "${!super_var}" ]]; then
-          _SUPERCLASS="${!super_var}"
-        fi
-
-        # Set up instance variables if present
-        local vars_var="${current_prefix}__instanceVars"
-        if [[ -n "${!vars_var}" ]]; then
-          instance_vars ${!vars_var}
-        fi
+        # Note: We don't call instance_vars here - it's not needed for method lookup
+        # and can cause recursive hangs
       fi
 
       # Check for namespaced method
@@ -1099,10 +1097,13 @@ method_missing() {
         return $?
       fi
 
-      # Get superclass from compiled metadata and continue
+      # Get superclass from compiled metadata
       local super_var="${current_prefix}__superclass"
-      if [[ -n "${!super_var}" && "${!super_var}" != "$current_class" ]]; then
-        current_class="${!super_var}"
+      next_class="${!super_var:-}"
+
+      # Move up the chain if we have a valid superclass
+      if [[ -n "$next_class" && "$next_class" != "nil" && "$next_class" != "$current_class" ]]; then
+        current_class="$next_class"
         continue
       fi
     else
@@ -1110,17 +1111,21 @@ method_missing() {
       msg_debug "No compiled class found for: $current_class"
     fi
 
-    # Stop if we've checked Object (root class) or no superclass
-    if [[ "$current_class" == "Object" || -z "$_SUPERCLASS" ]]; then
+    # Stop if we've checked Object (root class)
+    if [[ "$current_class" == "Object" ]]; then
       break
     fi
 
-    # Move up the inheritance chain
-    current_class="$_SUPERCLASS"
+    # Try Object as final fallback if not yet visited
+    if [[ -z "${visited_classes[Object]:-}" ]]; then
+      current_class="Object"
+    else
+      break
+    fi
   done
 
   # Method not found anywhere
-  echo "Error: Method '$_SELECTOR' not found in $original_receiver or its superclasses"
+  echo "Error: Method '$_SELECTOR' not found in $original_receiver or its superclasses" >&2
   return 1
 }
 
