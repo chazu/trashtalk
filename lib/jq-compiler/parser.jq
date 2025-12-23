@@ -185,7 +185,7 @@ def parseInstanceVarsSimple:
   if current.value == "instanceVars:" then
     advance | skipNewlines |
     # Collect all var specs manually
-    {vars: [], state: ., stop: false} |
+    {vars: [], warnings: [], state: ., stop: false} |
     until(
       .stop or
       .state.pos >= (.state.tokens | length) or
@@ -211,6 +211,17 @@ def parseInstanceVarsSimple:
           .vars += [{name: $name, default: {type: "string", value: ((.state | current.value) | ltrimstr("'") | rtrimstr("'"))}, location: $loc}] |
           .state |= advance |
           .state |= skipNewlines
+        elif (.state | current.type) == "IDENTIFIER" then
+          # Bare identifier after keyword - likely meant to be a quoted string
+          # Emit warning and treat as two separate variables
+          .warnings += [{
+            type: "possible_typo",
+            message: ("instanceVars: '" + $name + ":" + (.state | current.value) + "' looks like a string default. Did you mean '" + $name + ":'" + (.state | current.value) + "''?"),
+            token: {line: $loc.line, col: $loc.col}
+          }] |
+          # Treat keyword without value (name gets no default)
+          .vars += [{name: $name, default: null, location: $loc}]
+          # Don't advance - let the identifier be parsed as a separate var
         else
           .vars += [{name: $name, default: null, location: $loc}]
         end
@@ -226,7 +237,8 @@ def parseInstanceVarsSimple:
       end
     ) |
     .vars as $vars |
-    .state | .result = {type: "instanceVars", vars: $vars}
+    .warnings as $warnings |
+    .state | .result = {type: "instanceVars", vars: $vars, warnings: $warnings}
   else
     fail
   end;
@@ -236,7 +248,7 @@ def parseClassInstanceVarsSimple:
   if current.value == "classInstanceVars:" then
     advance | skipNewlines |
     # Collect all var specs manually
-    {vars: [], state: ., stop: false} |
+    {vars: [], warnings: [], state: ., stop: false} |
     until(
       .stop or
       .state.pos >= (.state.tokens | length) or
@@ -262,6 +274,17 @@ def parseClassInstanceVarsSimple:
           .vars += [{name: $name, default: {type: "string", value: ((.state | current.value) | ltrimstr("'") | rtrimstr("'"))}, location: $loc}] |
           .state |= advance |
           .state |= skipNewlines
+        elif (.state | current.type) == "IDENTIFIER" then
+          # Bare identifier after keyword - likely meant to be a quoted string
+          # Emit warning and treat as two separate variables
+          .warnings += [{
+            type: "possible_typo",
+            message: ("classInstanceVars: '" + $name + ":" + (.state | current.value) + "' looks like a string default. Did you mean '" + $name + ":'" + (.state | current.value) + "''?"),
+            token: {line: $loc.line, col: $loc.col}
+          }] |
+          # Treat keyword without value (name gets no default)
+          .vars += [{name: $name, default: null, location: $loc}]
+          # Don't advance - let the identifier be parsed as a separate var
         else
           .vars += [{name: $name, default: null, location: $loc}]
         end
@@ -277,7 +300,8 @@ def parseClassInstanceVarsSimple:
       end
     ) |
     .vars as $vars |
-    .state | .result = {type: "classInstanceVars", vars: $vars}
+    .warnings as $warnings |
+    .state | .result = {type: "classInstanceVars", vars: $vars, warnings: $warnings}
   else
     fail
   end;
@@ -534,6 +558,7 @@ def parseClassBody:
       (.state | parseInstanceVarsSimple) as $r |
       if $r.result != null then
         .instanceVars = ($r.result.vars // []) |
+        .errors += ($r.result.warnings // []) |
         .state = $r
       else
         # Record error and synchronize to next declaration
@@ -549,6 +574,7 @@ def parseClassBody:
       (.state | parseClassInstanceVarsSimple) as $r |
       if $r.result != null then
         .classInstanceVars = ($r.result.vars // []) |
+        .errors += ($r.result.warnings // []) |
         .state = $r
       else
         # Record error and synchronize to next declaration

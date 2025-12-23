@@ -74,6 +74,29 @@ INPUT_IVARS_STRING="Array subclass: Object
 run_test "ivar string default" "[]" \
     "$(parse_field "$INPUT_IVARS_STRING" '.instanceVars[0].default.value')"
 
+# Bare identifier after keyword triggers warning and is treated as separate var
+INPUT_IVARS_BARE_STRING='Config subclass: Object
+  instanceVars: name:unknown count:0'
+
+# name:unknown becomes two vars: 'name' (no default) and 'unknown' (no default)
+run_test "ivar keyword without quoted default has no default" "null" \
+    "$(parse_field "$INPUT_IVARS_BARE_STRING" '.instanceVars[0].default')"
+
+run_test "ivar keyword without quoted default name" "name" \
+    "$(parse_field "$INPUT_IVARS_BARE_STRING" '.instanceVars[0].name')"
+
+run_test "bare identifier becomes separate var" "unknown" \
+    "$(parse_field "$INPUT_IVARS_BARE_STRING" '.instanceVars[1].name')"
+
+run_test "third ivar numeric default" "0" \
+    "$(parse_field "$INPUT_IVARS_BARE_STRING" '.instanceVars[2].default.value')"
+
+run_test "warning emitted for bare identifier" "1" \
+    "$(parse_field "$INPUT_IVARS_BARE_STRING" '.warnings | length')"
+
+run_test "warning type is possible_typo" "possible_typo" \
+    "$(parse_field "$INPUT_IVARS_BARE_STRING" '.warnings[0].type')"
+
 # ------------------------------------------------------------------------------
 # Trait Include Tests
 # ------------------------------------------------------------------------------

@@ -1,0 +1,55 @@
+# Counter - A simple counter class demonstrating Trashtalk DSL
+# Instance variables use Smalltalk-style inference: value -> $(_ivar value)
+Counter subclass: Object
+  instanceVars: value:0 step:1
+
+  method: new [
+    | id |
+    id := $(_generate_instance_id Counter)
+    _create_instance Counter $id
+    ^ $id
+  ]
+
+  method: getValue [
+    ^ value + 0
+  ]
+
+  method: getStep [
+    ^ step + 0
+  ]
+
+  method: setValue: val [
+    value := val + 0
+  ]
+
+  method: setStep: val [
+    step := val + 0
+  ]
+
+  method: increment [
+    | newVal |
+    newVal := value + step
+    value := newVal + 0
+    ^ newVal + 0
+  ]
+
+  method: decrement [
+    | newVal |
+    newVal := value - step
+    value := newVal + 0
+    ^ newVal + 0
+  ]
+
+  method: incrementBy: amount [
+    | newVal |
+    newVal := value + amount
+    value := newVal + 0
+  ]
+
+  method: reset [
+    value := 0 + 0
+  ]
+
+  classMethod: description [
+    ^ "A simple counter"
+  ]

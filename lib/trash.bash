@@ -1175,6 +1175,23 @@ function send {
   # Method dispatch
   # ============================================
 
+  # Check for native binary first (highest priority)
+  local native_binary="$TRASHDIR/.compiled/${class_name}.native"
+  if [[ -x "$native_binary" ]]; then
+    msg_debug "Found native class: $native_binary"
+    # Native binaries receive: instance_id selector args...
+    # For class methods, pass the class name as receiver
+    local native_receiver="${_INSTANCE:-$class_name}"
+    "$native_binary" "$native_receiver" "$_SELECTOR" "$@"
+    exit_code=$?
+    # Exit code 200 = unknown selector, fall back to Bash dispatch
+    if [[ $exit_code -ne 200 ]]; then
+      _send_cleanup $frame_ensure_start $frame_handler_start $exit_code
+      return $exit_code
+    fi
+    msg_debug "Native binary doesn't implement $_SELECTOR, falling back to Bash"
+  fi
+
   # Check for compiled version first (prevents namespace pollution)
   compiled_file="$TRASHDIR/.compiled/$class_name"
   if [[ -f "$compiled_file" ]]; then
