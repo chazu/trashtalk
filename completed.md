@@ -617,4 +617,17 @@ Fixed multiple test failures caused by missing accessor methods and security che
 
 ---
 
+## Module System
+
+### Packages / Namespaces
+```smalltalk
+package: MyApp
+  import: 'networking/HttpClient'
+  import: 'data/JsonParser'
+```
+- Namespace isolation to avoid class name collisions
+- `MyApp::Counter` vs `OtherLib::Counter`
+- Package-level visibility (public/private classes)
+- [ ] Dependency declaration and loading order
+
 *Last updated: 2024-12-20*
