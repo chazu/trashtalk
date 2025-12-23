@@ -107,27 +107,4 @@ Go-based code generator takes output from jq compiler and produces a compiled na
 
 ---
 
-## Critical: Known Issues (Must Fix for v1.0)
-
-*No critical issues currently.*
-
----
-
 *Last updated: 2025-12-22 - String defaults in instanceVars clarified*
-
-## Recently Fixed
-
-### String Defaults in instanceVars (Fixed 2025-12-22)
-**Issue:** `instanceVars: name:unknown status:active` was being parsed incorrectly.
-
-**Resolution:** String defaults must use quotes. The correct syntax is:
-```smalltalk
-instanceVars: name:'unknown' status:'active' count:0
-```
-
-When you write `name:unknown` (without quotes), the parser now:
-1. Treats `name` as a variable with no default
-2. Treats `unknown` as a separate variable with no default
-3. Emits a warning: "Did you mean 'name:'unknown''?"
-
-This makes the language more explicit and avoids ambiguity between string literals and variable references.
