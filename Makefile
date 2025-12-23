@@ -42,14 +42,12 @@ $(COMPILED_TRAITS_DIR):
 $(COMPILED_DIR)/%: $(TRASH_DIR)/%.trash $(LIB_DIR)/jq-compiler/driver.bash
 	@echo "Compiling $<..."
 	@$(LIB_DIR)/jq-compiler/driver.bash compile "$<" 2>/dev/null > "$@"
-	@cp "$@" "$(TRASH_DIR)/$*"
 	@echo "  → $@"
 
 # Pattern rule for compiling traits (using jq-based compiler)
 $(COMPILED_TRAITS_DIR)/%: $(TRASH_DIR)/traits/%.trash $(LIB_DIR)/jq-compiler/driver.bash
 	@echo "Compiling trait $<..."
 	@$(LIB_DIR)/jq-compiler/driver.bash compile "$<" 2>/dev/null > "$@"
-	@cp "$@" "$(TRAITS_DIR)/$*"
 	@echo "  → $@"
 
 # Run all tests
@@ -162,8 +160,7 @@ ifndef CLASS
 endif
 	@echo "Compiling $(CLASS)..."
 	@$(LIB_DIR)/jq-compiler/driver.bash compile "$(TRASH_DIR)/$(CLASS).trash" 2>/dev/null > "$(COMPILED_DIR)/$(CLASS)"
-	@cp "$(COMPILED_DIR)/$(CLASS)" "$(TRASH_DIR)/$(CLASS)"
-	@echo "✓ $(CLASS) compiled"
+	@echo "✓ $(CLASS) compiled → $(COMPILED_DIR)/$(CLASS)"
 
 # Help
 help:

@@ -50,8 +50,11 @@ Object subclass: nil
     echo "  id: $_INSTANCE"
 
     if [[ -n "$data" && "$data" != "{}" ]]; then
+      echo "DATA FOUND"
       echo "$data" | jq -r 'to_entries | .[] | "  \(.key): \(.value)"'
     fi
+
+
   ]
 
   # Write inspection output to a file

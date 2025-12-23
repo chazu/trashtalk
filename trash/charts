@@ -1,3 +1,0 @@
-listAll() {
-  curl https://charts.calendly-internal.com/api/charts
-}
