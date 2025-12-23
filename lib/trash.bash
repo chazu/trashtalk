@@ -1271,7 +1271,9 @@ function send {
   # ============================================
 
   # Check for native binary first (highest priority)
-  local native_binary="$TRASHDIR/.compiled/${class_name}.native"
+  # Use _to_compiled_name to handle namespaced classes (MyApp::Counter → MyApp__Counter)
+  local compiled_name=$(_to_compiled_name "$class_name")
+  local native_binary="$TRASHDIR/.compiled/${compiled_name}.native"
   if [[ -x "$native_binary" ]]; then
     msg_debug "Found native class: $native_binary"
     # Native binaries receive: instance_id selector args...

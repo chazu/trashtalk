@@ -92,7 +92,9 @@ _remove_advice "Class" "selector"                # Remove advice
 
 ### Instance Persistence
 
-Instances stored in SQLite (`instances.db`) as JSON. Instance IDs are lowercase class name + UUID (e.g., `counter_abc123`).
+Instances stored in SQLite (`instances.db`) as JSON. Instance IDs are lowercase class name + UUID:
+- Non-namespaced: `counter_abc123`
+- Namespaced: `myapp_counter_abc123` (for `MyApp::Counter`)
 
 ## Key Files
 
@@ -100,6 +102,62 @@ Instances stored in SQLite (`instances.db`) as JSON. Instance IDs are lowercase 
 - `lib/jq-compiler/` - jq-based compiler (tokenizer.bash, parser.jq, codegen.jq, driver.bash)
 - `lib/vendor/sqlite-json.bash` - Database layer
 - `lib/vendor/tuplespace/` - Process coordination
+
+## Namespaces
+
+Trashtalk supports flat namespaces to prevent class name collisions between packages.
+
+### Syntax
+
+```smalltalk
+package: MyApp
+  import: Logging
+
+Counter subclass: Object
+  instanceVars: value:0
+
+  method: increment [
+    value := value + 1
+  ]
+```
+
+### Key Concepts
+
+| Concept | Example | Description |
+|---------|---------|-------------|
+| Package declaration | `package: MyApp` | Declares the namespace for a class |
+| Import | `import: Logging` | Import another package's classes |
+| Qualified reference | `@ OtherPkg::Counter new` | Explicit package reference |
+
+### Naming Conventions
+
+| Source | Compiled Function | Instance ID |
+|--------|-------------------|-------------|
+| `MyApp::Counter.increment` | `__MyApp__Counter__increment` | `myapp_counter_uuid` |
+| `Counter.increment` (no package) | `__Counter__increment` | `counter_uuid` |
+
+### Runtime Usage
+
+```bash
+# Create namespaced instance
+counter=$(@ MyApp::Counter new)
+
+# Use instance (works the same)
+@ $counter increment
+@ $counter getValue
+
+# Class is stored with qualified name
+db_get $counter | jq '.class'  # "MyApp::Counter"
+```
+
+### Design Notes
+
+- **Qualified references required**: Cross-package references must use `Package::Class` syntax
+- **`import:` is informational**: Parsed but not enforced - serves as documentation
+- **Single-file compilation preserved**: No multi-pass compilation needed
+- **Traits remain global**: No namespace prefix for traits
+
+See `docs/namespaces-design.md` for full design details.
 
 ## DSL Syntax Quick Reference
 
