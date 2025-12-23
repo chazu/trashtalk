@@ -127,25 +127,20 @@ See `windowing-ideas.md` for research on building an Acme-like terminal environm
 
 These bugs break expected behavior and should be fixed before Trashtalk is considered complete.
 
-### Heredoc in rawMethod
-When `rawMethod:` contains heredocs, compiler indents `EOF` terminators, breaking bash syntax. Affects `Trash.trash` methods like `createObject:super:`.
+### ~~Heredoc in rawMethod~~ ✓ FIXED
+~~When `rawMethod:` contains heredocs, compiler indents `EOF` terminators, breaking bash syntax. Affects `Trash.trash` methods like `createObject:super:`.~~
+
+**Fixed:** Added `fixHeredocIndent` function in codegen.jq that tracks heredoc state and strips indentation from heredoc content and terminators. The fix applies to both normal `method:` and `rawMethod:` (rawMethod already had handling via `smartIndent`).
 
 ### ~~Method Name Collision (Keyword vs Unary)~~ ✓ FIXED
 ~~Keyword methods (e.g., `skip:`) and unary methods with the same base name (e.g., `skip`) compile to the same bash function name (`__ClassName__skip`), causing the second definition to overwrite the first.~~
 
 **Fixed:** Keyword methods now compile with trailing underscore (e.g., `skip:` → `__Class__skip_`, `skip` → `__Class__skip`). The runtime dispatcher also updated to match.
 
-### Negative Numbers in Arguments
-The compiler may mangle arguments when a negative number follows another argument. For example, `0 -1` can become `0-1` (single argument instead of two).
+### ~~Negative Numbers in Arguments~~ ✓ FIXED
+~~The compiler may mangle arguments when a negative number follows another argument. For example, `0 -1` can become `0-1` (single argument instead of two).~~
 
-**Workaround:** Avoid negative number literals in method calls. Use variables or different test values:
-```smalltalk
-# BAD - may be mangled:
-@ obj assert_greater_than 0 -1
-
-# GOOD - use positive numbers or variables:
-@ obj assert_greater_than 1 0
-```
+**Fixed:** The codegen's gsub for fixing character class ranges (like `[0-9]`) was too broad and matched any `N -M` pattern. Now the gsub requires `[` before the pattern to ensure it only affects character classes.
 
 ### String Defaults in instanceVars
 The compiler strips colons from string default values. For example, `instanceVars: name:unknown status:active` compiles to `name unknown status active` instead of preserving the defaults.
@@ -156,4 +151,4 @@ The compiler strips colons from string default values. For example, `instanceVar
 
 ---
 
-*Last updated: 2024-12-20 - All tests passing, exception handling DSL added*
+*Last updated: 2025-12-21 - Heredoc indentation fix*

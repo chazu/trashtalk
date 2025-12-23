@@ -131,7 +131,7 @@ INPUT_KEYWORD='Counter subclass: Object
     value := newVal
   ]'
 
-run_test "keyword method selector" "setValue" \
+run_test "keyword method selector" "setValue_" \
     "$(parse_field "$INPUT_KEYWORD" '.methods[0].selector')"
 
 run_test "keyword method arg" "newVal" \
@@ -142,7 +142,7 @@ INPUT_MULTI_KEYWORD='Store subclass: Object
     ^ 1
   ]'
 
-run_test "multi-keyword selector" "getField_field" \
+run_test "multi-keyword selector" "getField_field_" \
     "$(parse_field "$INPUT_MULTI_KEYWORD" '.methods[0].selector')"
 
 run_test "multi-keyword first arg" "id" \
@@ -304,7 +304,7 @@ INPUT_3KW='Store subclass: Object
     ^ 1
   ]'
 
-run_test "3-keyword selector" "at_put_with" \
+run_test "3-keyword selector" "at_put_with_" \
     "$(parse_field "$INPUT_3KW" '.methods[0].selector')"
 
 run_test "3-keyword args count" "3" \

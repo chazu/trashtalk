@@ -1433,7 +1433,7 @@ def transformMethodBody($className; $isRaw):
     gsub(" ;"; ";") |                  # Remove space before semicolon
     gsub(" \\]\\]"; " ]]") |           # Keep space before ]]
     gsub("\\[\\[ "; "[[ ") |           # Keep space after [[
-    gsub("(?<a>[0-9]) -(?<b>[0-9])"; "\(.a)-\(.b)") |  # Fix char class ranges like [0-9]
+    gsub("\\[(?<a>[0-9]) -(?<b>[0-9])"; "[\(.a)-\(.b)") |  # Fix char class ranges like [0-9]
     gsub("(?<a>[a-zA-Z0-9]) \\](?<b>[^\\]])"; "\(.a)]\(.b)") |  # Remove space before ] not followed by ]
     gsub("(?<n>[0-9]) >"; "\(.n)>") |  # Fix number before redirect: 2> not 2 >
     # Mode-specific normalizations
@@ -1552,6 +1552,35 @@ def transformMethodBody($className; $isRaw):
     # Remove trailing empty/whitespace-only lines
     until(length == 0 or (.[-1] | test("^\\s*$") | not); .[:-1]);
 
+  # Fix heredoc indentation - strips indent from heredoc content and terminators
+  # Heredoc content and terminators must not be indented in bash
+  def fixHeredocIndent:
+    reduce .[] as $line ({lines: [], heredoc: null};
+      if .heredoc != null then
+        # We're inside a heredoc
+        # Check if this line (after stripping indent) matches the terminator
+        ($line | gsub("^\\s+"; "")) as $stripped |
+        if $stripped == .heredoc then
+          # This is the terminator - output unindented
+          {lines: (.lines + [$stripped]), heredoc: null}
+        else
+          # Heredoc content - output unindented (strip any leading whitespace)
+          {lines: (.lines + [$stripped]), heredoc: .heredoc}
+        end
+      else
+        # Check if this line starts a heredoc
+        # Pattern: <<MARKER or <<'MARKER' or <<"MARKER" or <<-MARKER
+        if ($line | test("<<-?['\"]?[A-Za-z_][A-Za-z0-9_]*['\"]?\\s*$")) then
+          # Extract the heredoc marker (without quotes)
+          ($line | capture("<<-?['\"]?(?<marker>[A-Za-z_][A-Za-z0-9_]*)['\"]?\\s*$").marker) as $marker |
+          {lines: (.lines + [$line]), heredoc: $marker}
+        else
+          # Regular line - keep as-is
+          {lines: (.lines + [$line]), heredoc: .heredoc}
+        end
+      end
+    ) | .lines;
+
   # Smart indentation for raw methods - tracks nesting, continuation, and heredocs
   def smartIndent:
     reduce .[] as $line ({lines: [], depth: 0, continuation: false, heredoc: null};
@@ -1621,8 +1650,8 @@ def transformMethodBody($className; $isRaw):
   else
     # Normal method - apply transformations
     .tokens | tokensToCode | split("\n") | map(transformLine) |
-    # Filter out null results and strip leading/trailing empty lines
-    map(select(. != null)) | stripEmptyLines | join("\n")
+    # Filter out null results, fix heredoc indentation, and strip empty lines
+    map(select(. != null)) | fixHeredocIndent | stripEmptyLines | join("\n")
   end;
 
 # ------------------------------------------------------------------------------
