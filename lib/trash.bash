@@ -40,6 +40,77 @@ TRASH_AUTHOR="Chaz Straney"
 TRASH_DESCRIPTION="Smalltalk-inspired message-passing system for Bash"
 
 # ============================================
+# Namespace Helpers
+# ============================================
+# Functions to handle Package::Class qualified names
+
+# Check if a class name is qualified (contains ::)
+# Usage: _is_qualified "MyApp::Counter" → returns 0 (true)
+#        _is_qualified "Counter" → returns 1 (false)
+function _is_qualified {
+  [[ "$1" == *::* ]]
+}
+
+# Extract the package from a qualified name
+# Usage: _get_package "MyApp::Counter" → "MyApp"
+#        _get_package "Counter" → ""
+function _get_package {
+  if _is_qualified "$1"; then
+    echo "${1%%::*}"
+  else
+    echo ""
+  fi
+}
+
+# Extract the class name from a qualified name
+# Usage: _get_class_name "MyApp::Counter" → "Counter"
+#        _get_class_name "Counter" → "Counter"
+function _get_class_name {
+  if _is_qualified "$1"; then
+    echo "${1##*::}"
+  else
+    echo "$1"
+  fi
+}
+
+# Convert qualified name to bash function prefix
+# Usage: _to_func_prefix "MyApp::Counter" → "__MyApp__Counter"
+#        _to_func_prefix "Counter" → "__Counter"
+function _to_func_prefix {
+  local name="$1"
+  # Replace :: with __ and prepend __
+  echo "__${name//::/__}"
+}
+
+# Convert qualified name to instance ID prefix (lowercase)
+# Usage: _to_instance_prefix "MyApp::Counter" → "myapp_counter"
+#        _to_instance_prefix "Counter" → "counter"
+function _to_instance_prefix {
+  local name="$1"
+  # Replace :: with _, lowercase
+  echo "${name//::/_}" | tr '[:upper:]' '[:lower:]'
+}
+
+# Convert qualified name to compiled file name
+# Usage: _to_compiled_name "MyApp::Counter" → "MyApp__Counter"
+#        _to_compiled_name "Counter" → "Counter"
+function _to_compiled_name {
+  local name="$1"
+  # Replace :: with __
+  echo "${name//::/__}"
+}
+
+# Get the path to a compiled class file
+# Usage: _compiled_path "MyApp::Counter" → "$TRASHDIR/.compiled/MyApp__Counter"
+function _compiled_path {
+  local class_name="$1"
+  local compiled_name=$(_to_compiled_name "$class_name")
+  echo "$TRASHDIR/.compiled/$compiled_name"
+}
+
+export -f _is_qualified _get_package _get_class_name _to_func_prefix _to_instance_prefix _to_compiled_name _compiled_path
+
+# ============================================
 # Context Stack System
 # ============================================
 # Lightweight in-memory stacks for context management.
@@ -273,27 +344,29 @@ function _ensure_class_sourced {
   local class_name="$1"
 
   # Check if already tracked as sourced
-  if [[ -n "${_SOURCED_COMPILED_CLASSES[$class_name]}" ]]; then
+  if [[ -n "${_SOURCED_COMPILED_CLASSES[$class_name]:-}" ]]; then
     return 0
   fi
 
   # Check if already sourced by looking for superclass metadata
-  local super_var="__${class_name}__superclass"
+  local func_prefix=$(_to_func_prefix "$class_name")
+  local super_var="${func_prefix}__superclass"
   if [[ -n "${!super_var+x}" ]]; then
     _SOURCED_COMPILED_CLASSES[$class_name]=1
     return 0
   fi
 
   # Try to source the compiled class
-  local compiled_file="$TRASHDIR/.compiled/$class_name"
+  local compiled_file=$(_compiled_path "$class_name")
   if [[ -f "$compiled_file" ]]; then
     source "$compiled_file"
     _SOURCED_COMPILED_CLASSES[$class_name]=1
     return 0
   fi
 
-  # Try the runtime copy
-  local runtime_file="$TRASHDIR/$class_name"
+  # Try the runtime copy (for non-namespaced classes, or source files)
+  local base_class=$(_get_class_name "$class_name")
+  local runtime_file="$TRASHDIR/$base_class"
   if [[ -f "$runtime_file" ]]; then
     source "$runtime_file"
     _SOURCED_COMPILED_CLASSES[$class_name]=1
@@ -332,8 +405,9 @@ function _get_class_instance_vars {
   # Ensure class is sourced so metadata is available
   _ensure_class_sourced "$class_name"
 
-  # Get from compiled metadata variable
-  local vars_var="__${class_name}__instanceVars"
+  # Get from compiled metadata variable (using func_prefix for namespaced classes)
+  local func_prefix=$(_to_func_prefix "$class_name")
+  local vars_var="${func_prefix}__instanceVars"
   if [[ -n "${!vars_var+x}" ]]; then
     echo "${!vars_var}"
   fi
@@ -352,8 +426,9 @@ function _get_parent_class {
   # Ensure class is sourced so metadata is available
   _ensure_class_sourced "$class_name"
 
-  # Get from compiled metadata variable
-  local super_var="__${class_name}__superclass"
+  # Get from compiled metadata variable (using func_prefix for namespaced classes)
+  local func_prefix=$(_to_func_prefix "$class_name")
+  local super_var="${func_prefix}__superclass"
   if [[ -n "${!super_var+x}" ]]; then
     parent="${!super_var}"
   fi
@@ -425,12 +500,15 @@ function instance_vars {
   _CURRENT_CLASS_VARS=""
   _CURRENT_CLASS_DEFAULTS=()
 
+  # Use $_CLASS if available (set by dispatcher context) for namespaced accessors
+  local accessor_class="${_CLASS:-}"
+
   # First, generate accessors for inherited vars from parent class
   # _SUPERCLASS is set by is_a before instance_vars is called
   if [[ -n "$_SUPERCLASS" && "$_SUPERCLASS" != "Object" ]]; then
     _collect_inherited_vars "$_SUPERCLASS"
     for var in $_INHERITED_VARS; do
-      _generate_accessor "$var"
+      _generate_accessor "$var" "$accessor_class"
     done
   fi
 
@@ -457,8 +535,8 @@ function instance_vars {
     # Store default value
     _CURRENT_CLASS_DEFAULTS["$var"]="$default_val"
 
-    # Generate accessor for this var
-    _generate_accessor "$var"
+    # Generate accessor for this var (with class name for namespacing)
+    _generate_accessor "$var" "$accessor_class"
   done
 }
 
@@ -478,10 +556,10 @@ function _generate_accessor {
   local capitalized
   capitalized="$(echo "${var:0:1}" | tr '[:lower:]' '[:upper:]')${var:1}"
 
-  # Determine function name prefix
+  # Determine function name prefix (handles namespaced classes)
   local prefix=""
   if [[ -n "$class_name" ]]; then
-    prefix="__${class_name}__"
+    prefix="$(_to_func_prefix "$class_name")__"
   fi
 
   # Generate getter: getFoo() or __ClassName__getFoo()
@@ -526,16 +604,21 @@ function _generate_accessor {
 
 # Create an instance with declared instance variables
 # Usage: _create_instance <class_name> <instance_id>
+# class_name can be qualified (MyApp::Counter) or unqualified (Counter)
 function _create_instance {
   local class_name="$1"
   local instance_id="$2"
   local created_at
   created_at=$(date +%s)
 
+  # Convert class name to function prefix for metadata lookup
+  # MyApp::Counter → __MyApp__Counter, Counter → __Counter
+  local func_prefix=$(_to_func_prefix "$class_name")
+
   # Get instance vars from compiled class metadata (preferred)
   # This avoids using stale global _CURRENT_CLASS_VARS from previous classes
   local class_vars=""
-  local vars_var="__${class_name}__instanceVars"
+  local vars_var="${func_prefix}__instanceVars"
   if [[ -n "${!vars_var}" ]]; then
     class_vars="${!vars_var}"
   fi
@@ -686,9 +769,10 @@ function _find_with_predicate {
 export -f _find_with_predicate
 
 # Generate a unique instance ID for a class
+# Handles namespaced classes: MyApp::Counter → myapp_counter_abc123
 function _generate_instance_id {
   local class_name="$1"
-  local prefix=$(echo "$class_name" | tr '[:upper:]' '[:lower:]')
+  local prefix=$(_to_instance_prefix "$class_name")
   echo "${prefix}_$(uuidgen 2>/dev/null || echo "$$_$(date +%s)")"
 }
 
@@ -903,27 +987,30 @@ function _class_has_method {
   # Walk the inheritance chain
   local current_class="$class_name"
   while [[ -n "$current_class" ]]; do
+    # Compute function prefix for namespaced classes
+    local current_prefix=$(_to_func_prefix "$current_class")
+
     # Ensure class is sourced
-    local compiled_file="$TRASHDIR/.compiled/$current_class"
-    if [[ -f "$compiled_file" && -z "${_SOURCED_COMPILED_CLASSES[$current_class]}" ]]; then
+    local compiled_file=$(_compiled_path "$current_class")
+    if [[ -f "$compiled_file" && -z "${_SOURCED_COMPILED_CLASSES[$current_class]:-}" ]]; then
       source "$compiled_file"
       _SOURCED_COMPILED_CLASSES[$current_class]=1
     fi
 
     # Check for instance method
-    local instance_func="__${current_class}__${normalized}"
+    local instance_func="${current_prefix}__${normalized}"
     if declare -f "$instance_func" >/dev/null 2>&1; then
       return 0
     fi
 
     # Check for class method
-    local class_func="__${current_class}__class__${normalized}"
+    local class_func="${current_prefix}__class__${normalized}"
     if declare -f "$class_func" >/dev/null 2>&1; then
       return 0
     fi
 
     # Move to parent class
-    local super_var="__${current_class}__superclass"
+    local super_var="${current_prefix}__superclass"
     current_class="${!super_var:-}"
   done
 
@@ -939,7 +1026,7 @@ function _conforms_to {
 
   # Ensure protocol is sourced
   local proto_file="$TRASHDIR/.compiled/$protocol_name"
-  if [[ -f "$proto_file" && -z "${_SOURCED_COMPILED_CLASSES[$protocol_name]}" ]]; then
+  if [[ -f "$proto_file" && -z "${_SOURCED_COMPILED_CLASSES[$protocol_name]:-}" ]]; then
     source "$proto_file"
     _SOURCED_COMPILED_CLASSES[$protocol_name]=1
   fi
@@ -980,30 +1067,33 @@ method_missing() {
   while [[ -n "$current_class" ]]; do
     msg_debug "Checking class: $current_class"
 
+    # Compute function prefix for namespaced classes
+    local current_prefix=$(_to_func_prefix "$current_class")
+
     # Check for compiled version first (prevents namespace pollution)
-    local compiled_file="$TRASHDIR/.compiled/$current_class"
+    local compiled_file=$(_compiled_path "$current_class")
     if [[ -f "$compiled_file" ]]; then
       # Source compiled file only once
-      if [[ -z "${_SOURCED_COMPILED_CLASSES[$current_class]}" ]]; then
+      if [[ -z "${_SOURCED_COMPILED_CLASSES[$current_class]:-}" ]]; then
         source "$compiled_file"
         _SOURCED_COMPILED_CLASSES[$current_class]=1
         msg_debug "Sourced compiled class $current_class in method_missing"
 
         # Set up superclass from compiled class metadata (always)
-        local super_var="__${current_class}__superclass"
+        local super_var="${current_prefix}__superclass"
         if [[ -n "${!super_var}" ]]; then
           _SUPERCLASS="${!super_var}"
         fi
 
         # Set up instance variables if present
-        local vars_var="__${current_class}__instanceVars"
+        local vars_var="${current_prefix}__instanceVars"
         if [[ -n "${!vars_var}" ]]; then
           instance_vars ${!vars_var}
         fi
       fi
 
       # Check for namespaced method
-      local namespaced_func="__${current_class}__${_SELECTOR}"
+      local namespaced_func="${current_prefix}__${_SELECTOR}"
       if declare -F "$namespaced_func" >/dev/null 2>&1; then
         msg_info "Found $_SELECTOR in compiled $current_class"
         "$namespaced_func" "$@"
@@ -1011,7 +1101,7 @@ method_missing() {
       fi
 
       # Check for class method
-      local class_method_func="__${current_class}__class__${_SELECTOR}"
+      local class_method_func="${current_prefix}__class__${_SELECTOR}"
       if declare -F "$class_method_func" >/dev/null 2>&1; then
         msg_info "Found $_SELECTOR (class method) in compiled $current_class"
         "$class_method_func" "$@"
@@ -1019,7 +1109,7 @@ method_missing() {
       fi
 
       # Get superclass from compiled metadata and continue
-      local super_var="__${current_class}__superclass"
+      local super_var="${current_prefix}__superclass"
       if [[ -n "${!super_var}" && "${!super_var}" != "$current_class" ]]; then
         current_class="${!super_var}"
         continue
@@ -1027,11 +1117,12 @@ method_missing() {
     fi
 
     # Fall back to legacy class file if no compiled version
-    if [[ -f "$TRASHDIR/$current_class" ]]; then
-      source "$TRASHDIR/$current_class"
+    local base_class=$(_get_class_name "$current_class")
+    if [[ -f "$TRASHDIR/$base_class" ]]; then
+      source "$TRASHDIR/$base_class"
 
       # Check if method is defined in this class
-      if file_defines_function "$TRASHDIR/$current_class" "$_SELECTOR"; then
+      if file_defines_function "$TRASHDIR/$base_class" "$_SELECTOR"; then
         msg_info "Found $_SELECTOR in $current_class"
         "$_SELECTOR" "$@"
         return $?
@@ -1148,6 +1239,10 @@ function send {
     _INSTANCE=""
   fi
 
+  # Compute function prefix for namespaced classes
+  # MyApp::Counter → __MyApp__Counter, Counter → __Counter
+  local func_prefix=$(_to_func_prefix "$class_name")
+
   # Push to call stack for debugging (lightweight, always on)
   _CALL_STACK[_CALL_DEPTH]="$_CLASS.$_SELECTOR"
   ((_CALL_DEPTH++))
@@ -1193,32 +1288,33 @@ function send {
   fi
 
   # Check for compiled version first (prevents namespace pollution)
-  compiled_file="$TRASHDIR/.compiled/$class_name"
+  # Use _compiled_path to handle namespaced classes (MyApp::Counter → MyApp__Counter)
+  compiled_file=$(_compiled_path "$class_name")
   if [[ -f "$compiled_file" ]]; then
     msg_debug "Found compiled class: $compiled_file"
 
     # Source compiled file only once
-    if [[ -z "${_SOURCED_COMPILED_CLASSES[$class_name]}" ]]; then
+    if [[ -z "${_SOURCED_COMPILED_CLASSES[$class_name]:-}" ]]; then
       source "$compiled_file"
       _SOURCED_COMPILED_CLASSES[$class_name]=1
       msg_debug "Sourced compiled class $class_name"
 
       # Set up _SUPERCLASS from compiled metadata for inheritance support
-      local super_var="__${class_name}__superclass"
+      local super_var="${func_prefix}__superclass"
       if [[ -n "${!super_var}" ]]; then
         _SUPERCLASS="${!super_var}"
       fi
 
       # Set up instance variables if present (only once)
       # This will also generate accessors for inherited vars via _SUPERCLASS
-      local vars_var="__${class_name}__instanceVars"
+      local vars_var="${func_prefix}__instanceVars"
       if [[ -n "${!vars_var}" ]]; then
         instance_vars ${!vars_var}
         msg_debug "Generated accessors for compiled class $class_name: ${!vars_var}"
       fi
 
       # Initialize class instance variables if present (only once)
-      local init_func="__${class_name}__initClassVars"
+      local init_func="${func_prefix}__initClassVars"
       if declare -F "$init_func" >/dev/null 2>&1; then
         "$init_func"
         msg_debug "Initialized class vars for $class_name"
@@ -1226,7 +1322,7 @@ function send {
     fi
 
     # Set up superclass from compiled class metadata (EVERY call, not just first)
-    local super_var="__${class_name}__superclass"
+    local super_var="${func_prefix}__superclass"
     if [[ -n "${!super_var}" ]]; then
       _SUPERCLASS="${!super_var}"
       msg_debug "Set superclass for $class_name: $_SUPERCLASS"
@@ -1235,7 +1331,7 @@ function send {
     # For class calls (no instance), try class methods FIRST
     # This prevents instance method `exists` from shadowing class method `exists:`
     if [[ -z "$_INSTANCE" ]]; then
-      local class_method_func="__${class_name}__class__${_SELECTOR}"
+      local class_method_func="${func_prefix}__class__${_SELECTOR}"
       if declare -F "$class_method_func" >/dev/null 2>&1; then
         msg_debug "Calling class method: $class_method_func"
         "$class_method_func" "$@"
@@ -1246,7 +1342,7 @@ function send {
     fi
 
     # Try namespaced instance method
-    local namespaced_func="__${class_name}__${_SELECTOR}"
+    local namespaced_func="${func_prefix}__${_SELECTOR}"
     if declare -F "$namespaced_func" >/dev/null 2>&1; then
       msg_debug "Calling namespaced function: $namespaced_func"
       "$namespaced_func" "$@"
@@ -1256,7 +1352,7 @@ function send {
     fi
 
     # Try class method (for instance calls that might fall through)
-    local class_method_func="__${class_name}__class__${_SELECTOR}"
+    local class_method_func="${func_prefix}__class__${_SELECTOR}"
     if declare -F "$class_method_func" >/dev/null 2>&1; then
       msg_debug "Calling class method: $class_method_func"
       "$class_method_func" "$@"
@@ -1266,12 +1362,12 @@ function send {
     fi
 
     # Try trait methods
-    local traits_var="__${class_name}__traits"
+    local traits_var="${func_prefix}__traits"
     if [[ -n "${!traits_var}" ]]; then
       local trait_name
       for trait_name in ${!traits_var}; do
         # Source trait if not already sourced
-        if [[ -z "${_SOURCED_COMPILED_CLASSES[$trait_name]}" ]]; then
+        if [[ -z "${_SOURCED_COMPILED_CLASSES[$trait_name]:-}" ]]; then
           local trait_file="$TRASHDIR/traits/$trait_name"
           if [[ -f "$trait_file" ]]; then
             source "$trait_file"
@@ -1306,6 +1402,11 @@ function send {
     fi
 
     msg_debug "Method $_SELECTOR not in compiled $class_name, checking inheritance"
+    # For compiled classes, use method_missing to walk inheritance chain
+    method_missing "$@"
+    exit_code=$?
+    _send_cleanup $frame_ensure_start $frame_handler_start $exit_code
+    return $exit_code
   fi
 
   # Legacy mode: source class file directly
@@ -1404,12 +1505,14 @@ export -f _send_cleanup
 
 function receiver_path {
   local receiver="$1"
-  # Validate: no path separators or traversal
+  # Validate: no path separators or traversal (but :: is allowed for namespaces)
   if [[ "$receiver" =~ [/\\] ]] || [[ "$receiver" == ".." ]] || [[ "$receiver" == "." ]]; then
     echo "Error: Invalid receiver name: $receiver" >&2
     return 1
   fi
-  echo "${TRASHDIR}/${receiver}"
+  # Extract base class name for file lookup (MyApp::Counter → Counter)
+  local base_class=$(_get_class_name "$receiver")
+  echo "${TRASHDIR}/${base_class}"
 }
 
 # Last result variable - stores output of most recent @ command
@@ -1436,14 +1539,14 @@ function @ {
   # This ensures class methods are available in the parent shell
   local ___receiver="$1"
   if [[ -n "$___receiver" ]]; then
-    # For instance IDs, extract class name
-    if [[ "$___receiver" == *_* && "$___receiver" =~ ^[a-z] ]]; then
-      local ___class="${___receiver%%_*}"
-      # Capitalize first letter (bash 3 compatible)
-      ___class="$(echo "${___class:0:1}" | tr '[:lower:]' '[:upper:]')${___class:1}"
-      _ensure_class_sourced "$___class"
+    # For instance IDs (lowercase, contains _), look up the class from DB
+    if [[ "$___receiver" =~ ^[a-z] && "$___receiver" == *_* ]]; then
+      local ___class=$(_get_instance_class "$___receiver" 2>/dev/null)
+      if [[ -n "$___class" ]]; then
+        _ensure_class_sourced "$___class"
+      fi
     else
-      # Direct class name
+      # Direct class name (may be qualified like MyApp::Counter)
       _ensure_class_sourced "$___receiver"
     fi
   fi
