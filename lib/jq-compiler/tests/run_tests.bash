@@ -130,6 +130,11 @@ run_integration_tests() {
     source "$SCRIPT_DIR/test_integration.bash"
 }
 
+run_namespace_tests() {
+    section "Namespace Tests"
+    source "$SCRIPT_DIR/test_namespaces.bash"
+}
+
 # ------------------------------------------------------------------------------
 # Main
 # ------------------------------------------------------------------------------
@@ -154,9 +159,13 @@ main() {
         integration)
             run_integration_tests
             ;;
+        namespaces)
+            run_namespace_tests
+            ;;
         all|*)
             run_tokenizer_tests
             run_parser_tests
+            run_namespace_tests
             run_codegen_tests
             run_integration_tests
             ;;

@@ -97,7 +97,41 @@ def literal($v):
 # Grammar Rules - Direct Implementation
 # ==============================================================================
 
+# Parse a class reference: IDENTIFIER or IDENTIFIER :: IDENTIFIER
+# Returns: {type: "classRef", name: "ClassName"} for unqualified
+#      or: {type: "classRef", package: "Pkg", name: "ClassName"} for qualified
+def parseClassRef:
+  if current.type == "IDENTIFIER" then
+    current.value as $first |
+    advance | skipNewlines |
+    if current.type == "NAMESPACE_SEP" then
+      # Qualified: Package::Class
+      advance | skipNewlines |
+      if current.type == "IDENTIFIER" then
+        .result = {type: "classRef", package: $first, name: current.value} |
+        advance
+      else
+        fail
+      end
+    else
+      # Unqualified: Class
+      .result = {type: "classRef", package: null, name: $first}
+    end
+  else
+    fail
+  end;
+
+# Format a class reference as a string for AST
+# Qualified: "Package::Class", Unqualified: "Class"
+def formatClassRef($ref):
+  if $ref.package != null then
+    "\($ref.package)::\($ref.name)"
+  else
+    $ref.name
+  end;
+
 # Parse class header: ClassName subclass: Parent | ClassName trait
+# Parent can be qualified: Counter subclass: Core::Object
 def parseClassHeader:
   skipNewlines |
   if current.type == "IDENTIFIER" then
@@ -107,15 +141,24 @@ def parseClassHeader:
     .result as $name |
     if current.value == "subclass:" then
       advance | skipNewlines |
-      if current.type == "IDENTIFIER" then
-        .result = {type: "class", name: $name, parent: current.value, isTrait: false, location: $location} |
-        advance
+      # Parse parent class reference (may be qualified)
+      parseClassRef |
+      if .result != null then
+        .result as $parentRef |
+        .result = {
+          type: "class",
+          name: $name,
+          parent: formatClassRef($parentRef),
+          parentPackage: $parentRef.package,
+          isTrait: false,
+          location: $location
+        }
       else
         fail
       end
     elif current.value == "trait" then
       advance |
-      .result = {type: "class", name: $name, parent: null, isTrait: true, location: $location}
+      .result = {type: "class", name: $name, parent: null, parentPackage: null, isTrait: true, location: $location}
     else
       fail
     end
@@ -306,14 +349,22 @@ def parseClassInstanceVarsSimple:
     fail
   end;
 
-# Parse: include: TraitName
+# Parse: include: TraitName (may be qualified: include: OtherPkg::Debuggable)
 def parseInclude:
   if current.value == "include:" then
     # Capture location from include: keyword
     {line: current.line, col: current.col} as $location |
     advance | skipNewlines |
-    if current.type == "IDENTIFIER" then
-      .result = {type: "include", trait: current.value, location: $location} | advance
+    # Parse trait reference (may be qualified)
+    parseClassRef |
+    if .result != null then
+      .result as $traitRef |
+      .result = {
+        type: "include",
+        trait: formatClassRef($traitRef),
+        traitPackage: $traitRef.package,
+        location: $location
+      }
     else
       fail
     end
@@ -699,18 +750,76 @@ def parseClassBody:
   .state | .errors = (.errors + $errors) | .result = $body;
 
 # ==============================================================================
+# Package Declaration Parsing
+# ==============================================================================
+
+# Parse: package: PackageName
+#        import: OtherPackage
+#        import: AnotherPackage
+# Returns: {package: "PackageName", imports: ["OtherPackage", "AnotherPackage"]}
+# or null if no package declaration
+def parsePackageDecl:
+  skipNewlines |
+  if current.value == "package:" then
+    # Capture location from package: keyword
+    {line: current.line, col: current.col} as $location |
+    advance | skipNewlines |
+    if current.type == "IDENTIFIER" then
+      current.value as $packageName |
+      advance | skipNewlines |
+      # Collect imports
+      {imports: [], state: .} |
+      until((.state | current.value) != "import:";
+        .state |= advance |
+        .state |= skipNewlines |
+        if (.state | current.type) == "IDENTIFIER" then
+          .imports += [.state | current.value] |
+          .state |= advance |
+          .state |= skipNewlines
+        else
+          # Error: expected identifier after import:
+          .
+        end
+      ) |
+      .imports as $imports |
+      .state | .result = {package: $packageName, imports: $imports, packageLocation: $location}
+    else
+      # Error: expected identifier after package:
+      fail
+    end
+  else
+    # No package declaration - that's OK
+    .result = null
+  end;
+
+# ==============================================================================
 # Main Parser
 # ==============================================================================
 
 def parseClass:
+  # First check for package declaration
+  parsePackageDecl |
+  .result as $pkgDecl |
   parseClassHeader |
   if .result != null then
     .result as $header |
     parseClassBody |
     if .result != null then
-      .result = ($header + .result)
+      # Combine header, body, and package info
+      ($header + .result) as $class |
+      # Add package and imports if present
+      .result = (if $pkgDecl != null then
+        $class + {package: $pkgDecl.package, imports: $pkgDecl.imports}
+      else
+        $class + {package: null, imports: []}
+      end)
     else
-      .result = ($header + {instanceVars: [], classInstanceVars: [], traits: [], requires: [], methodRequirements: [], methods: [], aliases: [], advice: []})
+      ($header + {instanceVars: [], classInstanceVars: [], traits: [], requires: [], methodRequirements: [], methods: [], aliases: [], advice: []}) as $class |
+      .result = (if $pkgDecl != null then
+        $class + {package: $pkgDecl.package, imports: $pkgDecl.imports}
+      else
+        $class + {package: null, imports: []}
+      end)
     end
   else
     .

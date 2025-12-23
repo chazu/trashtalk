@@ -312,11 +312,16 @@ tokenize() {
                 ;;
 
             # ------------------------------------------------------------------
-            # Colon - could be := (assign), block param (:x), or keyword (handled below)
+            # Colon - could be := (assign), :: (namespace sep), block param (:x), or keyword
             # ------------------------------------------------------------------
             ':')
                 if [[ "$next" == "=" ]]; then
                     add_token "ASSIGN" ":=" "$line" "$col"
+                    ((i += 2))
+                    ((col += 2))
+                elif [[ "$next" == ":" ]]; then
+                    # Namespace separator ::
+                    add_token "NAMESPACE_SEP" "::" "$line" "$col"
                     ((i += 2))
                     ((col += 2))
                 elif [[ "$next" =~ ^[a-zA-Z_] ]]; then
@@ -640,8 +645,8 @@ tokenize() {
                 done
 
                 # Check if followed by colon (making it a keyword)
-                # But NOT := (that's assignment)
-                if [[ "${input:i:1}" == ":" && "${input:i+1:1}" != "=" ]]; then
+                # But NOT := (assignment) or :: (namespace separator)
+                if [[ "${input:i:1}" == ":" && "${input:i+1:1}" != "=" && "${input:i+1:1}" != ":" ]]; then
                     word+=":"
                     ((i++))
                     ((col++))
