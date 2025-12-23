@@ -1,8 +1,9 @@
 # Trashtalk Namespaces Design Document
 
-**Status**: Draft
+**Status**: Implemented (Milestones 1-3, 5)
 **Author**: Claude + chazu
 **Date**: 2025-12-22
+**Updated**: 2025-12-23
 
 ## Overview
 
@@ -476,6 +477,36 @@ counter=$(@ MyApp::Counter new)
 @ Analytics::Tracker track: 'pageview'
 ```
 
+## Design Decisions
+
+### Import Resolution: Qualified References Required
+
+**Decision**: Cross-package class references must use qualified syntax (`Package::Class`). The `import:` declaration is parsed but not enforced - it serves as documentation and potential future IDE support.
+
+**Rationale**:
+- Keeps single-file compilation working (`make single CLASS=Foo`)
+- No multi-pass compilation or class registry needed
+- Code is explicit about where classes come from
+- Simpler implementation, matches "keep it simple" goal
+- Runtime already handles qualified references
+
+**Example**:
+```smalltalk
+package: MyApp
+  import: Logging    " Informational, not enforced "
+
+Counter subclass: Object
+  method: log [
+    @ Logging::Logger info: "test"   " Must be qualified "
+  ]
+```
+
+**What this means**:
+- `import:` is syntactically valid and stored in AST
+- No compile-time error for ambiguous/missing imports
+- No automatic resolution of unqualified names via imports
+- Users must always use `Package::Class` for cross-package references
+
 ## Open Questions
 
 ### 1. Core Namespace Name
@@ -512,24 +543,26 @@ Should `@ object class` return `MyApp::Counter` or `Counter`?
 
 ## Implementation Plan
 
-### Milestone 1: Parser Support
-- [ ] Add tokens: `package:`, `import:`, `::`
-- [ ] Parse package declaration
-- [ ] Parse qualified class references
-- [ ] Update AST output
-- [ ] Tests
+### Milestone 1: Parser Support ✓
+- [x] Add tokens: `package:`, `import:`, `::`
+- [x] Parse package declaration
+- [x] Parse qualified class references
+- [x] Update AST output
+- [x] Tests
 
-### Milestone 2: Codegen Support
-- [ ] Namespace-prefixed function names
-- [ ] Name resolution logic
-- [ ] Updated metadata generation
-- [ ] Tests
+### Milestone 2: Codegen Support ✓
+- [x] Namespace-prefixed function names
+- [x] Updated metadata generation (package, qualifiedName)
+- [x] Compile-time accessor generation (getFoo/setFoo)
+- [x] Tests
+- [x] Name resolution: use qualified refs (see Design Decisions)
 
-### Milestone 3: Runtime Support
-- [ ] Dispatcher handles `Package::Class` syntax
-- [ ] Namespaced instance IDs
-- [ ] SQLite with qualified class names
-- [ ] Tests
+### Milestone 3: Runtime Support ✓
+- [x] Dispatcher handles `Package::Class` syntax
+- [x] Namespaced instance IDs (myapp_counter_uuid)
+- [x] SQLite with qualified class names
+- [x] Namespace helper functions (_is_qualified, _to_func_prefix, etc.)
+- [x] Tests
 
 ### Milestone 4: Procyon Support
 - [ ] Parse namespace from AST
@@ -537,10 +570,10 @@ Should `@ object class` return `MyApp::Counter` or `Counter`?
 - [ ] Update `--info` output
 - [ ] Tests
 
-### Milestone 5: Polish
-- [ ] Error messages for ambiguous references
-- [ ] Documentation
-- [ ] Migrate Core classes (optional)
+### Milestone 5: Polish ✓
+- [x] Documentation (CLAUDE.md updated)
+- [x] Design decision: qualified refs required (no ambiguity possible)
+- [ ] Migrate Core classes (optional, deferred - not blocking)
 
 ## References
 
