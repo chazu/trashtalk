@@ -1,7 +1,13 @@
 # Trashtalk Roadmap
 
 ## Pre-0.0:
- - Review collection classes - add set, dictionary as objects
+ - Remove AI characters from classes (arrow glyph)
+ - remove vestigial 'native' code
+ - Clarify the need for kv
+ - Do we have problems with multiple processes running at once?
+ - 'legacy' mode in trash.bash
+ - Ensure all documentation is correct
+ - Review collection classes - add list (or array), set, dictionary as objects
  - Build out Tool class to wrap external commands
  - Are we using kv for tuplespace or recfiles?
  - Work out installation
@@ -14,6 +20,7 @@
  - Method signatures with argument names
  - Index/maintenance on schema changes
  - Handle upgrades when you add new instance_var to class with existing instances.
+ - rework object IDs - include hash of class instead of class name?
 
 ### Actor Enhancements
 - Supervision trees (restart strategies)
