@@ -1,0 +1,13 @@
+Fidget subclass: Object
+ instanceVars:
+
+ rawClassMethod: new [
+ local id=$(_generate_instance_id Fidget)
+ _create_instance Fidget " $id "
+ echo " $id "
+ ]
+
+ method: example [
+ @ Widget example
+ ^ " Hello from Fidget "
+ ]
