@@ -5,12 +5,10 @@
 # Source dependencies (use prefixed vars to avoid colliding with SCRIPT_DIR)
 _TUPLESPACE_DIR="$(dirname "${BASH_SOURCE[0]}")"
 _TUPLESPACE_PARENT="$(dirname "$_TUPLESPACE_DIR")"
-if [[ -f "$_TUPLESPACE_PARENT/kv-bash" ]]; then
-    source "$_TUPLESPACE_PARENT/kv-bash"
-fi
 if [[ -f "$_TUPLESPACE_PARENT/fun.sh" ]]; then
     source "$_TUPLESPACE_PARENT/fun.sh"
 fi
+# Note: kv_set/kv_get/kv_del are provided by sqlite-json.bash (sourced via trash.bash)
 
 # Tuplespace configuration
 TUPLESPACE_DIR="${HOME}/.tuplespace"
@@ -164,7 +162,7 @@ EOF
     local listener_pid=$!
     
     # Store listener info
-    kvset "listener_${tuple_type}_$$" "$listener_pid"
+    kv_set "listener_${tuple_type}_$$" "$listener_pid"
     
     echo "Listener started with PID: $listener_pid"
     echo "To stop: ts_stop_listener $tuple_type $$"
@@ -176,10 +174,10 @@ ts_stop_listener() {
     local tuple_type="$1"
     local process_id="$2"
 
-    local listener_pid=$(kvget "listener_${tuple_type}_${process_id}")
+    local listener_pid=$(kv_get "listener_${tuple_type}_${process_id}")
     if [[ -n "$listener_pid" ]]; then
         kill "$listener_pid" 2>/dev/null
-        kvdel "listener_${tuple_type}_${process_id}"
+        kv_del "listener_${tuple_type}_${process_id}"
         rm -f "${TUPLESPACE_LISTENERS_DIR}/listener_${tuple_type}_${process_id}"
         echo "Listener stopped"
     else

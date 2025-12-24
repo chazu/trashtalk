@@ -26,7 +26,8 @@ This enables decoupled, event-driven communication between scripts.
 - `recutils` (for structured tuple storage) - already in your Brewfile
 - `entr` (for file watching) - already in your Brewfile
 - `jq` (for JSON processing) - already in your Brewfile
-- Your existing `kv-bash` and `fun.sh` utilities
+- `sqlite3` (for listener process tracking via SQLite)
+- Your existing `fun.sh` utilities
 
 ## Quick Start
 
@@ -160,12 +161,12 @@ bash bash/tuplespace/test-tuplespace.bash
 - `~/.tuplespace/tuples.rec` - Main tuple database (recutils format)
 - `~/.tuplespace/events/` - Event trigger files
 - `~/.tuplespace/listeners/` - Listener scripts
-- `~/.kv-bash/` - Listener process tracking (via kv-bash)
+- `~/.trashtalk/instances.db` - Listener process tracking (via SQLite)
 
 ## Integration with Your Existing Tools
 
 The tuplespace integrates well with your existing bash utilities:
-- Uses your `kv-bash` for process tracking
+- Uses SQLite for process tracking (via `kv_set`/`kv_get`/`kv_del`)
 - Compatible with your functional programming utilities in `fun.sh`
 - Leverages `recutils` and `entr` from your Brewfile
 - Follows your existing bash scripting patterns

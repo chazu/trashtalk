@@ -321,3 +321,60 @@ db_clear() {
 db_drop() {
     [[ -f "$SQLITE_JSON_DB" ]] && rm -f "$SQLITE_JSON_DB"
 }
+
+########################
+# SIMPLE KEY-VALUE STORE
+########################
+# These functions provide simple string key-value storage
+# using the same SQLite database. Keys are prefixed with __kv__
+# to distinguish from instance documents.
+
+# Store a string value by key
+# Usage: kv_set <key> <value>
+kv_set() {
+    local key="$1"
+    local value="$2"
+
+    [[ -n "$key" ]] || {
+        _db_echo_err_box 'missing param "key"' 'kv_set()'
+        return 1
+    }
+
+    # Build JSON with proper escaping via jq
+    local json_value
+    json_value=$(printf '%s' "$value" | jq -Rs '{v: .}')
+    db_put "__kv__${key}" "$json_value"
+}
+
+# Retrieve a string value by key
+# Usage: kv_get <key>
+# Returns: value string or empty
+kv_get() {
+    local key="$1"
+
+    [[ -n "$key" ]] || {
+        _db_echo_err_box 'missing param "key"' 'kv_get()'
+        return 1
+    }
+
+    local result
+    result=$(db_get "__kv__${key}" 2>/dev/null)
+    if [[ -n "$result" ]]; then
+        echo "$result" | jq -r '.v // empty'
+        return 0
+    fi
+    return 1
+}
+
+# Delete a key
+# Usage: kv_del <key>
+kv_del() {
+    local key="$1"
+
+    [[ -n "$key" ]] || {
+        _db_echo_err_box 'missing param "key"' 'kv_del()'
+        return 1
+    }
+
+    db_delete "__kv__${key}" 2>/dev/null
+}

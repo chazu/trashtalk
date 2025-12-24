@@ -246,7 +246,7 @@ counter=$(@ Counter new)
 ## Dependencies
 
 Vendored in `lib/vendor/`:
-- `kv-bash` - Key-value persistence
+- `sqlite-json.bash` - SQLite-based JSON document store and key-value persistence
 - `tuplespace/` - Event coordination
 - `bsfl.sh` - Bash utility functions
 - `fun.sh` - Functional programming utilities

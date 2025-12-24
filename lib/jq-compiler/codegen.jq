@@ -1297,6 +1297,7 @@ def generateMetadata:
 # Generate class instance variable initializer function
 def generateClassVarsInit:
   funcPrefix as $prefix |
+  .name as $className |
   if (.classInstanceVars | length) > 0 then
     "\($prefix)__initClassVars() {",
     (.classInstanceVars[] |
@@ -1307,7 +1308,7 @@ def generateClassVarsInit:
         else ""
         end
       else "" end) as $default |
-      "  [[ -z \"$(kvget '\($prefix)__cvar__\($varName)')\" ]] && kvset '\($prefix)__cvar__\($varName)' '\($default)'"
+      "  [[ -z \"$(kv_get '\($className)__cvar__\($varName)')\" ]] && kv_set '\($className)__cvar__\($varName)' '\($default)'"
     ),
     "}",
     ""
