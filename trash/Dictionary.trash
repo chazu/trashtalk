@@ -25,7 +25,8 @@ Dictionary subclass: Object
   rawMethod: _getItemsObject [
     local items
     items="$(_ivar items)"
-    echo "${items:-{}}"
+    [[ -z "$items" ]] && items="{}"
+    echo "$items"
   ]
 
   # Get value at key
@@ -243,7 +244,8 @@ Dictionary subclass: Object
   rawMethod: asJson [
     local items
     items=$(_ivar items)
-    echo "${items:-{}}" | jq -c '.'
+    [[ -z "$items" ]] && items="{}"
+    echo "$items" | jq -c '.'
   ]
 
   # Create dictionary from JSON string

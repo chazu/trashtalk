@@ -1,15 +1,10 @@
 # Trashtalk Roadmap
 
 ## Pre-0.0:
- - Remove AI characters from classes (arrow glyph)
- - remove vestigial 'native' code
- - Clarify the need for kv
  - Do we have problems with multiple processes running at once?
- - 'legacy' mode in trash.bash
  - Ensure all documentation is correct
  - Review collection classes - add list (or array), set, dictionary as objects
  - Build out Tool class to wrap external commands
- - Are we using kv for tuplespace or recfiles?
  - Work out installation
  - What other classes are necessary?
  - Allow ephemeral object instances - don't always save them to db (new vs create)

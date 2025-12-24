@@ -11,7 +11,7 @@ Trash subclass: Object
     echo "Objects: $(@ self listObjects | wc -l)"
     echo "Traits: $(@ self listTraits | wc -l)"
     echo "Active Processes: $(@ Process listProcesses | wc -l)"
-    echo "KV Store: $KV_USER_DIR"
+    echo "Database: $SQLITE_JSON_DB"
   ]
 
   # List all available objects
@@ -216,7 +216,6 @@ EOF
     if [[ "$confirmation" =~ ^[Yy]$ ]]; then
       rm "$object_file"
       echo "Removed object $object_name"
-      kvdel "$object_name" 2>/dev/null || true
     else
       echo "Cancelled"
     fi
@@ -361,63 +360,6 @@ EOF
     echo "Cleanup complete"
   ]
 
-  # Show current call stack
-  method: showStack [
-    | stack count i frame_id frame_data receiver selector args |
-    _ensure_stack
-    stack := $(kvget _stack 2>/dev/null)
-    if [[ -z "$stack" || "$stack" == "[]" ]]; then
-      echo "Call stack is empty"
-      return 0
-    fi
-    count := $(echo "$stack" | jq 'length')
-    echo "=== Call Stack ($count frames) ==="
-    for ((i=count-1; i>=0; i--)); do
-      frame_id := $(echo "$stack" | jq -r ".[$i]")
-      frame_data := $(kvget "$frame_id" 2>/dev/null)
-      if [[ -n "$frame_data" ]]; then
-        receiver := $(echo "$frame_data" | jq -r '.args.receiver // "?"')
-        selector := $(echo "$frame_data" | jq -r '.args.selector // "?"')
-        args := $(echo "$frame_data" | jq -r '.args.args // ""')
-        echo "  [$i] $receiver >> $selector $args"
-      else
-        echo "  [$i] $frame_id (frame data missing)"
-      fi
-    done
-    echo ""
-    echo "Enable stack frames with: export TRASH_STACK_FRAMES=1"
-  ]
-
-  # Clear the call stack
-  method: clearStack [
-    | stack frame_id |
-    _ensure_stack
-    stack := $(kvget _stack 2>/dev/null)
-    if [[ -z "$stack" || "$stack" == "[]" ]]; then
-      echo "Stack already empty"
-      return 0
-    fi
-    echo "$stack" | jq -r '.[]' 2>/dev/null | while read -r frame_id; do
-      if [[ -n "$frame_id" ]]; then
-        kvdel "$frame_id" 2>/dev/null
-      fi
-    done
-    kvset _stack "[]"
-    echo "Stack cleared"
-  ]
-
-  # Get stack depth
-  method: stackDepth [
-    | stack |
-    _ensure_stack
-    stack := $(kvget _stack 2>/dev/null)
-    if [[ -z "$stack" ]]; then
-      echo "0"
-    else
-      echo "$stack" | jq 'length'
-    fi
-  ]
-
   # Show help
   method: help [
     echo "=== Trash System Commands ==="
@@ -494,14 +436,6 @@ EOF
       echo "$traits" | sed 's/^/  /'
     else
       echo "Traits: none"
-    fi
-    echo ""
-    state := $(kvget "$object_name" 2>/dev/null)
-    if [[ -n "$state" ]]; then
-      echo "Persistent state:"
-      echo "$state" | jq . 2>/dev/null || echo "$state"
-    else
-      echo "Persistent state: none"
     fi
   ]
 

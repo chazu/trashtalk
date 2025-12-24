@@ -1,21 +1,8 @@
 TODOs
 * _wrap_value function for wrapping a value into json _if needed_
 * values can be represented as tagged json objects e.g. {"type": "foo", "value": {"lol": "wat"} } or {"type": "string", "value": "bar"}
-* Right now only numbers can be assigned as result of a stack frame - any type needs to be able to be assigned
-* Top level has a stack frame - at the end of execution the return value is printed
-* Stack frames are used to pass in arguments for message sends
-* Stack frames are used to return values
 * Good first expression to parse: `[1,2,3] at: 1` or something?
 * Or maybe 2 + 2? Something that just sends a simple message and gets back a simple piece of data.
-
-DONE
-* Stack frames are JSON, build with `jo` and parsed with `jq`
-* Set a stack frame to a uuid key and add that key to the top of the stack (_stack)
-* A stack frame is stored in kv
-* Set the current stack frame return value (^ and _set_return_value functions)
-* build a stack frame with jo
-* Stack Frame should have a _type key with "StackFrame"
-* It also has a result and args map
 
 Per https://wiki.c2.com/?HeartOfSmalltalk:
 
@@ -23,11 +10,11 @@ Per https://wiki.c2.com/?HeartOfSmalltalk:
 * Read the value of a variable. Variables hold references to objects.
 * Read the value of a literal, i.e. 'hello' or 3.
 * Assign a variable -- store a reference to an object in a variable (could be a temporary (method scoped) variable or an instance variable
-* [DONE] Return a value -- push an object on the stack to be found by the invoker of this method
+* Return a value -- output to stdout for the invoker of this method
 * Create a block -- an object that refers to some code you can evaluate. It is a closure, like in Scheme, and is used to make control structures. It is the only thing on this list that is complicated.
 
 * Primitives are in bash - theyre just bash functions
-* Use `jo` to build json, `kvset` to store it, `jq` to get type info and values back.
+* Use `jo` to build json, `jq` to get type info and values back. SQLite for persistence (instances and class instance variables).
 * Use `yq` to parse yaml
 * Objects are serialized as yaml?
 * Implement a simple line editor like in that one japanese guys project?
@@ -82,7 +69,7 @@ Okay, new idea. How can we mimic elvish's behavior of having both
 * * [Foo bar:1 withQuux: [Fnord at:3]]
 * * forth with [nested procedures]
 * * * Primitive functions are in bash, defined words are in kv as combinations of primitive words
-* Make the stack work properly (i think its in bsfl, make it use kv i guess)
+* Call stack uses in-memory bash arrays (_CALL_STACK, _ENSURE_STACK, _HANDLER_STACK)
 * @ needs to resolve the receiver - i.e. it needs to parse the command
 
 

@@ -6,18 +6,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Source dependencies quietly
 source "$SCRIPT_DIR/vendor/bsfl.sh" 2>/dev/null || echo "Warning: bsfl.sh not found"
 source "$SCRIPT_DIR/vendor/fun.sh" 2>/dev/null || echo "Warning: fun.sh not found"
-source "$SCRIPT_DIR/vendor/kv-bash" 2>/dev/null || echo "Warning: kv-bash not found"
 source "$SCRIPT_DIR/vendor/sqlite-json.bash" 2>/dev/null || echo "Warning: sqlite-json.bash not found"
-
-# Export kv-bash functions so they're available in subshells (used for stack frames)
-export -f kvset kvget kvdel kv_validate_key 2>/dev/null
-export KV_USER_DIR
 
 # Export sqlite-json functions so they're available in subshells
 export -f db_init db_put db_get db_delete db_find_by_class db_query db_query_data 2>/dev/null
 export -f db_ensure_virtual_column db_create_index db_list_indices db_list_columns 2>/dev/null
 export -f db_count_by_class db_list_classes db_clear db_drop 2>/dev/null
 export -f _db_validate_id _db_validate_name _db_escape _db_sql 2>/dev/null
+export -f kv_set kv_get kv_del 2>/dev/null
 export SQLITE_JSON_DB
 
 # Override msg_debug to respect DEBUG mode and output to stderr
@@ -271,61 +267,6 @@ function current_unit {
   $BASH_SOURCE
 }
 
-# Return a value by pushing it onto the stack
-function ^ {
-  _set_return_value "$(jo value="$*")"
-}
-
-# Initialize the stack if it doesn't exist
-function _ensure_stack {
-  if ! kvget _stack >/dev/null 2>&1; then
-    kvset _stack "[]"
-  fi
-}
-
-# Push a new stack frame
-function _push_stack_frame {
-  local frame_id="frame_$(uuidgen 2>/dev/null || echo "$$_$(date +%s)")"
-  local frame_data="$(jo _type="StackFrame" args="$(jo "$@")" return="")"
-
-  _ensure_stack
-  kvset "$frame_id" "$frame_data"
-  kvset _stack "$(kvget _stack | jq ". + [\"$frame_id\"]")"
-
-  echo "$frame_id"
-}
-
-# Pop the current stack frame
-function _pop_stack_frame {
-  _ensure_stack
-  local frame_id=$(_current_stack_frame_id)
-  if [[ -n "$frame_id" && "$frame_id" != "null" ]]; then
-    local frame_data=$(kvget "$frame_id")
-    kvdel "$frame_id"
-    kvset _stack "$(kvget _stack | jq '.[0:-1]')"
-    echo "$frame_data"
-  fi
-}
-
-function _current_stack_frame_id {
-  kvget _stack | jq -r '.[-1]'
-}
-
-function _current_stack_frame {
-  kvget `_current_stack_frame_id`
-}
-
-
-# Set the return value of the current stack frame
-function _set_return_value {
-  local frame_id=$(_current_stack_frame_id)
-  if [[ -n "$frame_id" && "$frame_id" != "null" ]]; then
-    local current_frame=$(_current_stack_frame)
-    local updated_frame=$(echo "$current_frame" | jq ".return = $1")
-    kvset "$frame_id" "$updated_frame"
-  fi
-}
-
 # ============================================
 # Instance Variable Declaration
 # ============================================
@@ -535,30 +476,26 @@ function instance_vars {
 # ============================================
 
 # Generate accessor methods (getter/setter) for a variable
-# Usage: _generate_accessor <var_name> [class_name]
-# If class_name provided, generates namespaced functions (__ClassName__getFoo)
-# Otherwise generates plain functions (getFoo) - legacy mode
+# Usage: _generate_accessor <var_name> <class_name>
+# Generates namespaced functions: __ClassName__getFoo, __ClassName__setFoo
 function _generate_accessor {
   local var="$1"
-  local class_name="${2:-}"
+  local class_name="$2"
 
   # Capitalize first letter for method names
   local capitalized
   capitalized="$(echo "${var:0:1}" | tr '[:lower:]' '[:upper:]')${var:1}"
 
-  # Determine function name prefix (handles namespaced classes)
-  local prefix=""
-  if [[ -n "$class_name" ]]; then
-    prefix="$(_to_func_prefix "$class_name")__"
-  fi
+  # Compute function name prefix (handles namespaced classes)
+  local prefix="$(_to_func_prefix "$class_name")__"
 
-  # Generate getter: getFoo() or __ClassName__getFoo()
+  # Generate getter: __ClassName__getFoo()
   eval "${prefix}get${capitalized}() {
     local data=\$(db_get \"\$_RECEIVER\")
     [[ -n \"\$data\" ]] && echo \"\$data\" | jq -r \".$var // empty\"
   }"
 
-  # Generate setter: setFoo() or __ClassName__setFoo()
+  # Generate setter: __ClassName__setFoo()
   eval "${prefix}set${capitalized}() {
     local value=\"\$1\"
     local data=\$(db_get \"\$_RECEIVER\")
@@ -938,14 +875,14 @@ export -f _ivar_send
 # Class Instance Variable Helpers
 # ============================================
 # Class instance variables are shared across all instances of a class.
-# They are stored in kv-bash with keys like __ClassName__cvar__varname
+# They are stored in SQLite via kv_set/kv_get with keys like ClassName__cvar__varname
 
 # Get class instance variable value
 # Usage: _cvar <var_name>
 # Returns the value of the class instance variable for $_CLASS
 function _cvar {
   local var="$1"
-  kvget "__${_CLASS}__cvar__${var}"
+  kv_get "${_CLASS}__cvar__${var}"
 }
 
 # Set class instance variable value
@@ -953,7 +890,7 @@ function _cvar {
 function _cvar_set {
   local var="$1"
   local value="$2"
-  kvset "__${_CLASS}__cvar__${var}" "$value"
+  kv_set "${_CLASS}__cvar__${var}" "$value"
 }
 
 export -f _cvar

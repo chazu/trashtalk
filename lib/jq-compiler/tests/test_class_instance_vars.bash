@@ -113,7 +113,7 @@ else
 fi
 
 # Cleanup
-kvdel "__TestRuntime__cvar__testVar" 2>/dev/null
+kv_del "TestRuntime__cvar__testVar" 2>/dev/null
 
 # Test 9: Full integration - compile and run a class with cvars
 echo "=== Test 9: Full integration test ==="
@@ -154,7 +154,7 @@ EOF
 "$COMPILER_DIR/driver.bash" compile "$PROJECT_DIR/trash/TestCvarClass.trash" > "$PROJECT_DIR/trash/.compiled/TestCvarClass" 2>/dev/null
 
 # Clean any stale kv entries
-kvdel "__TestCvarClass__cvar__instanceCount" 2>/dev/null
+kv_del "TestCvarClass__cvar__instanceCount" 2>/dev/null
 
 # Reset count first (this also sources the class)
 @ TestCvarClass resetCount 2>/dev/null
@@ -175,7 +175,7 @@ else
 fi
 
 # Cleanup
-kvdel "__TestCvarClass__cvar__instanceCount" 2>/dev/null
+kv_del "TestCvarClass__cvar__instanceCount" 2>/dev/null
 rm -f "$PROJECT_DIR/trash/TestCvarClass.trash" "$PROJECT_DIR/trash/.compiled/TestCvarClass"
 
 echo ""

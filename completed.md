@@ -235,7 +235,7 @@ This extracts just the basename from any path, fixing inheritance and instance v
 
 ## Class Instance Variables (2024-12-18)
 
-Variables shared across all instances of a class, stored in kv-bash.
+Variables shared across all instances of a class, stored in SQLite.
 
 **Syntax:**
 ```smalltalk
@@ -255,11 +255,11 @@ Counter subclass: Object
 **Implementation:**
 - **Parser:** Added `classInstanceVars:` as sync point and parsing case
 - **Codegen:** Generates `__ClassName__classInstanceVars` metadata and `__ClassName__initClassVars()` function
-- **Runtime:** Added `_cvar` and `_cvar_set` functions using kv-bash storage
+- **Runtime:** Added `_cvar` and `_cvar_set` functions using SQLite storage (via `kv_set`/`kv_get`)
 - **Expression parser:** Auto-infers cvars like ivars - `counter` → `$(_cvar counter)`, `counter := x` → `_cvar_set counter "$x"`
 
 **Storage:**
-- Keys: `__ClassName__cvar__varname` in kv-bash
+- Keys: `ClassName__cvar__varname` in SQLite (via `kv_set`/`kv_get` in `sqlite-json.bash`)
 - Initialized on first class access (not re-initialized if already set)
 - No inheritance - each class has its own cvars
 
