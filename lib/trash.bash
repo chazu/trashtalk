@@ -36,8 +36,7 @@ _RECEIVER=Object
 
 # System constants
 TRASH_VERSION="0.1.0"
-TRASH_AUTHOR="Chaz Straney"
-TRASH_DESCRIPTION="Smalltalk-inspired message-passing system for Bash"
+TRASH_AUTHOR="Chazu"
 
 # ============================================
 # Namespace Helpers
@@ -45,15 +44,15 @@ TRASH_DESCRIPTION="Smalltalk-inspired message-passing system for Bash"
 # Functions to handle Package::Class qualified names
 
 # Check if a class name is qualified (contains ::)
-# Usage: _is_qualified "MyApp::Counter" → returns 0 (true)
-#        _is_qualified "Counter" → returns 1 (false)
+# Usage: _is_qualified "MyApp::Counter" -> returns 0 (true)
+#        _is_qualified "Counter" -> returns 1 (false)
 function _is_qualified {
   [[ "$1" == *::* ]]
 }
 
 # Extract the package from a qualified name
-# Usage: _get_package "MyApp::Counter" → "MyApp"
-#        _get_package "Counter" → ""
+# Usage: _get_package "MyApp::Counter" -> "MyApp"
+#        _get_package "Counter" -> ""
 function _get_package {
   if _is_qualified "$1"; then
     echo "${1%%::*}"
@@ -63,8 +62,8 @@ function _get_package {
 }
 
 # Extract the class name from a qualified name
-# Usage: _get_class_name "MyApp::Counter" → "Counter"
-#        _get_class_name "Counter" → "Counter"
+# Usage: _get_class_name "MyApp::Counter" -> "Counter"
+#        _get_class_name "Counter" -> "Counter"
 function _get_class_name {
   if _is_qualified "$1"; then
     echo "${1##*::}"
@@ -74,8 +73,8 @@ function _get_class_name {
 }
 
 # Convert qualified name to bash function prefix
-# Usage: _to_func_prefix "MyApp::Counter" → "__MyApp__Counter"
-#        _to_func_prefix "Counter" → "__Counter"
+# Usage: _to_func_prefix "MyApp::Counter" -> "__MyApp__Counter"
+#        _to_func_prefix "Counter" -> "__Counter"
 function _to_func_prefix {
   local name="$1"
   # Replace :: with __ and prepend __
@@ -83,8 +82,8 @@ function _to_func_prefix {
 }
 
 # Convert qualified name to instance ID prefix (lowercase)
-# Usage: _to_instance_prefix "MyApp::Counter" → "myapp_counter"
-#        _to_instance_prefix "Counter" → "counter"
+# Usage: _to_instance_prefix "MyApp::Counter" -> "myapp_counter"
+#        _to_instance_prefix "Counter" -> "counter"
 function _to_instance_prefix {
   local name="$1"
   # Replace :: with _, lowercase
@@ -92,8 +91,8 @@ function _to_instance_prefix {
 }
 
 # Convert qualified name to compiled file name
-# Usage: _to_compiled_name "MyApp::Counter" → "MyApp__Counter"
-#        _to_compiled_name "Counter" → "Counter"
+# Usage: _to_compiled_name "MyApp::Counter" -> "MyApp__Counter"
+#        _to_compiled_name "Counter" -> "Counter"
 function _to_compiled_name {
   local name="$1"
   # Replace :: with __
@@ -101,7 +100,7 @@ function _to_compiled_name {
 }
 
 # Get the path to a compiled class file
-# Usage: _compiled_path "MyApp::Counter" → "$TRASHDIR/.compiled/MyApp__Counter"
+# Usage: _compiled_path "MyApp::Counter" -> "$TRASHDIR/.compiled/MyApp__Counter"
 function _compiled_path {
   local class_name="$1"
   local compiled_name=$(_to_compiled_name "$class_name")
@@ -603,7 +602,7 @@ function _create_instance {
   created_at=$(date +%s)
 
   # Convert class name to function prefix for metadata lookup
-  # MyApp::Counter → __MyApp__Counter, Counter → __Counter
+  # MyApp::Counter -> __MyApp__Counter, Counter -> __Counter
   local func_prefix=$(_to_func_prefix "$class_name")
 
   # Get instance vars from compiled class metadata (preferred)
@@ -760,7 +759,7 @@ function _find_with_predicate {
 export -f _find_with_predicate
 
 # Generate a unique instance ID for a class
-# Handles namespaced classes: MyApp::Counter → myapp_counter_abc123
+# Handles namespaced classes: MyApp::Counter -> myapp_counter_abc123
 function _generate_instance_id {
   local class_name="$1"
   local prefix=$(_to_instance_prefix "$class_name")
@@ -1223,7 +1222,7 @@ function send {
   fi
 
   # Compute function prefix for namespaced classes
-  # MyApp::Counter → __MyApp__Counter, Counter → __Counter
+  # MyApp::Counter -> __MyApp__Counter, Counter -> __Counter
   local func_prefix=$(_to_func_prefix "$class_name")
 
   # Push to call stack for debugging (lightweight, always on)
@@ -1254,7 +1253,7 @@ function send {
   # ============================================
 
   # Check for native binary first (highest priority)
-  # Use _to_compiled_name to handle namespaced classes (MyApp::Counter → MyApp__Counter)
+  # Use _to_compiled_name to handle namespaced classes (MyApp::Counter -> MyApp__Counter)
   local compiled_name=$(_to_compiled_name "$class_name")
   local native_binary="$TRASHDIR/.compiled/${compiled_name}.native"
   if [[ -x "$native_binary" ]]; then
@@ -1273,7 +1272,7 @@ function send {
   fi
 
   # Check for compiled version first (prevents namespace pollution)
-  # Use _compiled_path to handle namespaced classes (MyApp::Counter → MyApp__Counter)
+  # Use _compiled_path to handle namespaced classes (MyApp::Counter -> MyApp__Counter)
   compiled_file=$(_compiled_path "$class_name")
   if [[ -f "$compiled_file" ]]; then
     msg_debug "Found compiled class: $compiled_file"
@@ -1504,7 +1503,7 @@ function receiver_path {
 declare -g __=""
 
 # Invoke trash - Send a message
-# Captures output in $__ for REPL chaining: @ Counter new → @ $__ increment
+# Captures output in $__ for REPL chaining: @ Counter new -> @ $__ increment
 function @ {
   if [ $# == 1 ]; then
     is_a Object
