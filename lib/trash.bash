@@ -1289,7 +1289,7 @@ function send {
       for trait_name in ${!traits_var}; do
         # Source trait if not already sourced
         if [[ -z "${_SOURCED_COMPILED_CLASSES[$trait_name]:-}" ]]; then
-          local trait_file="$TRASHDIR/traits/$trait_name"
+          local trait_file="$TRASHDIR/.compiled/traits/$trait_name"
           if [[ -f "$trait_file" ]]; then
             source "$trait_file"
             _SOURCED_COMPILED_CLASSES[$trait_name]=1
