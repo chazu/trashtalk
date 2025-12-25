@@ -1,6 +1,7 @@
 #!/opt/homebrew/bin/bash
 
-# Tests for Object class methods: inspect, findAll, count, find
+# Tests for Persistable trait methods: count, findAll, find
+# and Object instance methods: inspect, delete
 
 TRASHTALK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -34,10 +35,10 @@ echo "  Initial count should be 0..."
 count=$(@ Counter count)
 [[ "$count" == "0" ]] && pass "Initial Counter count is 0" || fail "Initial count is $count, expected 0"
 
-echo "  Creating instances..."
-c1=$(@ Counter new)
-c2=$(@ Counter new)
-c3=$(@ Counter new)
+echo "  Creating instances (using create for auto-persist)..."
+c1=$(@ Counter create)
+c2=$(@ Counter create)
+c3=$(@ Counter create)
 
 count=$(@ Counter count)
 [[ "$count" == "3" ]] && pass "Counter count is 3 after creating 3" || fail "Count is $count, expected 3"
@@ -67,6 +68,10 @@ echo "  Setting up counters with different values..."
 @ $c1 incrementBy: 3
 @ $c2 incrementBy: 7
 @ $c3 incrementBy: 5
+# Save to persist the value changes (find queries the database)
+@ $c1 save
+@ $c2 save
+@ $c3 save
 
 echo "  Testing find with 'value > 4'..."
 found=$(@ Counter find 'value > 4')

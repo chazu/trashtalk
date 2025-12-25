@@ -1,6 +1,7 @@
 # Array - Collection object for managing lists
 Array subclass: Object
   include: Debuggable
+  include: Persistable
   instanceVars: items:'[]'
 
   # Create a new array

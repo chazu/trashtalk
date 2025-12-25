@@ -106,6 +106,132 @@ function _compiled_path {
 export -f _is_qualified _get_package _get_class_name _to_func_prefix _to_instance_prefix _to_compiled_name _compiled_path
 
 # ============================================
+# Environment Abstraction
+# ============================================
+# All objects live in the MemoryEnv by default (file-based temp store).
+# Persistable objects can be saved to/loaded from the Store (SQLite).
+#
+# The "memory" environment uses temp files so it persists across subshells
+# but is cleaned up when the shell session ends.
+
+# Directory for ephemeral instance storage
+# Uses TRASH_SESSION_ID if set, otherwise the current shell's PID
+# This ensures subshells share the same environment
+_TRASH_SESSION_ID="${TRASH_SESSION_ID:-$$}"
+_ENV_DIR="/tmp/trashtalk_${_TRASH_SESSION_ID}"
+export TRASH_SESSION_ID="$_TRASH_SESSION_ID"
+export _ENV_DIR
+
+# Ensure the environment directory exists
+function _env_init {
+  mkdir -p "$_ENV_DIR"
+}
+
+# Get instance data from the memory environment
+# Usage: _env_get <instance_id>
+# Returns: JSON blob or empty if not found
+function _env_get {
+  local instance_id="$1"
+  local file="$_ENV_DIR/$instance_id"
+  [[ -f "$file" ]] && cat "$file"
+}
+
+# Set instance data in the memory environment
+# Usage: _env_set <instance_id> <json_data>
+function _env_set {
+  local instance_id="$1"
+  local data="$2"
+  _env_init
+  echo "$data" > "$_ENV_DIR/$instance_id"
+}
+
+# Check if instance exists in memory
+# Usage: _env_exists <instance_id>
+function _env_exists {
+  local instance_id="$1"
+  [[ -f "$_ENV_DIR/$instance_id" ]]
+}
+
+# Delete instance from memory
+# Usage: _env_delete <instance_id>
+function _env_delete {
+  local instance_id="$1"
+  rm -f "$_ENV_DIR/$instance_id" 2>/dev/null
+}
+
+# List all instances in memory (optionally filtered by class)
+# Usage: _env_list [class_name]
+function _env_list {
+  local class_filter="$1"
+  local file data class
+
+  [[ ! -d "$_ENV_DIR" ]] && return
+
+  for file in "$_ENV_DIR"/*; do
+    [[ -f "$file" ]] || continue
+    local id=$(basename "$file")
+    if [[ -n "$class_filter" ]]; then
+      data=$(cat "$file")
+      class=$(echo "$data" | jq -r '.class // empty')
+      [[ "$class" == "$class_filter" ]] && echo "$id"
+    else
+      echo "$id"
+    fi
+  done
+}
+
+# Persist an instance from memory to the Store (SQLite)
+# Usage: _env_persist <instance_id>
+# Returns: 0 on success, 1 if instance not in memory
+function _env_persist {
+  local instance_id="$1"
+  local file="$_ENV_DIR/$instance_id"
+
+  if [[ ! -f "$file" ]]; then
+    echo "Error: Instance $instance_id not found in memory" >&2
+    return 1
+  fi
+
+  local data
+  data=$(cat "$file")
+  db_put "$instance_id" "$data"
+}
+
+# Load an instance from the Store into memory
+# Usage: _env_load <instance_id>
+# Returns: 0 on success, 1 if not found in Store
+function _env_load {
+  local instance_id="$1"
+  local data
+  data=$(db_get "$instance_id" 2>/dev/null)
+
+  if [[ -z "$data" ]]; then
+    echo "Error: Instance $instance_id not found in Store" >&2
+    return 1
+  fi
+
+  _env_init
+  echo "$data" > "$_ENV_DIR/$instance_id"
+}
+
+# Check if instance is persisted in the Store
+# Usage: _env_is_persisted <instance_id>
+function _env_is_persisted {
+  local instance_id="$1"
+  local data
+  data=$(db_get "$instance_id" 2>/dev/null)
+  [[ -n "$data" ]]
+}
+
+# Clean up the environment directory
+# Usage: _env_cleanup
+function _env_cleanup {
+  [[ -d "$_ENV_DIR" ]] && rm -rf "$_ENV_DIR"
+}
+
+export -f _env_init _env_get _env_set _env_exists _env_delete _env_list _env_persist _env_load _env_is_persisted _env_cleanup
+
+# ============================================
 # Context Stack System
 # ============================================
 # Lightweight in-memory stacks for context management.
@@ -491,14 +617,14 @@ function _generate_accessor {
 
   # Generate getter: __ClassName__getFoo()
   eval "${prefix}get${capitalized}() {
-    local data=\$(db_get \"\$_RECEIVER\")
+    local data=\$(_env_get \"\$_RECEIVER\")
     [[ -n \"\$data\" ]] && echo \"\$data\" | jq -r \".$var // empty\"
   }"
 
   # Generate setter: __ClassName__setFoo()
   eval "${prefix}set${capitalized}() {
     local value=\"\$1\"
-    local data=\$(db_get \"\$_RECEIVER\")
+    local data=\$(_env_get \"\$_RECEIVER\")
 
     if [[ -z \"\$data\" ]]; then
       echo \"Error: Instance \$_RECEIVER not found\" >&2
@@ -525,7 +651,7 @@ function _generate_accessor {
       updated=\$(echo \"\$data\" | jq -c --arg v \"\$value\" \".$var = \\\$v\")
     fi
 
-    db_put \"\$_RECEIVER\" \"\$updated\"
+    _env_set \"\$_RECEIVER\" \"\$updated\"
   }"
 }
 
@@ -637,28 +763,33 @@ function _create_instance {
     fi
   done
 
-  db_put "$instance_id" "$data"
+  _env_set "$instance_id" "$data"
 }
 
-# Get the class of an instance
+# Get the class of an instance (checks memory first, then Store)
 function _get_instance_class {
   local instance_id="$1"
   local data
-  data=$(db_get "$instance_id" 2>/dev/null)
+  # First check memory environment
+  data=$(_env_get "$instance_id")
+  # Fall back to Store for persisted objects not yet loaded
+  if [[ -z "$data" ]]; then
+    data=$(db_get "$instance_id" 2>/dev/null)
+  fi
   [[ -n "$data" ]] && echo "$data" | jq -r '.class // empty'
 }
 
-# Check if something is an instance ID
+# Check if something is an instance ID (checks both memory and Store)
 function _is_instance {
   local maybe_instance="$1"
   local type_val=$(_get_instance_class "$maybe_instance")
   [[ -n "$type_val" ]]
 }
 
-# Delete an instance
+# Delete an instance from memory (and optionally from Store)
 function _delete_instance {
   local instance_id="$1"
-  db_delete "$instance_id" 2>/dev/null
+  _env_delete "$instance_id"
 }
 
 # Find instances matching a predicate
@@ -703,13 +834,34 @@ function _generate_instance_id {
   echo "${prefix}_$(uuidgen 2>/dev/null || echo "$$_$(date +%s)")"
 }
 
+# Ensure instance is loaded into memory (auto-loads from Store if needed)
+# Usage: _ensure_loaded <instance_id>
+# Returns: 0 if loaded, 1 if not found anywhere
+function _ensure_loaded {
+  local instance_id="$1"
+  # Already in memory?
+  if _env_exists "$instance_id"; then
+    return 0
+  fi
+  # Try to load from Store
+  local data
+  data=$(db_get "$instance_id" 2>/dev/null)
+  if [[ -n "$data" ]]; then
+    _env_set "$instance_id" "$data"
+    return 0
+  fi
+  return 1
+}
+
 # Get instance variable value directly (for Smalltalk-style syntax)
 # Usage: _ivar <var_name>
 # Returns the value of the instance variable for $_RECEIVER
 function _ivar {
   local var="$1"
   local data
-  data=$(db_get "$_RECEIVER" 2>/dev/null)
+  # Auto-load from Store if not in memory
+  _ensure_loaded "$_RECEIVER"
+  data=$(_env_get "$_RECEIVER")
   [[ -n "$data" ]] && echo "$data" | jq -r ".$var // empty"
 }
 
@@ -719,7 +871,9 @@ function _ivar_set {
   local var="$1"
   local value="$2"
   local data
-  data=$(db_get "$_RECEIVER" 2>/dev/null)
+  # Auto-load from Store if not in memory
+  _ensure_loaded "$_RECEIVER"
+  data=$(_env_get "$_RECEIVER")
 
   if [[ -z "$data" ]]; then
     echo "Error: Instance $_RECEIVER not found" >&2
@@ -739,7 +893,7 @@ function _ivar_set {
     updated=$(echo "$data" | jq -c --arg v "$value" ".$var = \$v")
   fi
 
-  db_put "$_RECEIVER" "$updated"
+  _env_set "$_RECEIVER" "$updated"
 }
 
 # Get instance variable as bash indexed array (for collection ivars stored as JSON)
@@ -749,7 +903,7 @@ function _ivar_set {
 function _ivar_array {
   local var="$1"
   local data json_arr
-  data=$(db_get "$_RECEIVER" 2>/dev/null)
+  data=$(_env_get "$_RECEIVER")
   if [[ -n "$data" ]]; then
     json_arr=$(echo "$data" | jq -r ".$var // empty")
     if [[ -n "$json_arr" && "$json_arr" != "null" ]]; then
@@ -766,7 +920,7 @@ function _ivar_array {
 function _ivar_dict {
   local var="$1"
   local data json_obj
-  data=$(db_get "$_RECEIVER" 2>/dev/null)
+  data=$(_env_get "$_RECEIVER")
   if [[ -n "$data" ]]; then
     json_obj=$(echo "$data" | jq -r ".$var // empty")
     if [[ -n "$json_obj" && "$json_obj" != "null" ]]; then
@@ -786,7 +940,7 @@ function _ivar_array_at {
   local var="$1"
   local idx="$2"
   local data
-  data=$(db_get "$_RECEIVER" 2>/dev/null)
+  data=$(_env_get "$_RECEIVER")
   if [[ -n "$data" ]]; then
     echo "$data" | jq -r ".$var[$idx] // empty"
   fi
@@ -798,7 +952,7 @@ function _ivar_dict_at {
   local var="$1"
   local key="$2"
   local data
-  data=$(db_get "$_RECEIVER" 2>/dev/null)
+  data=$(_env_get "$_RECEIVER")
   if [[ -n "$data" ]]; then
     echo "$data" | jq -r ".$var[\"$key\"] // empty"
   fi
@@ -815,6 +969,7 @@ export -f _get_class_instance_vars
 export -f _get_parent_class
 export -f _collect_inherited_vars
 export -f _generate_accessor
+export -f _ensure_loaded
 export -f _ivar
 export -f _ivar_set
 export -f _ivar_array
@@ -1282,7 +1437,7 @@ function send {
       return $exit_code
     fi
 
-    # Try trait methods
+    # Try trait methods (including class methods)
     local traits_var="${func_prefix}__traits"
     if [[ -n "${!traits_var}" ]]; then
       local trait_name
@@ -1296,7 +1451,16 @@ function send {
             msg_debug "Sourced trait $trait_name"
           fi
         fi
-        # Try trait method
+        # Try trait class method first (for class-level calls)
+        local trait_class_func="__${trait_name}__class__${_SELECTOR}"
+        if declare -F "$trait_class_func" >/dev/null 2>&1; then
+          msg_debug "Calling trait class method: $trait_class_func"
+          "$trait_class_func" "$@"
+          exit_code=$?
+          _send_cleanup $frame_ensure_start $frame_handler_start $exit_code
+          return $exit_code
+        fi
+        # Try trait instance method
         local trait_func="__${trait_name}__${_SELECTOR}"
         if declare -F "$trait_func" >/dev/null 2>&1; then
           msg_debug "Calling trait method: $trait_func"
