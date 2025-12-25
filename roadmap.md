@@ -7,8 +7,8 @@
  - Build out Tool class to wrap external commands
  - Work out installation
  - What other classes are necessary?
+   - HttpClient and HttpServer
  - Allow ephemeral object instances - don't always save them to db (new vs create)
- - Completion for bare @ function
  - Add second path for user classes, separate from built-in classes
  - Extract comments from `.trash` files
  - Generate markdown API docs automatically
@@ -16,6 +16,7 @@
  - Index/maintenance on schema changes
  - Handle upgrades when you add new instance_var to class with existing instances.
  - rework object IDs - include hash of class instead of class name?
+ - Completion for bare @ function
 
 ### Future Enhancements
 - Future combinators (all, any, race)
