@@ -14,17 +14,17 @@ Trash subclass: Object
     echo "Database: $SQLITE_JSON_DB"
   ]
 
-  # List all available objects
+  # List all available objects (compiled classes)
   method: listObjects [
-    find "$TRASHDIR" -maxdepth 1 -type f ! -path "*/traits/*" | while read -r file; do
+    find "$TRASHDIR/.compiled" -maxdepth 1 -type f 2>/dev/null | while read -r file; do
       basename "$file"
-    done | grep -v '\.trash$' | grep -v '\.legacy$' | sort
+    done | sort
   ]
 
-  # List all available traits
+  # List all available traits (compiled traits)
   method: listTraits [
-    if [[ -d "$TRASHDIR/traits" ]]; then
-      find "$TRASHDIR/traits" -type f | while read -r file; do
+    if [[ -d "$TRASHDIR/.compiled/traits" ]]; then
+      find "$TRASHDIR/.compiled/traits" -type f 2>/dev/null | while read -r file; do
         basename "$file"
       done | sort
     fi

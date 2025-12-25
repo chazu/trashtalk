@@ -9,16 +9,15 @@ Pending stabilisation of the yutani project, possible fallback to twin if it tur
 
 ## Concurrency & Coordination
 
-Base APIs implemented - see ACTOR.md, PROCESS.md, TUPLESPACE.md
+Base APIs implemented - see FUTURE.md, PROCESS.md, TUPLESPACE.md
 
-### Actor Enhancements
-- Supervision trees (restart strategies)
-- Actor linking (linked actors die together)
-- Named actors (lookup by name instead of ID)
-- Actor groups and broadcast messaging
+### Future Enhancements
+- Future combinators (all, any, race)
+- Timeout support for futures
+- Future chaining/composition
 
 ### Process Enhancements
-- Piping between processes (shouldn't this be an actor concern?)
+- Piping between processes
 - Process groups
 - Timeout support for long-running commands
 - generally making sure we dont lose track of processes

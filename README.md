@@ -204,9 +204,9 @@ lib/jq-compiler/driver.bash compile trash/MyClass.trash > trash/.compiled/MyClas
 | `Array` | Dynamic array with push, pop, map, filter |
 | `Counter` | Simple counter with increment/decrement |
 | `File` | File system operations (read, write, temp files) |
-| `Actor` | Erlang/Go-style concurrency via Tuplespace |
+| `Future` | Async computation with result retrieval |
 | `Process` | External OS process management (subprocess-like) |
-| `Tuplespace` | Linda-style tuple coordination |
+| `Tuplespace` | Linda-style tuple coordination (SQLite backend) |
 | `Twin` | Window manager integration (twsendmsg) |
 
 ### Traits
@@ -256,7 +256,6 @@ External tools (install separately):
 - `jq` - JSON processor
 - `sqlite3` - Database engine
 - `uuidgen` - UUID generation (usually pre-installed)
-- `recutils` - Record utilities (for Tuplespace)
 
 ## File Structure
 

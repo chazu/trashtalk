@@ -17,14 +17,13 @@
  - Handle upgrades when you add new instance_var to class with existing instances.
  - rework object IDs - include hash of class instead of class name?
 
-### Actor Enhancements
-- Supervision trees (restart strategies)
-- Actor linking (linked actors die together)
-- Named actors (lookup by name instead of ID)
-- Actor groups and broadcast messaging
+### Future Enhancements
+- Future combinators (all, any, race)
+- Timeout support for futures
+- Future chaining/composition
 
 ### Process Enhancements
-- Piping between processes (shouldn't this be an actor concern?)
+- Piping between processes
 - Process groups
 - Timeout support for long-running commands
 - generally making sure we dont lose track of processes

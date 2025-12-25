@@ -102,10 +102,11 @@ echo ""
 echo "--- 6. Background Process: start/wait ---"
 # ------------------------------------------------------------------------------
 
-proc=$(@ Process for: "sleep 0.2 && echo done")
+proc=$(@ Process for: "sleep 2 && echo done")
 pid=$(@ "$proc" start)
 assert_not_empty "start returns PID" "$pid"
 
+# Check isRunning immediately while process is still sleeping
 running=$(@ "$proc" isRunning)
 assert_eq "isRunning returns true while running" "true" "$running"
 
