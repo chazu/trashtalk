@@ -30,8 +30,8 @@ echo ""
 echo "1. Counter Class"
 # ==========================================
 
-echo "  Creating counter..."
-counter=$(@ Counter new)
+echo "  Creating counter (with persistence for later Store tests)..."
+counter=$(@ Counter create)
 [[ -n "$counter" ]] && pass "Counter created: $counter" || fail "Counter creation failed"
 
 echo "  Getting initial value..."
@@ -64,8 +64,8 @@ echo ""
 echo "2. Array Class"
 # ==========================================
 
-echo "  Creating array..."
-arr=$(@ Array new)
+echo "  Creating array (with persistence for later Store tests)..."
+arr=$(@ Array create)
 [[ -n "$arr" ]] && pass "Array created: $arr" || fail "Array creation failed"
 
 echo "  Checking initial size..."

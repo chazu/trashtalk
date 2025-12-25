@@ -35,7 +35,7 @@ Object subclass: nil
     _conforms_to "$_CLASS" "$protocolName"
   ]
 
-  # Delete this object from the database
+  # Delete this object from memory
   rawMethod: delete [
     _delete_instance "$_INSTANCE"
   ]
@@ -44,13 +44,12 @@ Object subclass: nil
   # Shows class name, instance ID, and all instance variables with values
   rawMethod: inspect [
     local data
-    data=$(db_get "$_RECEIVER" 2>/dev/null)
+    data=$(_env_get "$_RECEIVER")
 
     echo "a $_CLASS"
     echo "  id: $_INSTANCE"
 
     if [[ -n "$data" && "$data" != "{}" ]]; then
-      echo "DATA FOUND"
       echo "$data" | jq -r 'to_entries | .[] | "  \(.key): \(.value)"'
     else
       @ Trash methodsFor $_RECEIVER
@@ -64,38 +63,9 @@ Object subclass: nil
     echo "$filepath"
   ]
 
-  # Return all instance IDs for this class
-  # Usage: @ Counter findAll
-  rawClassMethod: findAll [
-    db_find_by_class "$_CLASS"
-  ]
-
-  # Return count of instances for this class
-  # Usage: @ Counter count
-  rawClassMethod: count [
-    db_count_by_class "$_CLASS"
-  ]
-
-  # Find instances matching a predicate
-  # Usage: @ Counter find 'value > 5'
-  # Supports: =, !=, >, <, >=, <=
-  # Returns: newline-separated list of instance IDs
-  rawClassMethod: find [
-    local predicate="$1"
-
-    if [[ -z "$predicate" ]]; then
-      db_find_by_class "$_CLASS"
-      return
-    fi
-
-    # Parse predicate using helper function from runtime
-    _find_with_predicate "$_CLASS" "$predicate"
-  ]
-
   # Return this object's data as JSON
-  # Usage: @ $counter asJson
   rawMethod: asJson [
-    db_get "$_RECEIVER"
+    _env_get "$_RECEIVER"
   ]
 
   # Edit this class's source file and recompile if changed
@@ -132,3 +102,4 @@ Object subclass: nil
       echo "No changes detected"
     fi
   ]
+
