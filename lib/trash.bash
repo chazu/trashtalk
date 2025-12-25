@@ -26,7 +26,7 @@ msg_debug() {
 msg_info() { echo "[INFO] $*" >&2; }
 
 # Set default TRASHDIR if not already set
-TRASHDIR=${TRASHDIR:-~/.trashtalk/trash}
+TRASHDIR=${TRASHDIR:-$HOME/.trashtalk/trash}
 _SUPERCLASS=Object
 _RECEIVER=Object
 

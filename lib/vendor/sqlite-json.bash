@@ -60,14 +60,14 @@ _db_escape() {
     echo "${str//\'/\'\'}"
 }
 
-# Run SQL command
+# Run SQL command (with busy timeout for concurrent access)
 _db_sql() {
-    sqlite3 "$SQLITE_JSON_DB" "$@"
+    sqlite3 -cmd ".timeout 5000" "$SQLITE_JSON_DB" "$@"
 }
 
-# Run SQL and return JSON results
+# Run SQL and return JSON results (with busy timeout)
 _db_sql_json() {
-    sqlite3 -json "$SQLITE_JSON_DB" "$@"
+    sqlite3 -cmd ".timeout 5000" -json "$SQLITE_JSON_DB" "$@"
 }
 
 ########################

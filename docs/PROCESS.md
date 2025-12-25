@@ -167,15 +167,15 @@ echo "Task 2: $(@ $proc2 exitCode)"
 echo "Task 3: $(@ $proc3 exitCode)"
 ```
 
-## Differences from Actor
+## Differences from Future
 
-| Process | Actor |
-|---------|-------|
-| External OS process wrapper | Internal concurrency primitive |
-| Direct stdin/stdout capture | Communicates via Tuplespace |
+| Process | Future |
+|---------|--------|
+| External OS process wrapper | Internal async computation |
+| Direct stdin/stdout capture | Captures via result files |
 | Runs any shell command | Runs Trashtalk code |
-| Command execution model | Message passing model |
-| `@ Process exec: "curl ..."` | `@ Actor spawn: Counter` |
+| Full process control (signals) | Simple await/cancel |
+| `@ Process exec: "curl ..."` | `@ Future run: '@ Counter calc'` |
 
 ## Quick Reference
 

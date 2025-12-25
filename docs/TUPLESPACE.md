@@ -43,14 +43,9 @@ Tuplespace provides Linda-style coordination primitives for inter-process commun
 @ Tuplespace get_key_value "person" "name" "Alice"
 ```
 
-Output is in recutils format:
-```
-Type: person
-ID: person_1734567890.123_12345
-Timestamp: 1734567890.123
-name: Alice
-age: 30
-city: NYC
+Output is in JSON format:
+```json
+[{"id":"person_1734567890_12345_1234","type":"person","data":"{\"name\":\"Alice\",\"age\":\"30\",\"city\":\"NYC\"}"}]
 ```
 
 ### Take Tuples (Read + Remove)
@@ -206,20 +201,10 @@ done
 
 ## Storage Details
 
-Tuplespace uses recutils for storage:
-- Database: `~/.tuplespace/tuples.rec`
-- Events directory: `~/.tuplespace/events/`
-- Requires `recsel` and `recdel` commands (install via `brew install recutils`)
-
-## Integration with Actor
-
-The Actor class uses Tuplespace internally for:
-- Actor registration (`type: "actor"`)
-- Message passing (`type: "message"`)
-- Response handling (`type: "response"`)
-- Lifecycle events (`type: "event"`)
-
-See `@ Actor help` for actor management commands.
+Tuplespace uses SQLite for storage:
+- Database: `~/.tuplespace/tuples.db`
+- Atomic operations via SQLite transactions
+- JSON storage with `json_extract` for queries
 
 ## Quick Reference
 
