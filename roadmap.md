@@ -17,6 +17,7 @@
  - Handle upgrades when you add new instance_var to class with existing instances.
  - rework object IDs - include hash of class instead of class name?
  - Completion for bare @ function
+ - do we want some syntactic sugar for sending output to /dev/null?
 
 ### Future Enhancements
 - Future combinators (all, any, race)
@@ -39,6 +40,13 @@ Pending stabilisation of the yutani project, possible fallback to twin if it tur
 
 ### Procyon
 Go-based code generator takes output from jq compiler and produces a compiled native object which can interoperate with trashtalk
+
+### Script Execution Enhancements
+Currently `@ Trash eval:` wraps code in a temporary class. Future improvements:
+- Extend compiler to handle standalone expressions (true Trashtalk syntax without class wrapper)
+- Full Trashtalk interpreter for interactive evaluation without compilation step
+- REPL integration with expression-level eval
+- Script file format (.trash-script) that doesn't require class boilerplate
 
 ### REPL / @ Improvements
 - Completion for repl when invoked via `@ Trash repl`
