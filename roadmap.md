@@ -4,11 +4,9 @@
  - Do we have problems with multiple processes running at once?
  - Ensure all documentation is correct
  - Review collection classes - add list (or array), set, dictionary as objects
- - Build out Tool class to wrap external commands
  - Work out installation
  - What other classes are necessary?
    - HttpClient and HttpServer
- - Allow ephemeral object instances - don't always save them to db (new vs create)
  - Add second path for user classes, separate from built-in classes
  - Extract comments from `.trash` files
  - Generate markdown API docs automatically
@@ -18,7 +16,10 @@
  - rework object IDs - include hash of class instead of class name?
  - Completion for bare @ function
  - do we want some syntactic sugar for sending output to /dev/null?
-
+ - decide on a name for the compiler
+   - Frankie - for Frances Allen / Frances Spence
+   - Maggie - for Margaret Hamilton
+   - Procyon - because why not
 ### Future Enhancements
 - Future combinators (all, any, race)
 - Timeout support for futures

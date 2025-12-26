@@ -153,14 +153,22 @@ reload:
 	@echo "  source $(LIB_DIR)/trash.bash"
 
 # Compile a single class (usage: make single CLASS=Counter)
+# Handles namespaced classes (package: Foo → outputs Foo__ClassName)
 single:
 ifndef CLASS
 	@echo "Usage: make single CLASS=ClassName"
 	@exit 1
 endif
 	@echo "Compiling $(CLASS)..."
-	@$(LIB_DIR)/jq-compiler/driver.bash compile "$(TRASH_DIR)/$(CLASS).trash" 2>/dev/null > "$(COMPILED_DIR)/$(CLASS)"
-	@echo "✓ $(CLASS) compiled → $(COMPILED_DIR)/$(CLASS)"
+	@pkg=$$(grep -E '^package:' "$(TRASH_DIR)/$(CLASS).trash" 2>/dev/null | awk '{print $$2}'); \
+	if [[ -n "$$pkg" ]]; then \
+		outfile="$(COMPILED_DIR)/$${pkg}__$(CLASS)"; \
+	else \
+		outfile="$(COMPILED_DIR)/$(CLASS)"; \
+	fi; \
+	$(LIB_DIR)/jq-compiler/driver.bash compile "$(TRASH_DIR)/$(CLASS).trash" 2>/dev/null > "$$outfile"; \
+	cp "$$outfile" "$(TRASH_DIR)/$$(basename $$outfile)" 2>/dev/null; \
+	echo "✓ $(CLASS) compiled → $$outfile"
 
 # Help
 help:
