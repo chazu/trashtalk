@@ -1,5 +1,5 @@
 Widget subclass: Object
- instanceVars: friend
+ instanceVars:
 
  rawClassMethod: new [
  local id=$(_generate_instance_id Widget)

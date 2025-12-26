@@ -1,0 +1,161 @@
+# Tools::Curl - Wrapper for the curl HTTP client
+#
+# Usage:
+#   @ Tools::Curl ensure
+#   @ Tools::Curl get: 'https://api.example.com/data'
+#   @ Tools::Curl post: '{"name":"test"}' to: 'https://api.example.com/data'
+#
+package: Tools
+
+Curl subclass: Tool
+
+  classMethod: name [
+    ^ "curl"
+  ]
+
+  classMethod: installCommand [
+    ^ "brew install curl"
+  ]
+
+  # Simple GET request
+  rawClassMethod: get: url [
+    local tool_path
+    tool_path=$(@ "$_CLASS" path)
+    if [[ -z "$tool_path" ]]; then
+      _throw "ToolError" "curl is not installed"
+      return 1
+    fi
+    "$tool_path" -s "$1"
+  ]
+
+  # GET request with headers returned
+  rawClassMethod: getWithHeaders: url [
+    local tool_path
+    tool_path=$(@ "$_CLASS" path)
+    if [[ -z "$tool_path" ]]; then
+      _throw "ToolError" "curl is not installed"
+      return 1
+    fi
+    "$tool_path" -si "$1"
+  ]
+
+  # GET request, return just status code
+  rawClassMethod: status: url [
+    local tool_path
+    tool_path=$(@ "$_CLASS" path)
+    if [[ -z "$tool_path" ]]; then
+      _throw "ToolError" "curl is not installed"
+      return 1
+    fi
+    "$tool_path" -s -o /dev/null -w "%{http_code}" "$1"
+  ]
+
+  # POST JSON data
+  rawClassMethod: post: data to: url [
+    local tool_path
+    tool_path=$(@ "$_CLASS" path)
+    if [[ -z "$tool_path" ]]; then
+      _throw "ToolError" "curl is not installed"
+      return 1
+    fi
+    "$tool_path" -s -X POST -H "Content-Type: application/json" -d "$1" "$2"
+  ]
+
+  # PUT JSON data
+  rawClassMethod: put: data to: url [
+    local tool_path
+    tool_path=$(@ "$_CLASS" path)
+    if [[ -z "$tool_path" ]]; then
+      _throw "ToolError" "curl is not installed"
+      return 1
+    fi
+    "$tool_path" -s -X PUT -H "Content-Type: application/json" -d "$1" "$2"
+  ]
+
+  # DELETE request
+  rawClassMethod: delete: url [
+    local tool_path
+    tool_path=$(@ "$_CLASS" path)
+    if [[ -z "$tool_path" ]]; then
+      _throw "ToolError" "curl is not installed"
+      return 1
+    fi
+    "$tool_path" -s -X DELETE "$1"
+  ]
+
+  # Download file to path
+  rawClassMethod: download: url to: filepath [
+    local tool_path
+    tool_path=$(@ "$_CLASS" path)
+    if [[ -z "$tool_path" ]]; then
+      _throw "ToolError" "curl is not installed"
+      return 1
+    fi
+    "$tool_path" -s -o "$2" "$1"
+    if [[ -f "$2" ]]; then
+      echo "$2"
+    else
+      _throw "DownloadError" "Failed to download $1"
+      return 1
+    fi
+  ]
+
+  # GET with custom header
+  rawClassMethod: get: url header: header [
+    local tool_path
+    tool_path=$(@ "$_CLASS" path)
+    if [[ -z "$tool_path" ]]; then
+      _throw "ToolError" "curl is not installed"
+      return 1
+    fi
+    "$tool_path" -s -H "$2" "$1"
+  ]
+
+  # GET with auth token (Bearer)
+  rawClassMethod: get: url token: token [
+    local tool_path
+    tool_path=$(@ "$_CLASS" path)
+    if [[ -z "$tool_path" ]]; then
+      _throw "ToolError" "curl is not installed"
+      return 1
+    fi
+    "$tool_path" -s -H "Authorization: Bearer $2" "$1"
+  ]
+
+  # POST with auth token
+  rawClassMethod: post: data to: url token: token [
+    local tool_path
+    tool_path=$(@ "$_CLASS" path)
+    if [[ -z "$tool_path" ]]; then
+      _throw "ToolError" "curl is not installed"
+      return 1
+    fi
+    "$tool_path" -s -X POST -H "Content-Type: application/json" -H "Authorization: Bearer $3" -d "$1" "$2"
+  ]
+
+  # HEAD request - get headers only
+  rawClassMethod: head: url [
+    local tool_path
+    tool_path=$(@ "$_CLASS" path)
+    if [[ -z "$tool_path" ]]; then
+      _throw "ToolError" "curl is not installed"
+      return 1
+    fi
+    "$tool_path" -sI "$1"
+  ]
+
+  # Check if URL is reachable
+  rawClassMethod: ping: url [
+    local tool_path status
+    tool_path=$(@ "$_CLASS" path)
+    if [[ -z "$tool_path" ]]; then
+      _throw "ToolError" "curl is not installed"
+      return 1
+    fi
+    status=$("$tool_path" -s -o /dev/null -w "%{http_code}" --connect-timeout 5 "$1")
+    if [[ "$status" -ge 200 && "$status" -lt 400 ]]; then
+      echo "true"
+    else
+      echo "false"
+    fi
+  ]
