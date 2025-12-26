@@ -519,6 +519,66 @@ EOF
     fi
   ]
 
+  # Evaluate a string of Trashtalk code
+  # Usage: @ Trash eval: 'counter := @ Counter new. @ counter increment. @ counter getValue'
+  # Returns the result of the last expression
+  rawClassMethod: eval: code [
+    local temp_class="_TempEval_$$_$RANDOM"
+    local temp_file="/tmp/${temp_class}.trash"
+    local compiled_file="/tmp/${temp_class}.compiled"
+    local result
+
+    # Wrap code in a temporary class with a run method
+    cat > "$temp_file" << EVALEOF
+${temp_class} subclass: Object
+  rawClassMethod: run [
+    $1
+  ]
+EVALEOF
+
+    # Compile the temporary class
+    if ! "$SCRIPT_DIR/jq-compiler/driver.bash" compile "$temp_file" > "$compiled_file" 2>&1; then
+      echo "Eval compile error:" >&2
+      cat "$compiled_file" >&2
+      rm -f "$temp_file" "$compiled_file"
+      return 1
+    fi
+
+    # Validate bash syntax
+    if ! bash -n "$compiled_file" 2>&1; then
+      echo "Eval syntax error" >&2
+      rm -f "$temp_file" "$compiled_file"
+      return 1
+    fi
+
+    # Source and execute
+    source "$compiled_file"
+    result=$("__${temp_class}__class__run")
+    local exit_code=$?
+
+    # Clean up
+    rm -f "$temp_file" "$compiled_file"
+    # Unset the temporary functions
+    unset -f "__${temp_class}__class__run" 2>/dev/null
+    unset "__${temp_class}__superclass" 2>/dev/null
+    unset "__${temp_class}__is_a" 2>/dev/null
+
+    echo "$result"
+    return $exit_code
+  ]
+
+  # Evaluate code from a file
+  # Usage: @ Trash evalFile: '/path/to/script.trash'
+  rawClassMethod: evalFile: filepath [
+    if [[ ! -f "$1" ]]; then
+      echo "Error: File not found: $1" >&2
+      return 1
+    fi
+    local code
+    code=$(cat "$1")
+    @ Trash eval: "$code"
+  ]
+
   # Quick class creation with template
   rawMethod: quickCreate: class_name template: template [
     template="${template:-basic}"
