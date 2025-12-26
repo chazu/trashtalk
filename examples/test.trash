@@ -1,0 +1,3 @@
+c=$(@ Counter new)
+@ $c increment > /dev/null
+@ $c getValue
