@@ -650,6 +650,17 @@ tokenize() {
                     word+=":"
                     ((i++))
                     ((col++))
+                    # Check if immediately followed by a number (no whitespace) for varspec default
+                    # e.g., value:42 should be a single token
+                    # String defaults must use quotes: fieldC:'defaultValue'
+                    if [[ "${input:i:1}" =~ [0-9] ]]; then
+                        # Consume the numeric default value
+                        while ((i < len)) && [[ "${input:i:1}" =~ [0-9] ]]; do
+                            word+="${input:i:1}"
+                            ((i++))
+                            ((col++))
+                        done
+                    fi
                     add_token "KEYWORD" "$word" "$line" "$word_start_col"
                 else
                     add_token "IDENTIFIER" "$word" "$line" "$word_start_col"

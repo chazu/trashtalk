@@ -241,12 +241,19 @@ def parseInstanceVarsSimple:
       (.state | isSyncPoint);
 
       if (.state | current.type) == "KEYWORD" then
-        # name:default - capture location from keyword token
+        # Keyword token may be "name:" or "name:42" (for varspec with inline numeric default)
         {line: (.state | current.line), col: (.state | current.col)} as $loc |
-        (.state | current.value | rtrimstr(":")) as $name |
+        (.state | current.value) as $kw |
+        # Split on first colon to get name and potential embedded numeric default
+        ($kw | split(":")) as $parts |
+        ($parts[0]) as $name |
+        (if ($parts | length) > 1 and $parts[1] != "" then $parts[1:] | join(":") else null end) as $embedded_default |
         .state |= advance |
         .state |= skipNewlines |
-        if (.state | current.type) == "NUMBER" then
+        if $embedded_default != null then
+          # Numeric default was embedded in the keyword token (e.g., "value:42")
+          .vars += [{name: $name, default: {type: "number", value: $embedded_default}, location: $loc}]
+        elif (.state | current.type) == "NUMBER" then
           .vars += [{name: $name, default: {type: "number", value: (.state | current.value)}, location: $loc}] |
           .state |= advance |
           .state |= skipNewlines
@@ -255,11 +262,10 @@ def parseInstanceVarsSimple:
           .state |= advance |
           .state |= skipNewlines
         elif (.state | current.type) == "IDENTIFIER" then
-          # Bare identifier after keyword - likely meant to be a quoted string
-          # Emit warning and treat as two separate variables
+          # Bare identifier after keyword with space (e.g., "name: value") - treat as two vars
           .warnings += [{
             type: "possible_typo",
-            message: ("instanceVars: '" + $name + ":" + (.state | current.value) + "' looks like a string default. Did you mean '" + $name + ":'" + (.state | current.value) + "''?"),
+            message: ("instanceVars: '" + $name + ": " + (.state | current.value) + "' - if this is meant to be a default, remove the space: '" + $name + ":" + (.state | current.value) + "'"),
             token: {line: $loc.line, col: $loc.col}
           }] |
           # Treat keyword without value (name gets no default)
@@ -304,12 +310,19 @@ def parseClassInstanceVarsSimple:
       (.state | isSyncPoint);
 
       if (.state | current.type) == "KEYWORD" then
-        # name:default - capture location from keyword token
+        # Keyword token may be "name:" or "name:42" (for varspec with inline numeric default)
         {line: (.state | current.line), col: (.state | current.col)} as $loc |
-        (.state | current.value | rtrimstr(":")) as $name |
+        (.state | current.value) as $kw |
+        # Split on first colon to get name and potential embedded numeric default
+        ($kw | split(":")) as $parts |
+        ($parts[0]) as $name |
+        (if ($parts | length) > 1 and $parts[1] != "" then $parts[1:] | join(":") else null end) as $embedded_default |
         .state |= advance |
         .state |= skipNewlines |
-        if (.state | current.type) == "NUMBER" then
+        if $embedded_default != null then
+          # Numeric default was embedded in the keyword token (e.g., "value:42")
+          .vars += [{name: $name, default: {type: "number", value: $embedded_default}, location: $loc}]
+        elif (.state | current.type) == "NUMBER" then
           .vars += [{name: $name, default: {type: "number", value: (.state | current.value)}, location: $loc}] |
           .state |= advance |
           .state |= skipNewlines
@@ -318,11 +331,10 @@ def parseClassInstanceVarsSimple:
           .state |= advance |
           .state |= skipNewlines
         elif (.state | current.type) == "IDENTIFIER" then
-          # Bare identifier after keyword - likely meant to be a quoted string
-          # Emit warning and treat as two separate variables
+          # Bare identifier after keyword with space (e.g., "name: value") - treat as two vars
           .warnings += [{
             type: "possible_typo",
-            message: ("classInstanceVars: '" + $name + ":" + (.state | current.value) + "' looks like a string default. Did you mean '" + $name + ":'" + (.state | current.value) + "''?"),
+            message: ("classInstanceVars: '" + $name + ": " + (.state | current.value) + "' - if this is meant to be a default, remove the space: '" + $name + ":" + (.state | current.value) + "'"),
             token: {line: $loc.line, col: $loc.col}
           }] |
           # Treat keyword without value (name gets no default)

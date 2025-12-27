@@ -53,6 +53,7 @@ Persistable trait
 
   # Return this object's data as JSON
   rawMethod: asJson [
+    _ensure_loaded "$_RECEIVER"
     _env_get "$_RECEIVER"
   ]
 

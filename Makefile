@@ -7,25 +7,39 @@ TRASH_DIR := trash
 COMPILED_DIR := $(TRASH_DIR)/.compiled
 TRAITS_DIR := $(TRASH_DIR)/traits
 COMPILED_TRAITS_DIR := $(COMPILED_DIR)/traits
+USER_DIR := $(TRASH_DIR)/user
 LIB_DIR := lib
 TESTS_DIR := tests
+
+# Parallel build settings - detect CPU count
+NPROCS := $(shell sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)
 
 # Find all .trash source files
 SOURCES := $(wildcard $(TRASH_DIR)/*.trash)
 TRAIT_SOURCES := $(wildcard $(TRASH_DIR)/traits/*.trash)
+USER_SOURCES := $(wildcard $(USER_DIR)/*.trash)
 
 # Compiled outputs (strip .trash extension)
 COMPILED := $(patsubst $(TRASH_DIR)/%.trash,$(COMPILED_DIR)/%,$(SOURCES))
 COMPILED_TRAITS := $(patsubst $(TRASH_DIR)/traits/%.trash,$(COMPILED_TRAITS_DIR)/%,$(TRAIT_SOURCES))
+COMPILED_USER := $(patsubst $(USER_DIR)/%.trash,$(COMPILED_DIR)/%,$(USER_SOURCES))
 
-.PHONY: all compile compile-traits test test-verbose test-dsl watch clean help info reload
+.PHONY: all compile compile-traits fast test test-verbose test-dsl watch clean help info reload
 
-# Default target
-all: compile
+# Default target - parallel build
+all: fast
 
-# Compile all .trash files
-compile: $(COMPILED_DIR) $(COMPILED_TRAITS_DIR) $(COMPILED) $(COMPILED_TRAITS)
-	@echo "✓ All classes compiled"
+# Fast parallel compile (default)
+fast: $(COMPILED_DIR) $(COMPILED_TRAITS_DIR)
+	@$(MAKE) -j$(NPROCS) --no-print-directory compile-all
+	@echo "✓ All classes compiled ($(NPROCS) parallel jobs)"
+
+# Internal target for parallel compilation
+compile-all: $(COMPILED) $(COMPILED_TRAITS) $(COMPILED_USER)
+
+# Sequential compile (for debugging)
+compile: $(COMPILED_DIR) $(COMPILED_TRAITS_DIR) $(COMPILED) $(COMPILED_TRAITS) $(COMPILED_USER)
+	@echo "✓ All classes compiled (sequential)"
 
 # Compile traits
 compile-traits: $(COMPILED_TRAITS_DIR) $(COMPILED_TRAITS)
@@ -47,6 +61,13 @@ $(COMPILED_DIR)/%: $(TRASH_DIR)/%.trash $(LIB_DIR)/jq-compiler/driver.bash
 # Pattern rule for compiling traits (using jq-based compiler)
 $(COMPILED_TRAITS_DIR)/%: $(TRASH_DIR)/traits/%.trash $(LIB_DIR)/jq-compiler/driver.bash
 	@echo "Compiling trait $<..."
+	@$(LIB_DIR)/jq-compiler/driver.bash compile "$<" 2>/dev/null > "$@"
+	@echo "  → $@"
+
+# Pattern rule for compiling user classes (output to .compiled, not .compiled/user)
+# Note: This rule must come before the main class rule to take precedence
+$(COMPILED_DIR)/%: $(USER_DIR)/%.trash $(LIB_DIR)/jq-compiler/driver.bash
+	@echo "Compiling user class $<..."
 	@$(LIB_DIR)/jq-compiler/driver.bash compile "$<" 2>/dev/null > "$@"
 	@echo "  → $@"
 
@@ -107,17 +128,17 @@ test-dsl: compile
 
 # Watch for changes and recompile (requires fswatch on macOS or inotifywait on Linux)
 watch:
-	@echo "Watching for changes in $(TRASH_DIR)/*.trash..."
+	@echo "Watching for changes in $(TRASH_DIR)/*.trash, traits/, and user/..."
 	@echo "Press Ctrl+C to stop"
 	@if command -v fswatch >/dev/null 2>&1; then \
-		fswatch -o $(TRASH_DIR)/*.trash $(TRASH_DIR)/traits/*.trash 2>/dev/null | \
+		fswatch -o $(TRASH_DIR)/*.trash $(TRASH_DIR)/traits/*.trash $(USER_DIR)/*.trash 2>/dev/null | \
 		while read; do \
 			echo ""; \
 			echo "[$(shell date '+%H:%M:%S')] Change detected, recompiling..."; \
 			$(MAKE) compile --no-print-directory; \
 		done; \
 	elif command -v inotifywait >/dev/null 2>&1; then \
-		while inotifywait -q -e modify $(TRASH_DIR)/*.trash $(TRASH_DIR)/traits/*.trash 2>/dev/null; do \
+		while inotifywait -q -e modify $(TRASH_DIR)/*.trash $(TRASH_DIR)/traits/*.trash $(USER_DIR)/*.trash 2>/dev/null; do \
 			echo ""; \
 			echo "[$(shell date '+%H:%M:%S')] Change detected, recompiling..."; \
 			$(MAKE) compile --no-print-directory; \
@@ -138,7 +159,7 @@ clean:
 info:
 	@echo "Trashtalk Project Info"
 	@echo "======================"
-	@echo "Source files:    $(words $(SOURCES)) classes, $(words $(TRAIT_SOURCES)) traits"
+	@echo "Source files:    $(words $(SOURCES)) classes, $(words $(TRAIT_SOURCES)) traits, $(words $(USER_SOURCES)) user classes"
 	@echo "Compiled dir:    $(COMPILED_DIR)"
 	@echo ""
 	@echo "Classes:"
@@ -146,6 +167,13 @@ info:
 	@echo ""
 	@echo "Traits:"
 	@for src in $(TRAIT_SOURCES); do echo "  - $$(basename $$src .trash)"; done
+	@echo ""
+	@echo "User Classes:"
+	@if [ -n "$(USER_SOURCES)" ]; then \
+		for src in $(USER_SOURCES); do echo "  - $$(basename $$src .trash)"; done; \
+	else \
+		echo "  (none)"; \
+	fi
 
 # Reload the shell environment (for interactive use)
 reload:
@@ -154,20 +182,33 @@ reload:
 
 # Compile a single class (usage: make single CLASS=Counter)
 # Handles namespaced classes (package: Foo → outputs Foo__ClassName)
+# Searches in trash/, trash/user/, and trash/traits/
 single:
 ifndef CLASS
 	@echo "Usage: make single CLASS=ClassName"
 	@exit 1
 endif
 	@echo "Compiling $(CLASS)..."
-	@pkg=$$(grep -E '^package:' "$(TRASH_DIR)/$(CLASS).trash" 2>/dev/null | awk '{print $$2}'); \
+	@srcfile=""; \
+	if [[ -f "$(TRASH_DIR)/$(CLASS).trash" ]]; then \
+		srcfile="$(TRASH_DIR)/$(CLASS).trash"; \
+	elif [[ -f "$(USER_DIR)/$(CLASS).trash" ]]; then \
+		srcfile="$(USER_DIR)/$(CLASS).trash"; \
+	elif [[ -f "$(TRAITS_DIR)/$(CLASS).trash" ]]; then \
+		srcfile="$(TRAITS_DIR)/$(CLASS).trash"; \
+	else \
+		echo "Error: $(CLASS).trash not found in trash/, trash/user/, or trash/traits/"; \
+		exit 1; \
+	fi; \
+	pkg=$$(grep -E '^package:' "$$srcfile" 2>/dev/null | awk '{print $$2}'); \
 	if [[ -n "$$pkg" ]]; then \
 		outfile="$(COMPILED_DIR)/$${pkg}__$(CLASS)"; \
+	elif [[ "$$srcfile" == *"/traits/"* ]]; then \
+		outfile="$(COMPILED_TRAITS_DIR)/$(CLASS)"; \
 	else \
 		outfile="$(COMPILED_DIR)/$(CLASS)"; \
 	fi; \
-	$(LIB_DIR)/jq-compiler/driver.bash compile "$(TRASH_DIR)/$(CLASS).trash" 2>/dev/null > "$$outfile"; \
-	cp "$$outfile" "$(TRASH_DIR)/$$(basename $$outfile)" 2>/dev/null; \
+	$(LIB_DIR)/jq-compiler/driver.bash compile "$$srcfile" 2>/dev/null > "$$outfile"; \
 	echo "✓ $(CLASS) compiled → $$outfile"
 
 # Help
@@ -176,8 +217,9 @@ help:
 	@echo "=================="
 	@echo ""
 	@echo "Targets:"
-	@echo "  make              - Compile all .trash files (default)"
-	@echo "  make compile      - Compile all .trash files"
+	@echo "  make              - Parallel compile all .trash files (default, $(NPROCS) jobs)"
+	@echo "  make fast         - Same as above (parallel compile)"
+	@echo "  make compile      - Sequential compile (for debugging)"
 	@echo "  make single CLASS=Name - Compile a single class"
 	@echo "  make test         - Run all bash tests"
 	@echo "  make test-dsl     - Run DSL test classes (Test*.trash)"

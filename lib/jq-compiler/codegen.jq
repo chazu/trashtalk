@@ -1318,19 +1318,30 @@ def generateClassVarsInit:
 
 # Generate accessor methods (getters/setters) for instance variables
 # These are generated at compile time so they're available immediately
+# Uses Smalltalk-style naming: foo (getter), foo: value (setter)
 def generateAccessors:
   funcPrefix as $prefix |
   if (.instanceVars | length) > 0 then
     (.instanceVars[] |
       .name as $varName |
-      # Capitalize first letter for method name
+      # Capitalize first letter for legacy method names
       ($varName | split("") | .[0] |= ascii_upcase | join("")) as $capName |
-      # Getter: getFoo() { echo "$(_ivar foo)"; return; }
+      # Smalltalk-style getter: foo() - just the variable name
+      "\($prefix)__\($varName)() {",
+      "  echo \"$(_ivar \($varName))\"; return",
+      "}",
+      "",
+      # Smalltalk-style setter: foo_() - called as "foo: value"
+      "\($prefix)__\($varName)_() {",
+      "  _ivar_set \($varName) \"$1\"",
+      "}",
+      "",
+      # Legacy getter: getFoo() for backwards compatibility
       "\($prefix)__get\($capName)() {",
       "  echo \"$(_ivar \($varName))\"; return",
       "}",
       "",
-      # Setter: setFoo() { _ivar_set foo "$1"; }
+      # Legacy setter: setFoo() for backwards compatibility
       "\($prefix)__set\($capName)() {",
       "  _ivar_set \($varName) \"$1\"",
       "}"
