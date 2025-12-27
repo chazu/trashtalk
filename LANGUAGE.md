@@ -14,7 +14,26 @@ Counter subclass: Object
 
 - Classes inherit from a superclass (use `Object` as base)
 - Instance variables are declared with `instanceVars:`, optionally with default values (`name:default`)
+- String defaults use quotes: `instanceVars: name:'unknown' status:'pending'`
 - Traits are mixed in with `include:`
+
+## Namespaces (Packages)
+
+Classes can be organized into namespaces:
+
+```smalltalk
+package: Tools
+
+Netcat subclass: Tool
+  # ...
+```
+
+Reference namespaced classes with `::`:
+
+```smalltalk
+@ Tools::Netcat listen: 8080
+@ Tools::Curl get: "https://example.com"
+```
 
 ## Methods
 
@@ -65,6 +84,34 @@ rawClassMethod: new [
 ]
 ```
 
+## Traits
+
+Traits are reusable method collections. Define a trait:
+
+```smalltalk
+Debuggable trait
+
+  method: inspect [
+    @ Console print: "Instance: $_RECEIVER"
+  ]
+
+  method: log: message [
+    echo "[$(date)] $message"
+  ]
+```
+
+Include traits in classes:
+
+```smalltalk
+Counter subclass: Object
+  include: Debuggable
+  include: Persistable
+```
+
+Built-in traits:
+- `Debuggable` - inspection and debugging methods
+- `Persistable` - database persistence (save, delete, findAll, etc.)
+
 ## Message Sends
 
 The `@` operator sends messages to objects:
@@ -112,11 +159,32 @@ instanceVars: count:0 name
 @ self setCount: 5         # Setter
 ```
 
-In `method:` blocks, you can also use `_ivar` and `_ivar_set`:
+In `rawMethod:` blocks, use `_ivar` and `_ivar_set`:
 
 ```smalltalk
 value := $(_ivar count)
 _ivar_set count "$newValue"
+```
+
+### Object References
+
+Store references to other objects in instance variables:
+
+```smalltalk
+# Store a reference
+_ivar_set_ref owner "$person_id"    # Validates reference exists
+
+# Retrieve and use
+owner=$(_ivar_ref owner)            # Get the reference
+@ $owner getName                    # Send message
+
+# Convenience: send directly
+result=$(_ivar_send owner getName)  # Same as above
+
+# Check validity
+if _ivar_ref_valid owner; then
+  class=$(_ivar_ref_class owner)    # Get class of referenced object
+fi
 ```
 
 ### Class Instance Variables
@@ -128,7 +196,7 @@ Counter subclass: Object
   classInstanceVars: totalCreated:0
 
   classMethod: new [
-    totalCreated := totalCreated + 1   # Auto-inferred in methods
+    totalCreated := totalCreated + 1
     ...
   ]
 ```
@@ -172,18 +240,121 @@ For passing code to methods like `do:`, `collect:`, `select:`:
 #{key: value}               # Dictionary literal
 ```
 
-## Instance Persistence
+## Persistence
 
-Instances are automatically persisted to SQLite:
+Classes that include the `Persistable` trait can be saved to SQLite:
 
 ```smalltalk
-counter := $(@ Counter new)          # Create and persist
-@ $counter increment                 # Modify (auto-saved)
+Counter subclass: Object
+  include: Persistable
+  instanceVars: value:0
+```
+
+Usage:
+
+```smalltalk
+counter := $(@ Counter new)          # Create in memory
+@ $counter increment
+@ $counter save                      # Persist to database
+
+# Or create and persist in one step:
+counter := $(@ Counter create)
+
 @ $counter delete                    # Remove from database
 
+# Queries
 @ Counter findAll                    # All instance IDs
 @ Counter count                      # Number of instances
 @ Counter find 'value > 5'           # Query with predicate
+```
+
+## Error Handling
+
+Trashtalk provides structured error handling:
+
+```smalltalk
+# Throw an error
+_throw "ErrorType" "Error message"
+
+# Handle errors
+_on_error "ErrorType" "handler_function"
+# ... code that might throw ...
+_pop_handler
+
+# Catch-all handler
+_on_error "*" "my_catch_all"
+
+# Cleanup that runs on frame exit
+_ensure "cleanup_command"
+```
+
+Example:
+
+```smalltalk
+rawMethod: safeOperation [
+  _on_error "NetworkError" "@ self handleNetworkError"
+  @ self riskyNetworkCall
+  _pop_handler
+]
+
+rawMethod: handleNetworkError [
+  echo "Network failed, using fallback"
+  @ self useFallback
+]
+```
+
+## Futures (Async)
+
+Run computations in the background:
+
+```smalltalk
+# Create a future
+future := $(@ Future for: '@ self expensiveCalculation')
+
+# Start it
+@ $future start
+
+# Do other work...
+
+# Get result (blocks until done)
+result := $(@ $future await)
+
+# Check without blocking
+@ $future poll          # Returns: pending/completed/failed
+@ $future isDone        # Returns 0 if done, 1 if pending
+
+# Cancel
+@ $future cancel
+
+# Cleanup
+@ $future cleanup
+```
+
+## Method Advice (AOP)
+
+Add behavior before/after methods without modifying them:
+
+```smalltalk
+# Run before a method
+_add_before_advice "Counter" "increment" "log_call"
+
+# Run after a method
+_add_after_advice "Counter" "increment" "log_result"
+
+# Remove advice
+_remove_advice "Counter" "increment"
+```
+
+## Source Introspection
+
+Access embedded source code and hashes:
+
+```smalltalk
+# Get source code of a class
+@ Trash sourceFor: Counter
+
+# Get SHA-256 hash of source
+@ Trash hashFor: Counter
 ```
 
 ## Complete Example
@@ -191,7 +362,7 @@ counter := $(@ Counter new)          # Create and persist
 ```smalltalk
 # Task.trash - A simple task tracker
 Task subclass: Object
-  include: Debuggable
+  include: Persistable
   instanceVars: title done:0 priority:1
 
   rawClassMethod: new [
@@ -233,6 +404,7 @@ source lib/trash.bash
 task=$(@ Task titled "Write docs")
 @ $task describe            # => [1] Write docs
 @ $task complete
+@ $task save                # Persist to database
 @ $task isComplete          # => yes
 @ Task findAll              # => task_abc123
 ```
@@ -246,6 +418,11 @@ task=$(@ Task titled "Write docs")
 - `@ self` refers to the current receiver
 - The `$__` variable holds the result of the last `@` command
 
+## Known Issues
+
+- **Method name collision**: Keyword methods (e.g., `skip:`) and unary methods with the same base name (e.g., `skip`) compile to the same function. Avoid this pattern.
+- **Negative numbers in arguments**: Arguments like `0 -1` may be mangled. Use variables instead of negative literals in method calls.
+
 ## Development Workflow
 
 ```bash
@@ -253,5 +430,7 @@ task=$(@ Task titled "Write docs")
 @ Trash edit Counter              # Edit existing class, auto-recompile on save
 @ Trash compileAndReload Counter  # Manual compile (safe - won't break on errors)
 @ Trash methodsFor Counter        # List methods
+@ Trash sourceFor Counter         # View embedded source
+@ Trash hashFor Counter           # View source hash
 @ $instance inspect               # Show instance details
 ```

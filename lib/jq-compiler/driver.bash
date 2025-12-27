@@ -233,9 +233,19 @@ cmd_compile() {
         exit 1
     fi
 
-    # Generate code (strip warnings field before codegen)
+    # Compute source hash (SHA-256) and read source content
+    local source_hash source_content
+    source_hash=$(shasum -a 256 "$source_file" | cut -d' ' -f1)
+    source_content=$(cat "$source_file")
+
+    # Add source metadata to AST (strip warnings, add source info)
+    local ast_with_source
+    ast_with_source=$(echo "$ast" | jq --arg hash "$source_hash" --arg src "$source_content" \
+        'del(.warnings) | . + {sourceHash: $hash, sourceCode: $src}')
+
+    # Generate code
     local output
-    output=$(echo "$ast" | jq 'del(.warnings)' | jq -r -f "$CODEGEN")
+    output=$(echo "$ast_with_source" | jq -r -f "$CODEGEN")
 
     if [[ $? -ne 0 ]]; then
         error "Code generation failed"

@@ -1273,12 +1273,14 @@ def generateMetadata:
   qualifiedName as $qname |
   if .isTrait then
     "\($prefix)__is_trait=\"1\"",
+    "\($prefix)__sourceHash=\"\(.sourceHash // "")\"",
     ""
   else
     "\($prefix)__superclass=\"\(.parent // "")\"",
     "\($prefix)__instanceVars=\"\(.instanceVars | varsToString)\"",
     "\($prefix)__classInstanceVars=\"\(.classInstanceVars | varsToString)\"",
     "\($prefix)__traits=\"\(.traits | join(" "))\"",
+    "\($prefix)__sourceHash=\"\(.sourceHash // "")\"",
     (if .package != null then
       "\($prefix)__package=\"\(.package)\"",
       "\($prefix)__qualifiedName=\"\($qname)\""
@@ -1292,6 +1294,21 @@ def generateMetadata:
       "\($prefix)__methodCategories=\"\($cats | join(" "))\""
     else empty end),
     ""
+  end;
+
+# Generate source code embedding function
+# Returns the original source code via a heredoc
+def generateSourceEmbed:
+  funcPrefix as $prefix |
+  if .sourceCode != null then
+    "\($prefix)__source() {",
+    "  cat <<'__TRASHTALK_SOURCE_EOF__'",
+    .sourceCode,
+    "__TRASHTALK_SOURCE_EOF__",
+    "}",
+    ""
+  else
+    empty
   end;
 
 # Generate class instance variable initializer function
@@ -1834,6 +1851,7 @@ def generate:
   (
     generateHeader,
     generateMetadata,
+    generateSourceEmbed,
     generateClassVarsInit,
     generateAccessors,
     generateRequires,
