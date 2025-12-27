@@ -415,6 +415,10 @@ EOF
     echo "=== Debugging ==="
     echo "@ Trash showStack               - Show current call stack"
     echo "@ Trash clearStack              - Clear call stack"
+    echo ""
+    echo "=== Source Introspection ==="
+    echo "@ Trash sourceFor: <class>      - Get embedded source code"
+    echo "@ Trash hashFor: <class>        - Get source hash (SHA-256)"
   ]
 
   # Show version information
@@ -424,6 +428,55 @@ EOF
     echo "Description: $TRASH_DESCRIPTION"
     echo "Bash version: $BASH_VERSION"
     echo "System: $(uname -s) $(uname -r)"
+  ]
+
+  # Get the embedded source code for a class
+  # Usage: @ Trash sourceFor: Counter
+  rawMethod: sourceFor: class_name [
+    local source_func="__${class_name}__source"
+    if declare -f "$source_func" >/dev/null 2>&1; then
+      "$source_func"
+    else
+      # Try loading the compiled class first
+      local compiled_file="$TRASHDIR/.compiled/$class_name"
+      if [[ -f "$compiled_file" ]]; then
+        source "$compiled_file"
+        if declare -f "$source_func" >/dev/null 2>&1; then
+          "$source_func"
+        else
+          echo "Error: Class $class_name does not have embedded source"
+          return 1
+        fi
+      else
+        echo "Error: Class $class_name not found"
+        return 1
+      fi
+    fi
+  ]
+
+  # Get the source hash for a class
+  # Usage: @ Trash hashFor: Counter
+  rawMethod: hashFor: class_name [
+    local hash_var="__${class_name}__sourceHash"
+    local compiled_file="$TRASHDIR/.compiled/$class_name"
+
+    # Try to get from already-loaded class
+    if [[ -n "${!hash_var:-}" ]]; then
+      echo "${!hash_var}"
+      return 0
+    fi
+
+    # Try loading the compiled class
+    if [[ -f "$compiled_file" ]]; then
+      source "$compiled_file"
+      if [[ -n "${!hash_var:-}" ]]; then
+        echo "${!hash_var}"
+        return 0
+      fi
+    fi
+
+    echo "Error: Could not get hash for $class_name"
+    return 1
   ]
 
   # Launch interactive REPL

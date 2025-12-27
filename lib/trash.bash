@@ -1097,10 +1097,33 @@ function _ivar_send {
   fi
 }
 
+# Set an ivar to an object reference, with validation
+# Usage: _ivar_set_ref customerId "$customer"
+# Returns 1 if the reference doesn't point to a valid instance
+function _ivar_set_ref {
+  local var="$1"
+  local ref="$2"
+
+  # Allow clearing the reference
+  if [[ -z "$ref" ]]; then
+    _ivar_set "$var" ""
+    return 0
+  fi
+
+  # Validate the reference points to an existing instance
+  if ! _is_instance "$ref"; then
+    echo "Error: '$ref' is not a valid instance" >&2
+    return 1
+  fi
+
+  _ivar_set "$var" "$ref"
+}
+
 export -f _ivar_ref
 export -f _ivar_ref_valid
 export -f _ivar_ref_class
 export -f _ivar_send
+export -f _ivar_set_ref
 
 # ============================================
 # Class Instance Variable Helpers
