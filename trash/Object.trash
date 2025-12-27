@@ -1,5 +1,14 @@
 Object subclass: nil
 
+  # Create a new instance of this class
+  # Subclasses inherit this - no need to define your own unless custom init needed
+  rawClassMethod: new [
+    local id
+    id=$(_generate_instance_id "$_CLASS")
+    _create_instance "$_CLASS" "$id"
+    echo "$id"
+  ]
+
   # Return a canonical string representation of this object
   # Format: <ClassName instanceId>
   rawMethod: printString [

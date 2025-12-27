@@ -1,12 +1,8 @@
 Widget subclass: Object
- instanceVars: friend
+  include: Debuggable
+  include: Persistable
+  instanceVars: friend
 
- rawClassMethod: new [
- local id=$(_generate_instance_id Widget)
- _create_instance Widget " $id "
- echo " $id "
- ]
-
- method: example [
- ^ " Hello World from Widget "
- ]
+  method: example [
+    ^ "Hello World from Widget"
+  ]

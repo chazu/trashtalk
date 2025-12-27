@@ -53,6 +53,28 @@ Trash subclass: Object
     echo "Class methods:"
     declare -F | awk '{print $3}' | grep "^__${class_name}__class__" | sed "s/__${class_name}__class__/  /"
 
+    # Show trait methods
+    local traits_var="__${class_name}__traits"
+    local traits="${!traits_var:-}"
+    if [[ -n "$traits" ]]; then
+      for trait in $traits; do
+        local trait_file="$TRASHDIR/.compiled/traits/$trait"
+        if [[ -f "$trait_file" ]]; then
+          source "$trait_file"
+          echo ""
+          echo "From trait $trait:"
+          declare -F | awk '{print $3}' | grep "^__${trait}__" | grep -v "__class__" | sed "s/__${trait}__/  /"
+          # Trait class methods
+          local trait_class_methods
+          trait_class_methods=$(declare -F | awk '{print $3}' | grep "^__${trait}__class__" | sed "s/__${trait}__class__/  /")
+          if [[ -n "$trait_class_methods" ]]; then
+            echo "  (class methods):"
+            echo "$trait_class_methods" | sed 's/^/  /'
+          fi
+        fi
+      done
+    fi
+
     # Show inherited methods
     local super_var="__${class_name}__superclass"
     local superclass="${!super_var:-}"
@@ -198,7 +220,6 @@ EOF
     echo "Created $trash_file (inherits from $superclass)"
     echo "Compiling..."
     "$SCRIPT_DIR/jq-compiler/driver.bash" compile "$trash_file" > "$TRASHDIR/.compiled/$object_name" 2>/dev/null
-    cp "$TRASHDIR/.compiled/$object_name" "$TRASHDIR/$object_name"
     source "$TRASHDIR/.compiled/$object_name"
     echo "✓ $object_name ready to use"
   ]
@@ -253,7 +274,6 @@ EOF
       # Source the compiled trait
       source "$compiled_trait"
       _mark_class_sourced "$class_name"
-      cp "$compiled_trait" "$trait_file"
       echo "✓ Trait $class_name reloaded"
       return 0
     fi
@@ -268,7 +288,6 @@ EOF
       # Source the compiled class
       source "$compiled_file"
       _mark_class_sourced "$class_name"
-      cp "$compiled_file" "$class_file"
       echo "✓ Class $class_name reloaded"
       return 0
     fi
@@ -299,13 +318,18 @@ EOF
     fi
 
     local source_file="$TRASHDIR/${class_name}.trash"
+    local user_source="$TRASHDIR/user/${class_name}.trash"
     local trait_source="$TRASHDIR/traits/${class_name}.trash"
     local target_file=""
     local file_to_compile=""
     local temp_file="/tmp/trash_compile_$$_${class_name}"
 
-    # Find source file and determine target
-    if [[ -f "$trait_source" ]]; then
+    # Find source file and determine target (check user dir before system dir)
+    if [[ -f "$user_source" ]]; then
+      file_to_compile="$user_source"
+      target_file="$TRASHDIR/.compiled/$class_name"
+      echo "Compiling user class $class_name..."
+    elif [[ -f "$trait_source" ]]; then
       file_to_compile="$trait_source"
       target_file="$TRASHDIR/.compiled/traits/$class_name"
       echo "Compiling trait $class_name..."
@@ -316,6 +340,7 @@ EOF
     else
       echo "Error: No source file found for $class_name"
       echo "Searched:"
+      echo "  - $user_source"
       echo "  - $source_file"
       echo "  - $trait_source"
       return 1
@@ -440,15 +465,30 @@ EOF
   ]
 
   # Create a new class with minimal skeleton and open in editor
+  # New classes are created in the user directory (trash/user/)
   rawMethod: new: class_name [
-    local trash_file="$TRASHDIR/${class_name}.trash"
+    local user_file="$TRASHDIR/user/${class_name}.trash"
+    local system_file="$TRASHDIR/${class_name}.trash"
+    local trait_file="$TRASHDIR/traits/${class_name}.trash"
 
-    if [[ -f "$trash_file" ]]; then
-      echo "Class $class_name already exists. Use '@ Trash edit $class_name' to edit."
+    # Check if class already exists anywhere
+    if [[ -f "$user_file" ]]; then
+      echo "Class $class_name already exists in user/. Use '@ Trash edit $class_name' to edit."
+      return 1
+    fi
+    if [[ -f "$system_file" ]]; then
+      echo "Class $class_name already exists as a system class. Use '@ Trash edit $class_name' to edit."
+      return 1
+    fi
+    if [[ -f "$trait_file" ]]; then
+      echo "A trait named $class_name already exists. Use '@ Trash edit $class_name' to edit."
       return 1
     fi
 
-    # Create minimal skeleton (using printf to avoid heredoc stdin issues)
+    # Ensure user directory exists
+    mkdir -p "$TRASHDIR/user"
+
+    # Create minimal skeleton in user directory
     printf '%s\n' \
       "$class_name subclass: Object" \
       "  instanceVars:" \
@@ -462,17 +502,17 @@ EOF
       "  method: example [" \
       "    ^ \"Hello from $class_name\"" \
       "  ]" \
-      > "$trash_file"
+      > "$user_file"
 
-    echo "Created $trash_file"
+    echo "Created $user_file"
 
     # Open in editor and compile if saved
     local before_mtime after_mtime
-    before_mtime=$(stat -f "%m" "$trash_file" 2>/dev/null || stat -c "%Y" "$trash_file" 2>/dev/null)
+    before_mtime=$(stat -f "%m" "$user_file" 2>/dev/null || stat -c "%Y" "$user_file" 2>/dev/null)
 
-    ${EDITOR:-vi} "$trash_file" </dev/tty >/dev/tty
+    ${EDITOR:-vi} "$user_file" </dev/tty >/dev/tty
 
-    after_mtime=$(stat -f "%m" "$trash_file" 2>/dev/null || stat -c "%Y" "$trash_file" 2>/dev/null)
+    after_mtime=$(stat -f "%m" "$user_file" 2>/dev/null || stat -c "%Y" "$user_file" 2>/dev/null)
 
     if [[ "$before_mtime" != "$after_mtime" ]]; then
       echo "File modified, compiling..."
@@ -485,17 +525,21 @@ EOF
   # Edit an existing class and recompile on save
   rawMethod: edit: class_name [
     local trash_file="$TRASHDIR/${class_name}.trash"
+    local user_file="$TRASHDIR/user/${class_name}.trash"
     local trait_file="$TRASHDIR/traits/${class_name}.trash"
     local file_to_edit=""
 
-    # Find the source file
-    if [[ -f "$trash_file" ]]; then
+    # Find the source file (check user dir before system dir)
+    if [[ -f "$user_file" ]]; then
+      file_to_edit="$user_file"
+    elif [[ -f "$trash_file" ]]; then
       file_to_edit="$trash_file"
     elif [[ -f "$trait_file" ]]; then
       file_to_edit="$trait_file"
     else
       echo "Error: No source file found for $class_name"
       echo "Searched:"
+      echo "  - $user_file"
       echo "  - $trash_file"
       echo "  - $trait_file"
       echo ""
@@ -672,7 +716,6 @@ EOF
     echo "Compiling..."
     mkdir -p "$TRASHDIR/.compiled"
     "$SCRIPT_DIR/jq-compiler/driver.bash" compile "$trash_file" > "$TRASHDIR/.compiled/$class_name" 2>/dev/null
-    cp "$TRASHDIR/.compiled/$class_name" "$TRASHDIR/$class_name"
     source "$TRASHDIR/.compiled/$class_name"
     echo "✓ $class_name ready to use"
   ]

@@ -837,6 +837,7 @@ function _generate_instance_id {
 # Ensure instance is loaded into memory (auto-loads from Store if needed)
 # Usage: _ensure_loaded <instance_id>
 # Returns: 0 if loaded, 1 if not found anywhere
+# Performs lazy schema migration if the instance has missing fields
 function _ensure_loaded {
   local instance_id="$1"
   # Already in memory?
@@ -847,10 +848,85 @@ function _ensure_loaded {
   local data
   data=$(db_get "$instance_id" 2>/dev/null)
   if [[ -n "$data" ]]; then
+    # Perform lazy migration if needed
+    data=$(_migrate_instance_schema "$data")
     _env_set "$instance_id" "$data"
     return 0
   fi
   return 1
+}
+
+# Migrate an instance's schema to match the current class definition
+# - Adds missing fields with their default values
+# - Updates _vars to match current class definition
+# - Preserves orphan data (removed fields stay in JSON but not in _vars)
+function _migrate_instance_schema {
+  local data="$1"
+  local class_name instance_vars current_vars
+
+  # Get class name from instance data
+  class_name=$(echo "$data" | jq -r '.class // empty')
+  if [[ -z "$class_name" ]]; then
+    echo "$data"
+    return
+  fi
+
+  # Get current class instanceVars metadata
+  local compiled_name="${class_name//::/__}"
+  local vars_var="__${compiled_name}__instanceVars"
+  instance_vars="${!vars_var:-}"
+
+  if [[ -z "$instance_vars" ]]; then
+    # Class not loaded or has no instanceVars
+    echo "$data"
+    return
+  fi
+
+  # Get the instance's current _vars
+  current_vars=$(echo "$data" | jq -r '._vars // [] | join(" ")')
+
+  # Build list of current class vars and check for missing ones
+  local updated="$data"
+  local new_vars=()
+  local needs_update=false
+
+  for var_spec in $instance_vars; do
+    local var_name="${var_spec%%:*}"
+    local default_value="${var_spec#*:}"
+    [[ "$default_value" == "$var_spec" ]] && default_value=""
+
+    new_vars+=("$var_name")
+
+    # Check if this var exists in the instance
+    if ! echo " $current_vars " | grep -q " $var_name "; then
+      needs_update=true
+      # Add the missing field with default value
+      if [[ -z "$default_value" ]]; then
+        updated=$(echo "$updated" | jq --arg k "$var_name" '. + {($k): null}')
+      elif [[ "$default_value" =~ ^[0-9]+$ ]]; then
+        updated=$(echo "$updated" | jq --arg k "$var_name" --argjson v "$default_value" '. + {($k): $v}')
+      else
+        updated=$(echo "$updated" | jq --arg k "$var_name" --arg v "$default_value" '. + {($k): $v}')
+      fi
+    fi
+  done
+
+  # Check if _vars needs updating (added or removed fields)
+  local current_vars_sorted=$(echo "$current_vars" | tr ' ' '\n' | sort | tr '\n' ' ')
+  local new_vars_sorted=$(printf '%s\n' "${new_vars[@]}" | sort | tr '\n' ' ')
+
+  if [[ "$current_vars_sorted" != "$new_vars_sorted" ]]; then
+    needs_update=true
+  fi
+
+  # Update _vars array to match current class definition
+  if [[ "$needs_update" == "true" ]]; then
+    local vars_json=$(printf '%s\n' "${new_vars[@]}" | jq -R . | jq -s .)
+    updated=$(echo "$updated" | jq --argjson v "$vars_json" '._vars = $v')
+    msg_debug "Migrated instance schema for $class_name"
+  fi
+
+  echo "$updated"
 }
 
 # Get instance variable value directly (for Smalltalk-style syntax)
@@ -1750,3 +1826,8 @@ function initialize_trash() {
 
 # Auto-initialize when sourced
 initialize_trash
+
+# Load tab completion for @ if in interactive shell
+if [[ $- == *i* ]] && [[ -f "$SCRIPT_DIR/trash-completion.bash" ]]; then
+  source "$SCRIPT_DIR/trash-completion.bash"
+fi
