@@ -206,6 +206,7 @@ lib/jq-compiler/driver.bash compile trash/MyClass.trash > trash/.compiled/MyClas
 | `File` | File system operations (read, write, temp files) |
 | `Future` | Async computation with result retrieval |
 | `Process` | External OS process management (subprocess-like) |
+| `ReplServer` | Socket-based REPL server for Emacs integration |
 | `Tuplespace` | Linda-style tuple coordination (SQLite backend) |
 | `Twin` | Window manager integration (twsendmsg) |
 
@@ -257,10 +258,76 @@ External tools (install separately):
 - `sqlite3` - Database engine
 - `uuidgen` - UUID generation (usually pre-installed)
 
+## Emacs Integration
+
+Trashtalk includes a major mode for Emacs with syntax highlighting, indentation, and REPL integration for interactive development.
+
+### Installation
+
+Add to your `init.el`:
+
+```elisp
+(add-to-list 'load-path "~/.trashtalk/emacs")
+(require 'trashtalk-mode)
+```
+
+Or with `use-package`:
+
+```elisp
+(use-package trashtalk-mode
+  :load-path "~/.trashtalk/emacs"
+  :mode "\\.trash\\'")
+```
+
+### REPL Server
+
+The REPL server provides interactive evaluation, hot reloading, and introspection from Emacs.
+
+**Start the server** in a terminal:
+
+```bash
+@ ReplServer start
+```
+
+**Connect from Emacs** with `C-c C-z` in any `.trash` buffer.
+
+### Key Bindings
+
+| Key | Command | Description |
+|-----|---------|-------------|
+| `C-c C-c` | `trashtalk-eval-defun` | Evaluate method at point |
+| `C-c C-r` | `trashtalk-eval-region` | Evaluate selected region |
+| `C-c C-l` | `trashtalk-eval-line` | Evaluate current line |
+| `C-c C-b` | `trashtalk-eval-buffer` | Evaluate entire buffer |
+| `C-c C-k` | `trashtalk-reload-current-file` | Recompile and reload class |
+| `C-c C-z` | `trashtalk-repl-connect` | Connect to REPL server |
+| `C-c C-i` | `trashtalk-info-at-point` | Show info for symbol at point |
+| `C-c C-m` | `trashtalk-methods-for-class` | List methods for a class |
+
+### REPL Protocol
+
+The server uses a simple line-based protocol over a Unix socket (`/tmp/trashtalk-repl.sock`):
+
+```
+Request:  COMMAND:payload
+Response: STATUS:result
+```
+
+Commands: `EVAL`, `COMPLETE`, `INFO`, `METHODS`, `RELOAD`, `PING`, `QUIT`
+
+You can also interact with the server from the command line:
+
+```bash
+echo "PING" | nc -U /tmp/trashtalk-repl.sock
+echo "EVAL:@ Counter new" | nc -U /tmp/trashtalk-repl.sock
+```
+
 ## File Structure
 
 ```
 ~/.trashtalk/
+├── emacs/
+│   └── trashtalk-mode.el    # Emacs major mode with REPL support
 ├── lib/
 │   ├── trash.bash           # Main runtime & dispatcher
 │   ├── jq-compiler/         # jq-based DSL compiler
@@ -273,7 +340,7 @@ External tools (install separately):
 │   ├── *.trash              # DSL source files
 │   ├── .compiled/           # Compiled output
 │   │   └── traits/          # Compiled traits
-│   └── traits/              # Trait files (compiled)
+│   └── traits/              # Trait source files
 └── tests/                   # Test scripts
 ```
 

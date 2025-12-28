@@ -46,6 +46,16 @@
   :type 'integer
   :group 'trashtalk)
 
+(defcustom trashtalk-repl-socket "/tmp/trashtalk-repl.sock"
+  "Path to the Trashtalk REPL server socket."
+  :type 'string
+  :group 'trashtalk)
+
+(defcustom trashtalk-repl-timeout 5
+  "Timeout in seconds for REPL commands."
+  :type 'integer
+  :group 'trashtalk)
+
 ;;; Syntax Table
 
 (defvar trashtalk-mode-syntax-table
@@ -264,6 +274,202 @@
      1))
   "Imenu generic expression for `trashtalk-mode'.")
 
+;;; REPL Connection
+
+(defvar trashtalk-repl-process nil
+  "The network process connected to the Trashtalk REPL server.")
+
+(defvar trashtalk-repl-response nil
+  "Accumulator for REPL response data.")
+
+(defvar trashtalk-repl-response-complete nil
+  "Flag indicating response is complete.")
+
+(defun trashtalk-repl-filter (proc string)
+  "Process filter for REPL responses."
+  (setq trashtalk-repl-response (concat trashtalk-repl-response string))
+  (when (string-match "\n" string)
+    (setq trashtalk-repl-response-complete t)))
+
+(defun trashtalk-repl-connect ()
+  "Connect to the Trashtalk REPL server."
+  (interactive)
+  (when (and trashtalk-repl-process
+             (process-live-p trashtalk-repl-process))
+    (delete-process trashtalk-repl-process))
+  (condition-case err
+      (progn
+        (setq trashtalk-repl-process
+              (make-network-process
+               :name "trashtalk-repl"
+               :remote trashtalk-repl-socket
+               :filter #'trashtalk-repl-filter
+               :sentinel (lambda (proc event)
+                           (message "Trashtalk REPL: %s" (string-trim event)))))
+        (message "Connected to Trashtalk REPL at %s" trashtalk-repl-socket))
+    (error
+     (setq trashtalk-repl-process nil)
+     (error "Failed to connect to REPL: %s" (error-message-string err)))))
+
+(defun trashtalk-repl-disconnect ()
+  "Disconnect from the Trashtalk REPL server."
+  (interactive)
+  (when (and trashtalk-repl-process
+             (process-live-p trashtalk-repl-process))
+    (delete-process trashtalk-repl-process)
+    (setq trashtalk-repl-process nil)
+    (message "Disconnected from Trashtalk REPL")))
+
+(defun trashtalk-repl-connected-p ()
+  "Return t if connected to the REPL server."
+  (and trashtalk-repl-process
+       (process-live-p trashtalk-repl-process)))
+
+(defun trashtalk-repl-ensure-connected ()
+  "Ensure we're connected to the REPL, connecting if necessary."
+  (unless (trashtalk-repl-connected-p)
+    (trashtalk-repl-connect)))
+
+(defun trashtalk-repl-send (command)
+  "Send COMMAND to the REPL and return the response."
+  (trashtalk-repl-ensure-connected)
+  (setq trashtalk-repl-response ""
+        trashtalk-repl-response-complete nil)
+  (process-send-string trashtalk-repl-process (concat command "\n"))
+  ;; Wait for response
+  (let ((timeout-time (+ (float-time) trashtalk-repl-timeout)))
+    (while (and (not trashtalk-repl-response-complete)
+                (< (float-time) timeout-time))
+      (accept-process-output trashtalk-repl-process 0.1)))
+  (if trashtalk-repl-response-complete
+      (string-trim trashtalk-repl-response)
+    (error "REPL timeout waiting for response")))
+
+(defun trashtalk-repl-parse-response (response)
+  "Parse RESPONSE into (status . payload).
+Response format: STATUS:payload"
+  (if (string-match "^\\([A-Z]+\\):\\(.*\\)" response)
+      (cons (match-string 1 response)
+            ;; Convert unit separator back to newlines
+            (replace-regexp-in-string "\x1f" "\n" (match-string 2 response)))
+    (cons "ERROR" response)))
+
+;;; REPL Interactive Commands
+
+(defun trashtalk-repl-ping ()
+  "Ping the REPL server to test connection."
+  (interactive)
+  (let* ((response (trashtalk-repl-send "PING"))
+         (parsed (trashtalk-repl-parse-response response)))
+    (if (string= (car parsed) "OK")
+        (message "REPL: %s" (cdr parsed))
+      (message "REPL error: %s" (cdr parsed)))))
+
+(defun trashtalk-eval-region (start end)
+  "Evaluate the region from START to END in the REPL."
+  (interactive "r")
+  (let* ((code (buffer-substring-no-properties start end))
+         ;; Base64 encode multiline code
+         (encoded (if (string-match "\n" code)
+                      (concat "BASE64:" (base64-encode-string code t))
+                    code))
+         (response (trashtalk-repl-send (concat "EVAL:" encoded)))
+         (parsed (trashtalk-repl-parse-response response)))
+    (if (string= (car parsed) "OK")
+        (message "=> %s" (cdr parsed))
+      (message "Error: %s" (cdr parsed)))))
+
+(defun trashtalk-eval-line ()
+  "Evaluate the current line in the REPL."
+  (interactive)
+  (trashtalk-eval-region (line-beginning-position) (line-end-position)))
+
+(defun trashtalk-eval-buffer ()
+  "Evaluate the entire buffer in the REPL."
+  (interactive)
+  (trashtalk-eval-region (point-min) (point-max)))
+
+(defun trashtalk-eval-defun ()
+  "Evaluate the method definition at point."
+  (interactive)
+  (save-excursion
+    (let (start end)
+      ;; Find method start
+      (end-of-line)
+      (unless (re-search-backward "^\\s-*\\(raw\\)?\\(class\\)?[Mm]ethod:" nil t)
+        (error "Not in a method definition"))
+      (setq start (line-beginning-position))
+      ;; Find matching ]
+      (goto-char start)
+      (re-search-forward "\\[" nil t)
+      (backward-char)
+      (forward-sexp)
+      (setq end (point))
+      (trashtalk-eval-region start end))))
+
+(defun trashtalk-info-at-point ()
+  "Get info about the class or instance at point."
+  (interactive)
+  (let* ((symbol (thing-at-point 'symbol t))
+         (response (trashtalk-repl-send (concat "INFO:" symbol)))
+         (parsed (trashtalk-repl-parse-response response)))
+    (if (string= (car parsed) "INFO")
+        (with-output-to-temp-buffer "*Trashtalk Info*"
+          (princ (cdr parsed)))
+      (message "Error: %s" (cdr parsed)))))
+
+(defun trashtalk-methods-for-class (class-name)
+  "List methods for CLASS-NAME."
+  (interactive
+   (list (read-string "Class: " (thing-at-point 'symbol t))))
+  (let* ((response (trashtalk-repl-send (concat "METHODS:" class-name)))
+         (parsed (trashtalk-repl-parse-response response)))
+    (if (string= (car parsed) "METHODS")
+        (with-output-to-temp-buffer "*Trashtalk Methods*"
+          (princ (format "Methods for %s:\n\n" class-name))
+          (princ (cdr parsed)))
+      (message "Error: %s" (cdr parsed)))))
+
+(defun trashtalk-reload-class (class-name)
+  "Reload (recompile and re-source) CLASS-NAME."
+  (interactive
+   (list (read-string "Reload class: "
+                      (save-excursion
+                        (goto-char (point-min))
+                        (if (re-search-forward "^\\([A-Z][a-zA-Z0-9_]*\\)\\s-+subclass:" nil t)
+                            (match-string 1)
+                          "")))))
+  (let* ((response (trashtalk-repl-send (concat "RELOAD:" class-name)))
+         (parsed (trashtalk-repl-parse-response response)))
+    (if (string= (car parsed) "OK")
+        (message "Reloaded: %s" class-name)
+      (message "Reload error: %s" (cdr parsed)))))
+
+(defun trashtalk-reload-current-file ()
+  "Reload the class defined in the current file."
+  (interactive)
+  (save-excursion
+    (goto-char (point-min))
+    (if (re-search-forward "^\\([A-Z][a-zA-Z0-9_]*\\)\\s-+subclass:" nil t)
+        (trashtalk-reload-class (match-string 1))
+      (error "No class definition found in buffer"))))
+
+;;; Keymap
+
+(defvar trashtalk-mode-map
+  (let ((map (make-sparse-keymap)))
+    ;; REPL commands
+    (define-key map (kbd "C-c C-c") #'trashtalk-eval-defun)
+    (define-key map (kbd "C-c C-r") #'trashtalk-eval-region)
+    (define-key map (kbd "C-c C-b") #'trashtalk-eval-buffer)
+    (define-key map (kbd "C-c C-l") #'trashtalk-eval-line)
+    (define-key map (kbd "C-c C-k") #'trashtalk-reload-current-file)
+    (define-key map (kbd "C-c C-z") #'trashtalk-repl-connect)
+    (define-key map (kbd "C-c C-i") #'trashtalk-info-at-point)
+    (define-key map (kbd "C-c C-m") #'trashtalk-methods-for-class)
+    map)
+  "Keymap for `trashtalk-mode'.")
+
 ;;; Mode Definition
 
 ;;;###autoload
@@ -271,6 +477,21 @@
   "Major mode for editing Trashtalk files.
 
 Trashtalk is a Smalltalk-inspired DSL that compiles to Bash.
+
+REPL Integration:
+  Start the server in a terminal: @ ReplServer start
+  Then connect from Emacs with C-c C-z.
+
+Key bindings:
+\\<trashtalk-mode-map>
+  \\[trashtalk-eval-defun]     Evaluate method at point
+  \\[trashtalk-eval-region]    Evaluate region
+  \\[trashtalk-eval-buffer]    Evaluate buffer
+  \\[trashtalk-eval-line]      Evaluate current line
+  \\[trashtalk-reload-current-file] Reload class in current file
+  \\[trashtalk-repl-connect]   Connect to REPL server
+  \\[trashtalk-info-at-point]  Info for symbol at point
+  \\[trashtalk-methods-for-class] List methods for class
 
 \\{trashtalk-mode-map}"
   :syntax-table trashtalk-mode-syntax-table
