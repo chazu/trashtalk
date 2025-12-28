@@ -178,6 +178,9 @@ def parseVarSpec:
     elif current.type == "STRING" then
       .result = {name: ($kw | rtrimstr(":")), default: {type: "string", value: (current.value | ltrimstr("'") | rtrimstr("'"))}} |
       advance
+    elif current.type == "TRIPLESTRING" then
+      .result = {name: ($kw | rtrimstr(":")), default: {type: "triplestring", value: current.value}} |
+      advance
     else
       # Keyword without value - treat as error or plain var
       fail
@@ -261,6 +264,10 @@ def parseInstanceVarsSimple:
           .vars += [{name: $name, default: {type: "string", value: ((.state | current.value) | ltrimstr("'") | rtrimstr("'"))}, location: $loc}] |
           .state |= advance |
           .state |= skipNewlines
+        elif (.state | current.type) == "TRIPLESTRING" then
+          .vars += [{name: $name, default: {type: "triplestring", value: (.state | current.value)}, location: $loc}] |
+          .state |= advance |
+          .state |= skipNewlines
         elif (.state | current.type) == "IDENTIFIER" then
           # Bare identifier after keyword with space (e.g., "name: value") - treat as two vars
           .warnings += [{
@@ -328,6 +335,10 @@ def parseClassInstanceVarsSimple:
           .state |= skipNewlines
         elif (.state | current.type) == "STRING" then
           .vars += [{name: $name, default: {type: "string", value: ((.state | current.value) | ltrimstr("'") | rtrimstr("'"))}, location: $loc}] |
+          .state |= advance |
+          .state |= skipNewlines
+        elif (.state | current.type) == "TRIPLESTRING" then
+          .vars += [{name: $name, default: {type: "triplestring", value: (.state | current.value)}, location: $loc}] |
           .state |= advance |
           .state |= skipNewlines
         elif (.state | current.type) == "IDENTIFIER" then

@@ -102,11 +102,12 @@ def varSpec:
     (token("KEYWORD") as $kw |
      if $kw.result != null then
        $kw | ws |
-       # Get default value (number or string)
-       choice2(
+       # Get default value (number, string, or triple-quoted string)
+       choice([
          (token("NUMBER") | map({name: ($kw.result.value | rtrimstr(":")), default: {type: "number", value: .value}}));
+         (token("TRIPLESTRING") | map({name: ($kw.result.value | rtrimstr(":")), default: {type: "triplestring", value: .value}}));
          (token("STRING") | map({name: ($kw.result.value | rtrimstr(":")), default: {type: "string", value: (.value | ltrimstr("'") | rtrimstr("'"))}}))
-       )
+       ])
      else
        $kw
      end);

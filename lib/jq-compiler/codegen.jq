@@ -66,6 +66,11 @@ def expr_skip_ws:
   else .
   end;
 
+# Escape a string for bash $'...' ANSI-C quoting
+# Escapes: backslash -> \\, single-quote -> \'
+def ansi_c_escape:
+  gsub("\\\\"; "\\\\") | gsub("'"; "\\'") | gsub("\n"; "\\n");
+
 # Check if current token is an infix operator
 def expr_is_operator:
   expr_peek as $tok |
@@ -134,6 +139,8 @@ def expr_parse_atom:
     { state: (. | expr_advance), result: { type: "number", value: $tok.value } }
   elif $tok.type == "STRING" then
     { state: (. | expr_advance), result: { type: "string", value: ($tok.value | ltrimstr("'") | rtrimstr("'")) } }
+  elif $tok.type == "TRIPLESTRING" then
+    { state: (. | expr_advance), result: { type: "triplestring", value: $tok.value } }
   elif $tok.type == "SUBSHELL" then
     { state: (. | expr_advance), result: { type: "subshell", value: $tok.value } }
   elif $tok.type == "ARITHMETIC" then
@@ -262,6 +269,8 @@ def expr_parse_expr(min_bp):
     { state: (. | expr_advance), result: { type: "number", value: $tok.value } }
   elif $tok.type == "STRING" then
     { state: (. | expr_advance), result: { type: "string", value: ($tok.value | ltrimstr("'") | rtrimstr("'")) } }
+  elif $tok.type == "TRIPLESTRING" then
+    { state: (. | expr_advance), result: { type: "triplestring", value: $tok.value } }
   elif $tok.type == "DSTRING" then
     { state: (. | expr_advance), result: { type: "dstring", value: $tok.value } }
   elif $tok.type == "IDENTIFIER" then
@@ -662,6 +671,7 @@ def expr_gen($locals; $ivars; $cvars):
   if . == null then ""
   elif .type == "number" then .value
   elif .type == "string" then "'\(.value)'"
+  elif .type == "triplestring" then "$'\(.value | ansi_c_escape)'"
   elif .type == "dstring" then .value
   elif .type == "self" then "\"$_RECEIVER\""
   elif .type == "identifier" then
@@ -1048,10 +1058,11 @@ def expr_gen_stmts($locals; $ivars; $cvars):
       #   - For locals: use bash array syntax
       #   - For ivars: use JSON serialization
       ($stmt.value.type == "array_literal" or $stmt.value.type == "dict_literal") as $is_collection |
+      ($stmt.value.type == "triplestring") as $is_ansi_quoted |
       ($stmt.value | expr_gen($current_locals; $ivars; $cvars)) as $val_code |
       ($stmt.value | expr_gen_json($current_locals; $ivars; $cvars)) as $json_code |
       if expr_is_local($stmt.target; $current_locals) then
-        if $is_collection then
+        if $is_collection or $is_ansi_quoted then
           .lines += ["  \($stmt.target)=\($val_code)"]
         else
           .lines += ["  \($stmt.target)=\"\($val_code)\""]
@@ -1060,6 +1071,8 @@ def expr_gen_stmts($locals; $ivars; $cvars):
         if $is_collection then
           # Use JSON serialization for collection ivars
           .lines += ["  _ivar_set \($stmt.target) '\($json_code)'"]
+        elif $is_ansi_quoted then
+          .lines += ["  _ivar_set \($stmt.target) \($val_code)"]
         else
           .lines += ["  _ivar_set \($stmt.target) \"\($val_code)\""]
         end
@@ -1067,12 +1080,14 @@ def expr_gen_stmts($locals; $ivars; $cvars):
         if $is_collection then
           # Use JSON serialization for collection cvars
           .lines += ["  _cvar_set \($stmt.target) '\($json_code)'"]
+        elif $is_ansi_quoted then
+          .lines += ["  _cvar_set \($stmt.target) \($val_code)"]
         else
           .lines += ["  _cvar_set \($stmt.target) \"\($val_code)\""]
         end
       else
         # Unknown target - treat as regular assignment (could be global/env var)
-        if $is_collection then
+        if $is_collection or $is_ansi_quoted then
           .lines += ["  \($stmt.target)=\($val_code)"]
         else
           .lines += ["  \($stmt.target)=\"\($val_code)\""]
@@ -1113,8 +1128,8 @@ def should_use_expr_parser:
   if ($tokens | length) < 3 then false
   else
     # First, check for strong Smalltalk signals that should always use expr parser
-    # Collection literals and try: are unambiguous Smalltalk syntax
-    (any($tokens[]; .type == "SYMBOL" or .type == "HASH_LPAREN" or .type == "HASH_LBRACE")) as $has_collection_literals |
+    # Collection literals, try:, and triple-quoted strings are unambiguous Smalltalk syntax
+    (any($tokens[]; .type == "SYMBOL" or .type == "HASH_LPAREN" or .type == "HASH_LBRACE" or .type == "TRIPLESTRING")) as $has_collection_literals |
     (any($tokens[]; .type == "KEYWORD" and .value == "try:")) as $has_try_catch |
     if $has_collection_literals or $has_try_catch then true
     else
@@ -1322,6 +1337,7 @@ def generateClassVarsInit:
       (if .default then
         if .default.type == "number" then .default.value
         elif .default.type == "string" then .default.value
+        elif .default.type == "triplestring" then .default.value
         else ""
         end
       else "" end) as $default |
@@ -1471,6 +1487,7 @@ def transformMethodBody($className; $isRaw):
         elif $tok.type == "VARIABLE" then $tok.value + " "
         elif $tok.type == "DSTRING" then $tok.value + " "
         elif $tok.type == "STRING" then $tok.value + " "
+        elif $tok.type == "TRIPLESTRING" then "$'\($tok.value | gsub("\\\\"; "\\\\") | gsub("'"; "\\'") | gsub("\n"; "\\n"))' "
         elif $tok.type == "NUMBER" then $tok.value + " "
         elif $tok.type == "KEYWORD" then $tok.value + " "
         elif $tok.type == "PATH" then $tok.value + " "

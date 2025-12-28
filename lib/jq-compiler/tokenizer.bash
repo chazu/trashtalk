@@ -348,36 +348,66 @@ tokenize() {
                 ;;
 
             # ------------------------------------------------------------------
-            # String literal (single-quoted)
+            # String literal (single-quoted or triple-quoted)
             # ------------------------------------------------------------------
             "'")
                 local str_start_col=$col
-                local str="'"
-                ((i++))
-                ((col++))
 
-                # Consume until closing quote
-                while ((i < len)) && [[ "${input:i:1}" != "'" ]]; do
-                    local c="${input:i:1}"
-                    if [[ "$c" == $'\n' ]]; then
-                        # String spans multiple lines - track position
-                        ((line++))
-                        col=0
-                    else
-                        ((col++))
-                    fi
-                    str+="$c"
-                    ((i++))
-                done
+                # Check for triple-quoted string '''...'''
+                if [[ "${input:i:3}" == "'''" ]]; then
+                    local str=""
+                    ((i += 3))
+                    ((col += 3))
 
-                # Consume closing quote
-                if ((i < len)); then
-                    str+="'"
+                    # Consume until closing '''
+                    while ((i < len)); do
+                        if [[ "${input:i:3}" == "'''" ]]; then
+                            # Found closing delimiter
+                            ((i += 3))
+                            ((col += 3))
+                            break
+                        fi
+                        local c="${input:i:1}"
+                        if [[ "$c" == $'\n' ]]; then
+                            ((line++))
+                            col=0
+                        else
+                            ((col++))
+                        fi
+                        str+="$c"
+                        ((i++))
+                    done
+
+                    add_token "TRIPLESTRING" "$str" "$line" "$str_start_col"
+                else
+                    # Regular single-quoted string
+                    local str="'"
                     ((i++))
                     ((col++))
-                fi
 
-                add_token "STRING" "$str" "$line" "$str_start_col"
+                    # Consume until closing quote
+                    while ((i < len)) && [[ "${input:i:1}" != "'" ]]; do
+                        local c="${input:i:1}"
+                        if [[ "$c" == $'\n' ]]; then
+                            # String spans multiple lines - track position
+                            ((line++))
+                            col=0
+                        else
+                            ((col++))
+                        fi
+                        str+="$c"
+                        ((i++))
+                    done
+
+                    # Consume closing quote
+                    if ((i < len)); then
+                        str+="'"
+                        ((i++))
+                        ((col++))
+                    fi
+
+                    add_token "STRING" "$str" "$line" "$str_start_col"
+                fi
                 ;;
 
             # ------------------------------------------------------------------

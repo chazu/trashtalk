@@ -135,6 +135,11 @@ run_namespace_tests() {
     source "$SCRIPT_DIR/test_namespaces.bash"
 }
 
+run_triplestring_tests() {
+    section "Triple-Quoted String Tests"
+    source "$SCRIPT_DIR/test_triplestrings.bash"
+}
+
 # ------------------------------------------------------------------------------
 # Main
 # ------------------------------------------------------------------------------
@@ -162,10 +167,14 @@ main() {
         namespaces)
             run_namespace_tests
             ;;
+        triplestrings)
+            run_triplestring_tests
+            ;;
         all|*)
             run_tokenizer_tests
             run_parser_tests
             run_namespace_tests
+            run_triplestring_tests
             run_codegen_tests
             run_integration_tests
             ;;

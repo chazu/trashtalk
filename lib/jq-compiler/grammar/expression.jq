@@ -70,6 +70,11 @@ def stringExpr:
   token("STRING") |
   map({type: "string", value: (.value | ltrimstr("'") | rtrimstr("'"))});
 
+# Parse triple-quoted string expression (multi-line)
+def tripleStringExpr:
+  token("TRIPLESTRING") |
+  map({type: "triplestring", value: .value});
+
 # Parse number expression
 def numberExpr:
   token("NUMBER") |
@@ -78,6 +83,7 @@ def numberExpr:
 # Parse simple expression (not message send)
 def simpleExpr:
   choice([
+    tripleStringExpr,
     stringExpr,
     numberExpr,
     identifierExpr

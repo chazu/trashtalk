@@ -132,6 +132,10 @@ def parse_prefix:
   elif $tok.type == "STRING" then
     { state: (. | expr_advance), result: { type: "string", value: ($tok.value | ltrimstr("'") | rtrimstr("'")) } }
 
+  # Triple-quoted string (multi-line)
+  elif $tok.type == "TRIPLESTRING" then
+    { state: (. | expr_advance), result: { type: "triplestring", value: $tok.value } }
+
   # Double-quoted string
   elif $tok.type == "DSTRING" then
     { state: (. | expr_advance), result: { type: "dstring", value: $tok.value } }
@@ -414,6 +418,8 @@ def parse_simple_arg:
     { state: (. | expr_advance), result: { type: "number", value: $tok.value } }
   elif $tok.type == "STRING" then
     { state: (. | expr_advance), result: { type: "string", value: ($tok.value | ltrimstr("'") | rtrimstr("'")) } }
+  elif $tok.type == "TRIPLESTRING" then
+    { state: (. | expr_advance), result: { type: "triplestring", value: $tok.value } }
   elif $tok.type == "DSTRING" then
     { state: (. | expr_advance), result: { type: "dstring", value: $tok.value } }
   elif $tok.type == "VARIABLE" then
