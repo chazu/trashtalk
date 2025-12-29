@@ -115,7 +115,8 @@ def expr_is_control_flow:
   ($tok.value == "ifTrue:" or $tok.value == "ifFalse:" or
    $tok.value == "whileTrue:" or $tok.value == "whileFalse:" or
    $tok.value == "timesRepeat:" or $tok.value == "try:" or
-   $tok.value == "ifNil:" or $tok.value == "ifNotNil:");
+   $tok.value == "ifNil:" or $tok.value == "ifNotNil:" or
+   $tok.value == "to:");
 
 # Check if current token terminates a keyword argument
 # (used to stop expression parsing at message boundaries)
@@ -441,8 +442,28 @@ def expr_parse_expr(min_bp):
         (.state | expr_peek.value) as $keyword |
         .state |= expr_advance |
         .state |= expr_skip_ws |
+        # Special handling for to:do: - takes expression then do: with block
+        if $keyword == "to:" then
+          (.state | expr_parse_atom) as $end_expr |
+          ($end_expr.state | expr_skip_ws) as $after_end |
+          if ($after_end | expr_peek_type) == "KEYWORD" and ($after_end | expr_peek.value) == "do:" then
+            (($after_end | expr_advance | expr_skip_ws) | expr_parse_block) as $do_block |
+            {
+              state: $do_block.state,
+              result: {
+                type: "control_flow",
+                kind: "range_do",
+                start: $receiver,
+                end: $end_expr.result,
+                block: $do_block.result
+              }
+            }
+            | infix_loop
+          else
+            { state: $after_end, result: { type: "error", message: "Expected 'do:' after 'to: end'" } }
+          end
         # Parse block argument (use expr_parse_block to avoid infix continuation)
-        if (.state | expr_peek_type) == "LBRACKET" then
+        elif (.state | expr_peek_type) == "LBRACKET" then
           (.state | expr_parse_block) as $block |
           # Check for ifTrue:ifFalse: pattern
           (if $keyword == "ifTrue:" then
@@ -1157,6 +1178,23 @@ def expr_gen($locals; $ivars; $cvars):
         [(.block.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
       else "" end) as $block_code |
       "for ((_i=0; _i<\(.count | expr_gen_arith($locals; $ivars; $cvars)); _i++)); do \($block_code); done"
+    elif .kind == "range_do" then
+      # Range iteration: start to: end do: [:i | body]
+      # Block should be block_literal with params array
+      (if .block.type == "block_literal" and (.block.params | length) > 0 then
+        .block.params[0]
+      else "_i" end) as $loop_var |
+      # Add loop var to locals for block code generation
+      ([$loop_var] + $locals) as $block_locals |
+      (if .block.tokens != null then
+        ({ tokens: .block.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
+        [($parsed.body // [])[] | expr_gen($block_locals; $ivars; $cvars)] | join("; ")
+      elif .block.body != null then
+        [(.block.body // [])[] | expr_gen($block_locals; $ivars; $cvars)] | join("; ")
+      else "" end) as $block_code |
+      (.start | expr_gen_arith($locals; $ivars; $cvars)) as $start_code |
+      (.end | expr_gen_arith($locals; $ivars; $cvars)) as $end_code |
+      "for ((\($loop_var)=\($start_code); \($loop_var)<\($end_code); \($loop_var)++)); do \($block_code); done"
     elif .kind == "while_true" then
       (if .block.tokens != null then
         ({ tokens: .block.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
@@ -1344,6 +1382,15 @@ def expr_gen_control_flow($locals; $ivars; $cvars):
     "if \(.condition | wrap_condition($locals; $ivars; $cvars)); then \(.true_block | expr_gen_block_body($locals; $ivars; $cvars)); else \(.false_block | expr_gen_block_body($locals; $ivars; $cvars)); fi"
   elif .kind == "times_repeat" then
     "for ((_i=0; _i<\(.count | expr_gen_arith($locals; $ivars; $cvars)); _i++)); do \(.block | expr_gen_block_body($locals; $ivars; $cvars)); done"
+  elif .kind == "range_do" then
+    # Range iteration with loop variable from block parameter
+    (if .block.type == "block_literal" and (.block.params | length) > 0 then
+      .block.params[0]
+    else "_i" end) as $loop_var |
+    ([$loop_var] + $locals) as $block_locals |
+    (.start | expr_gen_arith($locals; $ivars; $cvars)) as $start_code |
+    (.end | expr_gen_arith($locals; $ivars; $cvars)) as $end_code |
+    "for ((\($loop_var)=\($start_code); \($loop_var)<\($end_code); \($loop_var)++)); do \(.block | expr_gen_block_body($block_locals; $ivars; $cvars)); done"
   elif .kind == "while_true" then
     if .condition.type == "block" then
       "while \(.condition | expr_gen_block_body($locals; $ivars; $cvars)); do \(.block | expr_gen_block_body($locals; $ivars; $cvars)); done"
@@ -1537,7 +1584,8 @@ def should_use_expr_parser:
           $tokens[$i].value == "whileTrue:" or $tokens[$i].value == "whileFalse:" or
           $tokens[$i].value == "timesRepeat:" or $tokens[$i].value == "try:" or
           $tokens[$i].value == "and:" or $tokens[$i].value == "or:" or
-          $tokens[$i].value == "ifNil:" or $tokens[$i].value == "ifNotNil:"))
+          $tokens[$i].value == "ifNil:" or $tokens[$i].value == "ifNotNil:" or
+          $tokens[$i].value == "to:"))
         or
         # Pattern 7: Comparison operators between identifiers/numbers
         (($tokens[$i].type == "IDENTIFIER" or $tokens[$i].type == "NUMBER" or $tokens[$i].type == "RPAREN") and
