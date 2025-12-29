@@ -330,6 +330,20 @@ def parse_infix_loop(min_bp):
     else
       { state: ., result: null, error: "expected block after \($keyword)" }
     end
+  # Check if next token is a test predicate (postfix unary operator)
+  elif expr_peek_type == "TEST_PREDICATE" then
+    .result as $subject |
+    expr_peek.value as $test |
+    (. | expr_advance) |
+    {
+      state: .,
+      result: {
+        type: "test_expr",
+        test: $test,
+        subject: $subject
+      }
+    }
+    | parse_infix_loop(min_bp)
   # Check if next token is an infix operator
   elif is_operator_token then
     get_operator_value as $op |

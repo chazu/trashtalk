@@ -36,8 +36,11 @@ def expr_infix_bp:
     "<":  [5, 6],       # comparison, left-assoc
     ">=": [5, 6],       # comparison, left-assoc
     "<=": [5, 6],       # comparison, left-assoc
-    "==": [5, 6],       # comparison, left-assoc
-    "!=": [5, 6],       # comparison, left-assoc
+    "==": [5, 6],       # comparison (numeric), left-assoc
+    "!=": [5, 6],       # comparison (numeric), left-assoc
+    "=":  [5, 6],       # string equality, left-assoc
+    "~=": [5, 6],       # string inequality, left-assoc
+    "=~": [5, 6],       # regex match, left-assoc
     "+":  [10, 11],     # addition, left-assoc
     "-":  [10, 11],     # subtraction, left-assoc
     "*":  [20, 21],     # multiplication, left-assoc
@@ -80,7 +83,8 @@ def expr_is_operator:
     $tok.type == "SLASH" or $tok.type == "ASSIGN" or
     $tok.type == "GT" or $tok.type == "LT" or
     $tok.type == "GE" or $tok.type == "LE" or
-    $tok.type == "EQ" or $tok.type == "NE"
+    $tok.type == "EQ" or $tok.type == "NE" or
+    $tok.type == "EQUALS" or $tok.type == "STR_NE" or $tok.type == "MATCH"
   );
 
 def expr_op_value:
@@ -98,6 +102,9 @@ def expr_op_value:
   elif $tok.type == "LE" then "<="
   elif $tok.type == "EQ" then "=="
   elif $tok.type == "NE" then "!="
+  elif $tok.type == "EQUALS" then "="
+  elif $tok.type == "STR_NE" then "~="
+  elif $tok.type == "MATCH" then "=~"
   else null
   end;
 
@@ -107,7 +114,8 @@ def expr_is_control_flow:
   $tok != null and $tok.type == "KEYWORD" and
   ($tok.value == "ifTrue:" or $tok.value == "ifFalse:" or
    $tok.value == "whileTrue:" or $tok.value == "whileFalse:" or
-   $tok.value == "timesRepeat:" or $tok.value == "try:");
+   $tok.value == "timesRepeat:" or $tok.value == "try:" or
+   $tok.value == "ifNil:" or $tok.value == "ifNotNil:");
 
 # Check if current token terminates a keyword argument
 # (used to stop expression parsing at message boundaries)
@@ -164,6 +172,20 @@ def expr_parse_block:
   else
     (. | expr_advance) |
     expr_skip_ws |
+    # Check for block parameters [:x :y | body]
+    { state: ., params: [] } |
+    until((.state | expr_peek_type) != "BLOCK_PARAM";
+      (.state | expr_peek) as $p |
+      .params += [$p.value] |
+      .state |= expr_advance |
+      .state |= expr_skip_ws
+    ) |
+    # If we have params, skip the PIPE separator
+    (if (.params | length) > 0 and (.state | expr_peek_type) == "PIPE" then
+      .state |= expr_advance | .state |= expr_skip_ws
+    else . end) |
+    .params as $params |
+    .state |
     { state: ., tokens: [], depth: 1 } |
     until(.depth == 0 or (.state | expr_at_end);
       (.state | expr_peek) as $t |
@@ -178,7 +200,11 @@ def expr_parse_block:
         .tokens += [$t] | .state |= expr_advance
       end
     ) |
-    { state: .state, result: { type: "block", tokens: .tokens } }
+    if ($params | length) > 0 then
+      { state: .state, result: { type: "block_literal", params: $params, tokens: .tokens } }
+    else
+      { state: .state, result: { type: "block", tokens: .tokens } }
+    end
   end;
 
 def expr_parse_expr(min_bp):
@@ -484,6 +510,42 @@ def expr_parse_expr(min_bp):
                 block: $block.result
               }
             }
+          elif $keyword == "ifNil:" then
+            # Check for ifNil:ifNotNil: pattern
+            ($block.state | expr_skip_ws) as $after_block |
+            if ($after_block | expr_peek_type) == "KEYWORD" and ($after_block | expr_peek.value) == "ifNotNil:" then
+              (($after_block | expr_advance | expr_skip_ws) | expr_parse_block) as $else_block |
+              {
+                state: $else_block.state,
+                result: {
+                  type: "control_flow",
+                  kind: "nil_else",
+                  subject: $receiver,
+                  nil_block: $block.result,
+                  notnil_block: $else_block.result
+                }
+              }
+            else
+              {
+                state: $block.state,
+                result: {
+                  type: "control_flow",
+                  kind: "if_nil",
+                  subject: $receiver,
+                  block: $block.result
+                }
+              }
+            end
+          elif $keyword == "ifNotNil:" then
+            {
+              state: $block.state,
+              result: {
+                type: "control_flow",
+                kind: "if_not_nil",
+                subject: $receiver,
+                block: $block.result
+              }
+            }
           else
             { state: $block.state, result: $receiver }
           end)
@@ -491,6 +553,75 @@ def expr_parse_expr(min_bp):
         else
           .
         end
+      elif (.state | expr_peek_type) == "IDENTIFIER" and
+           ((.state | expr_peek.value) | . as $v |
+            ["fileExists", "isFile", "isDirectory", "isFifo", "isSymlink",
+             "isReadable", "isWritable", "isExecutable", "isEmpty", "notEmpty"] | index($v) != null) then
+        # File/string test predicate (fileExists, isFile, isEmpty, etc.)
+        .result as $subject |
+        (.state | expr_peek.value) as $test |
+        .state |= expr_advance |
+        {
+          state: .state,
+          result: {
+            type: "test_expr",
+            test: $test,
+            subject: $subject
+          }
+        }
+        | infix_loop
+      elif (.state | expr_peek_type) == "KEYWORD" and
+           ((.state | expr_peek.value) == "and:" or (.state | expr_peek.value) == "or:") then
+        # Boolean operators: (cond1) and: [cond2] or (cond1) or: [cond2]
+        .result as $left_cond |
+        (.state | expr_peek.value | rtrimstr(":")) as $bool_op |
+        .state |= expr_advance |
+        .state |= expr_skip_ws |
+        # Parse block argument containing the second condition
+        if (.state | expr_peek_type) == "LBRACKET" then
+          (.state | expr_parse_block) as $block |
+          {
+            state: $block.state,
+            result: {
+              type: "boolean_op",
+              op: $bool_op,
+              left: $left_cond,
+              right: $block.result
+            }
+          }
+          | infix_loop
+        else
+          # No block - just return what we have
+          .
+        end
+      elif (.state | expr_peek_type) == "KEYWORD" and (.state | expr_peek.value) == "matches:" then
+        # Regex match: str matches: 'pattern'
+        .result as $subject |
+        .state |= expr_advance |
+        .state |= expr_skip_ws |
+        # Parse the pattern expression (should be a string)
+        (.state | expr_parse_expr(0)) as $pattern |
+        {
+          state: $pattern.state,
+          result: {
+            type: "regex_match",
+            subject: $subject,
+            pattern: $pattern.result
+          }
+        }
+        | infix_loop
+      elif (.state | expr_peek_type) == "IDENTIFIER" and (.state | expr_peek.value) == "not" then
+        # Boolean negation: (condition) not
+        .result as $cond |
+        .state |= expr_advance |
+        {
+          state: .state,
+          result: {
+            type: "not",
+            condition: $cond
+          }
+        }
+        | infix_loop
       elif $is_op then
         (.state | expr_op_value) as $op |
         (expr_infix_bp[$op] // null) as $bp |
@@ -740,6 +871,8 @@ def expr_gen($locals; $ivars; $cvars):
     end
   elif .type == "return" then
     if .value == null then "return"
+    elif .value.type == "string" then "echo \"\(.value.value)\"; return"
+    elif .value.type == "symbol" then "echo \"\(.value.value)\"; return"
     else "echo \"\(.value | expr_gen($locals; $ivars; $cvars))\"; return"
     end
   elif .type == "passthrough" then
@@ -829,18 +962,150 @@ def expr_gen($locals; $ivars; $cvars):
     "$(@ Block params_code_captured '[\($params_json)]' '\($escaped_body)' '{\"_RECEIVER\":\"'\"$_RECEIVER\"'\"}')"
   elif .type == "control_flow" then
     # Inline control flow generation to avoid forward reference
-    # Helper to generate condition
-    (if .condition.type == "binary" then
-      "\(.condition.left | expr_gen_arith($locals; $ivars; $cvars)) \(.condition.op) \(.condition.right | expr_gen_arith($locals; $ivars; $cvars))"
-    elif .condition.type == "identifier" then
-      if expr_is_local(.condition.name; $locals) then "$\(.condition.name)"
-      elif expr_is_ivar(.condition.name; $ivars) then "$(_ivar \(.condition.name))"
-      else .condition.name
-      end
-    elif .condition.type == "variable" then .condition.value
-    elif .condition.type == "boolean" then (if .condition.value then "1" else "0" end)
-    else .condition | expr_gen($locals; $ivars; $cvars)
-    end) as $cond |
+    # Helper function to generate a condition with appropriate wrapper
+    # Returns {code: "...", needs_wrapper: bool} where needs_wrapper indicates if (( )) is needed
+    def gen_cond_part($cond):
+      if $cond.type == "test_expr" then
+        # Test expressions generate their own [[ ]] wrapper
+        ($cond.subject | expr_gen($locals; $ivars; $cvars)) as $subj |
+        if $cond.test == "fileExists" then {code: "[[ -e \"\($subj)\" ]]", needs_wrapper: false}
+        elif $cond.test == "isFile" then {code: "[[ -f \"\($subj)\" ]]", needs_wrapper: false}
+        elif $cond.test == "isDirectory" then {code: "[[ -d \"\($subj)\" ]]", needs_wrapper: false}
+        elif $cond.test == "isFifo" then {code: "[[ -p \"\($subj)\" ]]", needs_wrapper: false}
+        elif $cond.test == "isSymlink" then {code: "[[ -L \"\($subj)\" ]]", needs_wrapper: false}
+        elif $cond.test == "isReadable" then {code: "[[ -r \"\($subj)\" ]]", needs_wrapper: false}
+        elif $cond.test == "isWritable" then {code: "[[ -w \"\($subj)\" ]]", needs_wrapper: false}
+        elif $cond.test == "isExecutable" then {code: "[[ -x \"\($subj)\" ]]", needs_wrapper: false}
+        elif $cond.test == "isEmpty" then {code: "[[ -z \"\($subj)\" ]]", needs_wrapper: false}
+        elif $cond.test == "notEmpty" then {code: "[[ -n \"\($subj)\" ]]", needs_wrapper: false}
+        else {code: "# unknown test: \($cond.test)", needs_wrapper: false}
+        end
+      elif $cond.type == "boolean_op" then
+        # Recursive boolean operation - each side generates its own wrapper
+        (gen_cond_part($cond.left)) as $left |
+        # Right side is a block - parse it and generate condition from first statement
+        (if $cond.right.tokens != null then
+          ({ tokens: $cond.right.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
+          if ($parsed.body | length) > 0 then
+            gen_cond_part($parsed.body[0])
+          else {code: "true", needs_wrapper: false}
+          end
+        else {code: "true", needs_wrapper: false}
+        end) as $right |
+        # Wrap each side appropriately
+        (if $left.needs_wrapper then "(( \($left.code) ))" else $left.code end) as $left_code |
+        (if $right.needs_wrapper then "(( \($right.code) ))" else $right.code end) as $right_code |
+        (if $cond.op == "and" then "&&" else "||" end) as $bash_op |
+        {code: "\($left_code) \($bash_op) \($right_code)", needs_wrapper: false}
+      elif $cond.type == "not" then
+        # Boolean negation - negate the inner condition
+        (gen_cond_part($cond.condition)) as $inner |
+        # Wrap inner if needed, then negate
+        (if $inner.needs_wrapper then "! (( \($inner.code) ))" else "! \($inner.code)" end) as $negated |
+        {code: $negated, needs_wrapper: false}
+      elif $cond.type == "regex_match" then
+        # Regex match: subject matches: 'pattern'
+        ($cond.subject | expr_gen($locals; $ivars; $cvars)) as $subj |
+        ($cond.pattern | expr_gen($locals; $ivars; $cvars)) as $pat |
+        {code: "[[ \"\($subj)\" =~ \($pat) ]]", needs_wrapper: false}
+      elif $cond.type == "binary" then
+        # String comparison operators generate [[ ]] syntax, arithmetic use (( ))
+        # Helper to get value - string literals use raw value, others use expr_gen
+        def str_val: if .type == "string" then .value else expr_gen($locals; $ivars; $cvars) end;
+        if $cond.op == "=" then
+          # String equality
+          ($cond.left | str_val) as $left |
+          ($cond.right | str_val) as $right |
+          {code: "[[ \"\($left)\" == \"\($right)\" ]]", needs_wrapper: false}
+        elif $cond.op == "~=" then
+          # String inequality
+          ($cond.left | str_val) as $left |
+          ($cond.right | str_val) as $right |
+          {code: "[[ \"\($left)\" != \"\($right)\" ]]", needs_wrapper: false}
+        elif $cond.op == "=~" then
+          # Regex match
+          ($cond.left | expr_gen($locals; $ivars; $cvars)) as $left |
+          ($cond.right | expr_gen($locals; $ivars; $cvars)) as $right |
+          {code: "[[ \"\($left)\" =~ \($right) ]]", needs_wrapper: false}
+        else
+          # Arithmetic comparison (>, <, ==, !=, etc.)
+          {code: "\($cond.left | expr_gen_arith($locals; $ivars; $cvars)) \($cond.op) \($cond.right | expr_gen_arith($locals; $ivars; $cvars))", needs_wrapper: true}
+        end
+      elif $cond.type == "identifier" then
+        if expr_is_local($cond.name; $locals) then {code: "$\($cond.name)", needs_wrapper: true}
+        elif expr_is_ivar($cond.name; $ivars) then {code: "$(_ivar \($cond.name))", needs_wrapper: true}
+        else {code: $cond.name, needs_wrapper: true}
+        end
+      elif $cond.type == "variable" then {code: $cond.value, needs_wrapper: true}
+      elif $cond.type == "boolean" then {code: (if $cond.value then "1" else "0" end), needs_wrapper: true}
+      else {code: ($cond | expr_gen($locals; $ivars; $cvars)), needs_wrapper: true}
+      end;
+    # Handle nil checks separately (they use .subject not .condition)
+    if .kind == "if_nil" then
+      (.subject | expr_gen($locals; $ivars; $cvars)) as $subj |
+      (if .block.tokens != null then
+        ({ tokens: .block.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
+        [($parsed.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
+      elif .block.body != null then
+        [(.block.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
+      else "" end) as $block_code |
+      "if [[ -z \"\($subj)\" ]]; then \($block_code); fi"
+    elif .kind == "if_not_nil" then
+      (.subject | expr_gen($locals; $ivars; $cvars)) as $subj |
+      # Check if block has parameters (for binding)
+      # Block may be block_literal (with params) or block (without)
+      (if .block.type == "block_literal" then .block.params else [] end) as $params |
+      (if ($params | length) > 0 then
+        ($params + $locals) as $block_locals |
+        (if .block.tokens != null then
+          ({ tokens: .block.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
+          [($parsed.body // [])[] | expr_gen($block_locals; $ivars; $cvars)] | join("; ")
+        elif .block.body != null then
+          [(.block.body // [])[] | expr_gen($block_locals; $ivars; $cvars)] | join("; ")
+        else "" end) as $block_code |
+        "if [[ -n \"\($subj)\" ]]; then local \($params[0])=\"\($subj)\"; \($block_code); fi"
+      else
+        (if .block.tokens != null then
+          ({ tokens: .block.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
+          [($parsed.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
+        elif .block.body != null then
+          [(.block.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
+        else "" end) as $block_code |
+        "if [[ -n \"\($subj)\" ]]; then \($block_code); fi"
+      end)
+    elif .kind == "nil_else" then
+      (.subject | expr_gen($locals; $ivars; $cvars)) as $subj |
+      (if .nil_block.tokens != null then
+        ({ tokens: .nil_block.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
+        [($parsed.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
+      elif .nil_block.body != null then
+        [(.nil_block.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
+      else "" end) as $nil_code |
+      # Check if notnil block has parameters (for binding)
+      (if .notnil_block.type == "block_literal" then .notnil_block.params else [] end) as $params |
+      (if ($params | length) > 0 then
+        ($params + $locals) as $block_locals |
+        (if .notnil_block.tokens != null then
+          ({ tokens: .notnil_block.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
+          [($parsed.body // [])[] | expr_gen($block_locals; $ivars; $cvars)] | join("; ")
+        elif .notnil_block.body != null then
+          [(.notnil_block.body // [])[] | expr_gen($block_locals; $ivars; $cvars)] | join("; ")
+        else "" end) as $notnil_code |
+        "if [[ -z \"\($subj)\" ]]; then \($nil_code); else local \($params[0])=\"\($subj)\"; \($notnil_code); fi"
+      else
+        (if .notnil_block.tokens != null then
+          ({ tokens: .notnil_block.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
+          [($parsed.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
+        elif .notnil_block.body != null then
+          [(.notnil_block.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
+        else "" end) as $notnil_code |
+        "if [[ -z \"\($subj)\" ]]; then \($nil_code); else \($notnil_code); fi"
+      end)
+    else
+    # Generate the condition for other control flow kinds
+    (gen_cond_part(.condition)) as $cond_info |
+    $cond_info.code as $cond |
+    $cond_info.needs_wrapper as $needs_wrapper |
     # Generate block body inline (can't use nested def due to jq scoping)
     if .kind == "if_true" then
       (if .block.tokens != null then
@@ -849,7 +1114,11 @@ def expr_gen($locals; $ivars; $cvars):
       elif .block.body != null then
         [(.block.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
       else "" end) as $block_code |
-      "if (( \($cond) )); then \($block_code); fi"
+      if $needs_wrapper then
+        "if (( \($cond) )); then \($block_code); fi"
+      else
+        "if \($cond); then \($block_code); fi"
+      end
     elif .kind == "if_false" then
       (if .block.tokens != null then
         ({ tokens: .block.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
@@ -857,7 +1126,11 @@ def expr_gen($locals; $ivars; $cvars):
       elif .block.body != null then
         [(.block.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
       else "" end) as $block_code |
-      "if (( !(\($cond)) )); then \($block_code); fi"
+      if $needs_wrapper then
+        "if (( !(\($cond)) )); then \($block_code); fi"
+      else
+        "if ! \($cond); then \($block_code); fi"
+      end
     elif .kind == "if_else" then
       (if .true_block.tokens != null then
         ({ tokens: .true_block.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
@@ -871,7 +1144,11 @@ def expr_gen($locals; $ivars; $cvars):
       elif .false_block.body != null then
         [(.false_block.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
       else "" end) as $false_code |
-      "if (( \($cond) )); then \($true_code); else \($false_code); fi"
+      if $needs_wrapper then
+        "if (( \($cond) )); then \($true_code); else \($false_code); fi"
+      else
+        "if \($cond); then \($true_code); else \($false_code); fi"
+      end
     elif .kind == "times_repeat" then
       (if .block.tokens != null then
         ({ tokens: .block.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
@@ -936,6 +1213,7 @@ def expr_gen($locals; $ivars; $cvars):
     else
       "# ERROR: unknown control flow kind \(.kind)"
     end
+    end
   else
     "# unknown: \(.type)"
   end;
@@ -979,8 +1257,28 @@ def expr_gen_json($locals; $ivars; $cvars):
     expr_gen($locals; $ivars; $cvars)
   end;
 
-# Generate condition for control flow
-def expr_gen_condition($locals; $ivars; $cvars):
+# Generate a test expression (file tests, string tests)
+def expr_gen_test_expr($locals; $ivars; $cvars):
+  (.subject | expr_gen($locals; $ivars; $cvars)) as $subj |
+  if .test == "fileExists" then "[[ -e \"\($subj)\" ]]"
+  elif .test == "isFile" then "[[ -f \"\($subj)\" ]]"
+  elif .test == "isDirectory" then "[[ -d \"\($subj)\" ]]"
+  elif .test == "isFifo" then "[[ -p \"\($subj)\" ]]"
+  elif .test == "isSymlink" then "[[ -L \"\($subj)\" ]]"
+  elif .test == "isReadable" then "[[ -r \"\($subj)\" ]]"
+  elif .test == "isWritable" then "[[ -w \"\($subj)\" ]]"
+  elif .test == "isExecutable" then "[[ -x \"\($subj)\" ]]"
+  elif .test == "isEmpty" then "[[ -z \"\($subj)\" ]]"
+  elif .test == "notEmpty" then "[[ -n \"\($subj)\" ]]"
+  else "# unknown test: \(.test)"
+  end;
+
+# Check if a condition is a test expression (needs [[ ]] wrapper instead of (( )))
+def is_test_condition:
+  .type == "test_expr";
+
+# Generate condition for control flow (inner part, no wrapper)
+def expr_gen_condition_inner($locals; $ivars; $cvars):
   if .type == "binary" then
     "\(.left | expr_gen_arith($locals; $ivars; $cvars)) \(.op) \(.right | expr_gen_arith($locals; $ivars; $cvars))"
   elif .type == "block" then
@@ -995,6 +1293,15 @@ def expr_gen_condition($locals; $ivars; $cvars):
   else expr_gen($locals; $ivars; $cvars)
   end;
 
+# Generate condition with appropriate wrapper
+def expr_gen_condition($locals; $ivars; $cvars):
+  if .type == "test_expr" then
+    # Test expressions generate their own [[ ]] wrapper
+    expr_gen_test_expr($locals; $ivars; $cvars)
+  else
+    expr_gen_condition_inner($locals; $ivars; $cvars)
+  end;
+
 # Helper to generate block body (handles both tokens and body array)
 def expr_gen_block_body($locals; $ivars; $cvars):
   if .tokens != null then
@@ -1006,27 +1313,48 @@ def expr_gen_block_body($locals; $ivars; $cvars):
     ""
   end;
 
+# Wrap a condition with appropriate syntax based on type
+# Test expressions already have [[ ]], arithmetic needs (( ))
+def wrap_condition($locals; $ivars; $cvars):
+  if .type == "test_expr" then
+    # Test expressions generate their own [[ ]] wrapper
+    expr_gen_test_expr($locals; $ivars; $cvars)
+  else
+    # Arithmetic conditions need (( )) wrapper
+    "(( \(expr_gen_condition_inner($locals; $ivars; $cvars)) ))"
+  end;
+
+# Wrap a negated condition
+def wrap_condition_negated($locals; $ivars; $cvars):
+  if .type == "test_expr" then
+    # Negate the test expression
+    "! \(expr_gen_test_expr($locals; $ivars; $cvars))"
+  else
+    # Arithmetic conditions with negation
+    "(( !(\(expr_gen_condition_inner($locals; $ivars; $cvars))) ))"
+  end;
+
 # Generate code for control flow constructs
 def expr_gen_control_flow($locals; $ivars; $cvars):
   if .kind == "if_true" then
-    "if (( \(.condition | expr_gen_condition($locals; $ivars; $cvars)) )); then \(.block | expr_gen_block_body($locals; $ivars; $cvars)); fi"
+    "if \(.condition | wrap_condition($locals; $ivars; $cvars)); then \(.block | expr_gen_block_body($locals; $ivars; $cvars)); fi"
   elif .kind == "if_false" then
-    "if (( !(\(.condition | expr_gen_condition($locals; $ivars; $cvars))) )); then \(.block | expr_gen_block_body($locals; $ivars; $cvars)); fi"
+    "if \(.condition | wrap_condition_negated($locals; $ivars; $cvars)); then \(.block | expr_gen_block_body($locals; $ivars; $cvars)); fi"
   elif .kind == "if_else" then
-    "if (( \(.condition | expr_gen_condition($locals; $ivars; $cvars)) )); then \(.true_block | expr_gen_block_body($locals; $ivars; $cvars)); else \(.false_block | expr_gen_block_body($locals; $ivars; $cvars)); fi"
+    "if \(.condition | wrap_condition($locals; $ivars; $cvars)); then \(.true_block | expr_gen_block_body($locals; $ivars; $cvars)); else \(.false_block | expr_gen_block_body($locals; $ivars; $cvars)); fi"
   elif .kind == "times_repeat" then
     "for ((_i=0; _i<\(.count | expr_gen_arith($locals; $ivars; $cvars)); _i++)); do \(.block | expr_gen_block_body($locals; $ivars; $cvars)); done"
   elif .kind == "while_true" then
     if .condition.type == "block" then
       "while \(.condition | expr_gen_block_body($locals; $ivars; $cvars)); do \(.block | expr_gen_block_body($locals; $ivars; $cvars)); done"
     else
-      "while (( \(.condition | expr_gen_condition($locals; $ivars; $cvars)) )); do \(.block | expr_gen_block_body($locals; $ivars; $cvars)); done"
+      "while \(.condition | wrap_condition($locals; $ivars; $cvars)); do \(.block | expr_gen_block_body($locals; $ivars; $cvars)); done"
     end
   elif .kind == "while_false" then
     if .condition.type == "block" then
       "while ! \(.condition | expr_gen_block_body($locals; $ivars; $cvars)); do \(.block | expr_gen_block_body($locals; $ivars; $cvars)); done"
     else
-      "while (( !(\(.condition | expr_gen_condition($locals; $ivars; $cvars))) )); do \(.block | expr_gen_block_body($locals; $ivars; $cvars)); done"
+      "while \(.condition | wrap_condition_negated($locals; $ivars; $cvars)); do \(.block | expr_gen_block_body($locals; $ivars; $cvars)); done"
     end
   elif .kind == "try_catch" then
     (.error_param // "error") as $error_var |
@@ -1128,8 +1456,13 @@ def should_use_expr_parser:
   if ($tokens | length) < 3 then false
   else
     # First, check for strong Smalltalk signals that should always use expr parser
-    # Collection literals, try:, and triple-quoted strings are unambiguous Smalltalk syntax
-    (any($tokens[]; .type == "SYMBOL" or .type == "HASH_LPAREN" or .type == "HASH_LBRACE" or .type == "TRIPLESTRING")) as $has_collection_literals |
+    # Collection literals, try:, triple-quoted strings, and test predicates are unambiguous Smalltalk syntax
+    # Test predicates are now IDENTIFIER tokens with specific values
+    def is_test_predicate: . as $v |
+      ["fileExists", "isFile", "isDirectory", "isFifo", "isSymlink",
+       "isReadable", "isWritable", "isExecutable", "isEmpty", "notEmpty"] | index($v) != null;
+    (any($tokens[]; .type == "SYMBOL" or .type == "HASH_LPAREN" or .type == "HASH_LBRACE" or .type == "TRIPLESTRING" or
+                    (.type == "IDENTIFIER" and (.value | is_test_predicate)))) as $has_collection_literals |
     (any($tokens[]; .type == "KEYWORD" and .value == "try:")) as $has_try_catch |
     if $has_collection_literals or $has_try_catch then true
     else
@@ -1189,20 +1522,22 @@ def should_use_expr_parser:
           $tokens[$i + 1].type == "MINUS" or $tokens[$i + 1].type == "SLASH") and
          ($tokens[$i + 2].type == "IDENTIFIER" or $tokens[$i + 2].type == "NUMBER"))
         or
-        # Pattern 4: Cascade syntax - SEMICOLON after identifier (@ self foo; bar)
+        # Pattern 4: Cascade syntax - SEMI after identifier (@ self foo; bar)
         ($tokens[$i].type == "IDENTIFIER" and
-         $tokens[$i + 1].type == "SEMICOLON")
+         $tokens[$i + 1].type == "SEMI")
         or
         # Pattern 5: Return bare identifier - CARET IDENTIFIER (DOT or NEWLINE or end)
         ($tokens[$i].type == "CARET" and
          $tokens[$i + 1].type == "IDENTIFIER" and
          (($tokens[$i + 2].type // "END") == "DOT" or ($tokens[$i + 2].type // "END") == "NEWLINE" or ($tokens[$i + 2].type // "END") == "END"))
         or
-        # Pattern 6: Control flow keywords (ifTrue:, ifFalse:, whileTrue:, timesRepeat:, try:)
+        # Pattern 6: Control flow keywords (ifTrue:, ifFalse:, whileTrue:, timesRepeat:, try:, and:, or:, ifNil:, ifNotNil:)
         ($tokens[$i].type == "KEYWORD" and
          ($tokens[$i].value == "ifTrue:" or $tokens[$i].value == "ifFalse:" or
           $tokens[$i].value == "whileTrue:" or $tokens[$i].value == "whileFalse:" or
-          $tokens[$i].value == "timesRepeat:" or $tokens[$i].value == "try:"))
+          $tokens[$i].value == "timesRepeat:" or $tokens[$i].value == "try:" or
+          $tokens[$i].value == "and:" or $tokens[$i].value == "or:" or
+          $tokens[$i].value == "ifNil:" or $tokens[$i].value == "ifNotNil:"))
         or
         # Pattern 7: Comparison operators between identifiers/numbers
         (($tokens[$i].type == "IDENTIFIER" or $tokens[$i].type == "NUMBER" or $tokens[$i].type == "RPAREN") and

@@ -50,63 +50,33 @@ File subclass: Object
   ]
 
   # Check if file exists
-  rawMethod: exists [
-    local p=$(_ivar path)
-    if [[ -e "$p" ]]; then
-      echo "true"
-    else
-      echo "false"
-    fi
+  method: exists [
+    (path fileExists) ifTrue: [^ 'true'] ifFalse: [^ 'false']
   ]
 
   # Check if it's a regular file
-  rawMethod: isFile [
-    local p=$(_ivar path)
-    if [[ -f "$p" ]]; then
-      echo "true"
-    else
-      echo "false"
-    fi
+  method: isFile [
+    (path isFile) ifTrue: [^ 'true'] ifFalse: [^ 'false']
   ]
 
   # Check if it's a directory
-  rawMethod: isDirectory [
-    local p=$(_ivar path)
-    if [[ -d "$p" ]]; then
-      echo "true"
-    else
-      echo "false"
-    fi
+  method: isDirectory [
+    (path isDirectory) ifTrue: [^ 'true'] ifFalse: [^ 'false']
   ]
 
   # Check if it's a FIFO
-  rawMethod: isFifo [
-    local p=$(_ivar path)
-    if [[ -p "$p" ]]; then
-      echo "true"
-    else
-      echo "false"
-    fi
+  method: isFifo [
+    (path isFifo) ifTrue: [^ 'true'] ifFalse: [^ 'false']
   ]
 
   # Read entire file contents
-  rawMethod: read [
-    local p=$(_ivar path)
-    if [[ -f "$p" ]]; then
-      cat "$p"
-    else
-      echo ""
-    fi
+  method: read [
+    (path isFile) ifTrue: [^ $(cat "$(_ivar path)")] ifFalse: [^ '']
   ]
 
   # Read file as lines (one per line)
-  rawMethod: readLines [
-    local p=$(_ivar path)
-    if [[ -f "$p" ]]; then
-      cat "$p"
-    else
-      echo ""
-    fi
+  method: readLines [
+    (path isFile) ifTrue: [^ $(cat "$(_ivar path)")] ifFalse: [^ '']
   ]
 
   # Write contents to file (overwrites)
