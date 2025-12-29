@@ -104,12 +104,9 @@ TestCase subclass: Object
   # Nil/Empty Assertions
   # ==========================================
 
-  rawMethod: assertNil: value [
-    if [[ -z "$value" || "$value" == "null" ]]; then
-      @ "$_RECEIVER" _pass
-    else
-      @ "$_RECEIVER" _fail: "Expected nil/empty but got '$value'"
-    fi
+  method: assertNil: value [
+    (value isEmpty) or: [value = 'null'] ifTrue: [@ self _pass]
+                                         ifFalse: [@ self _fail: 'Expected nil/empty value']
   ]
 
   rawMethod: assert_nil [
@@ -121,12 +118,9 @@ TestCase subclass: Object
     fi
   ]
 
-  rawMethod: assertNotNil: value [
-    if [[ -n "$value" && "$value" != "null" ]]; then
-      @ "$_RECEIVER" _pass
-    else
-      @ "$_RECEIVER" _fail: "Expected non-nil value but got nil/empty"
-    fi
+  method: assertNotNil: value [
+    (value notEmpty) and: [value ~= 'null'] ifTrue: [@ self _pass]
+                                            ifFalse: [@ self _fail: 'Expected non-nil value']
   ]
 
   rawMethod: assert_not_nil [
@@ -160,12 +154,9 @@ TestCase subclass: Object
     fi
   ]
 
-  rawMethod: assert: actual matches: pattern [
-    if echo "$actual" | grep -qE "$pattern"; then
-      @ "$_RECEIVER" _pass
-    else
-      @ "$_RECEIVER" _fail: "Expected '$actual' to match pattern '$pattern'"
-    fi
+  method: assert: actual matches: pattern [
+    (actual matches: pattern) ifTrue: [@ self _pass]
+                              ifFalse: [@ self _fail: 'Pattern match failed']
   ]
 
   rawMethod: assert_matches [
@@ -182,12 +173,9 @@ TestCase subclass: Object
   # Numeric Assertions
   # ==========================================
 
-  rawMethod: assert: actual greaterThan: expected [
-    if [[ "$actual" -gt "$expected" ]]; then
-      @ "$_RECEIVER" _pass
-    else
-      @ "$_RECEIVER" _fail: "Expected $actual > $expected"
-    fi
+  method: assert: actual greaterThan: expected [
+    (actual > expected) ifTrue: [@ self _pass]
+                        ifFalse: [@ self _fail: 'Expected greater than']
   ]
 
   rawMethod: assert_greater_than [
@@ -200,12 +188,9 @@ TestCase subclass: Object
     fi
   ]
 
-  rawMethod: assert: actual lessThan: expected [
-    if [[ "$actual" -lt "$expected" ]]; then
-      @ "$_RECEIVER" _pass
-    else
-      @ "$_RECEIVER" _fail: "Expected $actual < $expected"
-    fi
+  method: assert: actual lessThan: expected [
+    (actual < expected) ifTrue: [@ self _pass]
+                        ifFalse: [@ self _fail: 'Expected less than']
   ]
 
   rawMethod: assert_less_than [
@@ -218,20 +203,14 @@ TestCase subclass: Object
     fi
   ]
 
-  rawMethod: assert: actual greaterOrEqual: expected [
-    if [[ "$actual" -ge "$expected" ]]; then
-      @ "$_RECEIVER" _pass
-    else
-      @ "$_RECEIVER" _fail: "Expected $actual >= $expected"
-    fi
+  method: assert: actual greaterOrEqual: expected [
+    (actual >= expected) ifTrue: [@ self _pass]
+                         ifFalse: [@ self _fail: 'Expected greater or equal']
   ]
 
-  rawMethod: assert: actual lessOrEqual: expected [
-    if [[ "$actual" -le "$expected" ]]; then
-      @ "$_RECEIVER" _pass
-    else
-      @ "$_RECEIVER" _fail: "Expected $actual <= $expected"
-    fi
+  method: assert: actual lessOrEqual: expected [
+    (actual <= expected) ifTrue: [@ self _pass]
+                         ifFalse: [@ self _fail: 'Expected less or equal']
   ]
 
   # ==========================================

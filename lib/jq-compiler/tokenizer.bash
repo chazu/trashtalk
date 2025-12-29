@@ -693,6 +693,8 @@ tokenize() {
                     fi
                     add_token "KEYWORD" "$word" "$line" "$word_start_col"
                 else
+                    # All non-keyword identifiers (including test predicates like isFile, isEmpty, etc.)
+                    # Test predicates are handled contextually in the expression parser
                     add_token "IDENTIFIER" "$word" "$line" "$word_start_col"
                 fi
                 ;;
@@ -764,12 +766,18 @@ tokenize() {
                 ;;
 
             # ------------------------------------------------------------------
-            # Tilde - home directory
+            # Tilde - home directory or ~= string inequality
             # ------------------------------------------------------------------
             '~')
-                add_token "TILDE" "~" "$line" "$col"
-                ((i++))
-                ((col++))
+                if [[ "$next" == "=" ]]; then
+                    add_token "STR_NE" "~=" "$line" "$col"
+                    ((i += 2))
+                    ((col += 2))
+                else
+                    add_token "TILDE" "~" "$line" "$col"
+                    ((i++))
+                    ((col++))
+                fi
                 ;;
 
             # ------------------------------------------------------------------
