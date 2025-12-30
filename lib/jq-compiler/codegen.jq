@@ -812,7 +812,9 @@ def expr_gen_arith($locals; $ivars; $cvars):
   else
     # For non-arithmetic types, fall through to main generator
     if .type == "self" then "\"$_RECEIVER\""
-    elif .type == "subshell" then .value
+    elif .type == "subshell" then
+      # Replace self with "$_RECEIVER" in subshell content
+      .value | gsub("@ self\\b"; "@ \"$_RECEIVER\"")
     elif .type == "variable" then .value
     else "0"
     end
@@ -833,7 +835,9 @@ def expr_gen($locals; $ivars; $cvars):
     else .name  # bare identifier (command name, etc.)
     end
   elif .type == "variable" then .value
-  elif .type == "subshell" then .value
+  elif .type == "subshell" then
+    # Replace self with "$_RECEIVER" in subshell content
+    .value | gsub("@ self\\b"; "@ \"$_RECEIVER\"")
   elif .type == "arithmetic" then .value
   elif .type == "arith_cmd" then .value
   elif .type == "path" then .value
@@ -883,9 +887,13 @@ def expr_gen($locals; $ivars; $cvars):
     # Check if target is ivar - need to use _ivar_set
     # Note: collection literals in blocks handled by expr_gen_stmts, not here
     (.value.type == "array_literal" or .value.type == "dict_literal") as $is_collection |
+    (.value.type == "string") as $is_string |
+    (.value.type == "dstring") as $is_dstring |
     (.value | expr_gen($locals; $ivars; $cvars)) as $val_code |
     if expr_is_local(.target; $locals) then
       if $is_collection then "\(.target)=\($val_code)"
+      elif $is_string then "\(.target)=\"\(.value.value)\""  # Use raw string value
+      elif $is_dstring then "\(.target)=\($val_code)"  # dstrings already have quotes
       else "\(.target)=\"\($val_code)\""
       end
     elif expr_is_ivar(.target; $ivars) then
@@ -896,6 +904,8 @@ def expr_gen($locals; $ivars; $cvars):
       "_cvar_set \(.target) \"\($val_code)\""
     else
       if $is_collection then "\(.target)=\($val_code)"
+      elif $is_string then "\(.target)=\"\(.value.value)\""  # Use raw string value
+      elif $is_dstring then "\(.target)=\($val_code)"  # dstrings already have quotes
       else "\(.target)=\"\($val_code)\""
       end
     end
@@ -964,7 +974,7 @@ def expr_gen($locals; $ivars; $cvars):
       elif $stmt_count == 1 then
         # Single statement - wrap in echo if it produces a value
         ($parsed.body[0]) as $stmt |
-        if $stmt.type == "return" or $stmt.type == "message_send" or $stmt.type == "cascade" then
+        if $stmt.type == "return" or $stmt.type == "message_send" or $stmt.type == "cascade" or $stmt.type == "locals" or $stmt.type == "assignment" then
           $stmt | expr_gen($block_locals; $ivars; $cvars)
         else
           # Value expression - wrap in echo
@@ -1443,11 +1453,17 @@ def expr_gen_stmts($locals; $ivars; $cvars):
       #   - For ivars: use JSON serialization
       ($stmt.value.type == "array_literal" or $stmt.value.type == "dict_literal") as $is_collection |
       ($stmt.value.type == "triplestring") as $is_ansi_quoted |
+      ($stmt.value.type == "string") as $is_string |
+      ($stmt.value.type == "dstring") as $is_dstring |
       ($stmt.value | expr_gen($current_locals; $ivars; $cvars)) as $val_code |
       ($stmt.value | expr_gen_json($current_locals; $ivars; $cvars)) as $json_code |
       if expr_is_local($stmt.target; $current_locals) then
         if $is_collection or $is_ansi_quoted then
           .lines += ["  \($stmt.target)=\($val_code)"]
+        elif $is_string then
+          .lines += ["  \($stmt.target)=\"\($stmt.value.value)\""]  # Use raw string value
+        elif $is_dstring then
+          .lines += ["  \($stmt.target)=\($val_code)"]  # dstrings already have quotes
         else
           .lines += ["  \($stmt.target)=\"\($val_code)\""]
         end
@@ -1520,7 +1536,10 @@ def should_use_expr_parser:
     (any($tokens[]; .type == "SYMBOL" or .type == "HASH_LPAREN" or .type == "HASH_LBRACE" or .type == "TRIPLESTRING" or
                     (.type == "IDENTIFIER" and (.value | is_test_predicate)))) as $has_collection_literals |
     (any($tokens[]; .type == "KEYWORD" and .value == "try:")) as $has_try_catch |
-    if $has_collection_literals or $has_try_catch then true
+    # Block literals must use expr parser to compile to Block objects
+    (any(range(0; ($tokens | length) - 1) as $i |
+      $tokens[$i].type == "LBRACKET" and $tokens[$i + 1].type == "BLOCK_PARAM")) as $has_block_literal |
+    if $has_collection_literals or $has_try_catch or $has_block_literal then true
     else
     # Check for exclusions: bash constructs that shouldn't use expr parser
     # Bash commands that appear as bare identifiers (not after @)
@@ -1614,6 +1633,10 @@ def should_use_expr_parser:
         ($tokens[$i].type == "AT" and
          $tokens[$i + 1].type == "IDENTIFIER" and
          ($tokens[$i + 2].type == "KEYWORD" or $tokens[$i + 2].type == "IDENTIFIER"))
+        or
+        # Pattern 10: Block literal - LBRACKET BLOCK_PARAM (e.g., [:x | ...])
+        ($tokens[$i].type == "LBRACKET" and
+         $tokens[$i + 1].type == "BLOCK_PARAM")
       )
     end
     end  # close if $has_collection_literals

@@ -1738,8 +1738,10 @@ function @ {
   # - repl: needs direct terminal I/O
   # - reloadClass/compileAndReload: need source/unset to affect parent
   # - edit/new: need tty for editor and call compileAndReload
+  # - value/valueWith:/valueWith:and:/do: need to modify caller variables (blocks)
   local ___selector="$2"
-  if [[ "$___selector" == "repl" || "$___selector" == "reloadClass" || "$___selector" == "compileAndReload" || "$___selector" == "edit" || "$___selector" == "new" ]]; then
+  if [[ "$___selector" == "repl" || "$___selector" == "reloadClass" || "$___selector" == "compileAndReload" || "$___selector" == "edit" || "$___selector" == "new" || \
+        "$___selector" == "value" || "$___selector" == "valueWith:" || "$___selector" == "do:" ]]; then
     send "$@"
     return $?
   fi
