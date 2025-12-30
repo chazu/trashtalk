@@ -854,11 +854,20 @@ def expr_gen($locals; $ivars; $cvars):
     "$(( \(.left | expr_gen_arith($locals; $ivars; $cvars)) \(.op) \(.right | expr_gen_arith($locals; $ivars; $cvars)) ))"
   elif .type == "message_send" then
     (.receiver | expr_gen($locals; $ivars; $cvars)) as $recv |
+    # Quote receiver if it's a variable expansion (contains $)
+    (if ($recv | test("^\\$")) then "\"\($recv)\"" else $recv end) as $quoted_recv |
+    # Format selector with args - keyword methods need colons for dispatcher
     (if ((.args // []) | length) > 0 then
-      " " + ([(.args // [])[] | expr_gen($locals; $ivars; $cvars)] | join(" "))
-    else ""
-    end) as $args |
-    "@ \($recv) \(.selector // "")\($args)"
+      # Keyword method: interleave keywords and args
+      # selector "at_put" with args [idx, val] -> "at: idx put: val"
+      (.selector | split("_")) as $keywords |
+      ([(.args // [])[] | expr_gen($locals; $ivars; $cvars)]) as $arg_codes |
+      ([$keywords, $arg_codes] | transpose | map("\(.[0]): \(.[1])") | join(" "))
+    else
+      # Unary method: just the selector
+      .selector // ""
+    end) as $msg |
+    "@ \($quoted_recv) \($msg)"
   elif .type == "cascade" then
     # Cascade: send multiple messages to same receiver
     # In expression context, we capture receiver and return last result
@@ -935,7 +944,7 @@ def expr_gen($locals; $ivars; $cvars):
     # Escape single quotes in body for bash string
     ($body_code | gsub("'"; "'\\''")) as $escaped_body |
     # Create Block with empty params
-    "$(@ Block params_code_captured '[]' '\($escaped_body)' '{\"_RECEIVER\":\"'\"$_RECEIVER\"'\"}')"
+    "$(@ Block params: '[]' code: '\($escaped_body)' captured: '{\"_RECEIVER\":\"'\"$_RECEIVER\"'\"}')"
   elif .type == "block_literal" then
     # Block literal with parameters: [:x :y | body] -> Block creation
     # Params become JSON array, body gets compiled, captured vars include _RECEIVER
@@ -980,7 +989,7 @@ def expr_gen($locals; $ivars; $cvars):
     ($body_code | gsub("'"; "'\\''")) as $escaped_body |
     # Build params JSON array: ["x", "y"]
     ($block_params | map("\"\(.)\"") | join(",")) as $params_json |
-    "$(@ Block params_code_captured '[\($params_json)]' '\($escaped_body)' '{\"_RECEIVER\":\"'\"$_RECEIVER\"'\"}')"
+    "$(@ Block params: '[\($params_json)]' code: '\($escaped_body)' captured: '{\"_RECEIVER\":\"'\"$_RECEIVER\"'\"}')"
   elif .type == "control_flow" then
     # Inline control flow generation to avoid forward reference
     # Helper function to generate a condition with appropriate wrapper
@@ -1598,6 +1607,13 @@ def should_use_expr_parser:
         ($tokens[$i].type == "SYMBOL" or
          $tokens[$i].type == "HASH_LPAREN" or
          $tokens[$i].type == "HASH_LBRACE")
+        or
+        # Pattern 9: Message send to variable - AT IDENTIFIER (KEYWORD or IDENTIFIER)
+        # e.g., @ aBlock valueWith: or @ aBlock value
+        # This enables proper variable expansion for message receivers
+        ($tokens[$i].type == "AT" and
+         $tokens[$i + 1].type == "IDENTIFIER" and
+         ($tokens[$i + 2].type == "KEYWORD" or $tokens[$i + 2].type == "IDENTIFIER"))
       )
     end
     end  # close if $has_collection_literals
