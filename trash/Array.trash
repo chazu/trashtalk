@@ -103,7 +103,7 @@ Array subclass: Object
 
     for ((i=0; i<len; i++)); do
       element=$(echo "$items" | jq -r ".[$i]")
-      @ "$block_id" valueWith "$element"
+      @ "$block_id" valueWith: "$element"
     done
   ]
 
@@ -161,7 +161,7 @@ Array subclass: Object
 
     for ((i=0; i<len; i++)); do
       element=$(echo "$items" | jq -r ".[$i]")
-      acc=$(@ "$block_id" valueWith_and "$acc" "$element")
+      acc=$(@ "$block_id" valueWith: "$acc" and: "$element")
     done
 
     echo "$acc"
