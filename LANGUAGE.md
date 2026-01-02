@@ -84,6 +84,41 @@ rawClassMethod: new [
 ]
 ```
 
+### Method Categories
+
+Organize methods into logical groups (no runtime effect, documentation only):
+
+```smalltalk
+category: 'initialization'
+  method: setup [
+    @ self reset
+  ]
+
+category: 'accessing'
+  method: getValue [
+    ^ value
+  ]
+```
+
+### Method Aliases
+
+Create alternate names for existing methods:
+
+```smalltalk
+alias: size for: count
+alias: length for: count
+```
+
+### Protocol Requirements
+
+Declare method dependencies (documentation/validation):
+
+```smalltalk
+requires: 'lib/database.bash'    # File dependency
+requires: do:                     # Required method selector
+requires: inject: into:           # Required keyword method
+```
+
 ## Traits
 
 Traits are reusable method collections. Define a trait:
@@ -132,6 +167,8 @@ Send multiple messages to the same receiver with `;`:
 @ self reset; increment; increment.   # Three messages to self
 ```
 
+Each cascaded message is compiled to a separate `@` call with the same receiver.
+
 ## Variables
 
 ### Local Variables
@@ -149,17 +186,28 @@ method: example [
 
 ### Instance Variables
 
-Auto-generated getters/setters:
+Declared at class level with optional defaults:
 
 ```smalltalk
 instanceVars: count:0 name
+```
 
-# In methods:
+Auto-generated getters/setters:
+
+```smalltalk
 @ self getCount            # Getter
 @ self setCount: 5         # Setter
 ```
 
-In `rawMethod:` blocks, use `_ivar` and `_ivar_set`:
+**Automatic inference**: In regular `method:` blocks, instance variable names are automatically detected and wrapped with `$(_ivar varname)` when used in expressions:
+
+```smalltalk
+method: increment [
+  value := value + step    # Compiles to: value=$(( $(_ivar value) + $(_ivar step) ))
+]
+```
+
+In `rawMethod:` blocks, use explicit access:
 
 ```smalltalk
 value := $(_ivar count)
@@ -205,15 +253,110 @@ Counter subclass: Object
 
 Control flow uses blocks `[...]` and is inlined at compile time:
 
+### Conditionals
+
 ```smalltalk
-# Conditionals
+# Basic conditionals
 (x > 5) ifTrue: [@ self doSomething].
 (x > 5) ifFalse: [@ self doOther].
 (x > 5) ifTrue: [a := 1] ifFalse: [a := 0].
 
-# Loops
+# Nil checking
+value ifNil: [value := 'default'].
+value ifNil: [^ 'missing'] ifNotNil: [^ value].
+value ifNotNil: [@ self process: value].
+```
+
+### Loops
+
+```smalltalk
+# Repeat N times
 5 timesRepeat: [@ self tick].
+
+# While loops
 [running] whileTrue: [@ self process].
+[count < max] whileFalse: [@ self wait].
+
+# Range iteration
+1 to: 10 do: [:i |
+  @ Console print: i
+].
+```
+
+### Boolean Operators
+
+```smalltalk
+# Combine conditions
+(x > 0) and: [y > 0] ifTrue: [@ self valid].
+(x > 100) or: [y > 100] ifTrue: [@ self overflow].
+
+# Negation
+(x > 10) not ifTrue: [@ self small].
+```
+
+## Operators
+
+### Comparison Operators
+
+Trashtalk distinguishes between string and numeric comparisons:
+
+| Operator | Type | Description |
+|----------|------|-------------|
+| `=` | String | String equality (`[[ "$a" == "$b" ]]`) |
+| `~=` | String | String inequality (`[[ "$a" != "$b" ]]`) |
+| `==` | Numeric | Numeric equality (`(( a == b ))`) |
+| `!=` | Numeric | Numeric inequality (`(( a != b ))`) |
+| `>` | Numeric | Greater than |
+| `<` | Numeric | Less than |
+| `>=` | Numeric | Greater or equal |
+| `<=` | Numeric | Less or equal |
+| `=~` | Regex | Regex match (`[[ "$str" =~ pattern ]]`) |
+
+```smalltalk
+# String comparison
+(name = 'Alice') ifTrue: [@ self greet].
+(status ~= 'active') ifTrue: [@ self activate].
+
+# Numeric comparison
+(count > 0) ifTrue: [@ self process].
+(x >= min) and: [x <= max] ifTrue: [@ self inRange].
+
+# Regex matching
+(email =~ '^[^@]+@[^@]+$') ifTrue: [@ self validEmail].
+(str matches: 'pattern') ifTrue: [@ self matched].
+```
+
+### Arithmetic Operators
+
+```smalltalk
+a + b
+a - b
+a * b
+a / b
+a % b    # Modulo
+-a       # Unary minus
+```
+
+Precedence: `*`, `/`, `%` bind tighter than `+`, `-`.
+
+### Test Predicates
+
+File and string testing predicates:
+
+```smalltalk
+# File tests
+(path fileExists) ifTrue: [@ self load].
+(path isFile) ifTrue: [@ self readFile].
+(path isDirectory) ifTrue: [@ self listDir].
+(path isReadable) ifTrue: [@ self open].
+(path isWritable) ifTrue: [@ self save].
+(path isExecutable) ifTrue: [@ self run].
+(path isFifo) ifTrue: [@ self readPipe].
+(path isSymlink) ifTrue: [@ self resolve].
+
+# String tests
+(str isEmpty) ifTrue: [str := 'default'].
+(str notEmpty) ifTrue: [@ self process].
 ```
 
 ## Blocks (Closures)
@@ -224,12 +367,52 @@ For passing code to methods like `do:`, `collect:`, `select:`:
 [:x | x + 1]                # Block with one parameter
 [:x :y | x + y]             # Block with two parameters
 [@ self doSomething]        # Block with no parameters
+```
 
-# Usage with Array:
+### Block Evaluation
+
+```smalltalk
+@ block value                    # No args
+@ block valueWith: arg           # One arg
+@ block valueWith: a and: b      # Two args
+@ block numArgs                  # Number of parameters
+```
+
+### Usage with Collections
+
+```smalltalk
 @ myArray do: [:each | @ Console print: each]
 @ myArray collect: [:x | x * 2]
 @ myArray select: [:x | x > 5]
 @ myArray inject: 0 into: [:sum :x | sum + x]
+```
+
+## String Literals
+
+### Single-Quoted Strings
+
+```smalltalk
+'simple string'
+```
+
+### Double-Quoted Strings (Interpolated)
+
+```smalltalk
+"Value is $(@ self getValue)"
+"Count: $count"
+```
+
+### Triple-Quoted Strings (Multi-line)
+
+```smalltalk
+text := '''This is a
+multi-line string
+with preserved newlines'''
+
+# Can also be used in instance variable defaults
+instanceVars: template:'''default
+multi-line
+value'''
 ```
 
 ## Collection Literals
@@ -239,6 +422,71 @@ For passing code to methods like `do:`, `collect:`, `select:`:
 #(1 2 3)                    # Array literal
 #{key: value}               # Dictionary literal
 ```
+
+## Array Class
+
+Create and manipulate arrays:
+
+```smalltalk
+arr := $(@ Array new)
+@ $arr push: 'item'
+@ $arr at: 0 put: 'first'
+item := $(@ $arr at: 0)
+size := $(@ $arr size)
+last := $(@ $arr pop)
+```
+
+### Array Methods
+
+| Method | Description |
+|--------|-------------|
+| `new` | Create empty array |
+| `at:` | Get element at index |
+| `at:put:` | Set element at index |
+| `push:` | Add to end |
+| `pop` | Remove and return last |
+| `size` | Get length |
+| `show` | Print contents |
+| `withValues:` | Initialize with values |
+| `do:` | Iterate with block |
+| `collect:` | Map with block |
+| `select:` | Filter with block |
+| `inject:into:` | Reduce with block |
+
+## Dictionary Class
+
+Create and manipulate key-value pairs:
+
+```smalltalk
+dict := $(@ Dictionary new)
+@ $dict at: 'name' put: 'Alice'
+name := $(@ $dict at: 'name')
+@ $dict removeAt: 'name'
+```
+
+### Dictionary Methods
+
+| Method | Description |
+|--------|-------------|
+| `new` | Create empty dictionary |
+| `at:` | Get value for key |
+| `at:put:` | Set value for key |
+| `at:ifAbsent:` | Get with default |
+| `includesKey:` | Check if key exists |
+| `removeAt:` | Remove key-value pair |
+| `keys` | Get all keys |
+| `values` | Get all values |
+| `size` | Number of entries |
+| `isEmpty` | Check if empty |
+| `clear` | Remove all entries |
+| `merge:` | Merge another dictionary |
+| `do:` | Iterate with [:key :value] |
+| `keysDo:` | Iterate keys only |
+| `valuesDo:` | Iterate values only |
+| `collect:` | Map values with block |
+| `select:` | Filter with block |
+| `asJson` | Export as JSON |
+| `fromJson:` | Create from JSON (class method) |
 
 ## Persistence
 
@@ -303,6 +551,52 @@ rawMethod: handleNetworkError [
 ]
 ```
 
+## Test Framework
+
+Trashtalk includes a TestCase class for writing tests:
+
+```smalltalk
+MyTests subclass: TestCase
+
+  method: testAddition [
+    | result |
+    result := 2 + 2
+    @ self assert: result equals: 4
+  ]
+
+  method: testGreater [
+    @ self assert: 10 greaterThan: 5
+  ]
+
+  method: testString [
+    @ self assert: 'hello world' contains: 'world'
+  ]
+```
+
+Run tests with:
+```smalltalk
+@ MyTests runAll
+```
+
+### Assertion Methods
+
+| Method | Description |
+|--------|-------------|
+| `assert:equals:` | Check equality |
+| `assert:notEquals:` | Check inequality |
+| `assertTrue:` | Check truthy |
+| `assertFalse:` | Check falsy |
+| `assertNil:` | Check nil/empty |
+| `assertNotNil:` | Check not nil |
+| `assert:contains:` | Check substring |
+| `assert:matches:` | Check regex match |
+| `assert:greaterThan:` | Numeric comparison |
+| `assert:lessThan:` | Numeric comparison |
+| `assert:greaterOrEqual:` | Numeric comparison |
+| `assert:lessOrEqual:` | Numeric comparison |
+| `skip` | Skip current test |
+| `pending` | Mark test as pending |
+
 ## Futures (Async)
 
 Run computations in the background:
@@ -355,6 +649,36 @@ Access embedded source code and hashes:
 
 # Get SHA-256 hash of source
 @ Trash hashFor: Counter
+```
+
+## Return Values
+
+The `^` operator returns a value from a method:
+
+```smalltalk
+method: getValue [
+  ^ value
+]
+```
+
+This compiles to:
+```bash
+echo "$value"; return
+```
+
+The returned value is captured via command substitution:
+```smalltalk
+result := $(@ self getValue)
+```
+
+## REPL Features
+
+In the REPL, the `$__` variable stores the result of the last `@` command:
+
+```bash
+@ Counter new
+@ $__ increment    # Uses result of previous command
+@ $__ getValue
 ```
 
 ## Complete Example
@@ -416,7 +740,8 @@ task=$(@ Task titled "Write docs")
 - End statements with `.` when followed by another statement
 - Use `^` to return values from methods
 - `@ self` refers to the current receiver
-- The `$__` variable holds the result of the last `@` command
+- The `$__` variable holds the result of the last `@` command (REPL only)
+- Instance variables are automatically inferred in regular methods
 
 ## Known Issues
 
