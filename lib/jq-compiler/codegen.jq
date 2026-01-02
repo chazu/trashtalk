@@ -1796,8 +1796,8 @@ def generateAccessors:
       "  echo \"$(_ivar \($varName))\"; return",
       "}",
       "",
-      # Legacy setter: setFoo() for backwards compatibility
-      "\($prefix)__set\($capName)() {",
+      # Legacy setter: setFoo_() for backwards compatibility (called as setFoo: value)
+      "\($prefix)__set\($capName)_() {",
       "  _ivar_set \($varName) \"$1\"",
       "}"
     ),

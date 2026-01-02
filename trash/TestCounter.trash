@@ -13,7 +13,7 @@ TestCounter subclass: TestCase
   rawMethod: testIncrementBy [
     local c val
     c=$(@ Counter new)
-    @ "$c" incrementBy 5
+    @ "$c" incrementBy: 5
     val=$(@ "$c" getValue)
     @ "$_RECEIVER" assert_equals "$val" 5
   ]
@@ -21,7 +21,7 @@ TestCounter subclass: TestCase
   rawMethod: testDecrement [
     local c val
     c=$(@ Counter new)
-    @ "$c" setValue 10
+    @ "$c" setValue: 10
     @ "$c" decrement >/dev/null
     val=$(@ "$c" getValue)
     @ "$_RECEIVER" assert_equals "$val" 9
@@ -39,7 +39,7 @@ TestCounter subclass: TestCase
   rawMethod: testStep [
     local c val
     c=$(@ Counter new)
-    @ "$c" setStep 5
+    @ "$c" setStep: 5
     @ "$c" increment >/dev/null
     val=$(@ "$c" getValue)
     @ "$_RECEIVER" assert_equals "$val" 5
