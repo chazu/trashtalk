@@ -1,0 +1,112 @@
+# FIFO - Named pipe abstraction
+# Encapsulates creation, access, and cleanup of POSIX named pipes (FIFOs)
+FIFO subclass: Object
+  instanceVars: path:'' keeperPid:''
+
+  # Create a FIFO instance for a given path (does not create the pipe yet)
+  rawClassMethod: at: aPath [
+    local id
+    id=$(_generate_instance_id FIFO)
+    _create_instance FIFO "$id"
+    @ "$id" _setPath: "$aPath"
+    echo "$id"
+  ]
+
+  # Get the path of this FIFO
+  method: path [
+    _ivar path
+  ]
+
+  # Create the named pipe on disk
+  rawMethod: create [
+    local p
+    p="$(_ivar path)"
+    rm -f "$p" 2>/dev/null
+    mkfifo "$p"
+  ]
+
+  # Check if the pipe exists on disk
+  rawMethod: exists [
+    local p
+    p="$(_ivar path)"
+    if [[ -p "$p" ]]; then
+      echo "true"
+    else
+      echo "false"
+    fi
+  ]
+
+  # Remove the pipe from disk
+  rawMethod: remove [
+    local p
+    p="$(_ivar path)"
+    rm -f "$p" 2>/dev/null
+  ]
+
+  # Open the FIFO read-write to prevent blocking
+  # Spawns a background process that holds the FIFO open
+  rawMethod: open [
+    local p keeper_pid
+    p="$(_ivar path)"
+
+    # Spawn a fully detached process that opens the FIFO read-write and sleeps forever
+    # This prevents blocking when reading/writing
+    # Must redirect all fds to /dev/null and use </dev/null for full detachment
+    /bin/bash -c 'exec 3<>"$1"; while true; do sleep 86400; done' _ "$p" </dev/null >/dev/null 2>&1 &
+    keeper_pid=$!
+
+    _ivar_set keeperPid "$keeper_pid"
+    sleep 0.1
+  ]
+
+  # Close the FIFO (kills the keeper process)
+  rawMethod: close [
+    local keeper_pid
+    keeper_pid="$(_ivar keeperPid)"
+    if [[ -n "$keeper_pid" ]]; then
+      kill "$keeper_pid" 2>/dev/null
+      _ivar_set keeperPid ""
+    fi
+  ]
+
+  # Write a line to the FIFO
+  rawMethod: writeLine: text [
+    local p text="$1"
+    p="$(_ivar path)"
+    echo "$text" > "$p"
+  ]
+
+  # Read a line from the FIFO
+  rawMethod: readLine [
+    local p line
+    p="$(_ivar path)"
+    if read -r line < "$p"; then
+      echo "$line"
+    fi
+  ]
+
+  # Read a line with timeout (seconds)
+  rawMethod: readLineTimeout: seconds [
+    local p line seconds="$1"
+    p="$(_ivar path)"
+    if read -t "$seconds" -r line < "$p" 2>/dev/null; then
+      echo "$line"
+    fi
+  ]
+
+  # Read lines continuously, calling handler for each
+  # The current line is available in $__FIFO_LINE
+  # Exits when the writer closes the FIFO
+  rawMethod: readLinesDo: handler [
+    local p handler="$1"
+    p="$(_ivar path)"
+
+    while IFS= read -r __FIFO_LINE; do
+      eval "$handler"
+    done < "$p"
+  ]
+
+  # Private setter
+  rawMethod: _setPath: aPath [
+    _ivar_set path "$aPath"
+  ]
