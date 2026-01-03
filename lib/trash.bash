@@ -1739,9 +1739,11 @@ function @ {
   # - reloadClass/compileAndReload: need source/unset to affect parent
   # - edit/new: need tty for editor and call compileAndReload
   # - value/valueWith:/valueWith:and:/do: need to modify caller variables (blocks)
+  # - startWriter:/startReader:/stopWriter/stopReader: spawn background processes
   local ___selector="$2"
   if [[ "$___selector" == "repl" || "$___selector" == "reloadClass" || "$___selector" == "compileAndReload" || "$___selector" == "edit" || "$___selector" == "new" || \
-        "$___selector" == "value" || "$___selector" == "valueWith:" || "$___selector" == "do:" ]]; then
+        "$___selector" == "value" || "$___selector" == "valueWith:" || "$___selector" == "do:" || \
+        "$___selector" == "startWriter:" || "$___selector" == "startReader:" || "$___selector" == "stopWriter" || "$___selector" == "stopReader" ]]; then
     send "$@"
     return $?
   fi
