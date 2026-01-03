@@ -1,5 +1,5 @@
 <p align="center">
-  <img width="460" height="300" src="https://github.com/chazu/trashtalk/blob/main/img/logo.png">
+  <img src="https://github.com/chazu/trashtalk/blob/main/img/logo.png">
 </p>
 
 
