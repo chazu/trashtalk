@@ -1,3 +1,8 @@
+<p align="center">
+  <img width="460" height="300" src="https://github.com/chazu/trashtalk/blob/main/img/logo.png">
+</p>
+
+
 # Trashtalk
 
 A Smalltalk-inspired message-passing system for Bash.
