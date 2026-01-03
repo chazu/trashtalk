@@ -1,7 +1,7 @@
 # FIFO - Named pipe abstraction
 # Encapsulates creation, access, and cleanup of POSIX named pipes (FIFOs)
 FIFO subclass: Object
-  instanceVars: path:'' keeperPid:''
+  instanceVars: path:'' keeperPid:'' writerPid:'' readerPid:''
 
   # Create a FIFO instance for a given path (does not create the pipe yet)
   rawClassMethod: at: aPath [
@@ -46,17 +46,20 @@ FIFO subclass: Object
   # Open the FIFO read-write to prevent blocking
   # Spawns a background process that holds the FIFO open
   rawMethod: open [
-    local p keeper_pid
+    local p keeper_pid pidfile
     p="$(_ivar path)"
+    pidfile="/tmp/fifo_keeper_${_INSTANCE}.pid"
 
-    # Spawn a fully detached process that opens the FIFO read-write and sleeps forever
-    # This prevents blocking when reading/writing
-    # Must redirect all fds to /dev/null and use </dev/null for full detachment
-    /bin/bash -c 'exec 3<>"$1"; while true; do sleep 86400; done' _ "$p" </dev/null >/dev/null 2>&1 &
-    keeper_pid=$!
+    # Spawn a detached process that ignores SIGINT (Ctrl+C immune)
+    # The keeper opens the FIFO read-write and sleeps forever
+    # trap '' INT makes it ignore interrupt signals
+    /bin/bash -c 'trap "" INT; echo $$ > "$2"; exec 3<>"$1"; while true; do sleep 86400; done' _ "$p" "$pidfile" </dev/null >/dev/null 2>&1 &
+
+    sleep 0.1
+    keeper_pid=$(cat "$pidfile" 2>/dev/null)
+    rm -f "$pidfile"
 
     _ivar_set keeperPid "$keeper_pid"
-    sleep 0.1
   ]
 
   # Close the FIFO (kills the keeper process)
@@ -104,6 +107,84 @@ FIFO subclass: Object
     while IFS= read -r __FIFO_LINE; do
       eval "$handler"
     done < "$p"
+  ]
+
+  # =========================================================================
+  # Async Writer API
+  # =========================================================================
+
+  # Start a command that writes to this FIFO in the background
+  # The command's stdout is redirected to the FIFO
+  rawMethod: startWriter: cmd [
+    local p cmd="$1" pidfile writer_pid
+    p="$(_ivar path)"
+    pidfile="/tmp/fifo_writer_${_INSTANCE}.pid"
+
+    # Spawn the command writing to the FIFO
+    # Uses trap to ignore SIGINT so Ctrl+C doesn't kill it
+    # Opens FIFO read-write (<>) to avoid blocking on open
+    /bin/bash -c 'trap "" INT; echo $$ > "$2"; exec 1<>"$3"; eval "$1"' _ "$cmd" "$pidfile" "$p" </dev/null 2>&1 &
+
+    sleep 0.1
+    writer_pid=$(cat "$pidfile" 2>/dev/null)
+    rm -f "$pidfile"
+
+    _ivar_set writerPid "$writer_pid"
+  ]
+
+  # Get the writer process PID
+  method: writerPid [
+    _ivar writerPid
+  ]
+
+  # Stop the writer process
+  rawMethod: stopWriter [
+    local writer_pid
+    writer_pid="$(_ivar writerPid)"
+    if [[ -n "$writer_pid" ]]; then
+      kill "$writer_pid" 2>/dev/null
+      kill -9 "$writer_pid" 2>/dev/null
+      _ivar_set writerPid ""
+    fi
+  ]
+
+  # =========================================================================
+  # Async Reader API
+  # =========================================================================
+
+  # Start a background reader that calls handler for each line
+  # The current line is available in $__FIFO_LINE
+  rawMethod: startReader: handler [
+    local p handler="$1" pidfile reader_pid
+    p="$(_ivar path)"
+    pidfile="/tmp/fifo_reader_${_INSTANCE}.pid"
+
+    # Spawn a reader loop in the background
+    # Uses trap to ignore SIGINT so Ctrl+C doesn't kill it
+    # Opens FIFO read-write (<>) to avoid blocking on open
+    /bin/bash -c 'trap "" INT; echo $$ > "$2"; exec 0<>"$3"; while IFS= read -r __FIFO_LINE; do eval "$1"; done' _ "$handler" "$pidfile" "$p" </dev/null 2>&1 &
+
+    sleep 0.1
+    reader_pid=$(cat "$pidfile" 2>/dev/null)
+    rm -f "$pidfile"
+
+    _ivar_set readerPid "$reader_pid"
+  ]
+
+  # Get the reader process PID
+  method: readerPid [
+    _ivar readerPid
+  ]
+
+  # Stop the reader process
+  rawMethod: stopReader [
+    local reader_pid
+    reader_pid="$(_ivar readerPid)"
+    if [[ -n "$reader_pid" ]]; then
+      kill "$reader_pid" 2>/dev/null
+      kill -9 "$reader_pid" 2>/dev/null
+      _ivar_set readerPid ""
+    fi
   ]
 
   # Private setter
