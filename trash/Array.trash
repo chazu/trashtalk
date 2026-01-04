@@ -97,6 +97,7 @@ Array subclass: Object
   # Iterate over each element, calling block with each value
   # Usage: @ myArray do: [:each | @ Console print: each]
   rawMethod: do: block [
+    pragma: direct
     local items len i element block_id="$1"
     items=$(@ "$_RECEIVER" _getItemsArray)
     len=$(echo "$items" | jq 'length')
