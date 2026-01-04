@@ -58,7 +58,6 @@ Application subclass: Object
 
     # Use session's event handling with a dispatcher handler
     @ "$session" onEventDo: '
-      echo "[APP] Event: $__COPROC_LINE" >&2
       @ "$__APP_DISPATCHER" dispatchJson: "$__COPROC_LINE"
       if [[ $(@ "$__APP_DISPATCHER" isRunning) != "true" ]]; then
         @ "$__APP_INSTANCE" stop
@@ -169,7 +168,6 @@ Application subclass: Object
   # Register global key handler
   rawMethod: onKeyDo: handler [
     local handler="$1" dispatcher
-    echo "[APP.onKeyDo] received handler (len=${#handler}): '$handler'" >&2
     dispatcher="$(_ivar dispatcher)"
     @ "$dispatcher" onKeyDo: "$handler"
   ]

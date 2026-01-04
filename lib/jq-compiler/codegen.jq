@@ -2188,6 +2188,13 @@ def generateMethod($funcPrefix; $ivars; $cvars):
     "\($funcPrefix)__\(.selector)"
   end) as $funcName |
 
+  # Check for pragmas and emit markers
+  (if (.pragmas // []) | contains(["direct"]) then
+    "declare -g \($funcName)__direct=1"
+  else
+    null
+  end) as $pragmaMarker |
+
   # Generate argument bindings for keyword methods
   (if (.args | length) > 0 then
     [.args | to_entries[] | "  local \(.value)=\"$\(.key + 1)\""] | join("\n")
@@ -2215,6 +2222,8 @@ def generateMethod($funcPrefix; $ivars; $cvars):
     .body | transformMethodBody($className; false)
   end) as $body |
 
+  # Emit pragma marker if present
+  (if $pragmaMarker != null then $pragmaMarker else empty end),
   # Combine into function
   "\($funcName)() {",
   (if $argBindings != "" then $argBindings else empty end),

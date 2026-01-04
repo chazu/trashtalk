@@ -1709,11 +1709,6 @@ function @ {
     is_a Object
   fi
 
-  # Debug for handler registration
-  if [[ "$2" == "onSubmitDo:" || "$2" == "onKeyDo:" ]]; then
-    echo "[@] $2 called with arg3 (len=${#3}): '$3'" >&2
-  fi
-
   msg_debug "Entrypoint: $*"
 
   # Security: Reject dangerous receiver patterns early
@@ -1726,15 +1721,17 @@ function @ {
   # Pre-source the receiver's class before entering subshell
   # This ensures class methods are available in the parent shell
   local ___receiver="$1"
+  local ___class=""
   if [[ -n "$___receiver" ]]; then
     # For instance IDs (lowercase, contains _), look up the class from DB
     if [[ "$___receiver" =~ ^[a-z] && "$___receiver" == *_* ]]; then
-      local ___class=$(_get_instance_class "$___receiver" 2>/dev/null)
+      ___class=$(_get_instance_class "$___receiver" 2>/dev/null)
       if [[ -n "$___class" ]]; then
         _ensure_class_sourced "$___class"
       fi
     else
       # Direct class name (may be qualified like MyApp::Counter)
+      ___class="$___receiver"
       _ensure_class_sourced "$___receiver"
     fi
   fi
@@ -1751,6 +1748,21 @@ function @ {
         "$___selector" == "startWriter:" || "$___selector" == "startReader:" || "$___selector" == "stopWriter" || "$___selector" == "stopReader" ]]; then
     send "$@"
     return $?
+  fi
+
+  # Check for pragma: direct marker on the method
+  # Marker format: __ClassName__selector__direct=1
+  if [[ -n "$___class" ]]; then
+    local ___func_prefix=$(_to_func_prefix "$___class")
+    # Normalize selector: do: -> do_, inject:into: -> inject_into_
+    local ___normalized="${___selector%:}"
+    ___normalized="${___normalized//:/_}"
+    [[ "$___selector" == *: ]] && ___normalized="${___normalized}_"
+    local ___direct_marker="${___func_prefix}__${___normalized}__direct"
+    if [[ -n "${!___direct_marker:-}" ]]; then
+      send "$@"
+      return $?
+    fi
   fi
 
   # Capture output and store in $__

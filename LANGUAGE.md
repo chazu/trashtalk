@@ -68,6 +68,107 @@ rawMethod: complexOperation [
 ]
 ```
 
+### Pragmas
+
+Pragmas are method-level directives that modify how a method is compiled or executed. Place them at the start of the method body.
+
+#### `pragma: direct`
+
+By default, method calls run in a subshell (via `$(...)` capture), which isolates side effects. The `pragma: direct` directive bypasses this subshell, allowing methods to modify variables in the calling shell.
+
+```smalltalk
+rawMethod: setGlobalCounter [
+  pragma: direct
+  GLOBAL_COUNTER="modified"
+]
+```
+
+**How it works:**
+1. The compiler emits a marker variable: `declare -g __ClassName__methodName__direct=1`
+2. At runtime, the `@` dispatcher checks for this marker
+3. If present, calls the method directly instead of capturing in a subshell
+
+**Use cases:**
+- Setting shell variables that must persist after the call
+- Performance-critical methods where subshell overhead matters
+- Methods that coordinate with the calling environment
+
+**Example - Normal method cannot modify caller's variable:**
+
+```smalltalk
+rawMethod: normalSet [
+  MY_VAR="modified_by_normal"
+]
+```
+
+```bash
+MY_VAR="original"
+@ MyClass normalSet
+echo "$MY_VAR"  # Still "original" - method ran in subshell
+```
+
+**Example - Direct method CAN modify caller's variable:**
+
+```smalltalk
+rawMethod: directSet [
+  pragma: direct
+  MY_VAR="modified_by_direct"
+]
+```
+
+```bash
+MY_VAR="original"
+@ MyClass directSet
+echo "$MY_VAR"  # Now "modified_by_direct"
+```
+
+**Works with keyword methods:**
+
+```smalltalk
+rawMethod: setValue: val [
+  pragma: direct
+  MY_VAR="$val"
+]
+```
+
+```bash
+@ MyClass setValue: "new_value"
+echo "$MY_VAR"  # "new_value"
+```
+
+**Gotchas:**
+
+1. **Output capture negates the benefit**: If you capture the output with `$(...)`, Bash creates a subshell anyway:
+   ```bash
+   # This still runs in a subshell due to $() capture
+   result=$(@ MyClass directSet)
+   echo "$MY_VAR"  # Still "original"
+   ```
+
+2. **Mixed class behavior**: You can mix direct and normal methods in the same class. Each method is independent:
+   ```smalltalk
+   rawMethod: directMethod [
+     pragma: direct
+     DIRECT_VAR="set"
+   ]
+   rawMethod: normalMethod [
+     NORMAL_VAR="set"  # Will NOT persist
+   ]
+   ```
+
+3. **Works with namespaced classes**: The marker uses the full qualified name:
+   ```smalltalk
+   package: MyApp
+
+   Service subclass: Object
+     rawMethod: configure [
+       pragma: direct
+       # Marker: __MyApp__Service__configure__direct=1
+     ]
+   ```
+
+4. **Only for `rawMethod:`**: Use with `rawMethod:` since you're working at the Bash level. Regular `method:` blocks apply transformations that may interfere.
+
 ### Class Methods
 
 Called on the class itself, not instances:
