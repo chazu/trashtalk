@@ -311,7 +311,8 @@ Session subclass: Object
         receive_resize_events=true receive_focus_events=true receive_widget_events=true)")
 
     # Build the grpcurl command - pipe through jq -c to get compact single-line JSON
-    cmd="grpcurl -plaintext -d '$filter_json' $host industries.loosh.yutani.v1.EventService/Subscribe | jq -c ."
+    # Use --unbuffered to prevent jq from buffering output
+    cmd="grpcurl -plaintext -d '$filter_json' $host industries.loosh.yutani.v1.EventService/Subscribe | jq --unbuffered -c ."
 
     # Create and start coproc
     evt_coproc=$(@ Coproc for: "$cmd")

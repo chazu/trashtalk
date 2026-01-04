@@ -20,8 +20,6 @@ EventDispatcher subclass: Object
   # Handler is a bash command that will be eval'd with $__EVENT set to the Event instance
   rawMethod: onWidget: widgetId do: handler [
     local widgetId="$1" handler="$2" hfile
-    echo "[REG] onWidget:do: widgetId='$widgetId'" >&2
-    echo "[REG] handler (length=${#handler})='$handler'" >&2
     hfile="$(_ivar handlerFile)"
     # Remove any existing handler for this widget
     if [[ -f "$hfile" ]]; then
@@ -30,14 +28,12 @@ EventDispatcher subclass: Object
     fi
     # Add new handler
     echo "${widgetId}:${handler}" >> "$hfile"
-    echo "[REG] Wrote to $hfile" >&2
   ]
 
   # Register a global key handler
   # Handler receives $__EVENT
   rawMethod: onKeyDo: handler [
     local handler="$1"
-    echo "[REG] onKeyDo: handler (length=${#handler})='$handler'" >&2
     _ivar_set keyHandler "$handler"
   ]
 
@@ -58,6 +54,7 @@ EventDispatcher subclass: Object
 
   # Dispatch an event to the appropriate handler
   rawMethod: dispatch: event [
+    pragma: direct
     local event="$1"
     local eventType widgetId handler hfile line
 
@@ -66,7 +63,6 @@ EventDispatcher subclass: Object
     case "$eventType" in
       key)
         handler="$(_ivar keyHandler)"
-        echo "[EVAL] key handler (length=${#handler})='$handler'" >&2
         if [[ -n "$handler" ]]; then
           __EVENT="$event"
           eval "$handler"
@@ -80,7 +76,6 @@ EventDispatcher subclass: Object
           line=$(grep "^${widgetId}:" "$hfile" 2>/dev/null | head -1)
           if [[ -n "$line" ]]; then
             handler="${line#*:}"
-            echo "[EVAL] widget handler (length=${#handler})='$handler'" >&2
             __EVENT="$event"
             eval "$handler"
           fi
@@ -112,16 +107,15 @@ EventDispatcher subclass: Object
 
   # Dispatch a raw JSON event (creates Event, then dispatches)
   rawMethod: dispatchJson: json [
+    pragma: direct
     local json="$1" event
 
     # Skip non-JSON lines
     if ! echo "$json" | jq -e . >/dev/null 2>&1; then
-      echo "[DISPATCH] Skipping non-JSON" >&2
       return
     fi
 
     event=$(@ Yutani::Event fromJson: "$json")
-    echo "[DISPATCH] Created event, type=$(@ "$event" eventType)" >&2
     @ "$_RECEIVER" dispatch: "$event"
   ]
 

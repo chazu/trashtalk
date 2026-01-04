@@ -50,7 +50,7 @@ def fail:
   .result = null;
 
 # Transform result if not null
-def map(f):
+def mapResult(f):
   if .result != null then .result |= f else . end;
 
 # Skip NEWLINE and COMMENT tokens
@@ -505,6 +505,28 @@ def parseAdvice:
     fail
   end;
 
+# Extract pragmas from the start of method body tokens
+# Pragma format: pragma: <name> (e.g., pragma: direct)
+# Returns {pragmas: [...], remaining_tokens: [...]}
+def extractPragmas:
+  . as $tokens |
+  # Skip leading newlines
+  ([$tokens[] | select(.type != "NEWLINE")] | .[0:3]) as $first3 |
+  if ($first3 | length) >= 2 and
+     ($first3[0].type == "KEYWORD") and
+     ($first3[0].value == "pragma:") and
+     ($first3[1].type == "IDENTIFIER") then
+    # Found a pragma - extract value and continue checking for more
+    $first3[1].value as $pragmaValue |
+    # Find where pragma: value ends in original tokens (skip newlines, find pragma:, skip it and value)
+    ($tokens | to_entries | map(select(.value.type != "NEWLINE")) | .[0:2] | .[-1].key + 1) as $skipCount |
+    # Recursively check for more pragmas
+    ($tokens[$skipCount:] | extractPragmas) as $rest |
+    {pragmas: ([$pragmaValue] + $rest.pragmas), remaining_tokens: $rest.remaining_tokens}
+  else
+    {pragmas: [], remaining_tokens: $tokens}
+  end;
+
 # Collect method body tokens between [ and ]
 def collectMethodBody:
   if current.type == "LBRACKET" then
@@ -585,6 +607,8 @@ def parseMethod:
       skipNewlines |
       collectMethodBody |
       if .result != null then
+        # Extract pragmas from body tokens
+        (.result.tokens | extractPragmas) as $pragmaResult |
         .result = {
           type: "method",
           kind: $kind.kind,
@@ -592,7 +616,8 @@ def parseMethod:
           selector: $sig.selector,
           keywords: $sig.keywords,
           args: $sig.args,
-          body: .result,
+          body: {type: "block", tokens: $pragmaResult.remaining_tokens},
+          pragmas: $pragmaResult.pragmas,
           location: $location
         }
       else
