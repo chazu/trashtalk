@@ -1,0 +1,157 @@
+package: Yutani
+
+EventDispatcher subclass: Object
+  instanceVars: handlerFile:'' keyHandler:'' mouseHandler:'' resizeHandler:'' focusHandler:'' running:''
+
+  # Create a new dispatcher
+  rawClassMethod: new [
+    local instance hfile
+    instance=$(_generate_instance_id "Yutani__EventDispatcher")
+    _create_instance "Yutani::EventDispatcher" "$instance"
+    # Create unique handler file
+    hfile="/tmp/yutani_handlers_${instance}.txt"
+    touch "$hfile"
+    @ "$instance" _setHandlerFile: "$hfile"
+    @ "$instance" _setRunning: "true"
+    echo "$instance"
+  ]
+
+  # Register a handler for a specific widget
+  # Handler is a bash command that will be eval'd with $__EVENT set to the Event instance
+  rawMethod: onWidget: widgetId do: handler [
+    local widgetId="$1" handler="$2" hfile
+    echo "[REG] onWidget:do: widgetId='$widgetId'" >&2
+    echo "[REG] handler (length=${#handler})='$handler'" >&2
+    hfile="$(_ivar handlerFile)"
+    # Remove any existing handler for this widget
+    if [[ -f "$hfile" ]]; then
+      grep -v "^${widgetId}:" "$hfile" > "${hfile}.tmp" 2>/dev/null || true
+      mv "${hfile}.tmp" "$hfile"
+    fi
+    # Add new handler
+    echo "${widgetId}:${handler}" >> "$hfile"
+    echo "[REG] Wrote to $hfile" >&2
+  ]
+
+  # Register a global key handler
+  # Handler receives $__EVENT
+  rawMethod: onKeyDo: handler [
+    local handler="$1"
+    echo "[REG] onKeyDo: handler (length=${#handler})='$handler'" >&2
+    _ivar_set keyHandler "$handler"
+  ]
+
+  # Register a global mouse handler
+  method: onMouseDo: handler [
+    _ivar_set mouseHandler "$handler"
+  ]
+
+  # Register a global resize handler
+  method: onResizeDo: handler [
+    _ivar_set resizeHandler "$handler"
+  ]
+
+  # Register a global focus handler
+  method: onFocusDo: handler [
+    _ivar_set focusHandler "$handler"
+  ]
+
+  # Dispatch an event to the appropriate handler
+  rawMethod: dispatch: event [
+    local event="$1"
+    local eventType widgetId handler hfile line
+
+    eventType=$(@ "$event" eventType)
+
+    case "$eventType" in
+      key)
+        handler="$(_ivar keyHandler)"
+        echo "[EVAL] key handler (length=${#handler})='$handler'" >&2
+        if [[ -n "$handler" ]]; then
+          __EVENT="$event"
+          eval "$handler"
+        fi
+        ;;
+      widget)
+        widgetId=$(@ "$event" widgetId)
+        hfile="$(_ivar handlerFile)"
+        if [[ -f "$hfile" && -n "$widgetId" ]]; then
+          # Find handler for this widget
+          line=$(grep "^${widgetId}:" "$hfile" 2>/dev/null | head -1)
+          if [[ -n "$line" ]]; then
+            handler="${line#*:}"
+            echo "[EVAL] widget handler (length=${#handler})='$handler'" >&2
+            __EVENT="$event"
+            eval "$handler"
+          fi
+        fi
+        ;;
+      mouse)
+        handler="$(_ivar mouseHandler)"
+        if [[ -n "$handler" ]]; then
+          __EVENT="$event"
+          eval "$handler"
+        fi
+        ;;
+      resize)
+        handler="$(_ivar resizeHandler)"
+        if [[ -n "$handler" ]]; then
+          __EVENT="$event"
+          eval "$handler"
+        fi
+        ;;
+      focus)
+        handler="$(_ivar focusHandler)"
+        if [[ -n "$handler" ]]; then
+          __EVENT="$event"
+          eval "$handler"
+        fi
+        ;;
+    esac
+  ]
+
+  # Dispatch a raw JSON event (creates Event, then dispatches)
+  rawMethod: dispatchJson: json [
+    local json="$1" event
+
+    # Skip non-JSON lines
+    if ! echo "$json" | jq -e . >/dev/null 2>&1; then
+      echo "[DISPATCH] Skipping non-JSON" >&2
+      return
+    fi
+
+    event=$(@ Yutani::Event fromJson: "$json")
+    echo "[DISPATCH] Created event, type=$(@ "$event" eventType)" >&2
+    @ "$_RECEIVER" dispatch: "$event"
+  ]
+
+  # Check if dispatcher is still running
+  rawMethod: isRunning [
+    _ivar running
+  ]
+
+  # Stop the dispatcher
+  method: stop [
+    _ivar_set running "false"
+  ]
+
+  # Remove a widget handler
+  rawMethod: removeHandlerFor: widgetId [
+    local widgetId="$1" hfile
+    hfile="$(_ivar handlerFile)"
+    if [[ -f "$hfile" ]]; then
+      grep -v "^${widgetId}:" "$hfile" > "${hfile}.tmp" 2>/dev/null || true
+      mv "${hfile}.tmp" "$hfile"
+    fi
+  ]
+
+  # Clean up handler file
+  rawMethod: cleanup [
+    local hfile
+    hfile="$(_ivar handlerFile)"
+    rm -f "$hfile" 2>/dev/null
+  ]
+
+  # Private setters
+  method: _setHandlerFile: v [ _ivar_set handlerFile "$v" ]
+  method: _setRunning: v [ _ivar_set running "$v" ]

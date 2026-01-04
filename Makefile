@@ -18,11 +18,17 @@ NPROCS := $(shell sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)
 SOURCES := $(wildcard $(TRASH_DIR)/*.trash)
 TRAIT_SOURCES := $(wildcard $(TRASH_DIR)/traits/*.trash)
 USER_SOURCES := $(wildcard $(USER_DIR)/*.trash)
+# Namespace subdirectories (e.g., trash/Yutani/*.trash)
+NAMESPACE_SOURCES := $(wildcard $(TRASH_DIR)/*/*.trash)
+# Filter out traits and user from namespace sources
+NAMESPACE_SOURCES := $(filter-out $(TRAIT_SOURCES) $(USER_SOURCES),$(NAMESPACE_SOURCES))
 
 # Compiled outputs (strip .trash extension)
 COMPILED := $(patsubst $(TRASH_DIR)/%.trash,$(COMPILED_DIR)/%,$(SOURCES))
 COMPILED_TRAITS := $(patsubst $(TRASH_DIR)/traits/%.trash,$(COMPILED_TRAITS_DIR)/%,$(TRAIT_SOURCES))
 COMPILED_USER := $(patsubst $(USER_DIR)/%.trash,$(COMPILED_DIR)/%,$(USER_SOURCES))
+# Namespace classes: trash/Yutani/Widget.trash -> .compiled/Yutani__Widget
+COMPILED_NAMESPACES := $(foreach src,$(NAMESPACE_SOURCES),$(COMPILED_DIR)/$(subst /,__,$(patsubst $(TRASH_DIR)/%.trash,%,$(src))))
 
 .PHONY: all compile compile-traits fast test test-verbose test-dsl watch clean help info reload
 
@@ -35,10 +41,10 @@ fast: $(COMPILED_DIR) $(COMPILED_TRAITS_DIR)
 	@echo "✓ All classes compiled ($(NPROCS) parallel jobs)"
 
 # Internal target for parallel compilation
-compile-all: $(COMPILED) $(COMPILED_TRAITS) $(COMPILED_USER)
+compile-all: $(COMPILED) $(COMPILED_TRAITS) $(COMPILED_USER) $(COMPILED_NAMESPACES)
 
 # Sequential compile (for debugging)
-compile: $(COMPILED_DIR) $(COMPILED_TRAITS_DIR) $(COMPILED) $(COMPILED_TRAITS) $(COMPILED_USER)
+compile: $(COMPILED_DIR) $(COMPILED_TRAITS_DIR) $(COMPILED) $(COMPILED_TRAITS) $(COMPILED_USER) $(COMPILED_NAMESPACES)
 	@echo "✓ All classes compiled (sequential)"
 
 # Compile traits
@@ -70,6 +76,27 @@ $(COMPILED_DIR)/%: $(USER_DIR)/%.trash $(LIB_DIR)/jq-compiler/driver.bash
 	@echo "Compiling user class $<..."
 	@$(LIB_DIR)/jq-compiler/driver.bash compile "$<" 2>/dev/null > "$@"
 	@echo "  → $@"
+
+# Compile namespace classes (e.g., trash/Yutani/Widget.trash -> .compiled/Yutani__Widget)
+.PHONY: compile-namespaces
+compile-namespaces:
+	@for src in $(NAMESPACE_SOURCES); do \
+		relpath=$${src#$(TRASH_DIR)/}; \
+		outname=$${relpath%.trash}; \
+		outname=$$(echo "$$outname" | sed 's/\//__/g'); \
+		outfile="$(COMPILED_DIR)/$$outname"; \
+		echo "Compiling namespace class $$src..."; \
+		$(LIB_DIR)/jq-compiler/driver.bash compile "$$src" 2>/dev/null > "$$outfile"; \
+		echo "  → $$outfile"; \
+	done
+
+# Individual namespace targets (generated dynamically)
+# This enables parallel compilation of namespace classes
+$(COMPILED_NAMESPACES): $(COMPILED_DIR)
+	@src="$(TRASH_DIR)/$$(echo '$(@F)' | sed 's/__/\//g').trash"; \
+	echo "Compiling namespace class $$src..."; \
+	$(LIB_DIR)/jq-compiler/driver.bash compile "$$src" 2>/dev/null > "$@"; \
+	echo "  → $@"
 
 # Run all tests
 test:

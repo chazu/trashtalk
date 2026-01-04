@@ -1,0 +1,192 @@
+package: Yutani
+
+Application subclass: Object
+  instanceVars: session:'' dispatcher:'' rootWidget:'' running:''
+
+  # Launch application on default host
+  rawClassMethod: launch [
+    @ "$_CLASS" launchOn: "localhost:7755"
+  ]
+
+  # Launch application on specified host
+  rawClassMethod: launchOn: host [
+    local host="$1"
+    local app session dispatcher
+
+    # Create application instance
+    app=$(@ "$_CLASS" new)
+
+    # Connect to Yutani
+    session=$(@ Yutani::Session connectTo: "$host" 2>&1 | grep -v "^\[INFO\]" | tail -1)
+    if [[ -z "$session" ]] || echo "$session" | grep -qi error; then
+      echo "Error: Could not connect to Yutani server at $host" >&2
+      return 1
+    fi
+
+    # Create dispatcher
+    dispatcher=$(@ Yutani::EventDispatcher new)
+
+    # Set up application
+    @ "$app" _setSession: "$session"
+    @ "$app" _setDispatcher: "$dispatcher"
+    @ "$app" _setRunning: "true"
+
+    # Call user's setup method
+    @ "$app" setup
+
+    # Run event loop
+    @ "$app" run
+
+    # Cleanup
+    @ "$app" cleanup
+  ]
+
+  # Subclasses override this to build UI
+  method: setup [
+    :
+  ]
+
+  # Main event loop
+  rawMethod: run [
+    local session dispatcher line
+    session="$(_ivar session)"
+    dispatcher="$(_ivar dispatcher)"
+
+    # Store dispatcher in global for handler access
+    __APP_DISPATCHER="$dispatcher"
+    __APP_INSTANCE="$_RECEIVER"
+
+    # Use session's event handling with a dispatcher handler
+    @ "$session" onEventDo: '
+      echo "[APP] Event: $__COPROC_LINE" >&2
+      @ "$__APP_DISPATCHER" dispatchJson: "$__COPROC_LINE"
+      if [[ $(@ "$__APP_DISPATCHER" isRunning) != "true" ]]; then
+        @ "$__APP_INSTANCE" stop
+      fi
+    '
+  ]
+
+  # Stop the application
+  method: stop [
+    _ivar_set running "false"
+  ]
+
+  # Cleanup resources
+  rawMethod: cleanup [
+    local session dispatcher
+    session="$(_ivar session)"
+    dispatcher="$(_ivar dispatcher)"
+
+    if [[ -n "$dispatcher" ]]; then
+      @ "$dispatcher" cleanup
+    fi
+
+    if [[ -n "$session" ]]; then
+      @ "$session" disconnect
+    fi
+  ]
+
+  # === Widget Creation Helpers ===
+  # These create widgets with dispatcher already set
+
+  rawMethod: createTextView: title [
+    local title="$1"
+    local session dispatcher widget
+    session="$(_ivar session)"
+    dispatcher="$(_ivar dispatcher)"
+    widget=$(@ Yutani::TextView titled: "$title" inSession: "$session")
+    @ "$widget" setDispatcher: "$dispatcher"
+    echo "$widget"
+  ]
+
+  rawMethod: createTextView: title text: initialText [
+    local title="$1" initialText="$2"
+    local session dispatcher widget
+    session="$(_ivar session)"
+    dispatcher="$(_ivar dispatcher)"
+    widget=$(@ Yutani::TextView titled: "$title" text: "$initialText" inSession: "$session")
+    @ "$widget" setDispatcher: "$dispatcher"
+    echo "$widget"
+  ]
+
+  rawMethod: createInputField: label [
+    local label="$1"
+    local session dispatcher widget
+    session="$(_ivar session)"
+    dispatcher="$(_ivar dispatcher)"
+    widget=$(@ Yutani::InputField labeled: "$label" inSession: "$session")
+    @ "$widget" setDispatcher: "$dispatcher"
+    echo "$widget"
+  ]
+
+  rawMethod: createInputField: label placeholder: placeholder [
+    local label="$1" placeholder="$2"
+    local session dispatcher widget
+    session="$(_ivar session)"
+    dispatcher="$(_ivar dispatcher)"
+    widget=$(@ Yutani::InputField labeled: "$label" placeholder: "$placeholder" inSession: "$session")
+    @ "$widget" setDispatcher: "$dispatcher"
+    echo "$widget"
+  ]
+
+  rawMethod: createListView: title [
+    local title="$1"
+    local session dispatcher widget
+    session="$(_ivar session)"
+    dispatcher="$(_ivar dispatcher)"
+    widget=$(@ Yutani::ListView titled: "$title" inSession: "$session")
+    @ "$widget" setDispatcher: "$dispatcher"
+    echo "$widget"
+  ]
+
+  rawMethod: createVerticalLayout [
+    local session dispatcher widget
+    session="$(_ivar session)"
+    dispatcher="$(_ivar dispatcher)"
+    widget=$(@ Yutani::VerticalLayout inSession: "$session")
+    @ "$widget" setDispatcher: "$dispatcher"
+    echo "$widget"
+  ]
+
+  rawMethod: createHorizontalLayout [
+    local session dispatcher widget
+    session="$(_ivar session)"
+    dispatcher="$(_ivar dispatcher)"
+    widget=$(@ Yutani::HorizontalLayout inSession: "$session")
+    @ "$widget" setDispatcher: "$dispatcher"
+    echo "$widget"
+  ]
+
+  # Set root widget
+  rawMethod: setRoot: widget [
+    local widget="$1"
+    _ivar_set rootWidget "$widget"
+    @ "$widget" setAsRoot
+  ]
+
+  # === Event Handler Registration ===
+
+  # Register global key handler
+  rawMethod: onKeyDo: handler [
+    local handler="$1" dispatcher
+    echo "[APP.onKeyDo] received handler (len=${#handler}): '$handler'" >&2
+    dispatcher="$(_ivar dispatcher)"
+    @ "$dispatcher" onKeyDo: "$handler"
+  ]
+
+  # Register global mouse handler
+  rawMethod: onMouseDo: handler [
+    local handler="$1" dispatcher
+    dispatcher="$(_ivar dispatcher)"
+    @ "$dispatcher" onMouseDo: "$handler"
+  ]
+
+  # Accessors
+  method: session [ _ivar session ]
+  method: dispatcher [ _ivar dispatcher ]
+  method: rootWidget [ _ivar rootWidget ]
+
+  # Private setters
+  method: _setSession: v [ _ivar_set session "$v" ]
+  method: _setDispatcher: v [ _ivar_set dispatcher "$v" ]
+  method: _setRunning: v [ _ivar_set running "$v" ]

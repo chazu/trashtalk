@@ -1,0 +1,42 @@
+package: Yutani
+
+ListView subclass: Yutani::Widget
+  instanceVars: items:''
+
+  # Create a new ListView with given title
+  rawClassMethod: titled: title inSession: session [
+    local title="$1" session="$2"
+    local instance wid
+    instance=$(_generate_instance_id "Yutani__ListView")
+    _create_instance "Yutani::ListView" "$instance"
+    @ "$instance" setSession: "$session"
+    @ "$instance" setTitle: "$title"
+    # Create the widget on the server
+    wid=$(@ "$session" createList: "$title")
+    @ "$instance" setWidgetId: "$wid"
+    echo "$instance"
+  ]
+
+  # Add an item to the list
+  rawMethod: addItem: text [
+    local text="$1" session wid
+    session="$(_ivar session)"
+    wid="$(_ivar widgetId)"
+    @ "$session" addItem: "$text" to: "$wid"
+  ]
+
+  # Add an item with secondary text
+  rawMethod: addItem: mainText secondary: secondaryText [
+    local mainText="$1" secondaryText="$2" session wid
+    session="$(_ivar session)"
+    wid="$(_ivar widgetId)"
+    @ "$session" addItem: "$mainText" secondary: "$secondaryText" to: "$wid"
+  ]
+
+  # Clear all items
+  rawMethod: clear [
+    local session wid
+    session="$(_ivar session)"
+    wid="$(_ivar widgetId)"
+    @ "$session" clearList: "$wid"
+  ]

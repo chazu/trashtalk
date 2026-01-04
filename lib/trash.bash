@@ -1709,6 +1709,11 @@ function @ {
     is_a Object
   fi
 
+  # Debug for handler registration
+  if [[ "$2" == "onSubmitDo:" || "$2" == "onKeyDo:" ]]; then
+    echo "[@] $2 called with arg3 (len=${#3}): '$3'" >&2
+  fi
+
   msg_debug "Entrypoint: $*"
 
   # Security: Reject dangerous receiver patterns early

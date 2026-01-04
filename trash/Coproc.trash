@@ -123,16 +123,10 @@ Coproc subclass: Object
       return 1
     fi
 
-    echo "[Coproc:readLinesDo] Starting read loop on $fifo_out" >&2
-    echo "[Coproc:readLinesDo] Handler: $handler" >&2
-
     # Read lines - store in global to avoid eval quoting issues
     while IFS= read -r __COPROC_LINE; do
-      echo "[Coproc:readLinesDo] Got line: ${__COPROC_LINE:0:50}..." >&2
       eval "$handler"
     done < "$fifo_out"
-
-    echo "[Coproc:readLinesDo] Read loop ended" >&2
   ]
 
   # Write a line to the process stdin

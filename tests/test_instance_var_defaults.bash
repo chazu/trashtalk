@@ -215,8 +215,8 @@ test_default_override() {
     # Initial value should be default
     local initial=$(@ $instance getCount)
 
-    # Override it
-    @ $instance setCount 999
+    # Override it (use keyword syntax with colon)
+    @ $instance setCount: 999
 
     local updated=$(@ $instance getCount)
 
