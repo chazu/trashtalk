@@ -1,0 +1,95 @@
+package: Yutani
+
+Widget subclass: Object
+  instanceVars: session:'' widgetId:'' title:'' dispatcher:''
+
+  # Session accessor
+  method: session [
+    _ivar session
+  ]
+
+  method: setSession: s [
+    _ivar_set session "$s"
+  ]
+
+  # Widget ID accessor
+  method: widgetId [
+    _ivar widgetId
+  ]
+
+  method: setWidgetId: id [
+    _ivar_set widgetId "$id"
+  ]
+
+  # Title accessor
+  method: title [
+    _ivar title
+  ]
+
+  method: setTitle: t [
+    _ivar_set title "$t"
+  ]
+
+  # Dispatcher accessor
+  method: dispatcher [
+    _ivar dispatcher
+  ]
+
+  method: setDispatcher: d [
+    _ivar_set dispatcher "$d"
+  ]
+
+  # Delete this widget from the session
+  rawMethod: delete [
+    local session wid dispatcher
+    session="$(_ivar session)"
+    wid="$(_ivar widgetId)"
+    dispatcher="$(_ivar dispatcher)"
+    # Remove handler from dispatcher
+    if [[ -n "$dispatcher" && -n "$wid" ]]; then
+      @ "$dispatcher" removeHandlerFor: "$wid"
+    fi
+    # Delete from server
+    if [[ -n "$session" && -n "$wid" ]]; then
+      @ "$session" deleteWidget: "$wid"
+    fi
+  ]
+
+  # Focus this widget
+  rawMethod: focus [
+    local session wid
+    session="$(_ivar session)"
+    wid="$(_ivar widgetId)"
+    if [[ -n "$session" && -n "$wid" ]]; then
+      @ "$session" focusWidget: "$wid"
+    fi
+  ]
+
+  # Register an event handler for this widget
+  # Handler is eval'd with $__EVENT set to the Event instance
+  rawMethod: onEventDo: handler [
+    local handler="$1" dispatcher wid
+    dispatcher="$(_ivar dispatcher)"
+    wid="$(_ivar widgetId)"
+    if [[ -n "$dispatcher" && -n "$wid" ]]; then
+      @ "$dispatcher" onWidget: "$wid" do: "$handler"
+    fi
+  ]
+
+  # Convenience: Register handler for submission events
+  # Handler receives $__EVENT and $__TEXT (submitted text)
+  # Note: WIDGET_CHANGED stores text, WIDGET_DONE triggers handler with stored text
+  rawMethod: onSubmitDo: handler [
+    local handler="$1" dispatcher wid wrappedHandler storageVar
+    dispatcher="$(_ivar dispatcher)"
+    wid="$(_ivar widgetId)"
+    if [[ -n "$dispatcher" && -n "$wid" ]]; then
+      # Use a temp file to store text (shell vars don't persist across subshell calls)
+      local storageFile="/tmp/yutani_text_${wid}.txt"
+      # Wrap handler to store text on CHANGED and fire on DONE
+      printf -v wrappedHandler '__wt=$(@ "$__EVENT" widgetEventType); if [[ "$__wt" == "WIDGET_CHANGED" ]]; then @ "$__EVENT" widgetDataAt: "text" > %s; elif [[ "$__wt" == "WIDGET_DONE" ]]; then __TEXT=$(cat %s 2>/dev/null); %s; fi' "$storageFile" "$storageFile" "$handler"
+      @ "$dispatcher" onWidget: "$wid" do: "$wrappedHandler"
+    else
+      echo "[WIDGET] Missing dispatcher or wid, not registering" >&2
+    fi
+  ]

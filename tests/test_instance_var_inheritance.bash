@@ -217,8 +217,8 @@ echo "5. Setters Work for Inherited Vars"
 
 child=$(@ TestChild new)
 
-@ $child setParentVar 42
-@ $child setChildVar 84
+@ $child setParentVar: 42
+@ $child setChildVar: 84
 
 new_parent=$(@ $child getParentVar)
 new_child=$(@ $child getChildVar)
