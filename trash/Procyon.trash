@@ -1,0 +1,67 @@
+# Tools::Procyon - Wrapper for the Procyon Go compiler
+# Installs via `go install` from GitHub
+#
+# Procyon compiles Trashtalk AST JSON to native Go binaries for performance.
+# It supports a subset of Trashtalk features, falling back to Bash for unsupported constructs.
+#
+# Usage:
+#   @ Tools::Procyon ensure              # Install if needed
+#   @ Tools::Procyon version             # Show version
+#   @ Tools::Procyon compile: input.json # Compile AST JSON to Go
+#
+package: Tools
+
+Procyon subclass: Tool
+
+  classMethod: name [
+    ^ "procyon"
+  ]
+
+  classMethod: installCommand [
+    ^ "go install github.com/chazu/procyon/cmd/procyon@latest"
+  ]
+
+  # Override version to use procyon's --version flag
+  rawClassMethod: version [
+    local tool_path
+    tool_path=$(command -v procyon 2>/dev/null)
+    if [[ -z "$tool_path" ]]; then
+      echo "not installed"
+      return 1
+    fi
+    "$tool_path" --version 2>/dev/null || echo "unknown"
+  ]
+
+  # Compile AST JSON to Go code (outputs to stdout)
+  # Note: procyon reads from stdin, so we pipe the file
+  rawClassMethod: compile: inputFile [
+    local tool_path
+    tool_path=$(@ "$_CLASS" path)
+    if [[ -z "$tool_path" ]]; then
+      _throw "ToolError" "procyon is not installed"
+      return 1
+    fi
+    "$tool_path" < "$1"
+  ]
+
+  # Compile AST JSON and write to output file
+  rawClassMethod: compile: inputFile to: outputFile [
+    local tool_path
+    tool_path=$(@ "$_CLASS" path)
+    if [[ -z "$tool_path" ]]; then
+      _throw "ToolError" "procyon is not installed"
+      return 1
+    fi
+    "$tool_path" < "$1" > "$2"
+  ]
+
+  # Get info about what procyon supports
+  rawClassMethod: info [
+    local tool_path
+    tool_path=$(@ "$_CLASS" path)
+    if [[ -z "$tool_path" ]]; then
+      _throw "ToolError" "procyon is not installed"
+      return 1
+    fi
+    "$tool_path" --help 2>&1 | head -20
+  ]
