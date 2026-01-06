@@ -1,0 +1,27 @@
+Protocol subclass: Object
+
+  rawClassMethod: requiredMethods [
+    # Returns the list of required method selectors as space-separated string
+    # Populated from __ProtocolName__requires metadata by compiler
+    local req_var="__${_CLASS}__requires"
+    echo "${!req_var:-}"
+  ]
+
+  rawClassMethod: isSatisfiedBy: className [
+    local class_to_check="$className"
+    local required
+    required=$(@ "$_CLASS" requiredMethods)
+
+    # If no requirements, trivially satisfied
+    [[ -z "$required" ]] && echo "true" && return 0
+
+    # Check each required method
+    for selector in $required; do
+      if ! _class_has_method "$class_to_check" "$selector"; then
+        echo "false"
+        return 0
+      fi
+    done
+
+    echo "true"
+  ]

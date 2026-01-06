@@ -1456,6 +1456,11 @@ function send {
     exit_code=$?
     # Exit code 200 = unknown selector, fall back to Bash dispatch
     if [[ $exit_code -ne 200 ]]; then
+      # Native binary updates the database directly, so reload into memory cache
+      # This ensures subsequent Bash operations see the updated state
+      if [[ -n "$_INSTANCE" ]]; then
+        _env_load "$_INSTANCE" 2>/dev/null || true
+      fi
       _send_cleanup $frame_ensure_start $frame_handler_start $exit_code
       return $exit_code
     fi
