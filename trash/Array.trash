@@ -13,13 +13,13 @@ Array subclass: Object
   ]
 
   # Accessor for items ivar
-  rawMethod: getItems [
-    echo "$(_ivar items)"
+  method: getItems [
+    ^ items
   ]
 
   # Setter for items ivar
-  rawMethod: setItems: newItems [
-    _ivar_set items "$1"
+  method: setItems: newItems [
+    items := newItems
   ]
 
   # Private helper - get the raw items JSON array

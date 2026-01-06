@@ -12,92 +12,67 @@ TestCase subclass: Object
   ]
 
   # Override in subclass for test setup
-  rawMethod: setUp [
-    :
+  method: setUp [
+    ^ nil
   ]
 
   # Override in subclass for test cleanup
-  rawMethod: tearDown [
-    :
+  method: tearDown [
+    ^ nil
   ]
 
   # ==========================================
   # Equality Assertions
   # ==========================================
 
-  rawMethod: assert: actual equals: expected [
-    if [[ "$actual" == "$expected" ]]; then
-      @ "$_RECEIVER" _pass
-    else
-      @ "$_RECEIVER" _fail: "Expected '$expected' but got '$actual'"
-    fi
+  method: assert: actual equals: expected [
+    (actual = expected) ifTrue: [@ self _pass]
+                        ifFalse: [@ self _fail: 'Values not equal']
   ]
 
-  # Snake_case alias
+  # Snake_case alias for positional args: @ self assert_equals "a" "b"
   rawMethod: assert_equals [
     local actual="$1"
     local expected="$2"
-    if [[ "$actual" == "$expected" ]]; then
-      @ "$_RECEIVER" _pass
-    else
-      @ "$_RECEIVER" _fail: "Expected '$expected' but got '$actual'"
-    fi
+    @ "$_RECEIVER" assert: "$actual" equals: "$expected"
   ]
 
-  rawMethod: assert: actual notEquals: expected [
-    if [[ "$actual" != "$expected" ]]; then
-      @ "$_RECEIVER" _pass
-    else
-      @ "$_RECEIVER" _fail: "Expected '$actual' to not equal '$expected'"
-    fi
+  method: assert: actual notEquals: expected [
+    (actual ~= expected) ifTrue: [@ self _pass]
+                         ifFalse: [@ self _fail: 'Values should not be equal']
   ]
 
+  # Snake_case alias for positional args
   rawMethod: assert_not_equals [
     local actual="$1"
     local expected="$2"
-    if [[ "$actual" != "$expected" ]]; then
-      @ "$_RECEIVER" _pass
-    else
-      @ "$_RECEIVER" _fail: "Expected '$actual' to not equal '$expected'"
-    fi
+    @ "$_RECEIVER" assert: "$actual" notEquals: "$expected"
   ]
 
   # ==========================================
   # Boolean Assertions
   # ==========================================
 
-  rawMethod: assertTrue: condition [
-    if [[ "$condition" == "true" || "$condition" == "1" ]]; then
-      @ "$_RECEIVER" _pass
-    else
-      @ "$_RECEIVER" _fail: "Expected true but got '$condition'"
-    fi
+  method: assertTrue: condition [
+    (condition = 'true') or: [condition = '1']
+      ifTrue: [@ self _pass]
+      ifFalse: [@ self _fail: 'Expected true']
   ]
 
-  rawMethod: assert_true [
-    local condition="$1"
-    if [[ "$condition" == "true" || "$condition" == "1" ]]; then
-      @ "$_RECEIVER" _pass
-    else
-      @ "$_RECEIVER" _fail: "Expected true but got '$condition'"
-    fi
+  # Snake_case alias - delegates to Smalltalk version
+  method: assert_true: condition [
+    @ self assertTrue: condition
   ]
 
-  rawMethod: assertFalse: condition [
-    if [[ "$condition" == "false" || "$condition" == "0" || -z "$condition" ]]; then
-      @ "$_RECEIVER" _pass
-    else
-      @ "$_RECEIVER" _fail: "Expected false but got '$condition'"
-    fi
+  method: assertFalse: condition [
+    (condition = 'false') or: [condition = '0'] or: [condition isEmpty]
+      ifTrue: [@ self _pass]
+      ifFalse: [@ self _fail: 'Expected false']
   ]
 
-  rawMethod: assert_false [
-    local condition="$1"
-    if [[ "$condition" == "false" || "$condition" == "0" || -z "$condition" ]]; then
-      @ "$_RECEIVER" _pass
-    else
-      @ "$_RECEIVER" _fail: "Expected false but got '$condition'"
-    fi
+  # Snake_case alias - delegates to Smalltalk version
+  method: assert_false: condition [
+    @ self assertFalse: condition
   ]
 
   # ==========================================
@@ -109,13 +84,9 @@ TestCase subclass: Object
                                          ifFalse: [@ self _fail: 'Expected nil/empty value']
   ]
 
-  rawMethod: assert_nil [
-    local value="$1"
-    if [[ -z "$value" || "$value" == "null" ]]; then
-      @ "$_RECEIVER" _pass
-    else
-      @ "$_RECEIVER" _fail: "Expected nil/empty but got '$value'"
-    fi
+  # Snake_case alias - delegates to Smalltalk version
+  method: assert_nil: value [
+    @ self assertNil: value
   ]
 
   method: assertNotNil: value [
@@ -123,13 +94,9 @@ TestCase subclass: Object
                                             ifFalse: [@ self _fail: 'Expected non-nil value']
   ]
 
-  rawMethod: assert_not_nil [
-    local value="$1"
-    if [[ -n "$value" && "$value" != "null" ]]; then
-      @ "$_RECEIVER" _pass
-    else
-      @ "$_RECEIVER" _fail: "Expected non-nil value but got nil/empty"
-    fi
+  # Snake_case alias - delegates to Smalltalk version
+  method: assert_not_nil: value [
+    @ self assertNotNil: value
   ]
 
   # ==========================================
@@ -178,14 +145,9 @@ TestCase subclass: Object
                         ifFalse: [@ self _fail: 'Expected greater than']
   ]
 
-  rawMethod: assert_greater_than [
-    local actual="$1"
-    local expected="$2"
-    if [[ "$actual" -gt "$expected" ]]; then
-      @ "$_RECEIVER" _pass
-    else
-      @ "$_RECEIVER" _fail: "Expected $actual > $expected"
-    fi
+  # Snake_case alias - delegates to Smalltalk version
+  method: assert_greater_than: actual than: expected [
+    @ self assert: actual greaterThan: expected
   ]
 
   method: assert: actual lessThan: expected [
@@ -193,14 +155,9 @@ TestCase subclass: Object
                         ifFalse: [@ self _fail: 'Expected less than']
   ]
 
-  rawMethod: assert_less_than [
-    local actual="$1"
-    local expected="$2"
-    if [[ "$actual" -lt "$expected" ]]; then
-      @ "$_RECEIVER" _pass
-    else
-      @ "$_RECEIVER" _fail: "Expected $actual < $expected"
-    fi
+  # Snake_case alias - delegates to Smalltalk version
+  method: assert_less_than: actual than: expected [
+    @ self assert: actual lessThan: expected
   ]
 
   method: assert: actual greaterOrEqual: expected [
@@ -253,12 +210,12 @@ TestCase subclass: Object
     return 77
   ]
 
-  rawMethod: fail: message [
-    @ "$_RECEIVER" _fail: "$message"
+  method: fail: message [
+    @ self _fail: message
   ]
 
-  rawMethod: fail [
-    @ "$_RECEIVER" _fail: "Explicit failure"
+  method: fail [
+    @ self _fail: 'Explicit failure'
   ]
 
   # ==========================================

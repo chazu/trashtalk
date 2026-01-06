@@ -12,13 +12,13 @@ Dictionary subclass: Object
   ]
 
   # Accessor for items ivar (raw JSON)
-  rawMethod: getItems [
-    echo "$(_ivar items)"
+  method: getItems [
+    ^ items
   ]
 
   # Setter for items ivar
-  rawMethod: setItems: newItems [
-    _ivar_set items "$1"
+  method: setItems: newItems [
+    items := newItems
   ]
 
   # Private helper - get the raw items JSON object
@@ -96,10 +96,10 @@ Dictionary subclass: Object
   ]
 
   # Check if dictionary is empty
-  rawMethod: isEmpty [
-    local size
-    size=$(@ "$_RECEIVER" size)
-    [[ "$size" -eq 0 ]] && echo "true" || echo "false"
+  method: isEmpty [
+    | size |
+    size := $(@ self size)
+    (size = 0) ifTrue: [^ 'true'] ifFalse: [^ 'false']
   ]
 
   # Print dictionary contents
@@ -235,9 +235,9 @@ Dictionary subclass: Object
   ]
 
   # Clear all entries
-  rawMethod: clear [
-    @ "$_RECEIVER" setItems: "{}"
-    echo "$_RECEIVER"
+  method: clear [
+    @ self setItems: '{}'
+    ^ self
   ]
 
   # Return as JSON string (compact format)
