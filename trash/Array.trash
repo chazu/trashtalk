@@ -23,59 +23,60 @@ Array subclass: Object
   ]
 
   # Private helper - get the raw items JSON array
-  rawMethod: _getItemsArray [
-    local items
-    items="$(_ivar items)"
-    echo "${items:-[]}"
+  method: _getItemsArray [
+    ^ items
   ]
 
   # Get element at index
   method: at: index [
-    | items |
-    items := $(@ self _getItemsArray)
-    echo "$items" | jq -r ".[$index] // empty"
+    ^ items arrayAt: index
   ]
 
   # Set element at index
   method: at: index put: value [
-    | items new_items |
-    items := $(@ self _getItemsArray)
-    new_items := $(echo "$items" | jq -c ".[$index] = \"$value\"")
-    @ self setItems: "$new_items"
-    ^ $value
+    items := items arrayAt: index put: value
+    ^ value
   ]
 
   # Add element to end
   method: push: value [
-    | items new_items |
-    items := $(@ self _getItemsArray)
-    new_items := $(echo "$items" | jq -c ". + [\"$value\"]")
-    @ self setItems: "$new_items"
-    ^ $value
+    items := items arrayPush: value
+    ^ value
   ]
 
   # Remove and return last element
   method: pop [
-    | items last new_items |
-    items := $(@ self _getItemsArray)
-    last := $(echo "$items" | jq -r '.[-1] // empty')
-    new_items := $(echo "$items" | jq -c '.[0:-1]')
-    @ self setItems: "$new_items"
-    ^ $last
+    | last |
+    last := items arrayLast
+    items := items arrayRemoveAt: -1
+    ^ last
   ]
 
   # Get array length
   method: size [
-    | items |
-    items := $(@ self _getItemsArray)
-    echo "$items" | jq 'length'
+    ^ items arrayLength
+  ]
+
+  # Check if array is empty
+  method: isEmpty [
+    ^ items arrayIsEmpty
+  ]
+
+  # Get first element
+  method: first [
+    ^ items arrayFirst
+  ]
+
+  # Get last element
+  method: last [
+    ^ items arrayLast
   ]
 
   # Print array contents
-  method: show [
-    | items len |
-    items := $(@ self _getItemsArray)
-    len := $(echo "$items" | jq 'length')
+  rawMethod: show [
+    local items len
+    items="$(_ivar items)"
+    len=$(echo "$items" | jq 'length')
     if [[ "$len" -eq 0 ]]; then
       echo "(empty array)"
     else
@@ -84,14 +85,14 @@ Array subclass: Object
   ]
 
   # Initialize with values
-  method: withValues: values [
-    | items value |
-    items := "[]"
-    for value in $values; do
-      items := $(echo "$items" | jq -c ". + [\"$value\"]")
+  rawMethod: withValues: values [
+    local items value
+    items="[]"
+    for value in $1; do
+      items=$(echo "$items" | jq -c --arg v "$value" '. + [$v]')
     done
-    @ self setItems: "$items"
-    ^ self
+    _ivar_set items "$items"
+    echo "$_RECEIVER"
   ]
 
   # Iterate over each element, calling block with each value
@@ -119,7 +120,7 @@ Array subclass: Object
     for ((i=0; i<len; i++)); do
       element=$(echo "$items" | jq -r ".[$i]")
       result=$(@ "$block_id" valueWith "$element")
-      new_items=$(echo "$new_items" | jq -c ". + [\"$result\"]")
+      new_items=$(echo "$new_items" | jq -c --arg v "$result" '. + [$v]')
     done
 
     # Create new Array with results
@@ -141,7 +142,7 @@ Array subclass: Object
       result=$(@ "$block_id" valueWith "$element")
       # Non-empty result means true
       if [[ -n "$result" ]]; then
-        new_items=$(echo "$new_items" | jq -c ". + [\"$element\"]")
+        new_items=$(echo "$new_items" | jq -c --arg v "$element" '. + [$v]')
       fi
     done
 

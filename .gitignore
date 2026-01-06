@@ -1,2 +1,3 @@
 *.db
 trash/user
+trash/.compiled/*.native

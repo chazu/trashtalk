@@ -22,90 +22,66 @@ Dictionary subclass: Object
   ]
 
   # Private helper - get the raw items JSON object
-  rawMethod: _getItemsObject [
-    local items
-    items="$(_ivar items)"
-    [[ -z "$items" ]] && items="{}"
-    echo "$items"
+  method: _getItemsObject [
+    ^ items
   ]
 
   # Get value at key
   # Usage: @ dict at: 'name'
-  rawMethod: at: key [
-    local key="$1"
-    local items
-    items=$(@ "$_RECEIVER" _getItemsObject)
-    echo "$items" | jq -r --arg k "$key" '.[$k] // empty'
+  method: at: key [
+    ^ items objectAt: key
   ]
 
   # Set value at key
   # Usage: @ dict at: 'name' put: 'Alice'
-  rawMethod: at: key put: value [
-    local key="$1"
-    local value="$2"
-    local items new_items
-    items=$(@ "$_RECEIVER" _getItemsObject)
-    new_items=$(echo "$items" | jq -c --arg k "$key" --arg v "$value" '.[$k] = $v')
-    @ "$_RECEIVER" setItems: "$new_items"
-    echo "$value"
+  method: at: key put: value [
+    items := items objectAt: key put: value
+    ^ value
   ]
 
   # Check if key exists
   # Usage: @ dict includesKey: 'name'
-  rawMethod: includesKey: key [
-    local key="$1"
-    local items result
-    items=$(@ "$_RECEIVER" _getItemsObject)
-    result=$(echo "$items" | jq -r --arg k "$key" 'has($k)')
-    echo "$result"
+  method: includesKey: key [
+    ^ items objectHasKey: key
   ]
 
-  # Remove key-value pair
+  # Remove key-value pair and return old value
   # Usage: @ dict removeAt: 'name'
-  rawMethod: removeAt: key [
-    local key="$1"
-    local items old_value new_items
-    items=$(@ "$_RECEIVER" _getItemsObject)
-    old_value=$(echo "$items" | jq -r --arg k "$key" '.[$k] // empty')
-    new_items=$(echo "$items" | jq -c --arg k "$key" 'del(.[$k])')
-    @ "$_RECEIVER" setItems: "$new_items"
-    echo "$old_value"
+  method: removeAt: key [
+    | oldValue |
+    oldValue := items objectAt: key
+    items := items objectRemoveKey: key
+    ^ oldValue
   ]
 
-  # Get all keys
-  # Usage: @ dict keys
+  # Get all keys (as newline-separated list)
   rawMethod: keys [
     local items
-    items=$(@ "$_RECEIVER" _getItemsObject)
+    items="$(_ivar items)"
     echo "$items" | jq -r 'keys[]'
   ]
 
-  # Get all values
-  # Usage: @ dict values
+  # Get all values (as newline-separated list)
   rawMethod: values [
     local items
-    items=$(@ "$_RECEIVER" _getItemsObject)
+    items="$(_ivar items)"
     echo "$items" | jq -r '.[]'
   ]
 
   # Get dictionary size (number of keys)
-  rawMethod: size [
-    local items
-    items=$(@ "$_RECEIVER" _getItemsObject)
-    echo "$items" | jq 'length'
+  method: size [
+    ^ items objectLength
   ]
 
   # Check if dictionary is empty
   method: isEmpty [
-    | size |
-    size := $(@ self size)
-    (size = 0) ifTrue: [^ 'true'] ifFalse: [^ 'false']
+    ^ items objectIsEmpty
   ]
 
   # Print dictionary contents
   rawMethod: show [
     local items len
-    items=$(@ "$_RECEIVER" _getItemsObject)
+    items="$(_ivar items)"
     len=$(echo "$items" | jq 'length')
     if [[ "$len" -eq 0 ]]; then
       echo "(empty dictionary)"
@@ -125,7 +101,7 @@ Dictionary subclass: Object
       value="${pair#*:}"
       items=$(echo "$items" | jq -c --arg k "$key" --arg v "$value" '.[$k] = $v')
     done
-    @ "$_RECEIVER" setItems: "$items"
+    _ivar_set items "$items"
     echo "$_RECEIVER"
   ]
 
@@ -133,7 +109,7 @@ Dictionary subclass: Object
   # Usage: @ dict do: [:key :value | echo "$key = $value"]
   rawMethod: do: block [
     local items keys_json key value block_id="$1"
-    items=$(@ "$_RECEIVER" _getItemsObject)
+    items="$(_ivar items)"
 
     # Iterate over keys
     while IFS= read -r key; do
@@ -146,7 +122,7 @@ Dictionary subclass: Object
   # Usage: @ dict keysDo: [:key | echo "Key: $key"]
   rawMethod: keysDo: block [
     local items key block_id="$1"
-    items=$(@ "$_RECEIVER" _getItemsObject)
+    items="$(_ivar items)"
 
     while IFS= read -r key; do
       @ "$block_id" valueWith "$key"
@@ -157,7 +133,7 @@ Dictionary subclass: Object
   # Usage: @ dict valuesDo: [:value | echo "Value: $value"]
   rawMethod: valuesDo: block [
     local items value block_id="$1"
-    items=$(@ "$_RECEIVER" _getItemsObject)
+    items="$(_ivar items)"
 
     while IFS= read -r value; do
       @ "$block_id" valueWith "$value"
@@ -168,7 +144,7 @@ Dictionary subclass: Object
   # Usage: doubled := @ dict collect: [:v | v * 2]
   rawMethod: collect: block [
     local items key value result new_items block_id="$1"
-    items=$(@ "$_RECEIVER" _getItemsObject)
+    items="$(_ivar items)"
     new_items="{}"
 
     while IFS= read -r key; do
@@ -188,7 +164,7 @@ Dictionary subclass: Object
   # Usage: evens := @ dict select: [:k :v | (v % 2) == 0]
   rawMethod: select: block [
     local items key value result new_items block_id="$1"
-    items=$(@ "$_RECEIVER" _getItemsObject)
+    items="$(_ivar items)"
     new_items="{}"
 
     while IFS= read -r key; do
@@ -212,10 +188,10 @@ Dictionary subclass: Object
   rawMethod: merge: other [
     local other="$1"
     local items other_items merged
-    items=$(@ "$_RECEIVER" asJson)
+    items=$(_ivar items)
     other_items=$(@ "$other" asJson)
     merged=$(echo "$items" "$other_items" | jq -sc '.[0] * .[1]')
-    @ "$_RECEIVER" setItems: "$merged"
+    _ivar_set items "$merged"
     echo "$_RECEIVER"
   ]
 
@@ -225,7 +201,7 @@ Dictionary subclass: Object
     local key="$1"
     local default="$2"
     local items result
-    items=$(@ "$_RECEIVER" _getItemsObject)
+    items="$(_ivar items)"
     result=$(echo "$items" | jq -r --arg k "$key" '.[$k] // null')
     if [[ "$result" == "null" ]]; then
       echo "$default"

@@ -30,7 +30,7 @@ _ENVIRONMENT_NATIVE="${_ENVIRONMENT_NATIVE:-$HOME/.trashtalk/trash/.compiled/Env
 
 # Check if native Environment is available
 _db_has_native() {
-    [[ -z "$TRASHTALK_NO_NATIVE" && -x "$_ENVIRONMENT_NATIVE" ]]
+    [[ -z "${TRASHTALK_NO_NATIVE:-}" && -x "$_ENVIRONMENT_NATIVE" ]]
 }
 
 ########################
