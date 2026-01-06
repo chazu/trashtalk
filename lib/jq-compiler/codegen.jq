@@ -118,6 +118,39 @@ def expr_is_control_flow:
    $tok.value == "ifNil:" or $tok.value == "ifNotNil:" or
    $tok.value == "to:");
 
+# ==============================================================================
+# JSON Primitive Detection
+# ==============================================================================
+# JSON primitives are special operations that compile to jq pipelines.
+# They eliminate the need for raw jq in Array/Dictionary implementations.
+
+# Array primitives that take arguments (keyword methods)
+def expr_is_json_array_keyword:
+  expr_peek as $tok |
+  $tok != null and $tok.type == "KEYWORD" and
+  ($tok.value == "arrayPush:" or $tok.value == "arrayAt:" or
+   $tok.value == "arrayAt:put:" or $tok.value == "arrayRemoveAt:");
+
+# Object primitives that take arguments (keyword methods)
+def expr_is_json_object_keyword:
+  expr_peek as $tok |
+  $tok != null and $tok.type == "KEYWORD" and
+  ($tok.value == "objectAt:" or $tok.value == "objectAt:put:" or
+   $tok.value == "objectHasKey:" or $tok.value == "objectRemoveKey:");
+
+# Unary JSON primitives (no arguments)
+def expr_is_json_unary:
+  expr_peek as $tok |
+  $tok != null and $tok.type == "IDENTIFIER" and
+  ($tok.value == "arrayLength" or $tok.value == "arrayFirst" or
+   $tok.value == "arrayLast" or $tok.value == "arrayIsEmpty" or
+   $tok.value == "objectKeys" or $tok.value == "objectValues" or
+   $tok.value == "objectLength" or $tok.value == "objectIsEmpty");
+
+# Combined check for any JSON primitive
+def expr_is_json_primitive:
+  expr_is_json_array_keyword or expr_is_json_object_keyword or expr_is_json_unary;
+
 # Check if current token terminates a keyword argument
 # (used to stop expression parsing at message boundaries)
 def expr_is_arg_terminator:
@@ -591,6 +624,75 @@ def expr_parse_expr(min_bp):
           }
         }
         | infix_loop
+      elif (.state | expr_is_json_unary) then
+        # Unary JSON primitives: arr arrayLength, arr arrayFirst, etc.
+        .result as $receiver |
+        (.state | expr_peek.value) as $op |
+        .state |= expr_advance |
+        {
+          state: .state,
+          result: {
+            type: "json_primitive",
+            operation: $op,
+            receiver: $receiver,
+            args: []
+          }
+        }
+        | infix_loop
+      elif (.state | expr_is_json_array_keyword) or (.state | expr_is_json_object_keyword) then
+        # Keyword JSON primitives: arr arrayPush: val, obj objectAt: key, etc.
+        .result as $receiver |
+        (.state | expr_peek.value) as $keyword |
+        .state |= expr_advance |
+        .state |= expr_skip_ws |
+        # Determine operation name from keyword
+        ($keyword | rtrimstr(":")) as $op_base |
+        # Check for compound keywords like arrayAt:put: or objectAt:put:
+        if $keyword == "arrayAt:" or $keyword == "objectAt:" then
+          # Parse first argument
+          (.state | expr_parse_expr(0)) as $first_arg |
+          $first_arg.state | expr_skip_ws |
+          # Check for put: continuation
+          if expr_peek_type == "KEYWORD" and expr_peek.value == "put:" then
+            expr_advance | expr_skip_ws |
+            (. | expr_parse_expr(0)) as $second_arg |
+            {
+              state: $second_arg.state,
+              result: {
+                type: "json_primitive",
+                operation: ($op_base + "Put"),
+                receiver: $receiver,
+                args: [$first_arg.result, $second_arg.result]
+              }
+            }
+            | infix_loop
+          else
+            # Just arrayAt: or objectAt: without put:
+            {
+              state: .,
+              result: {
+                type: "json_primitive",
+                operation: $op_base,
+                receiver: $receiver,
+                args: [$first_arg.result]
+              }
+            }
+            | infix_loop
+          end
+        else
+          # Single-arg keywords: arrayPush:, arrayRemoveAt:, objectHasKey:, objectRemoveKey:
+          (.state | expr_parse_expr(0)) as $arg |
+          {
+            state: $arg.state,
+            result: {
+              type: "json_primitive",
+              operation: $op_base,
+              receiver: $receiver,
+              args: [$arg.result]
+            }
+          }
+          | infix_loop
+        end
       elif (.state | expr_peek_type) == "KEYWORD" and
            ((.state | expr_peek.value) == "and:" or (.state | expr_peek.value) == "or:") then
         # Boolean operators: (cond1) and: [cond2] or (cond1) or: [cond2]
@@ -1271,6 +1373,73 @@ def expr_gen($locals; $ivars; $cvars):
       "# ERROR: unknown control flow kind \(.kind)"
     end
     end
+  elif .type == "json_primitive" then
+    # JSON primitive operations - generate jq pipelines
+    (.receiver | expr_gen($locals; $ivars; $cvars)) as $recv |
+    # Quote receiver if it's a variable expansion
+    (if ($recv | test("^\\$")) then "\"\($recv)\"" else $recv end) as $quoted_recv |
+    # Generate arguments - for jq --arg, strings need raw values without outer quotes
+    # But variables and other expressions need proper quoting
+    def gen_jq_arg($arg):
+      if $arg.type == "string" then
+        # String literal - use raw value for jq --arg
+        $arg.value
+      else
+        # Variables and expressions need the generated code
+        $arg | expr_gen($locals; $ivars; $cvars)
+      end;
+    ([(.args // [])[] | . as $a | gen_jq_arg($a)]) as $arg_codes |
+    if .operation == "arrayPush" then
+      # arr arrayPush: val -> $(echo "$arr" | jq -c --arg v "$val" '. + [$v]')
+      "$(echo \($quoted_recv) | jq -c --arg v \"\($arg_codes[0])\" '. + [$v]')"
+    elif .operation == "arrayAt" then
+      # arr arrayAt: idx -> $(echo "$arr" | jq -r --argjson i "$idx" '.[$i] // empty')
+      "$(echo \($quoted_recv) | jq -r --argjson i \"\($arg_codes[0])\" '.[$i] // empty')"
+    elif .operation == "arrayAtPut" then
+      # arr arrayAt: idx put: val -> $(echo "$arr" | jq -c --argjson i "$idx" --arg v "$val" '.[$i] = $v')
+      "$(echo \($quoted_recv) | jq -c --argjson i \"\($arg_codes[0])\" --arg v \"\($arg_codes[1])\" '.[$i] = $v')"
+    elif .operation == "arrayRemoveAt" then
+      # arr arrayRemoveAt: idx -> $(echo "$arr" | jq -c --argjson i "$idx" 'del(.[$i])')
+      "$(echo \($quoted_recv) | jq -c --argjson i \"\($arg_codes[0])\" 'del(.[$i])')"
+    elif .operation == "arrayLength" then
+      # arr arrayLength -> $(echo "$arr" | jq 'length')
+      "$(echo \($quoted_recv) | jq 'length')"
+    elif .operation == "arrayFirst" then
+      # arr arrayFirst -> $(echo "$arr" | jq -r '.[0] // empty')
+      "$(echo \($quoted_recv) | jq -r '.[0] // empty')"
+    elif .operation == "arrayLast" then
+      # arr arrayLast -> $(echo "$arr" | jq -r '.[-1] // empty')
+      "$(echo \($quoted_recv) | jq -r '.[-1] // empty')"
+    elif .operation == "arrayIsEmpty" then
+      # arr arrayIsEmpty -> $(echo "$arr" | jq 'length == 0')
+      "$(echo \($quoted_recv) | jq 'length == 0')"
+    elif .operation == "objectAt" then
+      # obj objectAt: key -> $(echo "$obj" | jq -r --arg k "$key" '.[$k] // empty')
+      "$(echo \($quoted_recv) | jq -r --arg k \"\($arg_codes[0])\" '.[$k] // empty')"
+    elif .operation == "objectAtPut" then
+      # obj objectAt: key put: val -> $(echo "$obj" | jq -c --arg k "$key" --arg v "$val" '.[$k] = $v')
+      "$(echo \($quoted_recv) | jq -c --arg k \"\($arg_codes[0])\" --arg v \"\($arg_codes[1])\" '.[$k] = $v')"
+    elif .operation == "objectHasKey" then
+      # obj objectHasKey: key -> $(echo "$obj" | jq --arg k "$key" 'has($k)')
+      "$(echo \($quoted_recv) | jq --arg k \"\($arg_codes[0])\" 'has($k)')"
+    elif .operation == "objectRemoveKey" then
+      # obj objectRemoveKey: key -> $(echo "$obj" | jq -c --arg k "$key" 'del(.[$k])')
+      "$(echo \($quoted_recv) | jq -c --arg k \"\($arg_codes[0])\" 'del(.[$k])')"
+    elif .operation == "objectKeys" then
+      # obj objectKeys -> $(echo "$obj" | jq -c 'keys')
+      "$(echo \($quoted_recv) | jq -c 'keys')"
+    elif .operation == "objectValues" then
+      # obj objectValues -> $(echo "$obj" | jq -c '[.[]]')
+      "$(echo \($quoted_recv) | jq -c '[.[]]')"
+    elif .operation == "objectLength" then
+      # obj objectLength -> $(echo "$obj" | jq 'length')
+      "$(echo \($quoted_recv) | jq 'length')"
+    elif .operation == "objectIsEmpty" then
+      # obj objectIsEmpty -> $(echo "$obj" | jq 'length == 0')
+      "$(echo \($quoted_recv) | jq 'length == 0')"
+    else
+      "# ERROR: unknown json_primitive operation \(.operation)"
+    end
   else
     "# unknown: \(.type)"
   end;
@@ -1533,13 +1702,24 @@ def should_use_expr_parser:
     def is_test_predicate: . as $v |
       ["fileExists", "isFile", "isDirectory", "isFifo", "isSymlink",
        "isReadable", "isWritable", "isExecutable", "isEmpty", "notEmpty"] | index($v) != null;
+    # JSON primitive keywords
+    def is_json_primitive_keyword: . as $v |
+      ["arrayPush:", "arrayAt:", "arrayRemoveAt:",
+       "objectAt:", "objectHasKey:", "objectRemoveKey:"] | index($v) != null;
+    # JSON primitive unary identifiers
+    def is_json_primitive_unary: . as $v |
+      ["arrayLength", "arrayFirst", "arrayLast", "arrayIsEmpty",
+       "objectKeys", "objectValues", "objectLength", "objectIsEmpty"] | index($v) != null;
     (any($tokens[]; .type == "SYMBOL" or .type == "HASH_LPAREN" or .type == "HASH_LBRACE" or .type == "TRIPLESTRING" or
                     (.type == "IDENTIFIER" and (.value | is_test_predicate)))) as $has_collection_literals |
     (any($tokens[]; .type == "KEYWORD" and .value == "try:")) as $has_try_catch |
+    # JSON primitives are strong Smalltalk signals
+    (any($tokens[]; (.type == "KEYWORD" and (.value | is_json_primitive_keyword)) or
+                    (.type == "IDENTIFIER" and (.value | is_json_primitive_unary)))) as $has_json_primitives |
     # Block literals must use expr parser to compile to Block objects
     (any(range(0; ($tokens | length) - 1) as $i |
       $tokens[$i].type == "LBRACKET" and $tokens[$i + 1].type == "BLOCK_PARAM")) as $has_block_literal |
-    if $has_collection_literals or $has_try_catch or $has_block_literal then true
+    if $has_collection_literals or $has_try_catch or $has_block_literal or $has_json_primitives then true
     else
     # Check for exclusions: bash constructs that shouldn't use expr parser
     # Bash commands that appear as bare identifiers (not after @)
@@ -1667,8 +1847,9 @@ def timestamp:
   now | strftime("%Y-%m-%dT%H:%M:%S");
 
 # Convert instance var list to space-separated string for metadata
+# Note: We escape double quotes so JSON defaults survive bash string parsing
 def varsToString:
-  [.[] | .name + (if .default then ":\(.default.value)" else "" end)] | join(" ");
+  [.[] | .name + (if .default then ":\(.default.value | gsub("\""; "\\\""))" else "" end)] | join(" ");
 
 # Get the fully qualified class name (Package::ClassName or just ClassName)
 # Input: class AST with .package and .name
