@@ -4,6 +4,11 @@
 # Procyon compiles Trashtalk AST JSON to native Go binaries for performance.
 # It supports a subset of Trashtalk features, falling back to Bash for unsupported constructs.
 #
+# v0.7.0 features:
+#   - --serve mode: each .native binary can run as its own daemon
+#   - --mode=plugin: generate c-shared libraries for dynamic loading
+#   - Metadata: --source, --hash, --info flags
+#
 # Usage:
 #   @ Tools::Procyon ensure              # Install if needed
 #   @ Tools::Procyon version             # Show version
@@ -18,7 +23,7 @@ Procyon subclass: Tool
   ]
 
   classMethod: installCommand [
-    ^ "go install github.com/chazu/procyon/cmd/procyon@latest"
+    ^ "go install github.com/chazu/procyon/cmd/procyon@v0.7.0"
   ]
 
   # Override version to use procyon's --version flag
