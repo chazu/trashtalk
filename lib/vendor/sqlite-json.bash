@@ -24,6 +24,15 @@
 
 SQLITE_JSON_DB="${SQLITE_JSON_DB:-$HOME/.trashtalk/instances.db}"
 
+# Native Environment accelerator (optional)
+# Set TRASHTALK_NO_NATIVE=1 to disable native acceleration
+_ENVIRONMENT_NATIVE="${_ENVIRONMENT_NATIVE:-$HOME/.trashtalk/trash/.compiled/Environment.native}"
+
+# Check if native Environment is available
+_db_has_native() {
+    [[ -z "$TRASHTALK_NO_NATIVE" && -x "$_ENVIRONMENT_NATIVE" ]]
+}
+
 ########################
 # LOCAL FUNCTIONS
 ########################
@@ -136,6 +145,12 @@ db_put() {
         return 1
     }
 
+    # Use native accelerator if available
+    if _db_has_native; then
+        "$_ENVIRONMENT_NATIVE" Environment set_to_ "$id" "$data" >/dev/null 2>&1
+        return
+    fi
+
     # Escape single quotes in JSON data for SQL string literal
     # json() function then validates and rejects malformed JSON
     local escaped_data
@@ -158,6 +173,15 @@ db_get() {
         _db_echo_err_box 'invalid id format' 'db_get()'
         return 1
     }
+
+    # Use native accelerator if available
+    if _db_has_native; then
+        local result
+        result=$("$_ENVIRONMENT_NATIVE" Environment get_ "$id" 2>/dev/null)
+        echo "$result"
+        [[ -n "$result" ]]
+        return
+    fi
 
     local result
     result=$(_db_sql "SELECT data FROM instances WHERE id = '$id';")
@@ -193,6 +217,12 @@ db_find_by_class() {
         _db_echo_err_box 'missing param "class_name"' 'db_find_by_class()'
         return 1
     }
+
+    # Use native accelerator if available
+    if _db_has_native; then
+        "$_ENVIRONMENT_NATIVE" Environment findByClass_ "$class_name" 2>/dev/null
+        return
+    fi
 
     class_name=$(_db_escape "$class_name")
     _db_sql "SELECT id FROM instances WHERE class = '$class_name';"

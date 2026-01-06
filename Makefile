@@ -238,6 +238,151 @@ endif
 	$(LIB_DIR)/jq-compiler/driver.bash compile "$$srcfile" 2>/dev/null > "$$outfile"; \
 	echo "✓ $(CLASS) compiled → $$outfile"
 
+# =====================
+# NATIVE PLUGIN TARGETS
+# =====================
+
+# Procyon compiler location
+PROCYON := ~/dev/go/procyon/procyon
+PROCYON_SRC := ~/dev/go/procyon
+
+# Platform-specific shared library extension
+DYLIB_EXT := $(shell if [ "$$(uname)" = "Darwin" ]; then echo "dylib"; else echo "so"; fi)
+
+# Find all classes that can be compiled to plugins
+# (Exclude Test* classes and internal system classes)
+PLUGIN_CANDIDATES := $(filter-out $(wildcard $(TRASH_DIR)/Test*.trash),$(SOURCES))
+PLUGINS := $(patsubst $(TRASH_DIR)/%.trash,$(COMPILED_DIR)/%.$(DYLIB_EXT),$(PLUGIN_CANDIDATES))
+
+.PHONY: plugins plugin daemon native clean-native binary binaries
+
+# Build a single class as a standalone native binary (usage: make binary CLASS=Counter)
+binary:
+ifndef CLASS
+	@echo "Usage: make binary CLASS=ClassName"
+	@exit 1
+endif
+	@echo "Building native binary for $(CLASS)..."
+	@srcfile="$(TRASH_DIR)/$(CLASS).trash"; \
+	if [[ ! -f "$$srcfile" ]]; then \
+		echo "Error: $$srcfile not found"; \
+		exit 1; \
+	fi; \
+	mkdir -p $(COMPILED_DIR)/.build; \
+	$(LIB_DIR)/jq-compiler/driver.bash parse "$$srcfile" 2>/dev/null | \
+		$(PROCYON) --mode=binary 2>/dev/null > "$(COMPILED_DIR)/.build/$(CLASS).go"; \
+	cp "$$srcfile" "$(COMPILED_DIR)/.build/$(CLASS).trash"; \
+	cd $(COMPILED_DIR)/.build && \
+		go mod init $(CLASS) 2>/dev/null || true; \
+		go get github.com/mattn/go-sqlite3 2>/dev/null || true; \
+		CGO_ENABLED=1 go build -o ../$(CLASS).native $(CLASS).go; \
+	echo "✓ $(CLASS) native binary built → $(COMPILED_DIR)/$(CLASS).native"
+
+# Build native binaries for all eligible classes
+binaries: $(COMPILED_DIR)/.build
+	@echo "Building native binaries (this requires CGO for sqlite3)..."
+	@cd $(COMPILED_DIR)/.build && \
+		go mod init trashtalk-binaries 2>/dev/null || true && \
+		go get github.com/mattn/go-sqlite3 2>/dev/null || true
+	@for src in $(PLUGIN_CANDIDATES); do \
+		class=$$(basename "$$src" .trash); \
+		echo "Building native binary for $$class..."; \
+		$(LIB_DIR)/jq-compiler/driver.bash parse "$$src" 2>/dev/null | \
+			$(PROCYON) --mode=binary 2>/dev/null > "$(COMPILED_DIR)/.build/$$class.go"; \
+		cp "$$src" "$(COMPILED_DIR)/.build/$$class.trash"; \
+		(cd $(COMPILED_DIR)/.build && \
+			CGO_ENABLED=1 go build -o ../$$class.native $$class.go 2>/dev/null); \
+		if [[ -f "$(COMPILED_DIR)/$$class.native" ]]; then \
+			echo "  ✓ $$class.native"; \
+		else \
+			echo "  ✗ $$class failed to build"; \
+		fi; \
+	done
+	@echo "Native binary build complete"
+
+# Build a single class as a plugin (usage: make plugin CLASS=Counter)
+plugin:
+ifndef CLASS
+	@echo "Usage: make plugin CLASS=ClassName"
+	@exit 1
+endif
+	@echo "Building plugin for $(CLASS)..."
+	@srcfile="$(TRASH_DIR)/$(CLASS).trash"; \
+	if [[ ! -f "$$srcfile" ]]; then \
+		echo "Error: $$srcfile not found"; \
+		exit 1; \
+	fi; \
+	mkdir -p $(COMPILED_DIR)/.build; \
+	$(LIB_DIR)/jq-compiler/driver.bash parse "$$srcfile" 2>/dev/null | \
+		$(PROCYON) --mode=plugin 2>/dev/null > "$(COMPILED_DIR)/.build/$(CLASS).go"; \
+	cd $(COMPILED_DIR)/.build && \
+		go mod init $(CLASS) 2>/dev/null || true; \
+		go get github.com/mattn/go-sqlite3 2>/dev/null || true; \
+		CGO_ENABLED=1 go build -buildmode=c-shared -o ../$(CLASS).$(DYLIB_EXT) $(CLASS).go; \
+	echo "✓ $(CLASS) plugin built → $(COMPILED_DIR)/$(CLASS).$(DYLIB_EXT)"
+
+# Build plugins for all eligible classes
+plugins: $(COMPILED_DIR)/.build
+	@echo "Building plugins (this requires CGO)..."
+	@cd $(COMPILED_DIR)/.build && \
+		go mod init trashtalk-plugins 2>/dev/null || true && \
+		go get github.com/mattn/go-sqlite3 2>/dev/null || true
+	@for src in $(PLUGIN_CANDIDATES); do \
+		class=$$(basename "$$src" .trash); \
+		echo "Building plugin for $$class..."; \
+		$(LIB_DIR)/jq-compiler/driver.bash parse "$$src" 2>/dev/null | \
+			$(PROCYON) --mode=plugin 2>/dev/null > "$(COMPILED_DIR)/.build/$$class.go"; \
+		cd $(COMPILED_DIR)/.build && \
+			CGO_ENABLED=1 go build -buildmode=c-shared -o ../$$class.$(DYLIB_EXT) $$class.go 2>/dev/null; \
+		if [[ -f "$(COMPILED_DIR)/$$class.$(DYLIB_EXT)" ]]; then \
+			echo "  ✓ $$class.$(DYLIB_EXT)"; \
+		else \
+			echo "  ✗ $$class failed to build"; \
+		fi; \
+	done
+	@echo "Plugin build complete"
+
+$(COMPILED_DIR)/.build:
+	@mkdir -p $(COMPILED_DIR)/.build
+
+# Build the trashtalk-daemon
+daemon:
+	@echo "Building trashtalk-daemon..."
+	@cd $(PROCYON_SRC) && go build ./cmd/trashtalk-daemon
+	@mkdir -p bin
+	@cp $(PROCYON_SRC)/trashtalk-daemon bin/
+	@echo "✓ trashtalk-daemon installed → bin/trashtalk-daemon"
+
+# Build procyon compiler (from Go source)
+procyon:
+	@echo "Building procyon compiler..."
+	@cd $(PROCYON_SRC) && go build ./cmd/procyon
+	@echo "✓ procyon built → $(PROCYON_SRC)/procyon"
+
+# Full native build: standalone binaries for all classes
+# (This is what integrates with lib/trash.bash's native dispatch)
+native: binaries
+	@echo ""
+	@echo "Native build complete!"
+	@echo "  Binaries: $(COMPILED_DIR)/*.native"
+
+# Full native build with daemon and plugins (for daemon-based dispatch)
+native-daemon: daemon plugins
+	@echo ""
+	@echo "Native daemon build complete!"
+	@echo "  Daemon: bin/trashtalk-daemon"
+	@echo "  Plugins: $(COMPILED_DIR)/*.$(DYLIB_EXT)"
+
+# Clean native artifacts
+clean-native:
+	@echo "Cleaning native artifacts..."
+	@rm -f $(COMPILED_DIR)/*.native
+	@rm -f $(COMPILED_DIR)/*.$(DYLIB_EXT)
+	@rm -f $(COMPILED_DIR)/*.h
+	@rm -rf $(COMPILED_DIR)/.build
+	@rm -f bin/trashtalk-daemon
+	@echo "✓ Native artifacts cleaned"
+
 # Help
 help:
 	@echo "Trashtalk Makefile"
@@ -255,3 +400,16 @@ help:
 	@echo "  make clean        - Remove compiled files"
 	@echo "  make info         - Show project information"
 	@echo "  make help         - Show this help"
+	@echo ""
+	@echo "Native Targets:"
+	@echo "  make binary CLASS=Name - Build a single class as native binary"
+	@echo "  make binaries     - Build all classes as native binaries"
+	@echo "  make native       - Same as binaries (integrates with @ dispatch)"
+	@echo "  make procyon      - Build the procyon compiler"
+	@echo "  make clean-native - Remove native artifacts"
+	@echo ""
+	@echo "Daemon/Plugin Targets (optional, for persistent daemon):"
+	@echo "  make plugin CLASS=Name - Build a single class as c-shared plugin"
+	@echo "  make plugins      - Build all classes as plugins"
+	@echo "  make daemon       - Build the trashtalk-daemon"
+	@echo "  make native-daemon - Build daemon + all plugins"

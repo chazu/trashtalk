@@ -1,114 +1,53 @@
-# Environment - Facade for the in-memory object store
-# Provides introspection and management of the current environment.
+# Environment - Instance storage layer for Trashtalk
+# This class provides the low-level storage API that the runtime uses
+# to persist and retrieve instances. When compiled with Procyon,
+# it becomes a fast native binary that trash.bash can call.
 #
-# Usage:
-#   @ Environment list              # All instance IDs in memory
-#   @ Environment count             # Number of objects in memory
-#   @ Environment get: $id          # Get JSON data for instance
-#   @ Environment exists: $id       # Check if instance is in memory
-#   @ Environment cleanup           # Clear all objects from memory
-#   @ Environment path              # Directory path of the environment
-
+# Usage from Bash:
+#   data=$(@ Environment get: $instance_id)
+#   @ Environment set: $instance_id to: "$json_data"
+#   @ Environment delete: $instance_id
+#   ids=$(@ Environment findByClass: Counter)
+#   exists=$(@ Environment exists: $instance_id)
+#
 Environment subclass: Object
 
-  # Return the directory path of the current environment
-  classMethod: path [
-    ^ $_ENV_DIR
+  # Get instance data by ID
+  # Returns JSON string or empty if not found
+  classMethod: get: instanceId [
+    ^ instanceId
   ]
 
-  # Return the session ID for this environment
-  classMethod: sessionId [
-    ^ $TRASH_SESSION_ID
+  # Store instance data
+  # instanceId - the instance ID (e.g., counter_abc123)
+  # data - JSON string to store
+  classMethod: set: instanceId to: data [
+    ^ instanceId
   ]
 
-  # List all instance IDs in the current environment
-  rawClassMethod: list [
-    _env_list
+  # Delete an instance by ID
+  classMethod: delete: instanceId [
+    ^ instanceId
   ]
 
-  # List all instance IDs for a specific class
-  rawClassMethod: listClass: className [
-    _env_list "$1"
+  # Find all instances of a given class
+  # Returns newline-separated list of instance IDs
+  classMethod: findByClass: className [
+    ^ className
   ]
 
-  # Count all objects in the current environment
-  rawClassMethod: count [
-    local count=0
-    local id
-    for id in $(_env_list); do
-      ((count++))
-    done
-    echo "$count"
+  # Check if an instance exists
+  # Returns 1 if exists, 0 if not
+  classMethod: exists: instanceId [
+    ^ instanceId
   ]
 
-  # Count objects of a specific class
-  rawClassMethod: countClass: className [
-    local count=0
-    local id
-    for id in $(_env_list "$1"); do
-      ((count++))
-    done
-    echo "$count"
+  # Get all instance IDs (for debugging)
+  classMethod: listAll [
+    ^ 0
   ]
 
-  # Get the JSON data for an instance
-  rawClassMethod: get: instanceId [
-    _env_get "$1"
+  # Count instances of a class
+  classMethod: countByClass: className [
+    ^ 0
   ]
-
-  # Check if an instance exists in memory
-  rawClassMethod: exists: instanceId [
-    if _env_exists "$1"; then
-      echo "true"
-    else
-      echo "false"
-    fi
-  ]
-
-  # Delete an instance from memory
-  rawClassMethod: delete: instanceId [
-    _env_delete "$1"
-  ]
-
-  # Clear all objects from the environment
-  rawClassMethod: cleanup [
-    local id
-    for id in $(_env_list); do
-      _env_delete "$id"
-    done
-    echo "Environment cleared"
-  ]
-
-  # Show environment info
-  rawClassMethod: info [
-    local count=0
-    local id
-    for id in $(_env_list); do
-      ((count++))
-    done
-    echo "Environment Info"
-    echo "  Session ID: $TRASH_SESSION_ID"
-    echo "  Path: $_ENV_DIR"
-    echo "  Objects: $count"
-  ]
-
-  # List objects grouped by class
-  rawClassMethod: inspect [
-    local id data class classes
-
-    echo "Environment Contents:"
-
-    # Get unique classes
-    classes=$(for id in $(_env_list); do
-      data=$(_env_get "$id")
-      echo "$data" | jq -r '.class // "unknown"'
-    done | sort -u)
-
-    # Count each class
-    for class in $classes; do
-      local count
-      count=$(_env_list "$class" | wc -l | tr -d ' ')
-      echo "  $class: $count"
-    done
-  ]
-
