@@ -242,8 +242,8 @@ endif
 # NATIVE PLUGIN TARGETS
 # =====================
 
-# Procyon compiler location
-PROCYON := ~/dev/go/procyon/procyon
+# Procyon compiler - use installed version from PATH, fallback to source location
+PROCYON := $(shell command -v procyon 2>/dev/null || echo ~/dev/go/procyon/procyon)
 PROCYON_SRC := ~/dev/go/procyon
 
 # Platform-specific shared library extension
@@ -357,19 +357,24 @@ plugins: $(COMPILED_DIR)/.build
 $(COMPILED_DIR)/.build:
 	@mkdir -p $(COMPILED_DIR)/.build
 
-# Build the trashtalk-daemon
+# Build and install the trashtalk-daemon to GOPATH/bin
 daemon:
-	@echo "Building trashtalk-daemon..."
-	@cd $(PROCYON_SRC) && go build ./cmd/trashtalk-daemon
-	@mkdir -p bin
-	@cp $(PROCYON_SRC)/trashtalk-daemon bin/
-	@echo "✓ trashtalk-daemon installed → bin/trashtalk-daemon"
+	@echo "Building and installing trashtalk-daemon..."
+	@cd $(PROCYON_SRC) && go install ./cmd/trashtalk-daemon
+	@echo "✓ trashtalk-daemon installed → $$(which trashtalk-daemon)"
 
-# Build procyon compiler (from Go source)
+# Build and install procyon compiler to GOPATH/bin
 procyon:
-	@echo "Building procyon compiler..."
-	@cd $(PROCYON_SRC) && go build ./cmd/procyon
-	@echo "✓ procyon built → $(PROCYON_SRC)/procyon"
+	@echo "Building and installing procyon compiler..."
+	@cd $(PROCYON_SRC) && go install ./cmd/procyon
+	@echo "✓ procyon installed → $$(which procyon)"
+
+# Install both procyon and trashtalk-daemon
+native-install: procyon daemon
+	@echo ""
+	@echo "Native tools installed:"
+	@echo "  procyon: $$(which procyon)"
+	@echo "  trashtalk-daemon: $$(which trashtalk-daemon)"
 
 # Full native build: standalone binaries for all classes
 # (This is what integrates with lib/trash.bash's native dispatch)
@@ -413,16 +418,19 @@ help:
 	@echo "  make info         - Show project information"
 	@echo "  make help         - Show this help"
 	@echo ""
-	@echo "Native Targets:"
+	@echo "Native Targets (standalone binaries, --serve mode):"
 	@echo "  make binary CLASS=Name - Build a single class as native binary"
 	@echo "  make binary CLASS=Ns/Name - Build namespaced class (outputs Ns__Name.native)"
-	@echo "  make binaries     - Build all classes as native binaries (including namespaced)"
-	@echo "  make native       - Same as binaries (integrates with @ dispatch)"
-	@echo "  make procyon      - Build the procyon compiler"
+	@echo "  make binaries     - Build all classes as native binaries"
+	@echo "  make native       - Same as binaries"
 	@echo "  make clean-native - Remove native artifacts"
 	@echo ""
-	@echo "Daemon/Plugin Targets (optional, for persistent daemon):"
-	@echo "  make plugin CLASS=Name - Build a single class as c-shared plugin"
+	@echo "Plugin Targets (c-shared libraries for trashtalk-daemon):"
+	@echo "  make plugin CLASS=Name - Build a single class as .dylib/.so plugin"
 	@echo "  make plugins      - Build all classes as plugins"
-	@echo "  make daemon       - Build the trashtalk-daemon"
+	@echo "  make daemon       - Install trashtalk-daemon to GOPATH/bin"
 	@echo "  make native-daemon - Build daemon + all plugins"
+	@echo ""
+	@echo "Tool Installation:"
+	@echo "  make procyon      - Install procyon compiler to GOPATH/bin"
+	@echo "  make native-install - Install both procyon and trashtalk-daemon"

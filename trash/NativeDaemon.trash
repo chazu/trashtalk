@@ -1,0 +1,361 @@
+# NativeDaemon - Single daemon for native class dispatch via c-shared plugins
+#
+# The daemon loads .dylib/.so plugins on demand, routing all native class
+# calls through a single trashtalk-daemon process.
+#
+# Usage:
+#   daemon := @ NativeDaemon instance.
+#   result := @ daemon dispatch: 'Counter' instance: '' selector: 'new' args: '[]'.
+#
+# The daemon is a singleton - only one instance per Trashtalk session.
+# Plugins are loaded lazily on first use of each class.
+
+NativeDaemon subclass: Object
+  instanceVars: daemon:'' pluginDir:'' status:'' debug:''
+
+  # Singleton instance stored in global
+  # Usage: daemon := @ NativeDaemon instance
+  rawClassMethod: instance [
+    if [[ -z "$_NATIVE_DAEMON" ]]; then
+      _NATIVE_DAEMON=$(_generate_instance_id NativeDaemon)
+      _create_instance NativeDaemon "$_NATIVE_DAEMON"
+      @ "$_NATIVE_DAEMON" _setStatus: "ready"
+      @ "$_NATIVE_DAEMON" _setPluginDir: "$TRASHDIR/.compiled"
+      @ "$_NATIVE_DAEMON" _setDaemon: ""
+    fi
+    echo "$_NATIVE_DAEMON"
+  ]
+
+  # Check if daemon is available (singleton exists)
+  rawClassMethod: isAvailable [
+    if [[ -n "$_NATIVE_DAEMON" ]]; then
+      echo "true"
+      return 0
+    fi
+    echo "false"
+    return 1
+  ]
+
+  # Reset the singleton (stops the daemon)
+  rawClassMethod: reset [
+    if [[ -n "$_NATIVE_DAEMON" ]]; then
+      @ "$_NATIVE_DAEMON" stop 2>/dev/null || true
+    fi
+    _NATIVE_DAEMON=""
+  ]
+
+  # Get or start the trashtalk-daemon process
+  # Uses file-based state to work around Bash subshell scoping issues
+  rawMethod: _ensureDaemon [
+    local coproc_id pluginDir daemonCmd pidfile
+    pidfile="/tmp/trashtalk-daemon.coproc"
+
+    # Check for existing daemon via file-based state
+    if [[ -f "$pidfile" ]]; then
+      coproc_id=$(cat "$pidfile")
+      if [[ -n "$coproc_id" ]] && @ "$coproc_id" isRunning >/dev/null 2>&1; then
+        _ivar_set daemon "$coproc_id"
+        echo "$coproc_id"
+        return 0
+      fi
+    fi
+
+    # Also check ivar (in case file was cleaned up)
+    coproc_id="$(_ivar daemon)"
+    if [[ -n "$coproc_id" ]] && @ "$coproc_id" isRunning >/dev/null 2>&1; then
+      echo "$coproc_id" > "$pidfile"
+      echo "$coproc_id"
+      return 0
+    fi
+
+    # Start trashtalk-daemon
+    pluginDir="$(_ivar pluginDir)"
+    daemonCmd="trashtalk-daemon --plugin-dir $pluginDir"
+
+    if [[ "$(_ivar debug)" == "true" ]]; then
+      daemonCmd="$daemonCmd --debug"
+    fi
+
+    coproc_id=$(@ Coproc for: "$daemonCmd")
+    @ "$coproc_id" start >/dev/null
+
+    # Give it a moment to initialize
+    sleep 0.02
+
+    # Store in file for cross-subshell access
+    echo "$coproc_id" > "$pidfile"
+    _ivar_set daemon "$coproc_id"
+    _ivar_set status "running"
+
+    if [[ "$(_ivar debug)" == "true" ]]; then
+      echo "[NativeDaemon] Started trashtalk-daemon (pid=$(@ "$coproc_id" pid))" >&2
+    fi
+
+    echo "$coproc_id"
+    return 0
+  ]
+
+  # Dispatch a method call to a native class
+  # Returns: result string, or empty if fallback needed
+  # Exit code: 0 = success, 1 = error, 200 = no native plugin (fallback to Bash)
+  rawMethod: dispatch: className instance: instanceId selector: selector args: argsJson [
+    local className="$1" instanceId="$2" selector="$3" argsJson="$4"
+    local coproc_id request response exitCode result instanceJson nativeSelector
+
+    # Ensure daemon is running
+    coproc_id=$(@ "$_RECEIVER" _ensureDaemon)
+    if [[ -z "$coproc_id" ]]; then
+      echo "[NativeDaemon] Error: failed to start daemon" >&2
+      return 1
+    fi
+
+    # Default args to empty array
+    if [[ -z "$argsJson" ]]; then
+      argsJson="[]"
+    fi
+
+    # Normalize selector: convert colons to underscores for native format
+    nativeSelector="${selector//:/_}"
+
+    # For instance methods, load instance data
+    instanceJson=""
+    if [[ -n "$instanceId" ]]; then
+      instanceJson=$(_env_get "$instanceId" 2>/dev/null)
+      # Native expects string values, so convert numbers to strings
+      if [[ -n "$instanceJson" ]]; then
+        instanceJson=$(echo "$instanceJson" | jq -c 'walk(if type == "number" then tostring else . end)')
+      fi
+    fi
+
+    # Build JSON request for trashtalk-daemon
+    # Format: {"class":"Counter","instance":"...","selector":"getValue","args":[]}
+    if [[ -n "$instanceJson" ]]; then
+      request=$(jq -cn --arg c "$className" --arg i "$instanceJson" --arg s "$nativeSelector" --argjson a "$argsJson" \
+        '{class: $c, instance: $i, selector: $s, args: $a}')
+    else
+      request=$(jq -cn --arg c "$className" --arg i "" --arg s "$nativeSelector" --argjson a "$argsJson" \
+        '{class: $c, instance: $i, selector: $s, args: $a}')
+    fi
+
+    if [[ "$(_ivar debug)" == "true" ]]; then
+      echo "[NativeDaemon] Request: $request" >&2
+    fi
+
+    # Send request to daemon
+    @ "$coproc_id" writeLine: "$request"
+
+    # Read response
+    response=$(@ "$coproc_id" readLine)
+
+    if [[ -z "$response" ]]; then
+      echo "[NativeDaemon] Error: no response from daemon" >&2
+      return 1
+    fi
+
+    if [[ "$(_ivar debug)" == "true" ]]; then
+      echo "[NativeDaemon] Response: $response" >&2
+    fi
+
+    # Parse response - daemon returns {"instance":"...","result":"...","exit_code":0}
+    exitCode=$(echo "$response" | jq -r '.exit_code // 1')
+
+    if [[ "$exitCode" == "200" ]]; then
+      # No native plugin for this class, fallback to Bash
+      return 200
+    fi
+
+    if [[ "$exitCode" != "0" ]]; then
+      local error
+      error=$(echo "$response" | jq -r '.error // "unknown error"')
+      echo "[NativeDaemon] Error: $error" >&2
+      return 1
+    fi
+
+    # For instance methods, update instance with new state from native
+    if [[ -n "$instanceId" ]] && [[ -n "$instanceJson" ]]; then
+      local updatedJson
+      updatedJson=$(echo "$response" | jq -r '.instance // empty')
+      if [[ -n "$updatedJson" ]] && [[ "$updatedJson" != "null" ]]; then
+        # Convert string numbers back to numbers where appropriate
+        local newInstanceJson
+        newInstanceJson=$(echo "$updatedJson" | jq -c 'walk(if type == "string" and test("^-?[0-9]+$") then tonumber else . end)')
+        _env_set "$instanceId" "$newInstanceJson"
+      fi
+    fi
+
+    # Extract result
+    result=$(echo "$response" | jq -r '.result // ""')
+    echo "$result"
+    return 0
+  ]
+
+  # Convenience: dispatch class method (no instance)
+  # When 'new' is called, creates a matching entry in Bash's env store
+  rawMethod: dispatchClass: className selector: selector args: argsJson [
+    local className="$1" selector="$2" argsJson="$3"
+    local result
+
+    result=$(@ "$_RECEIVER" dispatch: "$className" instance: "" selector: "$selector" args: "$argsJson")
+
+    # For 'new' selector, create matching Bash instance
+    if [[ "$selector" == "new" ]] && echo "$result" | grep -q "_"; then
+      # Use Trashtalk's standard instance creation to set up env store entry
+      _create_instance "$className" "$result"
+    fi
+
+    echo "$result"
+  ]
+
+  # Convenience: dispatch instance method with no args
+  rawMethod: dispatch: className instance: instanceId selector: selector [
+    local className="$1" instanceId="$2" selector="$3"
+    @ "$_RECEIVER" dispatch: "$className" instance: "$instanceId" selector: "$selector" args: "[]"
+  ]
+
+  # Check if a native plugin is available for a class
+  rawMethod: hasNative: className [
+    local className="$1" pluginDir ext nativePlugin
+    pluginDir="$(_ivar pluginDir)"
+
+    # Check for .dylib (macOS) or .so (Linux)
+    case "$(uname)" in
+      Darwin) ext=".dylib" ;;
+      *)      ext=".so" ;;
+    esac
+
+    nativePlugin="$pluginDir/${className}${ext}"
+
+    if [[ -f "$nativePlugin" ]]; then
+      echo "true"
+    else
+      echo "false"
+    fi
+  ]
+
+  # List available native plugins
+  rawMethod: listNatives [
+    local pluginDir file ext pattern
+    pluginDir="$(_ivar pluginDir)"
+
+    # Check for .dylib (macOS) or .so (Linux)
+    case "$(uname)" in
+      Darwin) ext=".dylib" ;;
+      *)      ext=".so" ;;
+    esac
+
+    pattern="${pluginDir}/*${ext}"
+
+    if [[ -d "$pluginDir" ]]; then
+      for file in $pattern; do
+        if [[ -f "$file" ]]; then
+          basename "$file" "$ext"
+        fi
+      done | sort
+    fi
+  ]
+
+  # Get daemon PID
+  rawMethod: pid [
+    local coproc_id pidfile="/tmp/trashtalk-daemon.coproc"
+
+    # Check file-based state first
+    if [[ -f "$pidfile" ]]; then
+      coproc_id=$(cat "$pidfile")
+      if [[ -n "$coproc_id" ]]; then
+        @ "$coproc_id" pid
+        return
+      fi
+    fi
+
+    # Fallback to ivar
+    coproc_id="$(_ivar daemon)"
+    if [[ -n "$coproc_id" ]]; then
+      @ "$coproc_id" pid
+    fi
+  ]
+
+  # Check if daemon is running
+  rawMethod: isRunning [
+    local coproc_id pidfile="/tmp/trashtalk-daemon.coproc"
+
+    # Check file-based state first
+    if [[ -f "$pidfile" ]]; then
+      coproc_id=$(cat "$pidfile")
+      if [[ -n "$coproc_id" ]] && @ "$coproc_id" isRunning >/dev/null 2>&1; then
+        echo "true"
+        return 0
+      fi
+    fi
+
+    # Fallback to ivar
+    coproc_id="$(_ivar daemon)"
+    if [[ -n "$coproc_id" ]]; then
+      @ "$coproc_id" isRunning
+    else
+      echo "false"
+    fi
+  ]
+
+  # Stop the daemon
+  rawMethod: stop [
+    local coproc_id pidfile="/tmp/trashtalk-daemon.coproc"
+
+    # Check file-based state
+    if [[ -f "$pidfile" ]]; then
+      coproc_id=$(cat "$pidfile")
+      if [[ -n "$coproc_id" ]]; then
+        @ "$coproc_id" terminate 2>/dev/null || true
+      fi
+      rm -f "$pidfile"
+    fi
+
+    # Also check ivar
+    coproc_id="$(_ivar daemon)"
+    if [[ -n "$coproc_id" ]]; then
+      @ "$coproc_id" terminate 2>/dev/null || true
+    fi
+
+    _ivar_set daemon ""
+    _ivar_set status "stopped"
+  ]
+
+  # Alias for backwards compatibility
+  rawMethod: stopAll [
+    @ "$_RECEIVER" stop
+  ]
+
+  # Alias for backwards compatibility - returns daemon status
+  rawMethod: listServers [
+    local coproc_id pidfile="/tmp/trashtalk-daemon.coproc"
+
+    # Check file-based state first
+    if [[ -f "$pidfile" ]]; then
+      coproc_id=$(cat "$pidfile")
+      if [[ -n "$coproc_id" ]] && @ "$coproc_id" isRunning >/dev/null 2>&1; then
+        echo "trashtalk-daemon"
+        return 0
+      fi
+    fi
+
+    # Fallback to ivar
+    coproc_id="$(_ivar daemon)"
+    if [[ -n "$coproc_id" ]] && @ "$coproc_id" isRunning >/dev/null 2>&1; then
+      echo "trashtalk-daemon"
+    fi
+  ]
+
+  # Get daemon status
+  method: status [
+    ^ status
+  ]
+
+  # Enable/disable debug mode
+  method: setDebug: flag [
+    debug := flag
+  ]
+
+  # Private setters
+  method: _setStatus: s [ status := s ]
+  method: _setPluginDir: d [ pluginDir := d ]
+  method: _setDaemon: d [ daemon := d ]
+
