@@ -696,12 +696,13 @@ def expr_parse_expr(min_bp):
       elif (.state | expr_peek_type) == "KEYWORD" and
            ((.state | expr_peek.value) == "and:" or (.state | expr_peek.value) == "or:") then
         # Boolean operators: (cond1) and: [cond2] or (cond1) or: [cond2]
-        .result as $left_cond |
-        (.state | expr_peek.value | rtrimstr(":")) as $bool_op |
-        .state |= expr_advance |
-        .state |= expr_skip_ws |
-        # Parse block argument containing the second condition
-        if (.state | expr_peek_type) == "LBRACKET" then
+        # Only treat as boolean op if followed by a block - otherwise it's part of a keyword message
+        (.state | expr_advance | expr_skip_ws | expr_peek_type) as $next_type |
+        if $next_type == "LBRACKET" then
+          .result as $left_cond |
+          (.state | expr_peek.value | rtrimstr(":")) as $bool_op |
+          .state |= expr_advance |
+          .state |= expr_skip_ws |
           (.state | expr_parse_block) as $block |
           {
             state: $block.state,
@@ -714,7 +715,7 @@ def expr_parse_expr(min_bp):
           }
           | infix_loop
         else
-          # No block - just return what we have
+          # Not followed by block - not a boolean op, just return what we have
           .
         end
       elif (.state | expr_peek_type) == "KEYWORD" and (.state | expr_peek.value) == "matches:" then
@@ -991,23 +992,32 @@ def expr_gen($locals; $ivars; $cvars):
     (.value.type == "array_literal" or .value.type == "dict_literal") as $is_collection |
     (.value.type == "string") as $is_string |
     (.value.type == "dstring") as $is_dstring |
+    (.value.type == "message_send" or .value.type == "cascade") as $is_message |
     (.value | expr_gen($locals; $ivars; $cvars)) as $val_code |
+    # For message sends, wrap in $() for command substitution
+    (if $is_message then "$(\($val_code))" else $val_code end) as $final_val |
     if expr_is_local(.target; $locals) then
       if $is_collection then "\(.target)=\($val_code)"
       elif $is_string then "\(.target)=\"\(.value.value)\""  # Use raw string value
       elif $is_dstring then "\(.target)=\($val_code)"  # dstrings already have quotes
+      elif $is_message then "\(.target)=\"\($final_val)\""
       else "\(.target)=\"\($val_code)\""
       end
     elif expr_is_ivar(.target; $ivars) then
       # For ivars, use _ivar_set (collection literals rare in loop bodies)
-      "_ivar_set \(.target) \"\($val_code)\""
+      if $is_message then "_ivar_set \(.target) \"\($final_val)\""
+      else "_ivar_set \(.target) \"\($val_code)\""
+      end
     elif expr_is_cvar(.target; $cvars) then
       # For cvars, use _cvar_set
-      "_cvar_set \(.target) \"\($val_code)\""
+      if $is_message then "_cvar_set \(.target) \"\($final_val)\""
+      else "_cvar_set \(.target) \"\($val_code)\""
+      end
     else
       if $is_collection then "\(.target)=\($val_code)"
       elif $is_string then "\(.target)=\"\(.value.value)\""  # Use raw string value
       elif $is_dstring then "\(.target)=\($val_code)"  # dstrings already have quotes
+      elif $is_message then "\(.target)=\"\($final_val)\""
       else "\(.target)=\"\($val_code)\""
       end
     end
@@ -1324,9 +1334,15 @@ def expr_gen($locals; $ivars; $cvars):
         [(.block.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
       else "" end) as $block_code |
       if .condition.type == "block" then
+        # Inline condition generation: parse block and wrap binary in (( ))
         (if .condition.tokens != null then
-          ({ tokens: .condition.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
-          [($parsed.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
+          ({ tokens: .condition.tokens, pos: 0 } | expr_parse_stmts) as $cond_parsed |
+          if ($cond_parsed.body | length) == 1 and ($cond_parsed.body[0].type == "binary") then
+            $cond_parsed.body[0] as $bin |
+            "(( \($bin.left | expr_gen_arith($locals; $ivars; $cvars)) \($bin.op) \($bin.right | expr_gen_arith($locals; $ivars; $cvars)) ))"
+          else
+            [($cond_parsed.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
+          end
         else "" end) as $cond_code |
         "while \($cond_code); do \($block_code); done"
       else
@@ -1340,11 +1356,17 @@ def expr_gen($locals; $ivars; $cvars):
         [(.block.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
       else "" end) as $block_code |
       if .condition.type == "block" then
+        # Inline condition generation: parse block and wrap binary in (( ))
         (if .condition.tokens != null then
-          ({ tokens: .condition.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
-          [($parsed.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
+          ({ tokens: .condition.tokens, pos: 0 } | expr_parse_stmts) as $cond_parsed |
+          if ($cond_parsed.body | length) == 1 and ($cond_parsed.body[0].type == "binary") then
+            $cond_parsed.body[0] as $bin |
+            "(( !(\($bin.left | expr_gen_arith($locals; $ivars; $cvars)) \($bin.op) \($bin.right | expr_gen_arith($locals; $ivars; $cvars))) ))"
+          else
+            [($cond_parsed.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
+          end
         else "" end) as $cond_code |
-        "while ! \($cond_code); do \($block_code); done"
+        "while \($cond_code); do \($block_code); done"
       else
         "while (( !(\($cond)) )); do \($block_code); done"
       end
@@ -1539,6 +1561,27 @@ def expr_gen_block_body($locals; $ivars; $cvars):
     ""
   end;
 
+# Helper to generate block as a while condition
+# For single comparison expressions, uses (( )) instead of $(( ))
+def expr_gen_block_as_condition($locals; $ivars; $cvars):
+  if .tokens != null then
+    ({ tokens: .tokens, pos: 0 } | expr_parse_stmts) as $parsed |
+    # If single expression that's a comparison, wrap in (( ))
+    if ($parsed.body | length) == 1 and ($parsed.body[0].type == "binary") then
+      "(( \($parsed.body[0] | expr_gen_condition_inner($locals; $ivars; $cvars)) ))"
+    else
+      [($parsed.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
+    end
+  elif .body != null then
+    if (.body | length) == 1 and (.body[0].type == "binary") then
+      "(( \(.body[0] | expr_gen_condition_inner($locals; $ivars; $cvars)) ))"
+    else
+      [(.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
+    end
+  else
+    ""
+  end;
+
 # Wrap a condition with appropriate syntax based on type
 # Test expressions already have [[ ]], arithmetic needs (( ))
 def wrap_condition($locals; $ivars; $cvars):
@@ -1581,13 +1624,13 @@ def expr_gen_control_flow($locals; $ivars; $cvars):
     "for ((\($loop_var)=\($start_code); \($loop_var)<\($end_code); \($loop_var)++)); do \(.block | expr_gen_block_body($block_locals; $ivars; $cvars)); done"
   elif .kind == "while_true" then
     if .condition.type == "block" then
-      "while \(.condition | expr_gen_block_body($locals; $ivars; $cvars)); do \(.block | expr_gen_block_body($locals; $ivars; $cvars)); done"
+      "while \(.condition | expr_gen_block_as_condition($locals; $ivars; $cvars)); do \(.block | expr_gen_block_body($locals; $ivars; $cvars)); done"
     else
       "while \(.condition | wrap_condition($locals; $ivars; $cvars)); do \(.block | expr_gen_block_body($locals; $ivars; $cvars)); done"
     end
   elif .kind == "while_false" then
     if .condition.type == "block" then
-      "while ! \(.condition | expr_gen_block_body($locals; $ivars; $cvars)); do \(.block | expr_gen_block_body($locals; $ivars; $cvars)); done"
+      "while ! \(.condition | expr_gen_block_as_condition($locals; $ivars; $cvars)); do \(.block | expr_gen_block_body($locals; $ivars; $cvars)); done"
     else
       "while \(.condition | wrap_condition_negated($locals; $ivars; $cvars)); do \(.block | expr_gen_block_body($locals; $ivars; $cvars)); done"
     end
@@ -1624,8 +1667,11 @@ def expr_gen_stmts($locals; $ivars; $cvars):
       ($stmt.value.type == "triplestring") as $is_ansi_quoted |
       ($stmt.value.type == "string") as $is_string |
       ($stmt.value.type == "dstring") as $is_dstring |
+      ($stmt.value.type == "message_send" or $stmt.value.type == "cascade") as $is_message |
       ($stmt.value | expr_gen($current_locals; $ivars; $cvars)) as $val_code |
       ($stmt.value | expr_gen_json($current_locals; $ivars; $cvars)) as $json_code |
+      # For message sends, wrap in $() for command substitution
+      (if $is_message then "$(\($val_code))" else $val_code end) as $msg_code |
       if expr_is_local($stmt.target; $current_locals) then
         if $is_collection or $is_ansi_quoted then
           .lines += ["  \($stmt.target)=\($val_code)"]
@@ -1633,6 +1679,8 @@ def expr_gen_stmts($locals; $ivars; $cvars):
           .lines += ["  \($stmt.target)=\"\($stmt.value.value)\""]  # Use raw string value
         elif $is_dstring then
           .lines += ["  \($stmt.target)=\($val_code)"]  # dstrings already have quotes
+        elif $is_message then
+          .lines += ["  \($stmt.target)=\"\($msg_code)\""]
         else
           .lines += ["  \($stmt.target)=\"\($val_code)\""]
         end
@@ -1642,6 +1690,8 @@ def expr_gen_stmts($locals; $ivars; $cvars):
           .lines += ["  _ivar_set \($stmt.target) '\($json_code)'"]
         elif $is_ansi_quoted then
           .lines += ["  _ivar_set \($stmt.target) \($val_code)"]
+        elif $is_message then
+          .lines += ["  _ivar_set \($stmt.target) \"\($msg_code)\""]
         else
           .lines += ["  _ivar_set \($stmt.target) \"\($val_code)\""]
         end
@@ -1651,6 +1701,8 @@ def expr_gen_stmts($locals; $ivars; $cvars):
           .lines += ["  _cvar_set \($stmt.target) '\($json_code)'"]
         elif $is_ansi_quoted then
           .lines += ["  _cvar_set \($stmt.target) \($val_code)"]
+        elif $is_message then
+          .lines += ["  _cvar_set \($stmt.target) \"\($msg_code)\""]
         else
           .lines += ["  _cvar_set \($stmt.target) \"\($val_code)\""]
         end
@@ -1658,6 +1710,8 @@ def expr_gen_stmts($locals; $ivars; $cvars):
         # Unknown target - treat as regular assignment (could be global/env var)
         if $is_collection or $is_ansi_quoted then
           .lines += ["  \($stmt.target)=\($val_code)"]
+        elif $is_message then
+          .lines += ["  \($stmt.target)=\"\($msg_code)\""]
         else
           .lines += ["  \($stmt.target)=\"\($val_code)\""]
         end

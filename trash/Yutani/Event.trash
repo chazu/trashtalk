@@ -84,40 +84,40 @@ Event subclass: Object
   ]
 
   # Accessors
-  method: eventType [
-    _ivar eventType
+  method: getEventType [
+    ^ eventType
   ]
 
-  method: widgetId [
-    _ivar widgetId
+  method: getWidgetId [
+    ^ widgetId
   ]
 
-  method: keyName [
-    _ivar keyName
+  method: getKeyName [
+    ^ keyName
   ]
 
-  method: keyMods [
-    _ivar keyMods
+  method: getKeyMods [
+    ^ keyMods
   ]
 
-  method: mouseX [
-    _ivar mouseX
+  method: getMouseX [
+    ^ mouseX
   ]
 
-  method: mouseY [
-    _ivar mouseY
+  method: getMouseY [
+    ^ mouseY
   ]
 
-  method: mouseButton [
-    _ivar mouseButton
+  method: getMouseButton [
+    ^ mouseButton
   ]
 
-  method: data [
-    _ivar data
+  method: getData [
+    ^ data
   ]
 
-  method: rawJson [
-    _ivar rawJson
+  method: getRawJson [
+    ^ rawJson
   ]
 
   # Get widget event type (WIDGET_SUBMITTED, etc.)
@@ -181,12 +181,12 @@ Event subclass: Object
   ]
 
   # Private setters
-  method: _setRawJson: v [ _ivar_set rawJson "$v" ]
-  method: _setEventType: v [ _ivar_set eventType "$v" ]
-  method: _setWidgetId: v [ _ivar_set widgetId "$v" ]
-  method: _setKeyName: v [ _ivar_set keyName "$v" ]
-  method: _setKeyMods: v [ _ivar_set keyMods "$v" ]
-  method: _setMouseX: v [ _ivar_set mouseX "$v" ]
-  method: _setMouseY: v [ _ivar_set mouseY "$v" ]
-  method: _setMouseButton: v [ _ivar_set mouseButton "$v" ]
-  method: _setData: v [ _ivar_set data "$v" ]
+  method: _setRawJson: v [ rawJson := v ]
+  method: _setEventType: v [ eventType := v ]
+  method: _setWidgetId: v [ widgetId := v ]
+  method: _setKeyName: v [ keyName := v ]
+  method: _setKeyMods: v [ keyMods := v ]
+  method: _setMouseX: v [ mouseX := v ]
+  method: _setMouseY: v [ mouseY := v ]
+  method: _setMouseButton: v [ mouseButton := v ]
+  method: _setData: v [ data := v ]

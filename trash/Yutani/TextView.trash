@@ -33,13 +33,13 @@ TextView subclass: Yutani::Widget
   ]
 
   # Get current text
-  method: text [
-    _ivar text
+  method: getText [
+    ^ text
   ]
 
   # Set text (internal, no server update)
   method: _setText: t [
-    _ivar_set text "$t"
+    text := t
   ]
 
   # Set text content (updates server)

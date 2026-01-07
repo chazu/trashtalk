@@ -39,17 +39,17 @@ EventDispatcher subclass: Object
 
   # Register a global mouse handler
   method: onMouseDo: handler [
-    _ivar_set mouseHandler "$handler"
+    mouseHandler := handler
   ]
 
   # Register a global resize handler
   method: onResizeDo: handler [
-    _ivar_set resizeHandler "$handler"
+    resizeHandler := handler
   ]
 
   # Register a global focus handler
   method: onFocusDo: handler [
-    _ivar_set focusHandler "$handler"
+    focusHandler := handler
   ]
 
   # Dispatch an event to the appropriate handler
@@ -120,13 +120,13 @@ EventDispatcher subclass: Object
   ]
 
   # Check if dispatcher is still running
-  rawMethod: isRunning [
-    _ivar running
+  method: isRunning [
+    ^ running
   ]
 
   # Stop the dispatcher
   method: stop [
-    _ivar_set running "false"
+    running := 'false'
   ]
 
   # Remove a widget handler
@@ -147,5 +147,5 @@ EventDispatcher subclass: Object
   ]
 
   # Private setters
-  method: _setHandlerFile: v [ _ivar_set handlerFile "$v" ]
-  method: _setRunning: v [ _ivar_set running "$v" ]
+  method: _setHandlerFile: v [ handlerFile := v ]
+  method: _setRunning: v [ running := v ]

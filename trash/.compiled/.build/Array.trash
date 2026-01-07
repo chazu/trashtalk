@@ -23,59 +23,60 @@ Array subclass: Object
   ]
 
   # Private helper - get the raw items JSON array
-  rawMethod: _getItemsArray [
-    local items
-    items="$(_ivar items)"
-    echo "${items:-[]}"
+  method: _getItemsArray [
+    ^ items
   ]
 
   # Get element at index
   method: at: index [
-    | items |
-    items := $(@ self _getItemsArray)
-    echo "$items" | jq -r ".[$index] // empty"
+    ^ items arrayAt: index
   ]
 
   # Set element at index
   method: at: index put: value [
-    | items new_items |
-    items := $(@ self _getItemsArray)
-    new_items := $(echo "$items" | jq -c ".[$index] = \"$value\"")
-    @ self setItems: "$new_items"
-    ^ $value
+    items := items arrayAt: index put: value
+    ^ value
   ]
 
   # Add element to end
   method: push: value [
-    | items new_items |
-    items := $(@ self _getItemsArray)
-    new_items := $(echo "$items" | jq -c ". + [\"$value\"]")
-    @ self setItems: "$new_items"
-    ^ $value
+    items := items arrayPush: value
+    ^ value
   ]
 
   # Remove and return last element
   method: pop [
-    | items last new_items |
-    items := $(@ self _getItemsArray)
-    last := $(echo "$items" | jq -r '.[-1] // empty')
-    new_items := $(echo "$items" | jq -c '.[0:-1]')
-    @ self setItems: "$new_items"
-    ^ $last
+    | last |
+    last := items arrayLast
+    items := items arrayRemoveAt: -1
+    ^ last
   ]
 
   # Get array length
   method: size [
-    | items |
-    items := $(@ self _getItemsArray)
-    echo "$items" | jq 'length'
+    ^ items arrayLength
+  ]
+
+  # Check if array is empty
+  method: isEmpty [
+    ^ items arrayIsEmpty
+  ]
+
+  # Get first element
+  method: first [
+    ^ items arrayFirst
+  ]
+
+  # Get last element
+  method: last [
+    ^ items arrayLast
   ]
 
   # Print array contents
-  method: show [
-    | items len |
-    items := $(@ self _getItemsArray)
-    len := $(echo "$items" | jq 'length')
+  rawMethod: show [
+    local items len
+    items="$(_ivar items)"
+    len=$(echo "$items" | jq 'length')
     if [[ "$len" -eq 0 ]]; then
       echo "(empty array)"
     else
@@ -84,86 +85,75 @@ Array subclass: Object
   ]
 
   # Initialize with values
-  method: withValues: values [
-    | items value |
-    items := "[]"
-    for value in $values; do
-      items := $(echo "$items" | jq -c ". + [\"$value\"]")
+  rawMethod: withValues: values [
+    local items value
+    items="[]"
+    for value in $1; do
+      items=$(echo "$items" | jq -c --arg v "$value" '. + [$v]')
     done
-    @ self setItems: "$items"
-    ^ self
+    _ivar_set items "$items"
+    echo "$_RECEIVER"
   ]
 
   # Iterate over each element, calling block with each value
   # Usage: @ myArray do: [:each | @ Console print: each]
-  rawMethod: do: block [
-    pragma: direct
-    local items len i element block_id="$1"
-    items=$(@ "$_RECEIVER" _getItemsArray)
-    len=$(echo "$items" | jq 'length')
-
-    for ((i=0; i<len; i++)); do
-      element=$(echo "$items" | jq -r ".[$i]")
-      @ "$block_id" valueWith: "$element"
-    done
+  method: do: aBlock [
+    | i len |
+    len := items arrayLength.
+    i := 0.
+    [i < len] whileTrue: [
+      @ aBlock valueWith: (items arrayAt: i).
+      i := i + 1
+    ]
   ]
 
   # Map each element through a block, returning new array
   # Usage: doubled := @ myArray collect: [:x | x * 2]
-  rawMethod: collect: block [
-    local items len i element result new_items block_id="$1"
-    items=$(@ "$_RECEIVER" _getItemsArray)
-    len=$(echo "$items" | jq 'length')
-    new_items="[]"
-
-    for ((i=0; i<len; i++)); do
-      element=$(echo "$items" | jq -r ".[$i]")
-      result=$(@ "$block_id" valueWith "$element")
-      new_items=$(echo "$new_items" | jq -c ". + [\"$result\"]")
-    done
-
-    # Create new Array with results
-    local new_array
-    new_array=$(@ Array new)
-    @ "$new_array" setItems: "$new_items"
-    echo "$new_array"
+  method: collect: aBlock [
+    | i len newItems result newArray |
+    len := items arrayLength.
+    newItems := '[]'.
+    i := 0.
+    [i < len] whileTrue: [
+      result := @ aBlock valueWith: (items arrayAt: i).
+      newItems := newItems arrayPush: result.
+      i := i + 1
+    ].
+    newArray := @ Array new.
+    @ newArray setItems: newItems.
+    ^ newArray
   ]
 
   # Select elements where block returns true (non-empty string)
-  rawMethod: select: block [
-    local items len i element result new_items block_id="$1"
-    items=$(@ "$_RECEIVER" _getItemsArray)
-    len=$(echo "$items" | jq 'length')
-    new_items="[]"
-
-    for ((i=0; i<len; i++)); do
-      element=$(echo "$items" | jq -r ".[$i]")
-      result=$(@ "$block_id" valueWith "$element")
-      # Non-empty result means true
-      if [[ -n "$result" ]]; then
-        new_items=$(echo "$new_items" | jq -c ". + [\"$element\"]")
-      fi
-    done
-
-    # Create new Array with selected elements
-    local new_array
-    new_array=$(@ Array new)
-    @ "$new_array" setItems: "$new_items"
-    echo "$new_array"
+  # Usage: evens := @ myArray select: [:x | x % 2 == 0]
+  method: select: aBlock [
+    | i len newItems element result newArray |
+    len := items arrayLength.
+    newItems := '[]'.
+    i := 0.
+    [i < len] whileTrue: [
+      element := items arrayAt: i.
+      result := @ aBlock valueWith: element.
+      result notEmpty ifTrue: [
+        newItems := newItems arrayPush: element
+      ].
+      i := i + 1
+    ].
+    newArray := @ Array new.
+    @ newArray setItems: newItems.
+    ^ newArray
   ]
 
   # Reduce array to single value using block
   # Usage: sum := @ myArray inject: 0 into: [:acc :each | acc + each]
-  rawMethod: inject: initial into: block [
-    local items len i element acc block_id="$2"
-    items=$(@ "$_RECEIVER" _getItemsArray)
-    len=$(echo "$items" | jq 'length')
-    acc="$1"
-
-    for ((i=0; i<len; i++)); do
-      element=$(echo "$items" | jq -r ".[$i]")
-      acc=$(@ "$block_id" valueWith: "$acc" and: "$element")
-    done
-
-    echo "$acc"
+  method: inject: initial into: aBlock [
+    | i len acc |
+    len := items arrayLength.
+    acc := initial.
+    i := 0.
+    [i < len] whileTrue: [
+      acc := @ aBlock valueWith: acc and: (items arrayAt: i).
+      i := i + 1
+    ].
+    ^ acc
   ]

@@ -19,7 +19,7 @@ import (
 	"time"
 )
 
-//go:embed Object.trash
+//go:embed Yutani__Widget.trash
 var _sourceCode string
 
 var _contentHash string
@@ -31,17 +31,21 @@ func init() {
 
 var ErrUnknownSelector = errors.New("unknown selector")
 
-type Object struct {
-	Class     string   `json:"class"`
-	CreatedAt string   `json:"created_at"`
-	Vars      []string `json:"_vars"`
+type Widget struct {
+	Class      string   `json:"class"`
+	CreatedAt  string   `json:"created_at"`
+	Vars       []string `json:"_vars"`
+	Session    string   `json:"session"`
+	WidgetId   string   `json:"widgetId"`
+	Title      string   `json:"title"`
+	Dispatcher string   `json:"dispatcher"`
 }
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "Usage: Object.native <instance_id> <selector> [args...]")
-		fmt.Fprintln(os.Stderr, "       Object.native --source")
-		fmt.Fprintln(os.Stderr, "       Object.native --hash")
+		fmt.Fprintln(os.Stderr, "Usage: Yutani__Widget.native <instance_id> <selector> [args...]")
+		fmt.Fprintln(os.Stderr, "       Yutani__Widget.native --source")
+		fmt.Fprintln(os.Stderr, "       Yutani__Widget.native --hash")
 		os.Exit(1)
 	}
 
@@ -53,7 +57,7 @@ func main() {
 		fmt.Println(_contentHash)
 		return
 	case "--info":
-		fmt.Printf("Class: Object\nHash: %s\nSource length: %d bytes\n", _contentHash, len(_sourceCode))
+		fmt.Printf("Class: Yutani::Widget\nPackage: Yutani\nHash: %s\nSource length: %d bytes\n", _contentHash, len(_sourceCode))
 		return
 	case "--serve":
 		runServeMode()
@@ -61,7 +65,7 @@ func main() {
 	}
 
 	if len(os.Args) < 3 {
-		fmt.Fprintln(os.Stderr, "Usage: Object.native <instance_id> <selector> [args...]")
+		fmt.Fprintln(os.Stderr, "Usage: Yutani__Widget.native <instance_id> <selector> [args...]")
 		os.Exit(1)
 	}
 
@@ -69,7 +73,7 @@ func main() {
 	selector := os.Args[2]
 	args := os.Args[3:]
 
-	if receiver == "Object" || receiver == "Object" {
+	if receiver == "Widget" || receiver == "Yutani::Widget" {
 		result, err := dispatchClass(selector, args)
 		if err != nil {
 			if errors.Is(err, ErrUnknownSelector) {
@@ -131,20 +135,20 @@ func openDB() (*sql.DB, error) {
 	return sql.Open("sqlite3", dbPath)
 }
 
-func loadInstance(db *sql.DB, id string) (*Object, error) {
+func loadInstance(db *sql.DB, id string) (*Widget, error) {
 	var data string
 	err := db.QueryRow("SELECT data FROM instances WHERE id = ?", id).Scan(&data)
 	if err != nil {
 		return nil, err
 	}
-	var instance Object
+	var instance Widget
 	if err := json.Unmarshal([]byte(data), &instance); err != nil {
 		return nil, err
 	}
 	return &instance, nil
 }
 
-func saveInstance(db *sql.DB, id string, instance *Object) error {
+func saveInstance(db *sql.DB, id string, instance *Widget) error {
 	data, err := json.Marshal(instance)
 	if err != nil {
 		return err
@@ -158,7 +162,7 @@ func generateInstanceID(className string) string {
 	return strings.ToLower(className) + "_" + uuid
 }
 
-func createInstance(db *sql.DB, id string, instance *Object) error {
+func createInstance(db *sql.DB, id string, instance *Widget) error {
 	data, err := json.Marshal(instance)
 	if err != nil {
 		return err
@@ -172,7 +176,7 @@ func deleteInstance(db *sql.DB, id string) error {
 	return err
 }
 
-func sendMessage(receiver interface{}, selector string, args ...interface{}) (string, error) {
+func sendMessage(receiver interface{}, selector string, args ...interface{}) string {
 	receiverStr := fmt.Sprintf("%v", receiver)
 	cmdArgs := []string{receiverStr, selector}
 	for _, arg := range args {
@@ -181,11 +185,8 @@ func sendMessage(receiver interface{}, selector string, args ...interface{}) (st
 	home, _ := os.UserHomeDir()
 	dispatchScript := filepath.Join(home, ".trashtalk", "bin", "trash-send")
 	cmd := exec.Command(dispatchScript, cmdArgs...)
-	output, err := cmd.Output()
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(output)), nil
+	output, _ := cmd.Output()
+	return strings.TrimSpace(string(output))
 }
 
 // ServeRequest is the JSON request format for --serve mode
@@ -243,7 +244,7 @@ func respond(resp ServeResponse) {
 }
 
 func handleServeRequest(db *sql.DB, req *ServeRequest) ServeResponse {
-	if req.Instance == "" || req.Instance == "Object" || req.Instance == "Object" {
+	if req.Instance == "" || req.Instance == "Widget" || req.Instance == "Yutani::Widget" {
 		result, err := dispatchClass(req.Selector, req.Args)
 		if err != nil {
 			if errors.Is(err, ErrUnknownSelector) {
@@ -260,7 +261,7 @@ func handleServeRequest(db *sql.DB, req *ServeRequest) ServeResponse {
 		}
 	}
 
-	var instance Object
+	var instance Widget
 	if err := json.Unmarshal([]byte(req.Instance), &instance); err != nil {
 		return ServeResponse{
 			Error:    "invalid instance JSON: " + err.Error(),
@@ -432,7 +433,8 @@ func _jsonArrayIsEmpty(jsonStr string) bool {
 	return len(arr) == 0
 }
 
-func _jsonArrayPush(jsonStr string, val interface{}) string {
+func _jsonArrayPush(jsonVal interface{}, val interface{}) string {
+	jsonStr := fmt.Sprintf("%v", jsonVal)
 	var arr []interface{}
 	json.Unmarshal([]byte(jsonStr), &arr)
 	arr = append(arr, val)
@@ -585,7 +587,7 @@ func toBool(v interface{}) bool {
 // invokeBlock calls a Trashtalk block through the Bash runtime
 // blockID is the instance ID of the Block object
 // args are the values to pass to the block
-func invokeBlock(blockID string, args ...interface{}) (string, error) {
+func invokeBlock(blockID string, args ...interface{}) string {
 	var cmdStr string
 	switch len(args) {
 	case 0:
@@ -595,25 +597,50 @@ func invokeBlock(blockID string, args ...interface{}) (string, error) {
 	case 2:
 		cmdStr = fmt.Sprintf("source ~/.trashtalk/lib/trash.bash && @ %q valueWith: %q and: %q", blockID, fmt.Sprint(args[0]), fmt.Sprint(args[1]))
 	default:
-		return "", fmt.Errorf("invokeBlock: too many arguments (%d)", len(args))
+		return ""
 	}
 
 	cmd := exec.Command("bash", "-c", cmdStr)
-	output, err := cmd.Output()
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(output)), nil
+	output, _ := cmd.Output()
+	return strings.TrimSpace(string(output))
 }
 
-func dispatch(c *Object, instanceID string, selector string, args []string) (string, error) {
+func dispatch(c *Widget, instanceID string, selector string, args []string) (string, error) {
 	switch selector {
 	case "class":
-		return "Object", nil
+		return "Yutani::Widget", nil
 	case "id":
 		return instanceID, nil
 	case "delete":
 		return instanceID, nil
+	case "getSession":
+		return c.GetSession(), nil
+	case "setSession_":
+		if len(args) < 1 {
+			return "", fmt.Errorf("setSession_ requires 1 argument")
+		}
+		return c.SetSession(args[0])
+	case "getWidgetId":
+		return c.GetWidgetId(), nil
+	case "setWidgetId_":
+		if len(args) < 1 {
+			return "", fmt.Errorf("setWidgetId_ requires 1 argument")
+		}
+		return c.SetWidgetId(args[0])
+	case "getTitle":
+		return c.GetTitle(), nil
+	case "setTitle_":
+		if len(args) < 1 {
+			return "", fmt.Errorf("setTitle_ requires 1 argument")
+		}
+		return c.SetTitle(args[0])
+	case "getDispatcher":
+		return c.GetDispatcher(), nil
+	case "setDispatcher_":
+		if len(args) < 1 {
+			return "", fmt.Errorf("setDispatcher_ requires 1 argument")
+		}
+		return c.SetDispatcher(args[0])
 	default:
 		return "", fmt.Errorf("%w: %s", ErrUnknownSelector, selector)
 	}
@@ -622,10 +649,14 @@ func dispatch(c *Object, instanceID string, selector string, args []string) (str
 func dispatchClass(selector string, args []string) (string, error) {
 	switch selector {
 	case "new":
-		id := generateInstanceID("Object")
-		instance := &Object{
-			Class:     "Object",
-			CreatedAt: time.Now().Format(time.RFC3339),
+		id := generateInstanceID("Widget")
+		instance := &Widget{
+			Class:      "Yutani::Widget",
+			CreatedAt:  time.Now().Format(time.RFC3339),
+			Dispatcher: "",
+			Session:    "",
+			Title:      "",
+			WidgetId:   "",
 		}
 		db, err := openDB()
 		if err != nil {
@@ -639,4 +670,60 @@ func dispatchClass(selector string, args []string) (string, error) {
 	default:
 		return "", fmt.Errorf("%w: %s", ErrUnknownSelector, selector)
 	}
+}
+
+func (c *Widget) GetSession() string {
+	return c.Session
+}
+
+func (c *Widget) SetSession(s string) (string, error) {
+	sInt, err := strconv.Atoi(s)
+	if err != nil {
+		return "", err
+	}
+	_ = sInt
+	c.Session = s
+	return "", nil
+}
+
+func (c *Widget) GetWidgetId() string {
+	return c.WidgetId
+}
+
+func (c *Widget) SetWidgetId(id string) (string, error) {
+	idInt, err := strconv.Atoi(id)
+	if err != nil {
+		return "", err
+	}
+	_ = idInt
+	c.WidgetId = id
+	return "", nil
+}
+
+func (c *Widget) GetTitle() string {
+	return c.Title
+}
+
+func (c *Widget) SetTitle(t string) (string, error) {
+	tInt, err := strconv.Atoi(t)
+	if err != nil {
+		return "", err
+	}
+	_ = tInt
+	c.Title = t
+	return "", nil
+}
+
+func (c *Widget) GetDispatcher() string {
+	return c.Dispatcher
+}
+
+func (c *Widget) SetDispatcher(d string) (string, error) {
+	dInt, err := strconv.Atoi(d)
+	if err != nil {
+		return "", err
+	}
+	_ = dInt
+	c.Dispatcher = d
+	return "", nil
 }

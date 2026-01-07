@@ -9,12 +9,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	uuid "github.com/google/uuid"
 	_ "github.com/mattn/go-sqlite3"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 //go:embed Array.trash
@@ -95,7 +97,7 @@ func main() {
 		os.Exit(200)
 	}
 
-	result, err := dispatch(instance, selector, args)
+	result, err := dispatch(instance, receiver, selector, args)
 	if err != nil {
 		if errors.Is(err, ErrUnknownSelector) {
 			os.Exit(200)
@@ -104,9 +106,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := saveInstance(db, receiver, instance); err != nil {
-		fmt.Fprintf(os.Stderr, "Error saving instance: %v\n", err)
-		os.Exit(1)
+	if selector == "delete" {
+		if err := deleteInstance(db, receiver); err != nil {
+			fmt.Fprintf(os.Stderr, "Error deleting instance: %v\n", err)
+			os.Exit(1)
+		}
+	} else {
+		if err := saveInstance(db, receiver, instance); err != nil {
+			fmt.Fprintf(os.Stderr, "Error saving instance: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	if result != "" {
@@ -145,6 +154,25 @@ func saveInstance(db *sql.DB, id string, instance *Array) error {
 	return err
 }
 
+func generateInstanceID(className string) string {
+	uuid := uuid.New().String()
+	return strings.ToLower(className) + "_" + uuid
+}
+
+func createInstance(db *sql.DB, id string, instance *Array) error {
+	data, err := json.Marshal(instance)
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec("INSERT INTO instances (id, data) VALUES (?, json(?))", id, string(data))
+	return err
+}
+
+func deleteInstance(db *sql.DB, id string) error {
+	_, err := db.Exec("DELETE FROM instances WHERE id = ?", id)
+	return err
+}
+
 func sendMessage(receiver interface{}, selector string, args ...interface{}) (string, error) {
 	receiverStr := fmt.Sprintf("%v", receiver)
 	cmdArgs := []string{receiverStr, selector}
@@ -163,9 +191,10 @@ func sendMessage(receiver interface{}, selector string, args ...interface{}) (st
 
 // ServeRequest is the JSON request format for --serve mode
 type ServeRequest struct {
-	Instance string   `json:"instance"`
-	Selector string   `json:"selector"`
-	Args     []string `json:"args"`
+	InstanceID string   `json:"instance_id"`
+	Instance   string   `json:"instance"`
+	Selector   string   `json:"selector"`
+	Args       []string `json:"args"`
 }
 
 // ServeResponse is the JSON response format for --serve mode
@@ -240,7 +269,7 @@ func handleServeRequest(db *sql.DB, req *ServeRequest) ServeResponse {
 		}
 	}
 
-	result, err := dispatch(&instance, req.Selector, req.Args)
+	result, err := dispatch(&instance, req.InstanceID, req.Selector, req.Args)
 	if err != nil {
 		if errors.Is(err, ErrUnknownSelector) {
 			return ServeResponse{ExitCode: 200}
@@ -248,6 +277,19 @@ func handleServeRequest(db *sql.DB, req *ServeRequest) ServeResponse {
 		return ServeResponse{
 			Error:    err.Error(),
 			ExitCode: 1,
+		}
+	}
+
+	if req.Selector == "delete" {
+		if err := deleteInstance(db, req.InstanceID); err != nil {
+			return ServeResponse{
+				Error:    err.Error(),
+				ExitCode: 1,
+			}
+		}
+		return ServeResponse{
+			ExitCode: 0,
+			Result:   result,
 		}
 	}
 
@@ -259,8 +301,320 @@ func handleServeRequest(db *sql.DB, req *ServeRequest) ServeResponse {
 	}
 }
 
-func dispatch(c *Array, selector string, args []string) (string, error) {
+// Common conversion helpers
+func _boolToString(b bool) string {
+	if b {
+		return "true"
+	}
+	return "false"
+}
+
+func _toStr(v interface{}) string {
+	if v == nil {
+		return ""
+	}
+	return fmt.Sprintf("%v", v)
+}
+
+// Array helpers for native slice operations
+func _arrayFirst(arr []interface{}) interface{} {
+	if len(arr) == 0 {
+		return nil
+	}
+	return arr[0]
+}
+
+func _arrayLast(arr []interface{}) interface{} {
+	if len(arr) == 0 {
+		return nil
+	}
+	return arr[len(arr)-1]
+}
+
+func _arrayAtPut(arr []interface{}, idx int, val interface{}) []interface{} {
+	// Handle negative indices
+	if idx < 0 {
+		idx = len(arr) + idx
+	}
+	if idx < 0 || idx >= len(arr) {
+		return arr
+	}
+	result := make([]interface{}, len(arr))
+	copy(result, arr)
+	result[idx] = val
+	return result
+}
+
+func _arrayRemoveAt(arr []interface{}, idx int) []interface{} {
+	// Handle negative indices
+	if idx < 0 {
+		idx = len(arr) + idx
+	}
+	if idx < 0 || idx >= len(arr) {
+		return arr
+	}
+	result := make([]interface{}, 0, len(arr)-1)
+	result = append(result, arr[:idx]...)
+	result = append(result, arr[idx+1:]...)
+	return result
+}
+
+// Map helpers for native map operations
+func _mapKeys(m map[string]interface{}) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+func _mapValues(m map[string]interface{}) []interface{} {
+	vals := make([]interface{}, 0, len(m))
+	for _, v := range m {
+		vals = append(vals, v)
+	}
+	return vals
+}
+
+func _mapHasKey(m map[string]interface{}, key string) bool {
+	_, ok := m[key]
+	return ok
+}
+
+func _mapAtPut(m map[string]interface{}, key string, val interface{}) map[string]interface{} {
+	result := make(map[string]interface{}, len(m)+1)
+	for k, v := range m {
+		result[k] = v
+	}
+	result[key] = val
+	return result
+}
+
+func _mapRemoveKey(m map[string]interface{}, key string) map[string]interface{} {
+	result := make(map[string]interface{}, len(m))
+	for k, v := range m {
+		if k != key {
+			result[k] = v
+		}
+	}
+	return result
+}
+
+// JSON string parsing helpers (for string-typed variables containing JSON)
+func _jsonArrayLen(jsonStr string) int {
+	var arr []interface{}
+	if err := json.Unmarshal([]byte(jsonStr), &arr); err != nil {
+		return 0
+	}
+	return len(arr)
+}
+
+func _jsonArrayFirst(jsonStr string) string {
+	var arr []interface{}
+	if err := json.Unmarshal([]byte(jsonStr), &arr); err != nil || len(arr) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%v", arr[0])
+}
+
+func _jsonArrayLast(jsonStr string) string {
+	var arr []interface{}
+	if err := json.Unmarshal([]byte(jsonStr), &arr); err != nil || len(arr) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%v", arr[len(arr)-1])
+}
+
+func _jsonArrayIsEmpty(jsonStr string) bool {
+	var arr []interface{}
+	if err := json.Unmarshal([]byte(jsonStr), &arr); err != nil {
+		return true
+	}
+	return len(arr) == 0
+}
+
+func _jsonArrayPush(jsonStr string, val interface{}) string {
+	var arr []interface{}
+	json.Unmarshal([]byte(jsonStr), &arr)
+	arr = append(arr, val)
+	result, _ := json.Marshal(arr)
+	return string(result)
+}
+
+func _jsonArrayAt(jsonStr string, idx int) string {
+	var arr []interface{}
+	if err := json.Unmarshal([]byte(jsonStr), &arr); err != nil {
+		return ""
+	}
+	if idx < 0 {
+		idx = len(arr) + idx
+	}
+	if idx < 0 || idx >= len(arr) {
+		return ""
+	}
+	return fmt.Sprintf("%v", arr[idx])
+}
+
+func _jsonArrayAtPut(jsonStr string, idx int, val interface{}) string {
+	var arr []interface{}
+	json.Unmarshal([]byte(jsonStr), &arr)
+	if idx < 0 {
+		idx = len(arr) + idx
+	}
+	if idx >= 0 && idx < len(arr) {
+		arr[idx] = val
+	}
+	result, _ := json.Marshal(arr)
+	return string(result)
+}
+
+func _jsonArrayRemoveAt(jsonStr string, idx int) string {
+	var arr []interface{}
+	json.Unmarshal([]byte(jsonStr), &arr)
+	if idx < 0 {
+		idx = len(arr) + idx
+	}
+	if idx >= 0 && idx < len(arr) {
+		arr = append(arr[:idx], arr[idx+1:]...)
+	}
+	result, _ := json.Marshal(arr)
+	return string(result)
+}
+
+func _jsonObjectLen(jsonStr string) int {
+	var m map[string]interface{}
+	if err := json.Unmarshal([]byte(jsonStr), &m); err != nil {
+		return 0
+	}
+	return len(m)
+}
+
+func _jsonObjectKeys(jsonStr string) []string {
+	var m map[string]interface{}
+	if err := json.Unmarshal([]byte(jsonStr), &m); err != nil {
+		return nil
+	}
+	return _mapKeys(m)
+}
+
+func _jsonObjectValues(jsonStr string) []interface{} {
+	var m map[string]interface{}
+	if err := json.Unmarshal([]byte(jsonStr), &m); err != nil {
+		return nil
+	}
+	return _mapValues(m)
+}
+
+func _jsonObjectIsEmpty(jsonStr string) bool {
+	var m map[string]interface{}
+	if err := json.Unmarshal([]byte(jsonStr), &m); err != nil {
+		return true
+	}
+	return len(m) == 0
+}
+
+func _jsonObjectAt(jsonStr string, key string) string {
+	var m map[string]interface{}
+	if err := json.Unmarshal([]byte(jsonStr), &m); err != nil {
+		return ""
+	}
+	if v, ok := m[key]; ok {
+		return fmt.Sprintf("%v", v)
+	}
+	return ""
+}
+
+func _jsonObjectAtPut(jsonStr string, key string, val interface{}) string {
+	var m map[string]interface{}
+	json.Unmarshal([]byte(jsonStr), &m)
+	if m == nil {
+		m = make(map[string]interface{})
+	}
+	m[key] = val
+	result, _ := json.Marshal(m)
+	return string(result)
+}
+
+func _jsonObjectHasKey(jsonStr string, key string) bool {
+	var m map[string]interface{}
+	if err := json.Unmarshal([]byte(jsonStr), &m); err != nil {
+		return false
+	}
+	_, ok := m[key]
+	return ok
+}
+
+func _jsonObjectRemoveKey(jsonStr string, key string) string {
+	var m map[string]interface{}
+	json.Unmarshal([]byte(jsonStr), &m)
+	delete(m, key)
+	result, _ := json.Marshal(m)
+	return string(result)
+}
+
+// toInt converts interface{} to int for arithmetic in iteration blocks
+func toInt(v interface{}) int {
+	switch x := v.(type) {
+	case int:
+		return x
+	case int64:
+		return int(x)
+	case float64:
+		return int(x)
+	case string:
+		n, _ := strconv.Atoi(x)
+		return n
+	default:
+		return 0
+	}
+}
+
+// toBool converts interface{} to bool for predicates in iteration blocks
+func toBool(v interface{}) bool {
+	switch x := v.(type) {
+	case bool:
+		return x
+	case int:
+		return x != 0
+	case string:
+		return x != ""
+	default:
+		return v != nil
+	}
+}
+
+// invokeBlock calls a Trashtalk block through the Bash runtime
+// blockID is the instance ID of the Block object
+// args are the values to pass to the block
+func invokeBlock(blockID string, args ...interface{}) (string, error) {
+	var cmdStr string
+	switch len(args) {
+	case 0:
+		cmdStr = fmt.Sprintf("source ~/.trashtalk/lib/trash.bash && @ %q value", blockID)
+	case 1:
+		cmdStr = fmt.Sprintf("source ~/.trashtalk/lib/trash.bash && @ %q valueWith: %q", blockID, fmt.Sprint(args[0]))
+	case 2:
+		cmdStr = fmt.Sprintf("source ~/.trashtalk/lib/trash.bash && @ %q valueWith: %q and: %q", blockID, fmt.Sprint(args[0]), fmt.Sprint(args[1]))
+	default:
+		return "", fmt.Errorf("invokeBlock: too many arguments (%d)", len(args))
+	}
+
+	cmd := exec.Command("bash", "-c", cmdStr)
+	output, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
+func dispatch(c *Array, instanceID string, selector string, args []string) (string, error) {
 	switch selector {
+	case "class":
+		return "Array", nil
+	case "id":
+		return instanceID, nil
+	case "delete":
+		return instanceID, nil
 	case "getItems":
 		return c.GetItems(), nil
 	case "setItems_":
@@ -268,6 +622,53 @@ func dispatch(c *Array, selector string, args []string) (string, error) {
 			return "", fmt.Errorf("setItems_ requires 1 argument")
 		}
 		return c.SetItems(args[0])
+	case "_getItemsArray":
+		return c._getItemsArray(), nil
+	case "at_":
+		if len(args) < 1 {
+			return "", fmt.Errorf("at_ requires 1 argument")
+		}
+		return c.At(args[0])
+	case "at_put_":
+		if len(args) < 2 {
+			return "", fmt.Errorf("at_put_ requires 2 argument")
+		}
+		return c.At_put(args[0], args[1])
+	case "push_":
+		if len(args) < 1 {
+			return "", fmt.Errorf("push_ requires 1 argument")
+		}
+		return c.Push(args[0])
+	case "pop":
+		return c.Pop(), nil
+	case "size":
+		return c.Size(), nil
+	case "isEmpty":
+		return c.IsEmpty(), nil
+	case "first":
+		return c.First(), nil
+	case "last":
+		return c.Last(), nil
+	case "do_":
+		if len(args) < 1 {
+			return "", fmt.Errorf("do_ requires 1 argument")
+		}
+		return c.Do(args[0])
+	case "collect_":
+		if len(args) < 1 {
+			return "", fmt.Errorf("collect_ requires 1 argument")
+		}
+		return c.Collect(args[0])
+	case "select_":
+		if len(args) < 1 {
+			return "", fmt.Errorf("select_ requires 1 argument")
+		}
+		return c.Select(args[0])
+	case "inject_into_":
+		if len(args) < 2 {
+			return "", fmt.Errorf("inject_into_ requires 2 argument")
+		}
+		return c.Inject_into(args[0], args[1])
 	default:
 		return "", fmt.Errorf("%w: %s", ErrUnknownSelector, selector)
 	}
@@ -275,13 +676,29 @@ func dispatch(c *Array, selector string, args []string) (string, error) {
 
 func dispatchClass(selector string, args []string) (string, error) {
 	switch selector {
+	case "new":
+		id := generateInstanceID("Array")
+		instance := &Array{
+			Class:     "Array",
+			CreatedAt: time.Now().Format(time.RFC3339),
+			Items:     "[]",
+		}
+		db, err := openDB()
+		if err != nil {
+			return "", err
+		}
+		defer db.Close()
+		if err := createInstance(db, id, instance); err != nil {
+			return "", err
+		}
+		return id, nil
 	default:
 		return "", fmt.Errorf("%w: %s", ErrUnknownSelector, selector)
 	}
 }
 
 func (c *Array) GetItems() string {
-	return strconv.Itoa(c.Items)
+	return c.Items
 }
 
 func (c *Array) SetItems(newItems string) (string, error) {
@@ -290,6 +707,161 @@ func (c *Array) SetItems(newItems string) (string, error) {
 		return "", err
 	}
 	_ = newItemsInt
-	c.Items = newItemsInt
+	c.Items = newItems
 	return "", nil
+}
+
+func (c *Array) _getItemsArray() string {
+	return c.Items
+}
+
+func (c *Array) At(index string) (string, error) {
+	indexInt, err := strconv.Atoi(index)
+	if err != nil {
+		return "", err
+	}
+	_ = indexInt
+	return _jsonArrayAt(c.Items, indexInt), nil
+}
+
+func (c *Array) At_put(index string, value string) (string, error) {
+	indexInt, err := strconv.Atoi(index)
+	if err != nil {
+		return "", err
+	}
+	_ = indexInt
+	valueInt, err := strconv.Atoi(value)
+	if err != nil {
+		return "", err
+	}
+	_ = valueInt
+	c.Items = _jsonArrayAtPut(c.Items, indexInt, valueInt)
+	return strconv.Itoa(valueInt), nil
+}
+
+func (c *Array) Push(value string) (string, error) {
+	valueInt, err := strconv.Atoi(value)
+	if err != nil {
+		return "", err
+	}
+	_ = valueInt
+	c.Items = _jsonArrayPush(c.Items, valueInt)
+	return strconv.Itoa(valueInt), nil
+}
+
+func (c *Array) Pop() string {
+	var last interface{}
+	last = _jsonArrayLast(c.Items)
+	c.Items = _jsonArrayRemoveAt(c.Items, -1)
+	return strconv.Itoa(last)
+}
+
+func (c *Array) Size() string {
+	return strconv.Itoa(_jsonArrayLen(c.Items))
+}
+
+func (c *Array) IsEmpty() string {
+	return _boolToString(_jsonArrayIsEmpty(c.Items))
+}
+
+func (c *Array) First() string {
+	return _jsonArrayFirst(c.Items)
+}
+
+func (c *Array) Last() string {
+	return _jsonArrayLast(c.Items)
+}
+
+func (c *Array) Do(aBlock string) (string, error) {
+	aBlockInt, err := strconv.Atoi(aBlock)
+	if err != nil {
+		return "", err
+	}
+	_ = aBlockInt
+	var i interface{}
+	var len_ interface{}
+	len_ = strconv.Itoa(_jsonArrayLen(c.Items))
+	i = 0
+	for toInt(i) < toInt(len_) {
+		invokeBlock(aBlock, _jsonArrayAt(c.Items, i))
+		i = toInt(i) + toInt(1)
+	}
+	return "", nil
+}
+
+func (c *Array) Collect(aBlock string) (string, error) {
+	aBlockInt, err := strconv.Atoi(aBlock)
+	if err != nil {
+		return "", err
+	}
+	_ = aBlockInt
+	var i interface{}
+	var len_ interface{}
+	var newItems interface{}
+	var result interface{}
+	var newArray interface{}
+	len_ = strconv.Itoa(_jsonArrayLen(c.Items))
+	newItems = "[]"
+	i = 0
+	for toInt(i) < toInt(len_) {
+		result = invokeBlock(aBlock, _jsonArrayAt(c.Items, i))
+		newItems = _jsonArrayPush(newItems, result)
+		i = toInt(i) + toInt(1)
+	}
+	newArray = sendMessage(Array, "new")
+	sendMessage(newArray, "setItems_", newItems)
+	return strconv.Itoa(newArray), nil
+}
+
+func (c *Array) Select(aBlock string) (string, error) {
+	aBlockInt, err := strconv.Atoi(aBlock)
+	if err != nil {
+		return "", err
+	}
+	_ = aBlockInt
+	var i interface{}
+	var len_ interface{}
+	var newItems interface{}
+	var element interface{}
+	var result interface{}
+	var newArray interface{}
+	len_ = strconv.Itoa(_jsonArrayLen(c.Items))
+	newItems = "[]"
+	i = 0
+	for toInt(i) < toInt(len_) {
+		element = _jsonArrayAt(c.Items, i)
+		result = invokeBlock(aBlock, element)
+		result
+		if notEmpty {
+			newItems = _jsonArrayPush(newItems, element)
+		}
+		i = toInt(i) + toInt(1)
+	}
+	newArray = sendMessage(Array, "new")
+	sendMessage(newArray, "setItems_", newItems)
+	return strconv.Itoa(newArray), nil
+}
+
+func (c *Array) Inject_into(initial string, aBlock string) (string, error) {
+	initialInt, err := strconv.Atoi(initial)
+	if err != nil {
+		return "", err
+	}
+	_ = initialInt
+	aBlockInt, err := strconv.Atoi(aBlock)
+	if err != nil {
+		return "", err
+	}
+	_ = aBlockInt
+	var i interface{}
+	var len_ interface{}
+	var acc interface{}
+	len_ = strconv.Itoa(_jsonArrayLen(c.Items))
+	acc = initialInt
+	i = 0
+	for toInt(i) < toInt(len_) {
+		acc = invokeBlock(aBlock, acc, _jsonArrayAt(c.Items, i))
+		i = toInt(i) + toInt(1)
+	}
+	return strconv.Itoa(acc), nil
 }

@@ -33,21 +33,21 @@ InputField subclass: Yutani::Widget
   ]
 
   # Label accessor
-  method: label [
-    _ivar label
+  method: getLabel [
+    ^ label
   ]
 
   method: setLabel: l [
-    _ivar_set label "$l"
+    label := l
   ]
 
   # Placeholder accessor
-  method: placeholder [
-    _ivar placeholder
+  method: getPlaceholder [
+    ^ placeholder
   ]
 
   method: setPlaceholder: p [
-    _ivar_set placeholder "$p"
+    placeholder := p
   ]
 
   # Get current text from server
