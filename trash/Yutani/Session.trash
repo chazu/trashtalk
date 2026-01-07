@@ -19,19 +19,19 @@ Session subclass: Object
   ]
 
   method: setHost: h [
-    _ivar_set host "$h"
+    host := h
   ]
 
   method: setSessionId: sid [
-    _ivar_set sessionId "$sid"
+    sessionId := sid
   ]
 
-  method: sessionId [
-    _ivar sessionId
+  method: getSessionId [
+    ^ sessionId
   ]
 
-  method: host [
-    _ivar host
+  method: getHost [
+    ^ host
   ]
 
   method: disconnect [

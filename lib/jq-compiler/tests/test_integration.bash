@@ -129,7 +129,7 @@ if [[ -n "$COMPILED" ]]; then
         "$(echo "$COMPILED" | grep -q '\$_RECEIVER' && echo true || echo false)"
 
     run_test "e2e: assignment transformed" "true" \
-        "$(echo "$COMPILED" | grep -q 'current=\$' && echo true || echo false)"
+        "$(echo "$COMPILED" | grep -qE 'current="?\$' && echo true || echo false)"
 else
     run_test "e2e: compilation succeeded" "true" "false"
 fi

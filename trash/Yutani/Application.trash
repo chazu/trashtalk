@@ -67,7 +67,7 @@ Application subclass: Object
 
   # Stop the application
   method: stop [
-    _ivar_set running "false"
+    running := 'false'
   ]
 
   # Cleanup resources
@@ -180,11 +180,11 @@ Application subclass: Object
   ]
 
   # Accessors
-  method: session [ _ivar session ]
-  method: dispatcher [ _ivar dispatcher ]
-  method: rootWidget [ _ivar rootWidget ]
+  method: getSession [ ^ session ]
+  method: getDispatcher [ ^ dispatcher ]
+  method: getRootWidget [ ^ rootWidget ]
 
   # Private setters
-  method: _setSession: v [ _ivar_set session "$v" ]
-  method: _setDispatcher: v [ _ivar_set dispatcher "$v" ]
-  method: _setRunning: v [ _ivar_set running "$v" ]
+  method: _setSession: v [ session := v ]
+  method: _setDispatcher: v [ dispatcher := v ]
+  method: _setRunning: v [ running := v ]

@@ -249,53 +249,65 @@ PROCYON_SRC := ~/dev/go/procyon
 # Platform-specific shared library extension
 DYLIB_EXT := $(shell if [ "$$(uname)" = "Darwin" ]; then echo "dylib"; else echo "so"; fi)
 
-# Find all classes that can be compiled to plugins
+# Find all classes that can be compiled to plugins/binaries
 # (Exclude Test* classes and internal system classes)
+# Include both regular classes and namespaced classes
 PLUGIN_CANDIDATES := $(filter-out $(wildcard $(TRASH_DIR)/Test*.trash),$(SOURCES))
+NAMESPACE_CANDIDATES := $(NAMESPACE_SOURCES)
+ALL_NATIVE_CANDIDATES := $(PLUGIN_CANDIDATES) $(NAMESPACE_CANDIDATES)
 PLUGINS := $(patsubst $(TRASH_DIR)/%.trash,$(COMPILED_DIR)/%.$(DYLIB_EXT),$(PLUGIN_CANDIDATES))
 
 .PHONY: plugins plugin daemon native clean-native binary binaries
 
-# Build a single class as a standalone native binary (usage: make binary CLASS=Counter)
+# Build a single class as a standalone native binary
+# Usage: make binary CLASS=Counter
+#        make binary CLASS=Yutani/Widget (namespaced)
+#        make binary CLASS=Yutani__Widget (also works)
 binary:
 ifndef CLASS
 	@echo "Usage: make binary CLASS=ClassName"
+	@echo "       make binary CLASS=Namespace/ClassName (for namespaced classes)"
 	@exit 1
 endif
 	@echo "Building native binary for $(CLASS)..."
-	@srcfile="$(TRASH_DIR)/$(CLASS).trash"; \
+	@classarg="$(CLASS)"; \
+	classarg=$$(echo "$$classarg" | sed 's/__/\//g'); \
+	srcfile="$(TRASH_DIR)/$$classarg.trash"; \
+	outname=$$(echo "$$classarg" | sed 's/\//__/g'); \
 	if [[ ! -f "$$srcfile" ]]; then \
 		echo "Error: $$srcfile not found"; \
 		exit 1; \
 	fi; \
 	mkdir -p $(COMPILED_DIR)/.build; \
 	$(LIB_DIR)/jq-compiler/driver.bash parse "$$srcfile" 2>/dev/null | \
-		$(PROCYON) --mode=binary 2>/dev/null > "$(COMPILED_DIR)/.build/$(CLASS).go"; \
-	cp "$$srcfile" "$(COMPILED_DIR)/.build/$(CLASS).trash"; \
+		$(PROCYON) --mode=binary 2>/dev/null > "$(COMPILED_DIR)/.build/$$outname.go"; \
+	cp "$$srcfile" "$(COMPILED_DIR)/.build/$$outname.trash"; \
 	cd $(COMPILED_DIR)/.build && \
-		go mod init $(CLASS) 2>/dev/null || true; \
-		go get github.com/mattn/go-sqlite3 2>/dev/null || true; \
-		CGO_ENABLED=1 go build -o ../$(CLASS).native $(CLASS).go; \
-	echo "✓ $(CLASS) native binary built → $(COMPILED_DIR)/$(CLASS).native"
+		go mod init $$outname 2>/dev/null || true; \
+		go get github.com/mattn/go-sqlite3 github.com/google/uuid 2>/dev/null || true; \
+		CGO_ENABLED=1 go build -o ../$$outname.native $$outname.go; \
+	echo "✓ $$outname native binary built → $(COMPILED_DIR)/$$outname.native"
 
-# Build native binaries for all eligible classes
+# Build native binaries for all eligible classes (including namespaced)
 binaries: $(COMPILED_DIR)/.build
 	@echo "Building native binaries (this requires CGO for sqlite3)..."
 	@cd $(COMPILED_DIR)/.build && \
 		go mod init trashtalk-binaries 2>/dev/null || true && \
-		go get github.com/mattn/go-sqlite3 2>/dev/null || true
-	@for src in $(PLUGIN_CANDIDATES); do \
-		class=$$(basename "$$src" .trash); \
-		echo "Building native binary for $$class..."; \
+		go get github.com/mattn/go-sqlite3 github.com/google/uuid 2>/dev/null || true
+	@for src in $(ALL_NATIVE_CANDIDATES); do \
+		relpath=$${src#$(TRASH_DIR)/}; \
+		outname=$${relpath%.trash}; \
+		outname=$$(echo "$$outname" | sed 's/\//__/g'); \
+		echo "Building native binary for $$outname..."; \
 		$(LIB_DIR)/jq-compiler/driver.bash parse "$$src" 2>/dev/null | \
-			$(PROCYON) --mode=binary 2>/dev/null > "$(COMPILED_DIR)/.build/$$class.go"; \
-		cp "$$src" "$(COMPILED_DIR)/.build/$$class.trash"; \
+			$(PROCYON) --mode=binary 2>/dev/null > "$(COMPILED_DIR)/.build/$$outname.go"; \
+		cp "$$src" "$(COMPILED_DIR)/.build/$$outname.trash"; \
 		(cd $(COMPILED_DIR)/.build && \
-			CGO_ENABLED=1 go build -o ../$$class.native $$class.go 2>/dev/null); \
-		if [[ -f "$(COMPILED_DIR)/$$class.native" ]]; then \
-			echo "  ✓ $$class.native"; \
+			CGO_ENABLED=1 go build -o ../$$outname.native $$outname.go 2>/dev/null); \
+		if [[ -f "$(COMPILED_DIR)/$$outname.native" ]]; then \
+			echo "  ✓ $$outname.native"; \
 		else \
-			echo "  ✗ $$class failed to build"; \
+			echo "  ✗ $$outname failed to build"; \
 		fi; \
 	done
 	@echo "Native binary build complete"
@@ -403,7 +415,8 @@ help:
 	@echo ""
 	@echo "Native Targets:"
 	@echo "  make binary CLASS=Name - Build a single class as native binary"
-	@echo "  make binaries     - Build all classes as native binaries"
+	@echo "  make binary CLASS=Ns/Name - Build namespaced class (outputs Ns__Name.native)"
+	@echo "  make binaries     - Build all classes as native binaries (including namespaced)"
 	@echo "  make native       - Same as binaries (integrates with @ dispatch)"
 	@echo "  make procyon      - Build the procyon compiler"
 	@echo "  make clean-native - Remove native artifacts"

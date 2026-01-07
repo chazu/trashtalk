@@ -4,12 +4,12 @@ FlexLayout subclass: Yutani::Widget
   instanceVars: direction:'' children:''
 
   # Direction accessor
-  method: direction [
-    _ivar direction
+  method: getDirection [
+    ^ direction
   ]
 
   method: setDirection: d [
-    _ivar_set direction "$d"
+    direction := d
   ]
 
   # Add a child widget (proportional sizing)

@@ -4,39 +4,39 @@ Widget subclass: Object
   instanceVars: session:'' widgetId:'' title:'' dispatcher:''
 
   # Session accessor
-  method: session [
-    _ivar session
+  method: getSession [
+    ^ session
   ]
 
   method: setSession: s [
-    _ivar_set session "$s"
+    session := s
   ]
 
   # Widget ID accessor
-  method: widgetId [
-    _ivar widgetId
+  method: getWidgetId [
+    ^ widgetId
   ]
 
   method: setWidgetId: id [
-    _ivar_set widgetId "$id"
+    widgetId := id
   ]
 
   # Title accessor
-  method: title [
-    _ivar title
+  method: getTitle [
+    ^ title
   ]
 
   method: setTitle: t [
-    _ivar_set title "$t"
+    title := t
   ]
 
   # Dispatcher accessor
-  method: dispatcher [
-    _ivar dispatcher
+  method: getDispatcher [
+    ^ dispatcher
   ]
 
   method: setDispatcher: d [
-    _ivar_set dispatcher "$d"
+    dispatcher := d
   ]
 
   # Delete this widget from the session
