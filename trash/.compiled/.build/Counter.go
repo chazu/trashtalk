@@ -1,33 +1,18 @@
 package main
 
 import (
-	"bufio"
-	"crypto/sha256"
+	"C"
 	"database/sql"
-	_ "embed"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	uuid "github.com/google/uuid"
 	_ "github.com/mattn/go-sqlite3"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 )
-
-//go:embed Counter.trash
-var _sourceCode string
-
-var _contentHash string
-
-func init() {
-	hash := sha256.Sum256([]byte(_sourceCode))
-	_contentHash = hex.EncodeToString(hash[:])
-}
 
 var ErrUnknownSelector = errors.New("unknown selector")
 
@@ -39,89 +24,19 @@ type Counter struct {
 	Step      string   `json:"step"`
 }
 
-func main() {
-	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "Usage: Counter.native <instance_id> <selector> [args...]")
-		fmt.Fprintln(os.Stderr, "       Counter.native --source")
-		fmt.Fprintln(os.Stderr, "       Counter.native --hash")
-		os.Exit(1)
-	}
+//export GetClassName
+func GetClassName() *C.char {
+	return C.CString("Counter")
+}
 
-	switch os.Args[1] {
-	case "--source":
-		fmt.Print(_sourceCode)
-		return
-	case "--hash":
-		fmt.Println(_contentHash)
-		return
-	case "--info":
-		fmt.Printf("Class: Counter\nHash: %s\nSource length: %d bytes\n", _contentHash, len(_sourceCode))
-		return
-	case "--serve":
-		runServeMode()
-		return
-	}
+//export Dispatch
+func Dispatch(instanceJSON *C.char, selector *C.char, argsJSON *C.char) *C.char {
+	instanceStr := C.GoString(instanceJSON)
+	selectorStr := C.GoString(selector)
+	argsStr := C.GoString(argsJSON)
 
-	if len(os.Args) < 3 {
-		fmt.Fprintln(os.Stderr, "Usage: Counter.native <instance_id> <selector> [args...]")
-		os.Exit(1)
-	}
-
-	receiver := os.Args[1]
-	selector := os.Args[2]
-	args := os.Args[3:]
-
-	if receiver == "Counter" || receiver == "Counter" {
-		result, err := dispatchClass(selector, args)
-		if err != nil {
-			if errors.Is(err, ErrUnknownSelector) {
-				os.Exit(200)
-			}
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
-		}
-		if result != "" {
-			fmt.Println(result)
-		}
-		return
-	}
-
-	db, err := openDB()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
-		os.Exit(1)
-	}
-	defer db.Close()
-
-	instance, err := loadInstance(db, receiver)
-	if err != nil {
-		os.Exit(200)
-	}
-
-	result, err := dispatch(instance, receiver, selector, args)
-	if err != nil {
-		if errors.Is(err, ErrUnknownSelector) {
-			os.Exit(200)
-		}
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
-
-	if selector == "delete" {
-		if err := deleteInstance(db, receiver); err != nil {
-			fmt.Fprintf(os.Stderr, "Error deleting instance: %v\n", err)
-			os.Exit(1)
-		}
-	} else {
-		if err := saveInstance(db, receiver, instance); err != nil {
-			fmt.Fprintf(os.Stderr, "Error saving instance: %v\n", err)
-			os.Exit(1)
-		}
-	}
-
-	if result != "" {
-		fmt.Println(result)
-	}
+	result := dispatchInternal(instanceStr, selectorStr, argsStr)
+	return C.CString(result)
 }
 
 func openDB() (*sql.DB, error) {
@@ -155,148 +70,88 @@ func saveInstance(db *sql.DB, id string, instance *Counter) error {
 	return err
 }
 
-func generateInstanceID(className string) string {
-	uuid := uuid.New().String()
-	return strings.ToLower(className) + "_" + uuid
-}
+func dispatchInternal(instanceJSON string, selector string, argsJSON string) string {
+	var args []string
+	json.Unmarshal([]byte(argsJSON), &args)
 
-func createInstance(db *sql.DB, id string, instance *Counter) error {
-	data, err := json.Marshal(instance)
-	if err != nil {
-		return err
-	}
-	_, err = db.Exec("INSERT INTO instances (id, data) VALUES (?, json(?))", id, string(data))
-	return err
-}
-
-func deleteInstance(db *sql.DB, id string) error {
-	_, err := db.Exec("DELETE FROM instances WHERE id = ?", id)
-	return err
-}
-
-func sendMessage(receiver interface{}, selector string, args ...interface{}) string {
-	receiverStr := fmt.Sprintf("%v", receiver)
-	cmdArgs := []string{receiverStr, selector}
-	for _, arg := range args {
-		cmdArgs = append(cmdArgs, fmt.Sprintf("%v", arg))
-	}
-	home, _ := os.UserHomeDir()
-	dispatchScript := filepath.Join(home, ".trashtalk", "bin", "trash-send")
-	cmd := exec.Command(dispatchScript, cmdArgs...)
-	output, _ := cmd.Output()
-	return strings.TrimSpace(string(output))
-}
-
-// ServeRequest is the JSON request format for --serve mode
-type ServeRequest struct {
-	InstanceID string   `json:"instance_id"`
-	Instance   string   `json:"instance"`
-	Selector   string   `json:"selector"`
-	Args       []string `json:"args"`
-}
-
-// ServeResponse is the JSON response format for --serve mode
-type ServeResponse struct {
-	Instance string `json:"instance,omitempty"`
-	Result   string `json:"result,omitempty"`
-	ExitCode int    `json:"exit_code"`
-	Error    string `json:"error,omitempty"`
-}
-
-func runServeMode() {
-	db, err := openDB()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
-		os.Exit(1)
-	}
-	defer db.Close()
-
-	scanner := bufio.NewScanner(os.Stdin)
-	// Increase buffer for large instance JSON
-	buf := make([]byte, 1048576)
-	scanner.Buffer(buf, len(buf))
-
-	for scanner.Scan() {
-		line := scanner.Text()
-		if line == "" {
-			continue
-		}
-
-		var req ServeRequest
-		if err := json.Unmarshal([]byte(line), &req); err != nil {
-			respond(ServeResponse{
-				Error:    "invalid JSON: " + err.Error(),
-				ExitCode: 1,
-			})
-			continue
-		}
-
-		resp := handleServeRequest(db, &req)
-		respond(resp)
-	}
-}
-
-func respond(resp ServeResponse) {
-	out, _ := json.Marshal(resp)
-	fmt.Println(string(out))
-}
-
-func handleServeRequest(db *sql.DB, req *ServeRequest) ServeResponse {
-	if req.Instance == "" || req.Instance == "Counter" || req.Instance == "Counter" {
-		result, err := dispatchClass(req.Selector, req.Args)
+	if instanceJSON == "" || instanceJSON == "Counter" {
+		result, err := dispatchClass(selector, args)
 		if err != nil {
 			if errors.Is(err, ErrUnknownSelector) {
-				return ServeResponse{ExitCode: 200}
+				return "{\"exit_code\":200}"
 			}
-			return ServeResponse{
-				Error:    err.Error(),
-				ExitCode: 1,
-			}
+			return fmt.Sprintf("{\"exit_code\":1,\"error\":%q}", err.Error())
 		}
-		return ServeResponse{
-			ExitCode: 0,
-			Result:   result,
-		}
+		return fmt.Sprintf("{\"result\":%q,\"exit_code\":0}", result)
 	}
 
 	var instance Counter
-	if err := json.Unmarshal([]byte(req.Instance), &instance); err != nil {
-		return ServeResponse{
-			Error:    "invalid instance JSON: " + err.Error(),
-			ExitCode: 1,
-		}
+	if err := json.Unmarshal([]byte(instanceJSON), &instance); err != nil {
+		return fmt.Sprintf("{\"exit_code\":1,\"error\":%q}", err.Error())
 	}
 
-	result, err := dispatch(&instance, req.InstanceID, req.Selector, req.Args)
+	result, err := dispatch(&instance, selector, args)
 	if err != nil {
 		if errors.Is(err, ErrUnknownSelector) {
-			return ServeResponse{ExitCode: 200}
+			return "{\"exit_code\":200}"
 		}
-		return ServeResponse{
-			Error:    err.Error(),
-			ExitCode: 1,
-		}
-	}
-
-	if req.Selector == "delete" {
-		if err := deleteInstance(db, req.InstanceID); err != nil {
-			return ServeResponse{
-				Error:    err.Error(),
-				ExitCode: 1,
-			}
-		}
-		return ServeResponse{
-			ExitCode: 0,
-			Result:   result,
-		}
+		return fmt.Sprintf("{\"exit_code\":1,\"error\":%q}", err.Error())
 	}
 
 	updatedJSON, _ := json.Marshal(&instance)
-	return ServeResponse{
-		ExitCode: 0,
-		Instance: string(updatedJSON),
-		Result:   result,
+	return fmt.Sprintf("{\"instance\":%s,\"result\":%q,\"exit_code\":0}", string(updatedJSON), result)
+}
+
+// toInt converts interface{} to int for arithmetic in iteration blocks
+func toInt(v interface{}) int {
+	switch x := v.(type) {
+	case int:
+		return x
+	case int64:
+		return int(x)
+	case float64:
+		return int(x)
+	case string:
+		n, _ := strconv.Atoi(x)
+		return n
+	default:
+		return 0
 	}
+}
+
+// toBool converts interface{} to bool for predicates in iteration blocks
+func toBool(v interface{}) bool {
+	switch x := v.(type) {
+	case bool:
+		return x
+	case int:
+		return x != 0
+	case string:
+		return x != ""
+	default:
+		return v != nil
+	}
+}
+
+// invokeBlock calls a Trashtalk block through the Bash runtime
+// blockID is the instance ID of the Block object
+// args are the values to pass to the block
+func invokeBlock(blockID string, args ...interface{}) string {
+	var cmdStr string
+	switch len(args) {
+	case 0:
+		cmdStr = fmt.Sprintf("source ~/.trashtalk/lib/trash.bash && @ %q value", blockID)
+	case 1:
+		cmdStr = fmt.Sprintf("source ~/.trashtalk/lib/trash.bash && @ %q valueWith: %q", blockID, fmt.Sprint(args[0]))
+	case 2:
+		cmdStr = fmt.Sprintf("source ~/.trashtalk/lib/trash.bash && @ %q valueWith: %q and: %q", blockID, fmt.Sprint(args[0]), fmt.Sprint(args[1]))
+	default:
+		return ""
+	}
+
+	cmd := exec.Command("bash", "-c", cmdStr)
+	output, _ := cmd.Output()
+	return strings.TrimSpace(string(output))
 }
 
 // Common conversion helpers
@@ -551,66 +406,8 @@ func _jsonObjectRemoveKey(jsonStr string, key string) string {
 	return string(result)
 }
 
-// toInt converts interface{} to int for arithmetic in iteration blocks
-func toInt(v interface{}) int {
-	switch x := v.(type) {
-	case int:
-		return x
-	case int64:
-		return int(x)
-	case float64:
-		return int(x)
-	case string:
-		n, _ := strconv.Atoi(x)
-		return n
-	default:
-		return 0
-	}
-}
-
-// toBool converts interface{} to bool for predicates in iteration blocks
-func toBool(v interface{}) bool {
-	switch x := v.(type) {
-	case bool:
-		return x
-	case int:
-		return x != 0
-	case string:
-		return x != ""
-	default:
-		return v != nil
-	}
-}
-
-// invokeBlock calls a Trashtalk block through the Bash runtime
-// blockID is the instance ID of the Block object
-// args are the values to pass to the block
-func invokeBlock(blockID string, args ...interface{}) string {
-	var cmdStr string
-	switch len(args) {
-	case 0:
-		cmdStr = fmt.Sprintf("source ~/.trashtalk/lib/trash.bash && @ %q value", blockID)
-	case 1:
-		cmdStr = fmt.Sprintf("source ~/.trashtalk/lib/trash.bash && @ %q valueWith: %q", blockID, fmt.Sprint(args[0]))
-	case 2:
-		cmdStr = fmt.Sprintf("source ~/.trashtalk/lib/trash.bash && @ %q valueWith: %q and: %q", blockID, fmt.Sprint(args[0]), fmt.Sprint(args[1]))
-	default:
-		return ""
-	}
-
-	cmd := exec.Command("bash", "-c", cmdStr)
-	output, _ := cmd.Output()
-	return strings.TrimSpace(string(output))
-}
-
-func dispatch(c *Counter, instanceID string, selector string, args []string) (string, error) {
+func dispatch(c *Counter, selector string, args []string) (string, error) {
 	switch selector {
-	case "class":
-		return "Counter", nil
-	case "id":
-		return instanceID, nil
-	case "delete":
-		return instanceID, nil
 	case "getValue":
 		return c.GetValue(), nil
 	case "getStep":
@@ -644,23 +441,6 @@ func dispatch(c *Counter, instanceID string, selector string, args []string) (st
 
 func dispatchClass(selector string, args []string) (string, error) {
 	switch selector {
-	case "new":
-		id := generateInstanceID("Counter")
-		instance := &Counter{
-			Class:     "Counter",
-			CreatedAt: time.Now().Format(time.RFC3339),
-			Step:      "1",
-			Value:     "0",
-		}
-		db, err := openDB()
-		if err != nil {
-			return "", err
-		}
-		defer db.Close()
-		if err := createInstance(db, id, instance); err != nil {
-			return "", err
-		}
-		return id, nil
 	case "description":
 		return Description(), nil
 	default:
@@ -729,3 +509,5 @@ func (c *Counter) Reset() {
 func Description() string {
 	return "A simple counter"
 }
+
+func main() {}

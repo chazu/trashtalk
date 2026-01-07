@@ -55,7 +55,7 @@ Coproc subclass: Object
 
   # Start with bidirectional communication
   rawMethod: start [
-    local cmd bg_pid fifo_in fifo_out
+    local cmd bg_pid fifo_in fifo_out pidfile
     cmd="$(_ivar command)"
 
     if [[ -z "$cmd" ]]; then
@@ -65,13 +65,22 @@ Coproc subclass: Object
 
     fifo_in="/tmp/coproc_${_INSTANCE}_in"
     fifo_out="/tmp/coproc_${_INSTANCE}_out"
-    rm -f "$fifo_in" "$fifo_out"
+    pidfile="/tmp/coproc_${_INSTANCE}_pid"
+    rm -f "$fifo_in" "$fifo_out" "$pidfile"
     mkfifo "$fifo_in" "$fifo_out"
 
-    # Start command: reads from fifo_in, writes to fifo_out
-    # Close inherited stdout/stderr to prevent $() from waiting
-    ( eval "$cmd" < "$fifo_in" > "$fifo_out" 2>&1 ) >&- 2>&- &
-    bg_pid=$!
+    # Start command in separate bash to fully detach from parent shell.
+    # This prevents $() from waiting for the background process.
+    /bin/bash -c '
+      eval "$1" < "$2" > "$3" 2>&1 &
+      echo $! > "$4"
+    ' _ "$cmd" "$fifo_in" "$fifo_out" "$pidfile" </dev/null >/dev/null 2>&1
+
+    # Small delay to ensure PID file is written
+    sleep 0.02
+
+    # Read the actual command PID
+    bg_pid=$(cat "$pidfile" 2>/dev/null)
 
     _ivar_set pid "$bg_pid"
     _ivar_set fifoIn "$fifo_in"
