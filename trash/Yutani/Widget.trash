@@ -83,7 +83,6 @@ Widget subclass: Object
     local handler="$1" dispatcher wid wrappedHandler storageVar
     dispatcher="$(_ivar dispatcher)"
     wid="$(_ivar widgetId)"
-    echo "[DEBUG onSubmitDo] Registering - dispatcher: $dispatcher, widgetId: $wid" >&2
     if [[ -n "$dispatcher" && -n "$wid" ]]; then
       # Use a temp file to store text (shell vars don't persist across subshell calls)
       local storageFile="/tmp/yutani_text_${wid}.txt"

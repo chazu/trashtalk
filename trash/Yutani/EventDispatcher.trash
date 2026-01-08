@@ -30,7 +30,6 @@ EventDispatcher subclass: Object
     local widgetId="$1" handler="$2"
     local handlerFile="/tmp/yutani_handler_${widgetId}.txt"
     echo "$handler" > "$handlerFile"
-    echo "[DEBUG onWidget:do:] Stored handler in: $handlerFile" >&2
   ]
 
   # Remove handler for a widget
@@ -76,7 +75,6 @@ EventDispatcher subclass: Object
     local eventType widgetId handler
 
     eventType=$(@ "$event" eventType)
-    echo "[DEBUG dispatch] Event type: $eventType" >&2
 
     case "$eventType" in
       key)
@@ -88,19 +86,14 @@ EventDispatcher subclass: Object
         ;;
       widget)
         widgetId=$(@ "$event" widgetId)
-        echo "[DEBUG dispatch] Widget event - widgetId: $widgetId" >&2
         if [[ -n "$widgetId" ]]; then
           local handlerFile="/tmp/yutani_handler_${widgetId}.txt"
-          echo "[DEBUG dispatch] Looking for handler file: $handlerFile" >&2
           if [[ -f "$handlerFile" ]]; then
             handler=$(cat "$handlerFile")
-            echo "[DEBUG dispatch] Handler found: ${handler:0:50}..." >&2
             if [[ -n "$handler" ]]; then
               __EVENT="$event"
               eval "$handler"
             fi
-          else
-            echo "[DEBUG dispatch] No handler file found" >&2
           fi
         fi
         ;;
@@ -135,11 +128,9 @@ EventDispatcher subclass: Object
 
     # Skip non-JSON lines
     if ! echo "$json" | jq -e . >/dev/null 2>&1; then
-      echo "[DEBUG dispatchJson] Skipping non-JSON: $json" >&2
       return
     fi
 
-    echo "[DEBUG dispatchJson] Received: $json" >&2
     event=$(@ Yutani::Event fromJson: "$json")
     @ "$_RECEIVER" dispatch: "$event"
   ]

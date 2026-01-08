@@ -302,7 +302,48 @@ Session subclass: Object
   ]
 
   # ============================================================================
-  # Event Streaming (still uses Coproc for now - streaming refactor deferred)
+  # Event Streaming - Native (preferred) or Coproc (fallback)
+  # ============================================================================
+
+  # Native streaming using GrpcClient.serverStream (requires native daemon)
+  # This is the preferred method - uses persistent gRPC connection, no subprocess
+  # The block receives JSON event data for each streamed message
+  rawMethod: streamEventsWithBlock: block [
+    pragma: direct
+    local sid client filter_json
+    sid="$(_ivar sessionId)"
+    client="$(_ivar grpcClient)"
+
+    # Build filter JSON for Subscribe request
+    filter_json=$(jo session_id="$(jo id="$sid")" \
+      filter="$(jo receive_key_events=true receive_mouse_events=true \
+        receive_resize_events=true receive_focus_events=true receive_widget_events=true)")
+
+    # Use native streaming - blocks until stream ends, calls block for each message
+    @ "$client" serverStream: 'industries.loosh.yutani.v1.EventService/Subscribe' \
+      with: "$filter_json" \
+      handler: "$1"
+  ]
+
+  # High-level streaming with EventDispatcher integration
+  # Creates Event objects and dispatches them through the provided dispatcher
+  # Usage: @ $session runEventLoopWithDispatcher: $dispatcher
+  rawMethod: runEventLoopWithDispatcher: dispatcher [
+    pragma: direct
+    local dispatcher="$1" handlerBlock
+
+    # Create a block that converts JSON to Event and dispatches it
+    handlerBlock=$(@ Block new: "
+      local json=\"\$1\"
+      @ \"$dispatcher\" dispatchJson: \"\$json\"
+    ")
+
+    # Start streaming - this blocks until stream ends/errors
+    @ "$_RECEIVER" streamEventsWithBlock: "$handlerBlock"
+  ]
+
+  # ============================================================================
+  # Fallback: Coproc-based streaming (for when native daemon unavailable)
   # ============================================================================
 
   rawMethod: startEventStream [
@@ -336,7 +377,7 @@ Session subclass: Object
     fi
   ]
 
-  # Process events with a handler. Handler can read $__COPROC_LINE.
+  # Process events with a handler (coproc mode). Handler can read $__COPROC_LINE.
   # Usage: @ $session onEventDo: '@ $obj handleEvent'
   rawMethod: onEventDo: handler [
     local evt_coproc handler="$1"
