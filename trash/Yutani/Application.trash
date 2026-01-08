@@ -46,9 +46,36 @@ Application subclass: Object
     :
   ]
 
-  # Main event loop
+  # Main event loop - tries native streaming first, falls back to coproc
   rawMethod: run [
-    local session dispatcher line
+    local session dispatcher
+    session="$(_ivar session)"
+    dispatcher="$(_ivar dispatcher)"
+
+    # Try native streaming first (requires native GrpcClient.dylib and daemon)
+    # Falls back to coproc-based streaming if native fails
+    if @ "$_RECEIVER" _tryNativeEventLoop 2>/dev/null; then
+      return 0
+    fi
+
+    # Fallback: coproc-based event loop
+    @ "$_RECEIVER" _runCoprocEventLoop
+  ]
+
+  # Native event loop using GrpcClient.serverStream
+  # Returns true if native streaming was successful
+  rawMethod: _tryNativeEventLoop [
+    local session dispatcher
+    session="$(_ivar session)"
+    dispatcher="$(_ivar dispatcher)"
+
+    # Use native streaming - blocks until stream ends
+    @ "$session" runEventLoopWithDispatcher: "$dispatcher"
+  ]
+
+  # Fallback: coproc-based event loop (uses grpcurl subprocess)
+  rawMethod: _runCoprocEventLoop [
+    local session dispatcher
     session="$(_ivar session)"
     dispatcher="$(_ivar dispatcher)"
 
