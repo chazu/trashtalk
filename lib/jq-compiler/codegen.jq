@@ -2423,12 +2423,14 @@ def generateMethod($funcPrefix; $ivars; $cvars):
     "\($funcPrefix)__\(.selector)"
   end) as $funcName |
 
-  # Check for pragmas and emit markers
-  (if (.pragmas // []) | contains(["direct"]) then
-    "declare -g \($funcName)__direct=1"
-  else
-    null
-  end) as $pragmaMarker |
+  # Check for pragmas and emit markers (supports multiple pragmas)
+  ((.pragmas // []) | map(
+    if . == "direct" then "declare -g \($funcName)__direct=1"
+    elif . == "procyonOnly" then "declare -g \($funcName)__procyonOnly=1"
+    elif . == "bashOnly" then "declare -g \($funcName)__bashOnly=1"
+    elif . == "procyonNative" then "declare -g \($funcName)__procyonNative=1"
+    else null end
+  ) | map(select(. != null))) as $pragmaMarkers |
 
   # Generate argument bindings for keyword methods
   (if (.args | length) > 0 then
@@ -2457,12 +2459,17 @@ def generateMethod($funcPrefix; $ivars; $cvars):
     .body | transformMethodBody($className; false)
   end) as $body |
 
-  # Emit pragma marker if present
-  (if $pragmaMarker != null then $pragmaMarker else empty end),
+  # For procyonOnly methods, replace body with error-throwing stub
+  (if (.pragmas // []) | contains(["procyonOnly"]) then
+    "  _throw \"NotImplemented\" \"Method \(.selector) requires native Procyon runtime\"\n  return 1"
+  else $body end) as $finalBody |
+
+  # Emit pragma markers if present (may be multiple)
+  (if ($pragmaMarkers | length) > 0 then $pragmaMarkers[] else empty end),
   # Combine into function
   "\($funcName)() {",
   (if $argBindings != "" then $argBindings else empty end),
-  $body,
+  $finalBody,
   "}",
   "";
 

@@ -1322,6 +1322,86 @@ method_missing() {
 # Track which compiled classes have been sourced to avoid re-sourcing
 declare -gA _SOURCED_COMPILED_CLASSES
 
+# ============================================
+# Native Daemon Dispatch
+# ============================================
+# Routes native method calls through trashtalk-daemon instead of spawning
+# individual .native binaries. The daemon loads .dylib/.so plugins on demand.
+
+# Check if a native plugin exists for a class
+# Returns: 0 if plugin exists, 1 otherwise
+# Sets: _NATIVE_PLUGIN_PATH to the plugin path
+function _has_native_plugin {
+  local class_name="$1"
+  local compiled_name=$(_to_compiled_name "$class_name")
+  local ext
+
+  case "$(uname)" in
+    Darwin) ext=".dylib" ;;
+    *)      ext=".so" ;;
+  esac
+
+  _NATIVE_PLUGIN_PATH="$TRASHDIR/.compiled/${compiled_name}${ext}"
+  [[ -f "$_NATIVE_PLUGIN_PATH" ]]
+}
+
+# Dispatch a method call through NativeDaemon
+# This calls NativeDaemon functions directly to avoid send() recursion
+# Returns: result on stdout, exit code from dispatch
+function _native_daemon_dispatch {
+  local class_name="$1"
+  local instance_id="$2"
+  local selector="$3"
+  shift 3
+  local args_json daemon_id result exit_code
+  local saved_class="$_CLASS" saved_receiver="$_RECEIVER"
+
+  # Build args as JSON array from remaining positional parameters
+  if [[ $# -eq 0 ]]; then
+    args_json="[]"
+  else
+    # Encode each argument as a JSON string and wrap in array
+    args_json=$(printf '%s\n' "$@" | jq -R . | jq -s -c .)
+  fi
+
+  # Ensure NativeDaemon is sourced (it's a Bash-compiled class)
+  if [[ -z "${_SOURCED_COMPILED_CLASSES[NativeDaemon]:-}" ]]; then
+    local nd_compiled="$TRASHDIR/.compiled/NativeDaemon"
+    if [[ -f "$nd_compiled" ]]; then
+      source "$nd_compiled"
+      _SOURCED_COMPILED_CLASSES[NativeDaemon]=1
+    else
+      msg_debug "NativeDaemon not compiled, falling back to direct binary"
+      return 200
+    fi
+  fi
+
+  # Set up class context for NativeDaemon calls (enables private method access)
+  _CLASS=NativeDaemon
+
+  # Get or create NativeDaemon singleton (call class method directly)
+  daemon_id=$(__NativeDaemon__class__instance)
+  if [[ -z "$daemon_id" ]]; then
+    msg_debug "Failed to get NativeDaemon instance"
+    _CLASS="$saved_class"
+    return 200
+  fi
+
+  # Dispatch through daemon (call method directly, setting _RECEIVER for ivar access)
+  _RECEIVER="$daemon_id"
+  result=$(__NativeDaemon__dispatch_instance_selector_args_ "$class_name" "$instance_id" "$selector" "$args_json")
+  exit_code=$?
+
+  # Restore context
+  _CLASS="$saved_class"
+  _RECEIVER="$saved_receiver"
+
+  if [[ $exit_code -eq 0 ]]; then
+    echo "$result"
+  fi
+  return $exit_code
+}
+
 function send {
   msg_debug "Send: $*"
 
@@ -1443,20 +1523,28 @@ function send {
   # Method dispatch
   # ============================================
 
-  # Check for native binary first (highest priority)
-  # Use _to_compiled_name to handle namespaced classes (MyApp::Counter -> MyApp__Counter)
-  local compiled_name=$(_to_compiled_name "$class_name")
-  local native_binary="$TRASHDIR/.compiled/${compiled_name}.native"
-  if [[ -x "$native_binary" ]]; then
-    msg_debug "Found native class: $native_binary"
-    # Native binaries receive: instance_id selector args...
-    # For class methods, pass the class name as receiver
-    local native_receiver="${_INSTANCE:-$class_name}"
-    "$native_binary" "$native_receiver" "$_SELECTOR" "$@"
+  # Normalize selector for pragma marker lookup: do: -> do_, inject:into: -> inject_into_
+  local normalized_selector="${_SELECTOR%:}"
+  normalized_selector="${normalized_selector//:/_}"
+  [[ "$_SELECTOR" == *: ]] && normalized_selector="${normalized_selector}_"
+
+  # Check for pragma: bashOnly marker - skip native dispatch if set
+  local bashOnly_marker="${func_prefix}__${normalized_selector}__bashOnly"
+  local skip_native=0
+  if [[ -n "${!bashOnly_marker:-}" ]]; then
+    msg_debug "bashOnly pragma set for $_SELECTOR, skipping native dispatch"
+    skip_native=1
+  fi
+
+  # Check for native plugin first (highest priority), unless bashOnly
+  # Routes through trashtalk-daemon which loads .dylib/.so plugins on demand
+  if [[ $skip_native -eq 0 ]] && _has_native_plugin "$class_name"; then
+    msg_debug "Found native plugin: $_NATIVE_PLUGIN_PATH"
+    _native_daemon_dispatch "$class_name" "${_INSTANCE:-}" "$_SELECTOR" "$@"
     exit_code=$?
-    # Exit code 200 = unknown selector, fall back to Bash dispatch
+    # Exit code 200 = unknown selector or no daemon, fall back to Bash dispatch
     if [[ $exit_code -ne 200 ]]; then
-      # Native binary updates the database directly, so reload into memory cache
+      # Daemon updates the env store directly, so reload into memory cache
       # This ensures subsequent Bash operations see the updated state
       if [[ -n "$_INSTANCE" ]]; then
         _env_load "$_INSTANCE" 2>/dev/null || true
@@ -1464,7 +1552,7 @@ function send {
       _send_cleanup $frame_ensure_start $frame_handler_start $exit_code
       return $exit_code
     fi
-    msg_debug "Native binary doesn't implement $_SELECTOR, falling back to Bash"
+    msg_debug "Native plugin doesn't implement $_SELECTOR, falling back to Bash"
   fi
 
   # Check for compiled version first (prevents namespace pollution)
@@ -1767,6 +1855,16 @@ function @ {
     if [[ -n "${!___direct_marker:-}" ]]; then
       send "$@"
       return $?
+    fi
+
+    # Check for pragma: procyonOnly marker
+    # If set, ensure native plugin exists before attempting dispatch
+    local ___procyonOnly_marker="${___func_prefix}__${___normalized}__procyonOnly"
+    if [[ -n "${!___procyonOnly_marker:-}" ]]; then
+      if ! _has_native_plugin "$___class"; then
+        echo "Error: Method $___selector requires native Procyon plugin for $___class" >&2
+        return 1
+      fi
     fi
   fi
 

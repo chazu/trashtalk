@@ -1,7 +1,7 @@
 # NativeDaemon - Single daemon for native class dispatch via c-shared plugins
 #
 # The daemon loads .dylib/.so plugins on demand, routing all native class
-# calls through a single trashtalk-daemon process.
+# calls through a single trashtalk-daemon process using Unix sockets.
 #
 # Usage:
 #   daemon := @ NativeDaemon instance.
@@ -9,9 +9,10 @@
 #
 # The daemon is a singleton - only one instance per Trashtalk session.
 # Plugins are loaded lazily on first use of each class.
+# Daemon auto-exits after 5 minutes of inactivity.
 
 NativeDaemon subclass: Object
-  instanceVars: daemon:'' pluginDir:'' status:'' debug:''
+  instanceVars: pluginDir:'' status:'' debug:'' socketPath:'/tmp/trashtalk-daemon.sock'
 
   # Singleton instance stored in global
   # Usage: daemon := @ NativeDaemon instance
@@ -19,9 +20,12 @@ NativeDaemon subclass: Object
     if [[ -z "$_NATIVE_DAEMON" ]]; then
       _NATIVE_DAEMON=$(_generate_instance_id NativeDaemon)
       _create_instance NativeDaemon "$_NATIVE_DAEMON"
-      @ "$_NATIVE_DAEMON" _setStatus: "ready"
-      @ "$_NATIVE_DAEMON" _setPluginDir: "$TRASHDIR/.compiled"
-      @ "$_NATIVE_DAEMON" _setDaemon: ""
+      # Use direct ivar manipulation to avoid private method checks
+      # when called from _native_daemon_dispatch
+      local json
+      json=$(_env_get "$_NATIVE_DAEMON")
+      json=$(echo "$json" | jq -c '.status = "ready" | .pluginDir = "'"$TRASHDIR/.compiled"'"')
+      _env_set "$_NATIVE_DAEMON" "$json"
     fi
     echo "$_NATIVE_DAEMON"
   ]
@@ -44,70 +48,69 @@ NativeDaemon subclass: Object
     _NATIVE_DAEMON=""
   ]
 
-  # Get or start the trashtalk-daemon process
-  # Uses file-based state to work around Bash subshell scoping issues
+  # Ensure the daemon process is running
+  # Starts it in background if not already running
   rawMethod: _ensureDaemon [
-    local coproc_id pluginDir daemonCmd pidfile
-    pidfile="/tmp/trashtalk-daemon.coproc"
+    local socketPath pidFile pid pluginDir daemonCmd socketOpt pluginOpt debugOpt
 
-    # Check for existing daemon via file-based state
-    if [[ -f "$pidfile" ]]; then
-      coproc_id=$(cat "$pidfile")
-      if [[ -n "$coproc_id" ]] && @ "$coproc_id" isRunning >/dev/null 2>&1; then
-        _ivar_set daemon "$coproc_id"
-        echo "$coproc_id"
+    socketPath="$(_ivar socketPath)"
+    pidFile="${socketPath}.pid"
+    pluginDir="$(_ivar pluginDir)"
+    # Use variables to avoid compiler breaking hyphenated option names
+    daemonCmd="trashtalk-daemon"
+    socketOpt="--socket"
+    pluginOpt="--plugin-dir"
+    debugOpt="--debug"
+
+    # Check if daemon is already running
+    if [[ -S "$socketPath" ]] && [[ -f "$pidFile" ]]; then
+      pid=$(cat "$pidFile" 2>/dev/null)
+      if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+        # Daemon is running
         return 0
       fi
     fi
 
-    # Also check ivar (in case file was cleaned up)
-    coproc_id="$(_ivar daemon)"
-    if [[ -n "$coproc_id" ]] && @ "$coproc_id" isRunning >/dev/null 2>&1; then
-      echo "$coproc_id" > "$pidfile"
-      echo "$coproc_id"
-      return 0
-    fi
+    # Clean up stale files
+    rm -f "$socketPath" "$pidFile" 2>/dev/null
 
-    # Start trashtalk-daemon
-    pluginDir="$(_ivar pluginDir)"
-    daemonCmd="trashtalk-daemon --plugin-dir $pluginDir"
-
+    # Start daemon in background (disown to prevent subshell from waiting)
     if [[ "$(_ivar debug)" == "true" ]]; then
-      daemonCmd="$daemonCmd --debug"
+      "$daemonCmd" "$socketOpt" "$socketPath" "$pluginOpt" "$pluginDir" "$debugOpt" </dev/null >/dev/null 2>&1 &
+      disown
+    else
+      "$daemonCmd" "$socketOpt" "$socketPath" "$pluginOpt" "$pluginDir" </dev/null >/dev/null 2>&1 &
+      disown
     fi
 
-    coproc_id=$(@ Coproc for: "$daemonCmd")
-    @ "$coproc_id" start >/dev/null
+    # Wait for socket to appear (max 2 seconds)
+    local i
+    for i in 1 2 3 4 5 6 7 8 9 10; do
+      if [[ -S "$socketPath" ]]; then
+        _ivar_set status "running"
+        return 0
+      fi
+      sleep 0.2
+    done
 
-    # Give it a moment to initialize
-    sleep 0.02
-
-    # Store in file for cross-subshell access
-    echo "$coproc_id" > "$pidfile"
-    _ivar_set daemon "$coproc_id"
-    _ivar_set status "running"
-
-    if [[ "$(_ivar debug)" == "true" ]]; then
-      echo "[NativeDaemon] Started trashtalk-daemon (pid=$(@ "$coproc_id" pid))" >&2
-    fi
-
-    echo "$coproc_id"
-    return 0
+    echo "[NativeDaemon] Error: daemon failed to start" >&2
+    return 1
   ]
 
-  # Dispatch a method call to a native class
+  # Dispatch a method call to a native class via Unix socket
   # Returns: result string, or empty if fallback needed
   # Exit code: 0 = success, 1 = error, 200 = no native plugin (fallback to Bash)
   rawMethod: dispatch: className instance: instanceId selector: selector args: argsJson [
     local className="$1" instanceId="$2" selector="$3" argsJson="$4"
-    local coproc_id request response exitCode result instanceJson nativeSelector
+    local socketPath request response exitCode result instanceJson nativeSelector
 
-    # Ensure daemon is running
-    coproc_id=$(@ "$_RECEIVER" _ensureDaemon)
-    if [[ -z "$coproc_id" ]]; then
-      echo "[NativeDaemon] Error: failed to start daemon" >&2
-      return 1
+    # Ensure daemon is running (call function directly to avoid send() overhead)
+    __NativeDaemon___ensureDaemon
+    if [[ $? -ne 0 ]]; then
+      return 200
     fi
+
+    socketPath="$(_ivar socketPath)"
 
     # Default args to empty array
     if [[ -z "$argsJson" ]]; then
@@ -141,11 +144,9 @@ NativeDaemon subclass: Object
       echo "[NativeDaemon] Request: $request" >&2
     fi
 
-    # Send request to daemon
-    @ "$coproc_id" writeLine: "$request"
-
-    # Read response
-    response=$(@ "$coproc_id" readLine)
+    # Send request to daemon via Unix socket
+    # nc -U connects to Unix socket, -w 30 sets 30 second timeout
+    response=$(echo "$request" | nc -U "$socketPath" 2>/dev/null)
 
     if [[ -z "$response" ]]; then
       echo "[NativeDaemon] Error: no response from daemon" >&2
@@ -256,92 +257,52 @@ NativeDaemon subclass: Object
 
   # Get daemon PID
   rawMethod: pid [
-    local coproc_id pidfile="/tmp/trashtalk-daemon.coproc"
+    local socketPath pidFile
+    socketPath="$(_ivar socketPath)"
+    pidFile="${socketPath}.pid"
 
-    # Check file-based state first
-    if [[ -f "$pidfile" ]]; then
-      coproc_id=$(cat "$pidfile")
-      if [[ -n "$coproc_id" ]]; then
-        @ "$coproc_id" pid
-        return
-      fi
-    fi
-
-    # Fallback to ivar
-    coproc_id="$(_ivar daemon)"
-    if [[ -n "$coproc_id" ]]; then
-      @ "$coproc_id" pid
+    if [[ -f "$pidFile" ]]; then
+      cat "$pidFile"
     fi
   ]
 
   # Check if daemon is running
   rawMethod: isRunning [
-    local coproc_id pidfile="/tmp/trashtalk-daemon.coproc"
+    local socketPath pidFile pid
+    socketPath="$(_ivar socketPath)"
+    pidFile="${socketPath}.pid"
 
-    # Check file-based state first
-    if [[ -f "$pidfile" ]]; then
-      coproc_id=$(cat "$pidfile")
-      if [[ -n "$coproc_id" ]] && @ "$coproc_id" isRunning >/dev/null 2>&1; then
+    if [[ -S "$socketPath" ]] && [[ -f "$pidFile" ]]; then
+      pid=$(cat "$pidFile" 2>/dev/null)
+      if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
         echo "true"
         return 0
       fi
     fi
-
-    # Fallback to ivar
-    coproc_id="$(_ivar daemon)"
-    if [[ -n "$coproc_id" ]]; then
-      @ "$coproc_id" isRunning
-    else
-      echo "false"
-    fi
+    echo "false"
+    return 1
   ]
 
   # Stop the daemon
   rawMethod: stop [
-    local coproc_id pidfile="/tmp/trashtalk-daemon.coproc"
+    local socketPath pidFile pid
+    socketPath="$(_ivar socketPath)"
+    pidFile="${socketPath}.pid"
 
-    # Check file-based state
-    if [[ -f "$pidfile" ]]; then
-      coproc_id=$(cat "$pidfile")
-      if [[ -n "$coproc_id" ]]; then
-        @ "$coproc_id" terminate 2>/dev/null || true
+    if [[ -f "$pidFile" ]]; then
+      pid=$(cat "$pidFile" 2>/dev/null)
+      if [[ -n "$pid" ]]; then
+        kill "$pid" 2>/dev/null || true
       fi
-      rm -f "$pidfile"
     fi
 
-    # Also check ivar
-    coproc_id="$(_ivar daemon)"
-    if [[ -n "$coproc_id" ]]; then
-      @ "$coproc_id" terminate 2>/dev/null || true
-    fi
-
-    _ivar_set daemon ""
+    rm -f "$socketPath" "$pidFile" 2>/dev/null
     _ivar_set status "stopped"
   ]
 
   # Alias for backwards compatibility
   rawMethod: stopAll [
     @ "$_RECEIVER" stop
-  ]
-
-  # Alias for backwards compatibility - returns daemon status
-  rawMethod: listServers [
-    local coproc_id pidfile="/tmp/trashtalk-daemon.coproc"
-
-    # Check file-based state first
-    if [[ -f "$pidfile" ]]; then
-      coproc_id=$(cat "$pidfile")
-      if [[ -n "$coproc_id" ]] && @ "$coproc_id" isRunning >/dev/null 2>&1; then
-        echo "trashtalk-daemon"
-        return 0
-      fi
-    fi
-
-    # Fallback to ivar
-    coproc_id="$(_ivar daemon)"
-    if [[ -n "$coproc_id" ]] && @ "$coproc_id" isRunning >/dev/null 2>&1; then
-      echo "trashtalk-daemon"
-    fi
   ]
 
   # Get daemon status
@@ -357,5 +318,4 @@ NativeDaemon subclass: Object
   # Private setters
   method: _setStatus: s [ status := s ]
   method: _setPluginDir: d [ pluginDir := d ]
-  method: _setDaemon: d [ daemon := d ]
 
