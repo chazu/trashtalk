@@ -1,16 +1,34 @@
 package: Yutani
 
+# Yutani Session - manages connection to Yutani UI server
+# Refactored to use GrpcClient for connection pooling and native Procyon support
+
 Session subclass: Object
-  instanceVars: sessionId:'' host:'localhost:7755' eventCoproc:''
+  instanceVars: sessionId:'' host:'localhost:7755' eventCoproc:'' grpcClient:''
+
+  # ============================================================================
+  # Factory Methods
+  # ============================================================================
 
   rawClassMethod: connectTo: host [
     local host="$1"
-    local session response sid
+    local session client response sid
+
+    # Create GrpcClient with pooling enabled
+    client=$(@ GrpcClient connectTo: "$host")
+    @ "$client" enablePooling
+
+    # Create session instance
     session=$(@ Yutani::Session new)
-    @ "$session" setHost: "$host"
-    response=$(@ "$session" createSession)
+    @ "$session" _setHost: "$host"
+    @ "$session" _setGrpcClient: "$client"
+
+    # Create session on server
+    response=$(@ "$client" call: 'industries.loosh.yutani.v1.SessionService/CreateSession' \
+      with: '{"client_name": "trashtalk"}')
     sid=$(echo "$response" | jq -r '.sessionId.id')
-    @ "$session" setSessionId: "$sid"
+    @ "$session" _setSessionId: "$sid"
+
     echo "$session"
   ]
 
@@ -18,287 +36,274 @@ Session subclass: Object
     @ Yutani::Session connectTo: 'localhost:7755'
   ]
 
-  method: setHost: h [
-    host := h
-  ]
+  # ============================================================================
+  # Accessors
+  # ============================================================================
 
-  method: setSessionId: sid [
-    sessionId := sid
-  ]
+  method: getSessionId [ ^ sessionId ]
+  method: getHost [ ^ host ]
+  method: getGrpcClient [ ^ grpcClient ]
 
-  method: getSessionId [
-    ^ sessionId
-  ]
-
-  method: getHost [
-    ^ host
-  ]
+  # ============================================================================
+  # Session Lifecycle
+  # ============================================================================
 
   method: disconnect [
     @ self destroySession.
     @ self stopEventStream
   ]
 
-  rawMethod: createSession [
-    local host
-    host="$(_ivar host)"
-    grpcurl -plaintext -d '{"client_name": "trashtalk"}' "$host" \
-      "industries.loosh.yutani.v1.SessionService/CreateSession" 2>&1
-  ]
-
   rawMethod: destroySession [
-    local sid host json
+    local sid client json
     sid="$(_ivar sessionId)"
-    host="$(_ivar host)"
+    client="$(_ivar grpcClient)"
     json=$(jo session_id="$(jo id="$sid")")
-    grpcurl -plaintext -d "$json" "$host" \
-      "industries.loosh.yutani.v1.SessionService/DestroySession" 2>&1
+    @ "$client" call: 'industries.loosh.yutani.v1.SessionService/DestroySession' with: "$json"
   ]
 
   rawMethod: ping [
-    local ts host json
+    local ts client json
     ts=$(date +%s)
-    host="$(_ivar host)"
+    client="$(_ivar grpcClient)"
     json=$(jo timestamp="$ts")
-    grpcurl -plaintext -d "$json" "$host" \
-      "industries.loosh.yutani.v1.SessionService/Ping" 2>&1
+    @ "$client" call: 'industries.loosh.yutani.v1.SessionService/Ping' with: "$json"
   ]
 
   rawMethod: serverInfo [
-    local host
-    host="$(_ivar host)"
-    grpcurl -plaintext -d '{}' "$host" \
-      "industries.loosh.yutani.v1.SessionService/GetServerInfo" 2>&1
+    local client
+    client="$(_ivar grpcClient)"
+    @ "$client" call: 'industries.loosh.yutani.v1.SessionService/GetServerInfo' with: '{}'
   ]
 
+  # ============================================================================
+  # Screen Operations
+  # ============================================================================
+
   rawMethod: screenSize [
-    local sid host json
+    local sid client json
     sid="$(_ivar sessionId)"
-    host="$(_ivar host)"
+    client="$(_ivar grpcClient)"
     json=$(jo session_id="$(jo id="$sid")")
-    grpcurl -plaintext -d "$json" "$host" \
-      "industries.loosh.yutani.v1.ScreenService/GetSize" 2>&1
+    @ "$client" call: 'industries.loosh.yutani.v1.ScreenService/GetSize' with: "$json"
   ]
 
   rawMethod: clearScreen [
-    local sid host json
+    local sid client json
     sid="$(_ivar sessionId)"
-    host="$(_ivar host)"
+    client="$(_ivar grpcClient)"
     json=$(jo session_id="$(jo id="$sid")")
-    grpcurl -plaintext -d "$json" "$host" \
-      "industries.loosh.yutani.v1.ScreenService/Clear" 2>&1
+    @ "$client" call: 'industries.loosh.yutani.v1.ScreenService/Clear' with: "$json"
   ]
 
   rawMethod: sync [
-    local sid host json
+    local sid client json
     sid="$(_ivar sessionId)"
-    host="$(_ivar host)"
+    client="$(_ivar grpcClient)"
     json=$(jo session_id="$(jo id="$sid")")
-    grpcurl -plaintext -d "$json" "$host" \
-      "industries.loosh.yutani.v1.ScreenService/Sync" 2>&1
+    @ "$client" call: 'industries.loosh.yutani.v1.ScreenService/Sync' with: "$json"
   ]
 
+  # ============================================================================
+  # Widget Creation
+  # ============================================================================
+
   rawMethod: createList: title [
-    local sid host json response title="$1"
+    local sid client json response title="$1"
     sid="$(_ivar sessionId)"
-    host="$(_ivar host)"
+    client="$(_ivar grpcClient)"
     json=$(jo session_id="$(jo id="$sid")" type="WIDGET_LIST" properties="$(jo border=true title="$title")")
-    response=$(grpcurl -plaintext -d "$json" "$host" \
-      "industries.loosh.yutani.v1.WidgetService/CreateWidget" 2>&1)
+    response=$(@ "$client" call: 'industries.loosh.yutani.v1.WidgetService/CreateWidget' with: "$json")
     echo "$response" | jq -r '.widgetId.id'
   ]
 
   rawMethod: createTextView: title [
-    local sid host json response title="$1"
+    local sid client json response title="$1"
     sid="$(_ivar sessionId)"
-    host="$(_ivar host)"
+    client="$(_ivar grpcClient)"
     json=$(jo session_id="$(jo id="$sid")" type="WIDGET_TEXT_VIEW" \
       properties="$(jo border=true title="$title" \
         text_view="$(jo word_wrap=true dynamic_colors=true)")")
-    response=$(grpcurl -plaintext -d "$json" "$host" \
-      "industries.loosh.yutani.v1.WidgetService/CreateWidget" 2>&1)
+    response=$(@ "$client" call: 'industries.loosh.yutani.v1.WidgetService/CreateWidget' with: "$json")
     echo "$response" | jq -r '.widgetId.id'
   ]
 
   rawMethod: createTextViewWithText: title text: text [
-    local sid host json response title="$1" text="$2"
+    local sid client json response title="$1" text="$2"
     sid="$(_ivar sessionId)"
-    host="$(_ivar host)"
+    client="$(_ivar grpcClient)"
     json=$(jo session_id="$(jo id="$sid")" type="WIDGET_TEXT_VIEW" \
       properties="$(jo border=true title="$title" \
         text_view="$(jo -- -s text="$text" word_wrap=true dynamic_colors=true)")")
-    response=$(grpcurl -plaintext -d "$json" "$host" \
-      "industries.loosh.yutani.v1.WidgetService/CreateWidget" 2>&1)
+    response=$(@ "$client" call: 'industries.loosh.yutani.v1.WidgetService/CreateWidget' with: "$json")
     echo "$response" | jq -r '.widgetId.id'
-  ]
-
-  rawMethod: setText: text on: widgetId [
-    local sid host json text="$1" widgetId="$2"
-    sid="$(_ivar sessionId)"
-    host="$(_ivar host)"
-    json=$(jo session_id="$(jo id="$sid")" widget_id="$(jo id="$widgetId")" \
-      properties="$(jo text_view="$(jo -- -s text="$text")")")
-    grpcurl -plaintext -d "$json" "$host" \
-      "industries.loosh.yutani.v1.WidgetService/SetProperties" 2>&1
-  ]
-
-  rawMethod: addItem: mainText to: listId [
-    local sid host json mainText="$1" listId="$2"
-    sid="$(_ivar sessionId)"
-    host="$(_ivar host)"
-    json=$(jo session_id="$(jo id="$sid")" widget_id="$(jo id="$listId")" main_text="$mainText")
-    grpcurl -plaintext -d "$json" "$host" \
-      "industries.loosh.yutani.v1.ListService/AddItem" 2>&1
-  ]
-
-  rawMethod: addItem: mainText secondary: secondaryText to: listId [
-    local sid host json mainText="$1" secondaryText="$2" listId="$3"
-    sid="$(_ivar sessionId)"
-    host="$(_ivar host)"
-    json=$(jo session_id="$(jo id="$sid")" widget_id="$(jo id="$listId")" \
-      main_text="$mainText" secondary_text="$secondaryText")
-    grpcurl -plaintext -d "$json" "$host" \
-      "industries.loosh.yutani.v1.ListService/AddItem" 2>&1
-  ]
-
-  rawMethod: clearList: listId [
-    local sid host json listId="$1"
-    sid="$(_ivar sessionId)"
-    host="$(_ivar host)"
-    json=$(jo session_id="$(jo id="$sid")" widget_id="$(jo id="$listId")")
-    grpcurl -plaintext -d "$json" "$host" \
-      "industries.loosh.yutani.v1.ListService/Clear" 2>&1
-  ]
-
-  rawMethod: setRoot: widgetId [
-    local sid host json widgetId="$1"
-    sid="$(_ivar sessionId)"
-    host="$(_ivar host)"
-    json=$(jo session_id="$(jo id="$sid")" widget_id="$(jo id="$widgetId")")
-    grpcurl -plaintext -d "$json" "$host" \
-      "industries.loosh.yutani.v1.WidgetService/SetRoot" 2>&1
-  ]
-
-  rawMethod: listWidgets [
-    local sid host json
-    sid="$(_ivar sessionId)"
-    host="$(_ivar host)"
-    json=$(jo session_id="$(jo id="$sid")")
-    grpcurl -plaintext -d "$json" "$host" \
-      "industries.loosh.yutani.v1.WidgetService/ListWidgets" 2>&1
-  ]
-
-  rawMethod: deleteWidget: widgetId [
-    local sid host json widgetId="$1"
-    sid="$(_ivar sessionId)"
-    host="$(_ivar host)"
-    json=$(jo session_id="$(jo id="$sid")" widget_id="$(jo id="$widgetId")")
-    grpcurl -plaintext -d "$json" "$host" \
-      "industries.loosh.yutani.v1.WidgetService/DeleteWidget" 2>&1
-  ]
-
-  rawMethod: createHorizontalLayout [
-    local sid host json response
-    sid="$(_ivar sessionId)"
-    host="$(_ivar host)"
-    # FLEX_COLUMN = items side by side (horizontal)
-    json=$(jo session_id="$(jo id="$sid")" type="WIDGET_FLEX" \
-      properties="$(jo flex="$(jo direction="FLEX_COLUMN")")")
-    response=$(grpcurl -plaintext -d "$json" "$host" \
-      "industries.loosh.yutani.v1.WidgetService/CreateWidget" 2>&1)
-    echo "$response" | jq -r '.widgetId.id'
-  ]
-
-  rawMethod: createVerticalLayout [
-    local sid host json response
-    sid="$(_ivar sessionId)"
-    host="$(_ivar host)"
-    # FLEX_ROW = items stacked vertically (top to bottom)
-    json=$(jo session_id="$(jo id="$sid")" type="WIDGET_FLEX" \
-      properties="$(jo flex="$(jo direction="FLEX_ROW")")")
-    response=$(grpcurl -plaintext -d "$json" "$host" \
-      "industries.loosh.yutani.v1.WidgetService/CreateWidget" 2>&1)
-    echo "$response" | jq -r '.widgetId.id'
-  ]
-
-  rawMethod: addChild: childId to: layoutId [
-    local sid host json childId="$1" layoutId="$2"
-    sid="$(_ivar sessionId)"
-    host="$(_ivar host)"
-    json=$(jo session_id="$(jo id="$sid")" flex_id="$(jo id="$layoutId")" item_id="$(jo id="$childId")" proportion=1 fixed_size=0 focus=false)
-    grpcurl -plaintext -d "$json" "$host" \
-      "industries.loosh.yutani.v1.LayoutService/FlexAddItem" 2>&1
-  ]
-
-  rawMethod: addChild: childId to: layoutId fixedSize: size [
-    local sid host json childId="$1" layoutId="$2" size="$3"
-    sid="$(_ivar sessionId)"
-    host="$(_ivar host)"
-    json=$(jo session_id="$(jo id="$sid")" flex_id="$(jo id="$layoutId")" item_id="$(jo id="$childId")" proportion=0 fixed_size="$size" focus=false)
-    grpcurl -plaintext -d "$json" "$host" \
-      "industries.loosh.yutani.v1.LayoutService/FlexAddItem" 2>&1
-  ]
-
-  rawMethod: addChild: childId to: layoutId fixedSize: size focus: shouldFocus [
-    local sid host json childId="$1" layoutId="$2" size="$3" shouldFocus="$4"
-    sid="$(_ivar sessionId)"
-    host="$(_ivar host)"
-    json=$(jo session_id="$(jo id="$sid")" flex_id="$(jo id="$layoutId")" item_id="$(jo id="$childId")" proportion=0 fixed_size="$size" focus="$shouldFocus")
-    grpcurl -plaintext -d "$json" "$host" \
-      "industries.loosh.yutani.v1.LayoutService/FlexAddItem" 2>&1
   ]
 
   rawMethod: createInputField: label [
-    local sid host json response label="$1"
+    local sid client json response label="$1"
     sid="$(_ivar sessionId)"
-    host="$(_ivar host)"
+    client="$(_ivar grpcClient)"
     json=$(jo session_id="$(jo id="$sid")" type="WIDGET_INPUT_FIELD" \
       properties="$(jo border=true input_field="$(jo -- -s label="$label" -s placeholder="" -s text="")")")
-    response=$(grpcurl -plaintext -d "$json" "$host" \
-      "industries.loosh.yutani.v1.WidgetService/CreateWidget" 2>&1)
+    response=$(@ "$client" call: 'industries.loosh.yutani.v1.WidgetService/CreateWidget' with: "$json")
     echo "$response" | jq -r '.widgetId.id'
   ]
 
   rawMethod: createInputFieldWithPlaceholder: label placeholder: placeholder [
-    local sid host json response label="$1" placeholder="$2"
+    local sid client json response label="$1" placeholder="$2"
     sid="$(_ivar sessionId)"
-    host="$(_ivar host)"
+    client="$(_ivar grpcClient)"
     json=$(jo session_id="$(jo id="$sid")" type="WIDGET_INPUT_FIELD" \
       properties="$(jo border=true input_field="$(jo -- -s label="$label" -s placeholder="$placeholder" -s text="")")")
-    response=$(grpcurl -plaintext -d "$json" "$host" \
-      "industries.loosh.yutani.v1.WidgetService/CreateWidget" 2>&1)
+    response=$(@ "$client" call: 'industries.loosh.yutani.v1.WidgetService/CreateWidget' with: "$json")
     echo "$response" | jq -r '.widgetId.id'
   ]
 
-  rawMethod: setInputText: text on: widgetId [
-    local sid host json text="$1" widgetId="$2"
+  rawMethod: createHorizontalLayout [
+    local sid client json response
     sid="$(_ivar sessionId)"
-    host="$(_ivar host)"
+    client="$(_ivar grpcClient)"
+    # FLEX_COLUMN = items side by side (horizontal)
+    json=$(jo session_id="$(jo id="$sid")" type="WIDGET_FLEX" \
+      properties="$(jo flex="$(jo direction="FLEX_COLUMN")")")
+    response=$(@ "$client" call: 'industries.loosh.yutani.v1.WidgetService/CreateWidget' with: "$json")
+    echo "$response" | jq -r '.widgetId.id'
+  ]
+
+  rawMethod: createVerticalLayout [
+    local sid client json response
+    sid="$(_ivar sessionId)"
+    client="$(_ivar grpcClient)"
+    # FLEX_ROW = items stacked vertically (top to bottom)
+    json=$(jo session_id="$(jo id="$sid")" type="WIDGET_FLEX" \
+      properties="$(jo flex="$(jo direction="FLEX_ROW")")")
+    response=$(@ "$client" call: 'industries.loosh.yutani.v1.WidgetService/CreateWidget' with: "$json")
+    echo "$response" | jq -r '.widgetId.id'
+  ]
+
+  # ============================================================================
+  # Widget Operations
+  # ============================================================================
+
+  rawMethod: setText: text on: widgetId [
+    local sid client json text="$1" widgetId="$2"
+    sid="$(_ivar sessionId)"
+    client="$(_ivar grpcClient)"
+    json=$(jo session_id="$(jo id="$sid")" widget_id="$(jo id="$widgetId")" \
+      properties="$(jo text_view="$(jo -- -s text="$text")")")
+    @ "$client" call: 'industries.loosh.yutani.v1.WidgetService/SetProperties' with: "$json"
+  ]
+
+  rawMethod: setInputText: text on: widgetId [
+    local sid client json text="$1" widgetId="$2"
+    sid="$(_ivar sessionId)"
+    client="$(_ivar grpcClient)"
     json=$(jo session_id="$(jo id="$sid")" widget_id="$(jo id="$widgetId")" \
       properties="$(jo input_field="$(jo -- -s text="$text")")")
-    grpcurl -plaintext -d "$json" "$host" \
-      "industries.loosh.yutani.v1.WidgetService/SetProperties" 2>&1
+    @ "$client" call: 'industries.loosh.yutani.v1.WidgetService/SetProperties' with: "$json"
   ]
 
   rawMethod: getInputText: widgetId [
-    local sid host json response widgetId="$1"
+    local sid client json response widgetId="$1"
     sid="$(_ivar sessionId)"
-    host="$(_ivar host)"
+    client="$(_ivar grpcClient)"
     json=$(jo session_id="$(jo id="$sid")" widget_id="$(jo id="$widgetId")")
-    response=$(grpcurl -plaintext -d "$json" "$host" \
-      "industries.loosh.yutani.v1.WidgetService/GetProperties" 2>&1)
+    response=$(@ "$client" call: 'industries.loosh.yutani.v1.WidgetService/GetProperties' with: "$json")
     # Try both camelCase and snake_case field names
     echo "$response" | jq -r '.properties.inputField.text // .properties.input_field.text // ""'
   ]
 
   rawMethod: focusWidget: widgetId [
-    local sid host json widgetId="$1"
+    local sid client json widgetId="$1"
     sid="$(_ivar sessionId)"
-    host="$(_ivar host)"
+    client="$(_ivar grpcClient)"
     json=$(jo session_id="$(jo id="$sid")" widget_id="$(jo id="$widgetId")")
-    grpcurl -plaintext -d "$json" "$host" \
-      "industries.loosh.yutani.v1.WidgetService/SetFocus" 2>&1
+    @ "$client" call: 'industries.loosh.yutani.v1.WidgetService/SetFocus' with: "$json"
   ]
+
+  rawMethod: setRoot: widgetId [
+    local sid client json widgetId="$1"
+    sid="$(_ivar sessionId)"
+    client="$(_ivar grpcClient)"
+    json=$(jo session_id="$(jo id="$sid")" widget_id="$(jo id="$widgetId")")
+    @ "$client" call: 'industries.loosh.yutani.v1.WidgetService/SetRoot' with: "$json"
+  ]
+
+  rawMethod: listWidgets [
+    local sid client json
+    sid="$(_ivar sessionId)"
+    client="$(_ivar grpcClient)"
+    json=$(jo session_id="$(jo id="$sid")")
+    @ "$client" call: 'industries.loosh.yutani.v1.WidgetService/ListWidgets' with: "$json"
+  ]
+
+  rawMethod: deleteWidget: widgetId [
+    local sid client json widgetId="$1"
+    sid="$(_ivar sessionId)"
+    client="$(_ivar grpcClient)"
+    json=$(jo session_id="$(jo id="$sid")" widget_id="$(jo id="$widgetId")")
+    @ "$client" call: 'industries.loosh.yutani.v1.WidgetService/DeleteWidget' with: "$json"
+  ]
+
+  # ============================================================================
+  # List Operations
+  # ============================================================================
+
+  rawMethod: addItem: mainText to: listId [
+    local sid client json mainText="$1" listId="$2"
+    sid="$(_ivar sessionId)"
+    client="$(_ivar grpcClient)"
+    json=$(jo session_id="$(jo id="$sid")" widget_id="$(jo id="$listId")" main_text="$mainText")
+    @ "$client" call: 'industries.loosh.yutani.v1.ListService/AddItem' with: "$json"
+  ]
+
+  rawMethod: addItem: mainText secondary: secondaryText to: listId [
+    local sid client json mainText="$1" secondaryText="$2" listId="$3"
+    sid="$(_ivar sessionId)"
+    client="$(_ivar grpcClient)"
+    json=$(jo session_id="$(jo id="$sid")" widget_id="$(jo id="$listId")" \
+      main_text="$mainText" secondary_text="$secondaryText")
+    @ "$client" call: 'industries.loosh.yutani.v1.ListService/AddItem' with: "$json"
+  ]
+
+  rawMethod: clearList: listId [
+    local sid client json listId="$1"
+    sid="$(_ivar sessionId)"
+    client="$(_ivar grpcClient)"
+    json=$(jo session_id="$(jo id="$sid")" widget_id="$(jo id="$listId")")
+    @ "$client" call: 'industries.loosh.yutani.v1.ListService/Clear' with: "$json"
+  ]
+
+  # ============================================================================
+  # Layout Operations
+  # ============================================================================
+
+  rawMethod: addChild: childId to: layoutId [
+    local sid client json childId="$1" layoutId="$2"
+    sid="$(_ivar sessionId)"
+    client="$(_ivar grpcClient)"
+    json=$(jo session_id="$(jo id="$sid")" flex_id="$(jo id="$layoutId")" item_id="$(jo id="$childId")" proportion=1 fixed_size=0 focus=false)
+    @ "$client" call: 'industries.loosh.yutani.v1.LayoutService/FlexAddItem' with: "$json"
+  ]
+
+  rawMethod: addChild: childId to: layoutId fixedSize: size [
+    local sid client json childId="$1" layoutId="$2" size="$3"
+    sid="$(_ivar sessionId)"
+    client="$(_ivar grpcClient)"
+    json=$(jo session_id="$(jo id="$sid")" flex_id="$(jo id="$layoutId")" item_id="$(jo id="$childId")" proportion=0 fixed_size="$size" focus=false)
+    @ "$client" call: 'industries.loosh.yutani.v1.LayoutService/FlexAddItem' with: "$json"
+  ]
+
+  rawMethod: addChild: childId to: layoutId fixedSize: size focus: shouldFocus [
+    local sid client json childId="$1" layoutId="$2" size="$3" shouldFocus="$4"
+    sid="$(_ivar sessionId)"
+    client="$(_ivar grpcClient)"
+    json=$(jo session_id="$(jo id="$sid")" flex_id="$(jo id="$layoutId")" item_id="$(jo id="$childId")" proportion=0 fixed_size="$size" focus="$shouldFocus")
+    @ "$client" call: 'industries.loosh.yutani.v1.LayoutService/FlexAddItem' with: "$json"
+  ]
+
+  # ============================================================================
+  # Event Streaming (still uses Coproc for now - streaming refactor deferred)
+  # ============================================================================
 
   rawMethod: startEventStream [
     local sid filter_json host evt_coproc cmd
@@ -361,3 +366,12 @@ Session subclass: Object
     line=$(@ "$evt_coproc" readLine)
     echo "$line"
   ]
+
+  # ============================================================================
+  # Private Setters
+  # ============================================================================
+
+  method: _setHost: v [ host := v ]
+  method: _setSessionId: v [ sessionId := v ]
+  method: _setGrpcClient: v [ grpcClient := v ]
+

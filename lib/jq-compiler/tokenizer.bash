@@ -263,9 +263,17 @@ tokenize() {
             # ------------------------------------------------------------------
             '<')
                 if [[ "$next" == "<" ]]; then
-                    add_token "HEREDOC" "<<" "$line" "$col"
-                    ((i += 2))
-                    ((col += 2))
+                    # Check for here-string (<<<)
+                    local next2="${input:$((i+2)):1}"
+                    if [[ "$next2" == "<" ]]; then
+                        add_token "HERESTRING" "<<<" "$line" "$col"
+                        ((i += 3))
+                        ((col += 3))
+                    else
+                        add_token "HEREDOC" "<<" "$line" "$col"
+                        ((i += 2))
+                        ((col += 2))
+                    fi
                 elif [[ "$next" == "=" ]]; then
                     add_token "LE" "<=" "$line" "$col"
                     ((i += 2))

@@ -2156,6 +2156,7 @@ def transformMethodBody($className; $isRaw):
         elif $tok.type == "GT" then " >"
         elif $tok.type == "LT" then " <"
         elif $tok.type == "HEREDOC" then "<<"
+        elif $tok.type == "HERESTRING" then "<<< "
         elif $tok.type == "MATCH" then " =~ "
         elif $tok.type == "EQ" then " == "
         elif $tok.type == "NE" then " != "
@@ -2196,6 +2197,10 @@ def transformMethodBody($className; $isRaw):
     (if $raw then
       # Raw mode: minimal normalization
       gsub("; ;"; ";;") |              # Fix double semicolon
+      gsub("(?<a>[a-zA-Z_][a-zA-Z0-9_]*) \\[(?<b>[\"$])"; "\(.a)[\(.b)") |  # Fix array access: VAR ["$key"] → VAR["$key"]
+      gsub(" \\]= "; "]=") |           # Fix array assignment: ]= → ]=
+      gsub("\" \\*"; "\"*") |          # Fix pattern glob: "${prefix}" * → "${prefix}"*
+      gsub("} \\*"; "}*") |            # Fix pattern glob: ${prefix} * → ${prefix}*
       gsub("(?<a>[a-zA-Z0-9]) \\](?<b>[+*?$])"; "\(.a)]\(.b)") |  # Remove space before ] when followed by quantifier
       gsub("(?<a>[a-zA-Z0-9]) \\](?<b> \\]\\])"; "\(.a)]\(.b)") |  # Remove space before ] when followed by ]]
       gsub(" \\)"; ")") |              # Remove space before )
