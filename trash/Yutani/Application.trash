@@ -184,26 +184,21 @@ Application subclass: Object
   ]
 
   # Set root widget
-  rawMethod: setRoot: widget [
-    local widget="$1"
-    _ivar_set rootWidget "$widget"
-    @ "$widget" setAsRoot
+  method: setRoot: widget [
+    rootWidget := widget
+    @ widget setAsRoot
   ]
 
   # === Event Handler Registration ===
 
   # Register global key handler
-  rawMethod: onKeyDo: handler [
-    local handler="$1" dispatcher
-    dispatcher="$(_ivar dispatcher)"
-    @ "$dispatcher" onKeyDo: "$handler"
+  method: onKeyDo: handler [
+    @ dispatcher onKeyDo: handler
   ]
 
   # Register global mouse handler
-  rawMethod: onMouseDo: handler [
-    local handler="$1" dispatcher
-    dispatcher="$(_ivar dispatcher)"
-    @ "$dispatcher" onMouseDo: "$handler"
+  method: onMouseDo: handler [
+    @ dispatcher onMouseDo: handler
   ]
 
   # Accessors

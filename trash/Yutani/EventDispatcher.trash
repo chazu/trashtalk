@@ -44,9 +44,8 @@ EventDispatcher subclass: Object
   # ============================================================================
 
   # Register a global key handler
-  rawMethod: onKeyDo: handler [
-    local handler="$1"
-    _ivar_set keyHandler "$handler"
+  method: onKeyDo: handler [
+    keyHandler := handler
   ]
 
   # Register a global mouse handler

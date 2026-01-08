@@ -199,6 +199,93 @@ Or use the compiler directly:
 lib/jq-compiler/driver.bash compile trash/MyClass.trash > trash/.compiled/MyClass
 ```
 
+## Profiling
+
+Trashtalk includes a built-in profiling system to help identify performance bottlenecks and optimize method dispatch.
+
+### Enabling Profiling
+
+Set `TRASH_PROFILE=1` to enable profiling output:
+
+```bash
+# Profile to stderr
+TRASH_PROFILE=1 @ Counter new
+
+# Profile to a file
+TRASH_PROFILE=1 TRASH_PROFILE_FILE=profile.log @ MyApp run
+```
+
+### Profile Output Format
+
+Profiling logs entry and exit points with timing:
+
+```
+[1767909948.119] → Counter.new [native]
+[daemon] Counter.new 44ms route=fallback reason=no_plugin
+[1767909948.248] → Counter.new [native→bash]
+[1767909948.295] ← Counter.new [native→bash] 153ms
+```
+
+- `→` marks method entry
+- `←` marks method exit with elapsed time
+- Route types: `native`, `bash`, `native→bash`, `bash:direct`
+
+### Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `TRASH_PROFILE=1` | Enable profiling output |
+| `TRASH_PROFILE_FILE=path` | Write to file instead of stderr |
+| `TRASH_PROFILE_DEPTH=N` | Only log calls up to depth N |
+| `TRASH_PROFILE_MIN_MS=N` | Only log calls taking >= N milliseconds |
+
+### Profile Analyzer
+
+Use `bin/trash-profile-analyze` to generate reports from profile logs:
+
+```bash
+# Generate profile data
+TRASH_PROFILE=1 @ MyApp run 2>profile.log
+
+# Analyze the profile
+bin/trash-profile-analyze profile.log
+```
+
+The analyzer generates a report showing:
+
+- **Dispatch Routing**: Breakdown of native vs bash execution
+- **Slowest Methods**: Top 10 methods by execution time
+- **Most Called Methods**: Top 10 methods by call count
+- **Classes by Call Count**: Which classes are used most
+- **Recommendations**: Suggestions for optimization (e.g., classes that would benefit from native plugins)
+
+Example output:
+
+```
+================================================================================
+                        TRASHTALK PROFILE REPORT
+================================================================================
+
+Run duration: 2.5 seconds
+Total method calls: 150
+Total method time: 2340ms
+
+DISPATCH ROUTING
+----------------
+  [native→bash]          120 calls ( 80%)   avg    15ms   total   1800ms
+  [bash]                  30 calls ( 20%)   avg    18ms   total    540ms
+
+SLOWEST METHODS (top 10)
+------------------------
+     153ms  Dictionary.new                           [native→bash]
+      89ms  Array.map                                [bash]
+      ...
+
+RECOMMENDATIONS
+---------------
+  1. Dictionary has 45 calls but no native support - prioritize for dylib
+```
+
 ## Core Classes
 
 | Class | Description |
