@@ -17,7 +17,7 @@ NativeDaemon subclass: Object
   # Singleton instance stored in global
   # Usage: daemon := @ NativeDaemon instance
   rawClassMethod: instance [
-    if [[ -z "$_NATIVE_DAEMON" ]]; then
+    if [[ -z "${_NATIVE_DAEMON:-}" ]]; then
       _NATIVE_DAEMON=$(_generate_instance_id NativeDaemon)
       _create_instance NativeDaemon "$_NATIVE_DAEMON"
       # Use direct ivar manipulation to avoid private method checks
@@ -32,7 +32,7 @@ NativeDaemon subclass: Object
 
   # Check if daemon is available (singleton exists)
   rawClassMethod: isAvailable [
-    if [[ -n "$_NATIVE_DAEMON" ]]; then
+    if [[ -n "${_NATIVE_DAEMON:-}" ]]; then
       echo "true"
       return 0
     fi
@@ -42,7 +42,7 @@ NativeDaemon subclass: Object
 
   # Reset the singleton (stops the daemon)
   rawClassMethod: reset [
-    if [[ -n "$_NATIVE_DAEMON" ]]; then
+    if [[ -n "${_NATIVE_DAEMON:-}" ]]; then
       @ "$_NATIVE_DAEMON" stop 2>/dev/null || true
     fi
     _NATIVE_DAEMON=""
@@ -181,6 +181,8 @@ NativeDaemon subclass: Object
         local newInstanceJson
         newInstanceJson=$(echo "$updatedJson" | jq -c 'walk(if type == "string" and test("^-?[0-9]+$") then tonumber else . end)')
         _env_set "$instanceId" "$newInstanceJson"
+        # Persist changes to database (new model: all instances stay persistent)
+        _env_persist "$instanceId"
       fi
     fi
 

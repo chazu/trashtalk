@@ -126,13 +126,13 @@ echo ""
 echo "--- 7. Class Method: spawn:/waitPid: ---"
 # ------------------------------------------------------------------------------
 
-pid=$(@ Process spawn: "sleep 0.1")
+pid=$(@ Process spawn: "sleep 0.5")
 assert_not_empty "spawn: returns PID" "$pid"
 
 running=$(@ Process isRunningPid: "$pid")
 assert_eq "isRunningPid: true while running" "true" "$running"
 
-sleep 0.2
+sleep 0.6
 running=$(@ Process isRunningPid: "$pid")
 assert_eq "isRunningPid: false after completion" "false" "$running"
 

@@ -102,6 +102,19 @@ func dispatchInternal(instanceJSON string, selector string, argsJSON string) str
 	return fmt.Sprintf("{\"instance\":%s,\"result\":%q,\"exit_code\":0}", string(updatedJSON), result)
 }
 
+func sendMessage(receiver interface{}, selector string, args ...interface{}) string {
+	receiverStr := fmt.Sprintf("%v", receiver)
+	cmdArgs := []string{receiverStr, selector}
+	for _, arg := range args {
+		cmdArgs = append(cmdArgs, fmt.Sprintf("%v", arg))
+	}
+	home, _ := os.UserHomeDir()
+	dispatchScript := filepath.Join(home, ".trashtalk", "bin", "trash-send")
+	cmd := exec.Command(dispatchScript, cmdArgs...)
+	output, _ := cmd.Output()
+	return strings.TrimSpace(string(output))
+}
+
 // toInt converts interface{} to int for arithmetic in iteration blocks
 func toInt(v interface{}) int {
 	switch x := v.(type) {
@@ -367,7 +380,8 @@ func _jsonObjectIsEmpty(jsonStr string) bool {
 	return len(m) == 0
 }
 
-func _jsonObjectAt(jsonStr string, key string) string {
+func _jsonObjectAt(jsonVal any, key string) string {
+	jsonStr := fmt.Sprintf("%v", jsonVal)
 	var m map[string]interface{}
 	if err := json.Unmarshal([]byte(jsonStr), &m); err != nil {
 		return ""
@@ -378,7 +392,8 @@ func _jsonObjectAt(jsonStr string, key string) string {
 	return ""
 }
 
-func _jsonObjectAtPut(jsonStr string, key string, val interface{}) string {
+func _jsonObjectAtPut(jsonVal any, key string, val any) string {
+	jsonStr := fmt.Sprintf("%v", jsonVal)
 	var m map[string]interface{}
 	json.Unmarshal([]byte(jsonStr), &m)
 	if m == nil {
@@ -389,7 +404,8 @@ func _jsonObjectAtPut(jsonStr string, key string, val interface{}) string {
 	return string(result)
 }
 
-func _jsonObjectHasKey(jsonStr string, key string) bool {
+func _jsonObjectHasKey(jsonVal any, key string) bool {
+	jsonStr := fmt.Sprintf("%v", jsonVal)
 	var m map[string]interface{}
 	if err := json.Unmarshal([]byte(jsonStr), &m); err != nil {
 		return false
@@ -398,7 +414,8 @@ func _jsonObjectHasKey(jsonStr string, key string) bool {
 	return ok
 }
 
-func _jsonObjectRemoveKey(jsonStr string, key string) string {
+func _jsonObjectRemoveKey(jsonVal any, key string) string {
+	jsonStr := fmt.Sprintf("%v", jsonVal)
 	var m map[string]interface{}
 	json.Unmarshal([]byte(jsonStr), &m)
 	delete(m, key)
@@ -457,22 +474,12 @@ func (c *Counter) GetStep() string {
 }
 
 func (c *Counter) SetValue(val string) (string, error) {
-	valInt, err := strconv.Atoi(val)
-	if err != nil {
-		return "", err
-	}
-	_ = valInt
-	c.Value = strconv.Itoa(toInt(valInt) + toInt(0))
+	c.Value = strconv.Itoa(toInt(val) + toInt(0))
 	return "", nil
 }
 
 func (c *Counter) SetStep(val string) (string, error) {
-	valInt, err := strconv.Atoi(val)
-	if err != nil {
-		return "", err
-	}
-	_ = valInt
-	c.Step = strconv.Itoa(toInt(valInt) + toInt(0))
+	c.Step = strconv.Itoa(toInt(val) + toInt(0))
 	return "", nil
 }
 
@@ -491,13 +498,8 @@ func (c *Counter) Decrement() string {
 }
 
 func (c *Counter) IncrementBy(amount string) (string, error) {
-	amountInt, err := strconv.Atoi(amount)
-	if err != nil {
-		return "", err
-	}
-	_ = amountInt
 	var newVal interface{}
-	newVal = toInt(c.Value) + toInt(amountInt)
+	newVal = toInt(c.Value) + toInt(amount)
 	c.Value = strconv.Itoa(toInt(newVal) + toInt(0))
 	return "", nil
 }

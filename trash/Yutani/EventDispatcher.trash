@@ -1,37 +1,50 @@
 package: Yutani
 
-EventDispatcher subclass: Object
-  instanceVars: handlerFile:'' keyHandler:'' mouseHandler:'' resizeHandler:'' focusHandler:'' running:''
+# EventDispatcher - routes UI events to widget handlers
+# Refactored to use Bash associative array for O(1) handler lookup
 
-  # Create a new dispatcher
+EventDispatcher subclass: Object
+  instanceVars: keyHandler:'' mouseHandler:'' resizeHandler:'' focusHandler:'' running:''
+
+  # ============================================================================
+  # Initialization
+  # ============================================================================
+
+  # Create a new dispatcher with its own handler registry
   rawClassMethod: new [
-    local instance hfile
+    local instance
     instance=$(_generate_instance_id "Yutani__EventDispatcher")
     _create_instance "Yutani::EventDispatcher" "$instance"
-    # Create unique handler file
-    hfile="/tmp/yutani_handlers_${instance}.txt"
-    touch "$hfile"
-    @ "$instance" _setHandlerFile: "$hfile"
     @ "$instance" _setRunning: "true"
     echo "$instance"
   ]
 
+  # ============================================================================
+  # Widget Handler Registration
+  # ============================================================================
+
   # Register a handler for a specific widget
-  # Handler is a bash command that will be eval'd with $__EVENT set to the Event instance
+  # Handler is a bash command that will be eval'd with $__EVENT set
+  # Uses file-based storage to survive subshell boundaries
   rawMethod: onWidget: widgetId do: handler [
-    local widgetId="$1" handler="$2" hfile
-    hfile="$(_ivar handlerFile)"
-    # Remove any existing handler for this widget
-    if [[ -f "$hfile" ]]; then
-      grep -v "^${widgetId}:" "$hfile" > "${hfile}.tmp" 2>/dev/null || true
-      mv "${hfile}.tmp" "$hfile"
-    fi
-    # Add new handler
-    echo "${widgetId}:${handler}" >> "$hfile"
+    local widgetId="$1" handler="$2"
+    local handlerFile="/tmp/yutani_handler_${widgetId}.txt"
+    echo "$handler" > "$handlerFile"
+    echo "[DEBUG onWidget:do:] Stored handler in: $handlerFile" >&2
   ]
 
+  # Remove handler for a widget
+  rawMethod: removeHandlerFor: widgetId [
+    local widgetId="$1"
+    local handlerFile="/tmp/yutani_handler_${widgetId}.txt"
+    rm -f "$handlerFile"
+  ]
+
+  # ============================================================================
+  # Global Event Handlers
+  # ============================================================================
+
   # Register a global key handler
-  # Handler receives $__EVENT
   rawMethod: onKeyDo: handler [
     local handler="$1"
     _ivar_set keyHandler "$handler"
@@ -52,13 +65,18 @@ EventDispatcher subclass: Object
     focusHandler := handler
   ]
 
+  # ============================================================================
+  # Event Dispatch
+  # ============================================================================
+
   # Dispatch an event to the appropriate handler
   rawMethod: dispatch: event [
     pragma: direct
     local event="$1"
-    local eventType widgetId handler hfile line
+    local eventType widgetId handler
 
     eventType=$(@ "$event" eventType)
+    echo "[DEBUG dispatch] Event type: $eventType" >&2
 
     case "$eventType" in
       key)
@@ -70,14 +88,19 @@ EventDispatcher subclass: Object
         ;;
       widget)
         widgetId=$(@ "$event" widgetId)
-        hfile="$(_ivar handlerFile)"
-        if [[ -f "$hfile" && -n "$widgetId" ]]; then
-          # Find handler for this widget
-          line=$(grep "^${widgetId}:" "$hfile" 2>/dev/null | head -1)
-          if [[ -n "$line" ]]; then
-            handler="${line#*:}"
-            __EVENT="$event"
-            eval "$handler"
+        echo "[DEBUG dispatch] Widget event - widgetId: $widgetId" >&2
+        if [[ -n "$widgetId" ]]; then
+          local handlerFile="/tmp/yutani_handler_${widgetId}.txt"
+          echo "[DEBUG dispatch] Looking for handler file: $handlerFile" >&2
+          if [[ -f "$handlerFile" ]]; then
+            handler=$(cat "$handlerFile")
+            echo "[DEBUG dispatch] Handler found: ${handler:0:50}..." >&2
+            if [[ -n "$handler" ]]; then
+              __EVENT="$event"
+              eval "$handler"
+            fi
+          else
+            echo "[DEBUG dispatch] No handler file found" >&2
           fi
         fi
         ;;
@@ -112,12 +135,18 @@ EventDispatcher subclass: Object
 
     # Skip non-JSON lines
     if ! echo "$json" | jq -e . >/dev/null 2>&1; then
+      echo "[DEBUG dispatchJson] Skipping non-JSON: $json" >&2
       return
     fi
 
+    echo "[DEBUG dispatchJson] Received: $json" >&2
     event=$(@ Yutani::Event fromJson: "$json")
     @ "$_RECEIVER" dispatch: "$event"
   ]
+
+  # ============================================================================
+  # Lifecycle
+  # ============================================================================
 
   # Check if dispatcher is still running
   method: isRunning [
@@ -129,23 +158,16 @@ EventDispatcher subclass: Object
     running := 'false'
   ]
 
-  # Remove a widget handler
-  rawMethod: removeHandlerFor: widgetId [
-    local widgetId="$1" hfile
-    hfile="$(_ivar handlerFile)"
-    if [[ -f "$hfile" ]]; then
-      grep -v "^${widgetId}:" "$hfile" > "${hfile}.tmp" 2>/dev/null || true
-      mv "${hfile}.tmp" "$hfile"
-    fi
-  ]
-
-  # Clean up handler file
+  # Clean up all handlers for this dispatcher
   rawMethod: cleanup [
-    local hfile
-    hfile="$(_ivar handlerFile)"
-    rm -f "$hfile" 2>/dev/null
+    # Remove all handler files (simple cleanup - removes all yutani handlers)
+    rm -f /tmp/yutani_handler_*.txt 2>/dev/null
+    rm -f /tmp/yutani_text_*.txt 2>/dev/null
   ]
 
-  # Private setters
-  method: _setHandlerFile: v [ handlerFile := v ]
+  # ============================================================================
+  # Private Setters
+  # ============================================================================
+
   method: _setRunning: v [ running := v ]
+

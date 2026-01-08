@@ -11,6 +11,9 @@ rm -f ~/.trashtalk/instances.db
 
 source "$TRASHTALK_DIR/lib/trash.bash"
 
+# Reset native daemon to ensure clean state
+@ NativeDaemon reset 2>/dev/null
+
 PASSED=0
 FAILED=0
 

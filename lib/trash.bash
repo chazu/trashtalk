@@ -638,16 +638,16 @@ function _generate_accessor {
       return 1
     fi
 
-    # Update the field (handle numeric, JSON, or string)
+    # Update the field (handle numeric, JSON object/array, or string)
     local updated
     if [[ \"\$value\" =~ ^-?[0-9]+\$ ]]; then
       # Numeric value
       updated=\$(echo \"\$data\" | jq -c \".$var = \$value\")
-    elif echo \"\$value\" | jq -e . >/dev/null 2>&1; then
-      # Valid JSON - use as raw JSON value
+    elif [[ \"\$value\" =~ ^\[.*\]\$ || \"\$value\" =~ ^\{.*\}\$ ]] && echo \"\$value\" | jq -e . >/dev/null 2>&1; then
+      # Valid JSON object or array - use as raw JSON value
       updated=\$(echo \"\$data\" | jq -c --argjson v \"\$value\" \".$var = \\\$v\")
     else
-      # String value - use --arg for safe escaping
+      # String value (including \"true\", \"false\", \"null\") - use --arg for safe escaping
       updated=\$(echo \"\$data\" | jq -c --arg v \"\$value\" \".$var = \\\$v\")
     fi
 
@@ -764,6 +764,9 @@ function _create_instance {
   done
 
   _env_set "$instance_id" "$data"
+
+  # Persist immediately (new model: all instances are persistent by default)
+  _env_persist "$instance_id"
 }
 
 # Get the class of an instance (checks memory first, then Store)
@@ -956,16 +959,16 @@ function _ivar_set {
     return 1
   fi
 
-  # Update the field (handle numeric, JSON, or string)
+  # Update the field (handle numeric, JSON object/array, or string)
   local updated
   if [[ "$value" =~ ^-?[0-9]+$ ]]; then
     # Numeric value
     updated=$(echo "$data" | jq -c ".$var = $value")
-  elif echo "$value" | jq -e . >/dev/null 2>&1; then
-    # Valid JSON - use as raw JSON value
+  elif [[ "$value" =~ ^\[.*\]$ || "$value" =~ ^\{.*\}$ ]] && echo "$value" | jq -e . >/dev/null 2>&1; then
+    # Valid JSON object or array - use as raw JSON value
     updated=$(echo "$data" | jq -c --argjson v "$value" ".$var = \$v")
   else
-    # String value - use --arg for safe escaping
+    # String value (including "true", "false", "null") - use --arg for safe escaping
     updated=$(echo "$data" | jq -c --arg v "$value" ".$var = \$v")
   fi
 
@@ -1544,11 +1547,8 @@ function send {
     exit_code=$?
     # Exit code 200 = unknown selector or no daemon, fall back to Bash dispatch
     if [[ $exit_code -ne 200 ]]; then
-      # Daemon updates the env store directly, so reload into memory cache
-      # This ensures subsequent Bash operations see the updated state
-      if [[ -n "$_INSTANCE" ]]; then
-        _env_load "$_INSTANCE" 2>/dev/null || true
-      fi
+      # Daemon already updates the env store via _env_set in NativeDaemon dispatch
+      # No need to reload - the updated state is already in the env store
       _send_cleanup $frame_ensure_start $frame_handler_start $exit_code
       return $exit_code
     fi
