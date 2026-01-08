@@ -1,0 +1,241 @@
+# GrpcClient - gRPC client with dual Bash/Procyon implementation
+#
+# Bash implementation uses grpcurl for unary calls.
+# Streaming methods are marked procyonOnly and require native Procyon runtime.
+#
+# Usage:
+#   client := @ GrpcClient connectTo: 'localhost:50051'.
+#   response := @ $client call: 'myservice.Echo' with: '{"message":"hello"}'.
+#
+# With proto file:
+#   client := @ GrpcClient connectTo: 'localhost:50051' withProto: 'service.proto'.
+
+# Note: Using string 'yes'/'no' instead of boolean true/false because
+# the _ivar function uses jq's // operator which treats false as empty.
+GrpcClient subclass: Object
+  instanceVars: address:'' useReflection:'yes' protoFile:'' poolConnections:'no' usePlaintext:'yes'
+
+  # ==========================================================================
+  # Class methods - Factory constructors
+  # ==========================================================================
+
+  classMethod: connectTo: addr [
+    | client |
+    client := @ GrpcClient new.
+    @ $client _setAddress: addr.
+    ^ $client
+  ]
+
+  classMethod: connectTo: addr withProto: proto [
+    | client |
+    client := @ GrpcClient connectTo: addr.
+    @ $client _setProtoFile: proto.
+    @ $client _setUseReflection: 'no'.
+    ^ $client
+  ]
+
+  # ==========================================================================
+  # Unary RPC - Works in both Bash and Procyon
+  # procyonNative: Bash uses grpcurl, Procyon uses native gRPC
+  # ==========================================================================
+
+  rawMethod: call: method with: jsonPayload [
+    pragma: procyonNative
+    pragma: direct
+    local addr proto result plaintext_flag
+    addr="$(_ivar address)"
+    proto="$(_ivar protoFile)"
+
+    # Build plaintext flag
+    if [[ "$(_ivar usePlaintext)" == "yes" ]]; then
+      plaintext_flag="-plaintext"
+    else
+      plaintext_flag=""
+    fi
+
+    # Call grpcurl
+    if [[ -n "$proto" ]]; then
+      result=$(grpcurl $plaintext_flag -d "$2" -proto "$proto" "$addr" "$1" 2>&1)
+    else
+      # Reflection mode (server must have reflection enabled)
+      result=$(grpcurl $plaintext_flag -d "$2" "$addr" "$1" 2>&1)
+    fi
+
+    if [[ $? -eq 0 ]]; then
+      echo "$result"
+    else
+      _throw "GrpcError" "$result"
+      return 1
+    fi
+  ]
+
+  # Unary call with empty payload
+  rawMethod: call: method [
+    pragma: procyonNative
+    pragma: direct
+    local addr proto result plaintext_flag
+    addr="$(_ivar address)"
+    proto="$(_ivar protoFile)"
+
+    if [[ "$(_ivar usePlaintext)" == "yes" ]]; then
+      plaintext_flag="-plaintext"
+    else
+      plaintext_flag=""
+    fi
+
+    if [[ -n "$proto" ]]; then
+      result=$(grpcurl $plaintext_flag -d '{}' -proto "$proto" "$addr" "$1" 2>&1)
+    else
+      result=$(grpcurl $plaintext_flag -d '{}' "$addr" "$1" 2>&1)
+    fi
+
+    if [[ $? -eq 0 ]]; then
+      echo "$result"
+    else
+      _throw "GrpcError" "$result"
+      return 1
+    fi
+  ]
+
+  # ==========================================================================
+  # Server Streaming RPC - Procyon only
+  # ==========================================================================
+
+  method: serverStream: method with: payload handler: block [
+    pragma: procyonOnly
+    "Server streaming requires native Procyon runtime"
+  ]
+
+  # ==========================================================================
+  # Client Streaming RPC - Procyon only
+  # ==========================================================================
+
+  method: clientStream: method handler: block [
+    pragma: procyonOnly
+    "Client streaming requires native Procyon runtime"
+  ]
+
+  # ==========================================================================
+  # Bidirectional Streaming RPC - Procyon only
+  # ==========================================================================
+
+  method: bidiStream: method handler: block [
+    pragma: procyonOnly
+    "Bidirectional streaming requires native Procyon runtime"
+  ]
+
+  # ==========================================================================
+  # List available services (reflection mode)
+  # ==========================================================================
+
+  rawMethod: listServices [
+    pragma: procyonNative
+    pragma: direct
+    local addr result plaintext_flag
+    addr="$(_ivar address)"
+
+    if [[ "$(_ivar usePlaintext)" == "yes" ]]; then
+      plaintext_flag="-plaintext"
+    else
+      plaintext_flag=""
+    fi
+
+    result=$(grpcurl $plaintext_flag "$addr" list 2>&1)
+    if [[ $? -eq 0 ]]; then
+      echo "$result"
+    else
+      _throw "GrpcError" "$result"
+      return 1
+    fi
+  ]
+
+  # List methods for a service
+  rawMethod: listMethods: service [
+    pragma: procyonNative
+    pragma: direct
+    local addr result plaintext_flag
+    addr="$(_ivar address)"
+
+    if [[ "$(_ivar usePlaintext)" == "yes" ]]; then
+      plaintext_flag="-plaintext"
+    else
+      plaintext_flag=""
+    fi
+
+    result=$(grpcurl $plaintext_flag "$addr" list "$1" 2>&1)
+    if [[ $? -eq 0 ]]; then
+      echo "$result"
+    else
+      _throw "GrpcError" "$result"
+      return 1
+    fi
+  ]
+
+  # Describe a service or method
+  rawMethod: describe: target [
+    pragma: direct
+    local addr result plaintext_flag
+    addr="$(_ivar address)"
+
+    if [[ "$(_ivar usePlaintext)" == "yes" ]]; then
+      plaintext_flag="-plaintext"
+    else
+      plaintext_flag=""
+    fi
+
+    result=$(grpcurl $plaintext_flag "$addr" describe "$1" 2>&1)
+    if [[ $? -eq 0 ]]; then
+      echo "$result"
+    else
+      _throw "GrpcError" "$result"
+      return 1
+    fi
+  ]
+
+  # ==========================================================================
+  # Configuration methods
+  # ==========================================================================
+
+  rawMethod: enablePooling [
+    _ivar_set poolConnections 'yes'
+  ]
+
+  rawMethod: disablePooling [
+    _ivar_set poolConnections 'no'
+  ]
+
+  rawMethod: enableTLS [
+    _ivar_set usePlaintext 'no'
+  ]
+
+  rawMethod: enablePlaintext [
+    _ivar_set usePlaintext 'yes'
+  ]
+
+  rawMethod: address [
+    echo "$(_ivar address)"
+  ]
+
+  rawMethod: isUsingReflection [
+    echo "$(_ivar useReflection)"
+  ]
+
+  rawMethod: isPoolingEnabled [
+    echo "$(_ivar poolConnections)"
+  ]
+
+  # ==========================================================================
+  # Private setters
+  # ==========================================================================
+
+  rawMethod: _setAddress: a [
+    _ivar_set address "$1"
+  ]
+
+  rawMethod: _setProtoFile: p [
+    _ivar_set protoFile "$1"
+  ]
+
+  rawMethod: _setUseReflection: r [
+    _ivar_set useReflection "$1"
+  ]
