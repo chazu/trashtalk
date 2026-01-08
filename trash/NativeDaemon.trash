@@ -103,6 +103,12 @@ NativeDaemon subclass: Object
   rawMethod: dispatch: className instance: instanceId selector: selector args: argsJson [
     local className="$1" instanceId="$2" selector="$3" argsJson="$4"
     local socketPath request response exitCode result instanceJson nativeSelector
+    local _daemon_profile_start _daemon_profile_end _daemon_elapsed _daemon_route="plugin"
+
+    # Profile: record start time
+    if [[ -n "${TRASH_PROFILE:-}" ]]; then
+      _daemon_profile_start=$(_profile_time_ms)
+    fi
 
     # Ensure daemon is running (call function directly to avoid send() overhead)
     __NativeDaemon___ensureDaemon
@@ -162,6 +168,11 @@ NativeDaemon subclass: Object
 
     if [[ "$exitCode" == "200" ]]; then
       # No native plugin for this class, fallback to Bash
+      if [[ -n "${TRASH_PROFILE:-}" ]]; then
+        _daemon_profile_end=$(_profile_time_ms)
+        _daemon_elapsed=$(( _daemon_profile_end - _daemon_profile_start ))
+        echo "[daemon] $className.$selector ${_daemon_elapsed}ms route=fallback reason=no_plugin" >&2
+      fi
       return 200
     fi
 
@@ -188,6 +199,14 @@ NativeDaemon subclass: Object
 
     # Extract result
     result=$(echo "$response" | jq -r '.result // ""')
+
+    # Profile: log daemon dispatch timing
+    if [[ -n "${TRASH_PROFILE:-}" ]]; then
+      _daemon_profile_end=$(_profile_time_ms)
+      _daemon_elapsed=$(( _daemon_profile_end - _daemon_profile_start ))
+      echo "[daemon] $className.$selector ${_daemon_elapsed}ms route=$_daemon_route" >&2
+    fi
+
     echo "$result"
     return 0
   ]

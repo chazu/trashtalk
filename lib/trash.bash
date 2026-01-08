@@ -35,6 +35,85 @@ TRASH_VERSION="0.1.0"
 TRASH_AUTHOR="Chazu"
 
 # ============================================
+# Profiling Support
+# ============================================
+# Enable with TRASH_PROFILE=1
+# Configure with:
+#   TRASH_PROFILE_FILE=path    Write to file instead of stderr
+#   TRASH_PROFILE_DEPTH=N      Max call depth to log (default: unlimited)
+#   TRASH_PROFILE_MIN_MS=N     Only log calls taking >= N ms
+
+declare -g _TRASH_PROFILE_DATA=""
+
+# Log a profile entry
+# Usage: _profile_log <direction> <class> <selector> <route> [elapsed_ms] [result_len]
+_profile_log() {
+  [[ -z "${TRASH_PROFILE:-}" ]] && return
+
+  local direction="$1" class="$2" selector="$3" route="$4"
+  local elapsed_ms="${5:-}" result_len="${6:-}"
+  local timestamp indent output_fd
+
+  # Check depth filter
+  if [[ -n "${TRASH_PROFILE_DEPTH:-}" ]] && (( _CALL_DEPTH > TRASH_PROFILE_DEPTH )); then
+    return
+  fi
+
+  # Check minimum time filter (only for exit logs)
+  if [[ "$direction" == "←" && -n "${TRASH_PROFILE_MIN_MS:-}" && -n "$elapsed_ms" ]]; then
+    if (( elapsed_ms < TRASH_PROFILE_MIN_MS )); then
+      return
+    fi
+  fi
+
+  # Get timestamp with milliseconds
+  if command -v gdate >/dev/null 2>&1; then
+    timestamp=$(gdate +%s.%3N)
+  else
+    timestamp=$(date +%s)
+  fi
+
+  # Build indentation based on call depth
+  indent=$(printf '%*s' $(( (_CALL_DEPTH - 1) * 2 )) '')
+
+  # Format the log entry
+  local log_entry
+  if [[ "$direction" == "→" ]]; then
+    log_entry="[$timestamp] ${indent}→ ${class}.${selector} [$route]"
+  else
+    log_entry="[$timestamp] ${indent}← ${class}.${selector} [$route] ${elapsed_ms}ms"
+    if [[ -n "$result_len" && "$result_len" -gt 0 ]]; then
+      log_entry="${log_entry} result_len=${result_len}"
+    fi
+  fi
+
+  # Output to file or stderr
+  if [[ -n "${TRASH_PROFILE_FILE:-}" ]]; then
+    echo "$log_entry" >> "$TRASH_PROFILE_FILE"
+  else
+    echo "$log_entry" >&2
+  fi
+
+  # Accumulate data for analysis
+  if [[ "$direction" == "←" ]]; then
+    _TRASH_PROFILE_DATA="${_TRASH_PROFILE_DATA}${class}|${selector}|${route}|${elapsed_ms}
+"
+  fi
+}
+
+# Get current time in milliseconds (for elapsed time calculation)
+_profile_time_ms() {
+  if command -v gdate >/dev/null 2>&1; then
+    gdate +%s%3N
+  else
+    # Fallback: use seconds * 1000 (less precise)
+    echo "$(( $(date +%s) * 1000 ))"
+  fi
+}
+
+export -f _profile_log _profile_time_ms
+
+# ============================================
 # Namespace Helpers
 # ============================================
 # Functions to handle Package::Class qualified names
@@ -1429,8 +1508,14 @@ function send {
   # because local declaration shadows the parent's variable immediately.
   local calling_class="${_CLASS:-}"
 
-  local _RECEIVER="$1"; shift
-  local _SELECTOR="$1"; shift
+  local _RECEIVER="${1:-}"; shift || true
+  local _SELECTOR="${1:-}"; shift || true
+
+  # Validate we have both receiver and selector
+  if [[ -z "$_RECEIVER" || -z "$_SELECTOR" ]]; then
+    echo "Error: send requires receiver and selector" >&2
+    return 1
+  fi
   local _CLASS=""
   local _INSTANCE=""
 
@@ -1503,6 +1588,12 @@ function send {
   _CALL_STACK[_CALL_DEPTH]="$_CLASS.$_SELECTOR"
   ((_CALL_DEPTH++))
 
+  # Profiling: record start time and initialize route tracking
+  local _profile_start_ms="" _profile_route=""
+  if [[ -n "${TRASH_PROFILE:-}" ]]; then
+    _profile_start_ms=$(_profile_time_ms)
+  fi
+
   # ============================================
   # Before advice
   # ============================================
@@ -1516,7 +1607,7 @@ function send {
   if [[ "$_SELECTOR" == _* ]]; then
     if [[ -z "$calling_class" || "$calling_class" != "$class_name" ]]; then
       echo "Error: Cannot call private method '$_SELECTOR' on $class_name from outside the class" >&2
-      _send_cleanup $frame_ensure_start $frame_handler_start 1
+      _send_cleanup $frame_ensure_start $frame_handler_start 1 "$_profile_start_ms" "error:private"
       return 1
     fi
     msg_debug "Private method $_SELECTOR allowed (called from same class: $calling_class)"
@@ -1543,16 +1634,19 @@ function send {
   # Routes through trashtalk-daemon which loads .dylib/.so plugins on demand
   if [[ $skip_native -eq 0 ]] && _has_native_plugin "$class_name"; then
     msg_debug "Found native plugin: $_NATIVE_PLUGIN_PATH"
+    _profile_route="native"
+    [[ -n "${TRASH_PROFILE:-}" ]] && _profile_log "→" "$_CLASS" "$_SELECTOR" "native"
     _native_daemon_dispatch "$class_name" "${_INSTANCE:-}" "$_SELECTOR" "$@"
     exit_code=$?
     # Exit code 200 = unknown selector or no daemon, fall back to Bash dispatch
     if [[ $exit_code -ne 200 ]]; then
       # Daemon already updates the env store via _env_set in NativeDaemon dispatch
       # No need to reload - the updated state is already in the env store
-      _send_cleanup $frame_ensure_start $frame_handler_start $exit_code
+      _send_cleanup $frame_ensure_start $frame_handler_start $exit_code "$_profile_start_ms" "$_profile_route"
       return $exit_code
     fi
     msg_debug "Native plugin doesn't implement $_SELECTOR, falling back to Bash"
+    _profile_route="native→bash"
   fi
 
   # Check for compiled version first (prevents namespace pollution)
@@ -1560,6 +1654,18 @@ function send {
   compiled_file=$(_compiled_path "$class_name")
   if [[ -f "$compiled_file" ]]; then
     msg_debug "Found compiled class: $compiled_file"
+    # Set bash route if not already set by native fallback
+    if [[ -z "$_profile_route" ]]; then
+      # Check for pragma: direct marker
+      local direct_marker="${func_prefix}__${normalized_selector}__direct"
+      if [[ -n "${!direct_marker:-}" ]]; then
+        _profile_route="bash:direct"
+      else
+        _profile_route="bash"
+      fi
+    fi
+    # Log entry point for profiling
+    [[ -n "${TRASH_PROFILE:-}" ]] && _profile_log "→" "$_CLASS" "$_SELECTOR" "$_profile_route"
 
     # Source compiled file only once
     if [[ -z "${_SOURCED_COMPILED_CLASSES[$class_name]:-}" ]]; then
@@ -1604,7 +1710,7 @@ function send {
         msg_debug "Calling class method: $class_method_func"
         "$class_method_func" "$@"
         exit_code=$?
-        _send_cleanup $frame_ensure_start $frame_handler_start $exit_code
+        _send_cleanup $frame_ensure_start $frame_handler_start $exit_code "$_profile_start_ms" "$_profile_route"
         return $exit_code
       fi
     fi
@@ -1615,7 +1721,7 @@ function send {
       msg_debug "Calling namespaced function: $namespaced_func"
       "$namespaced_func" "$@"
       exit_code=$?
-      _send_cleanup $frame_ensure_start $frame_handler_start $exit_code
+      _send_cleanup $frame_ensure_start $frame_handler_start $exit_code "$_profile_start_ms" "$_profile_route"
       return $exit_code
     fi
 
@@ -1625,7 +1731,7 @@ function send {
       msg_debug "Calling class method: $class_method_func"
       "$class_method_func" "$@"
       exit_code=$?
-      _send_cleanup $frame_ensure_start $frame_handler_start $exit_code
+      _send_cleanup $frame_ensure_start $frame_handler_start $exit_code "$_profile_start_ms" "$_profile_route"
       return $exit_code
     fi
 
@@ -1649,7 +1755,7 @@ function send {
           msg_debug "Calling trait class method: $trait_class_func"
           "$trait_class_func" "$@"
           exit_code=$?
-          _send_cleanup $frame_ensure_start $frame_handler_start $exit_code
+          _send_cleanup $frame_ensure_start $frame_handler_start $exit_code "$_profile_start_ms" "$_profile_route"
           return $exit_code
         fi
         # Try trait instance method
@@ -1658,7 +1764,7 @@ function send {
           msg_debug "Calling trait method: $trait_func"
           "$trait_func" "$@"
           exit_code=$?
-          _send_cleanup $frame_ensure_start $frame_handler_start $exit_code
+          _send_cleanup $frame_ensure_start $frame_handler_start $exit_code "$_profile_start_ms" "$_profile_route"
           return $exit_code
         fi
       done
@@ -1673,7 +1779,7 @@ function send {
         msg_debug "Calling generated accessor: $_SELECTOR"
         "$_SELECTOR" "$@"
         exit_code=$?
-        _send_cleanup $frame_ensure_start $frame_handler_start $exit_code
+        _send_cleanup $frame_ensure_start $frame_handler_start $exit_code "$_profile_start_ms" "$_profile_route"
         return $exit_code
       fi
     fi
@@ -1682,16 +1788,20 @@ function send {
     # For compiled classes, use method_missing to walk inheritance chain
     method_missing "$@"
     exit_code=$?
-    _send_cleanup $frame_ensure_start $frame_handler_start $exit_code
+    _send_cleanup $frame_ensure_start $frame_handler_start $exit_code "$_profile_start_ms" "$_profile_route"
     return $exit_code
   fi
 
   # Legacy mode: source class file directly
   if [[ ! -f "$class_file" ]]; then
     echo "Error: Class file not found: $class_file" >&2
-    _send_cleanup $frame_ensure_start $frame_handler_start 1
+    _send_cleanup $frame_ensure_start $frame_handler_start 1 "$_profile_start_ms" "error"
     return 1
   fi
+
+  # Set legacy route for profiling
+  [[ -z "$_profile_route" ]] && _profile_route="bash:legacy"
+  [[ -n "${TRASH_PROFILE:-}" ]] && _profile_log "→" "$_CLASS" "$_SELECTOR" "$_profile_route"
 
   source "$class_file"
 
@@ -1718,16 +1828,18 @@ function send {
     exit_code=$?
   fi
 
-  _send_cleanup $frame_ensure_start $frame_handler_start $exit_code
+  _send_cleanup $frame_ensure_start $frame_handler_start $exit_code "$_profile_start_ms" "$_profile_route"
   return $exit_code
 }
 
 # Internal cleanup function for send()
-# Handles: ensures, error handlers, after advice, call stack
+# Handles: ensures, error handlers, after advice, call stack, profiling
 _send_cleanup() {
   local frame_ensure_start=$1
   local frame_handler_start=$2
   local exit_code=$3
+  local profile_start_ms="${4:-}"
+  local profile_route="${5:-}"
 
   # ============================================
   # Error handling
@@ -1771,6 +1883,16 @@ _send_cleanup() {
   # ============================================
   if [[ ${#_AFTER_ADVICE[@]} -gt 0 ]]; then
     _run_after_advice "$_CLASS" "$_SELECTOR" "$exit_code" "$@"
+  fi
+
+  # ============================================
+  # Profiling: log exit with elapsed time
+  # ============================================
+  if [[ -n "${TRASH_PROFILE:-}" && -n "$profile_start_ms" && -n "$profile_route" ]]; then
+    local profile_end_ms elapsed_ms
+    profile_end_ms=$(_profile_time_ms)
+    elapsed_ms=$(( profile_end_ms - profile_start_ms ))
+    _profile_log "←" "$_CLASS" "$_SELECTOR" "$profile_route" "$elapsed_ms"
   fi
 
   # Pop call stack
@@ -1835,7 +1957,7 @@ function @ {
   # - edit/new: need tty for editor and call compileAndReload
   # - value/valueWith:/valueWith:and:/do: need to modify caller variables (blocks)
   # - startWriter:/startReader:/stopWriter/stopReader: spawn background processes
-  local ___selector="$2"
+  local ___selector="${2:-}"
   if [[ "$___selector" == "repl" || "$___selector" == "reloadClass" || "$___selector" == "compileAndReload" || "$___selector" == "edit" || "$___selector" == "new" || \
         "$___selector" == "value" || "$___selector" == "valueWith:" || "$___selector" == "do:" || \
         "$___selector" == "startWriter:" || "$___selector" == "startReader:" || "$___selector" == "stopWriter" || "$___selector" == "stopReader" ]]; then
