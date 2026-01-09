@@ -32,11 +32,11 @@ Transcript subclass: Object
   ]
 
   method: setSession: s [
-    _ivar_set session "$s"
+    session := s
   ]
 
   method: session [
-    _ivar session
+    ^ session
   ]
 
   rawMethod: setup [

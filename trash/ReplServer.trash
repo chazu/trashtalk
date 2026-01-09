@@ -269,7 +269,7 @@ ReplServer subclass: Object
   ]
 
   method: clearHistory [
-    history := "[]"
+    _ivar_set history "[]"
   ]
 
   # ========================================

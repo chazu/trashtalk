@@ -20,7 +20,7 @@ IDE subclass: Object
   ]
 
   method: setSession: s [
-    _ivar_set session "$s"
+    session := s
   ]
 
   rawMethod: setup [
