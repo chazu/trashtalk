@@ -35,12 +35,12 @@ ReplServer subclass: Object
 
   # Set the socket path
   method: socketPath: path [
-    _ivar_set socketPath "$path"
+    socketPath := path
   ]
 
   # Get the socket path
   method: socketPath [
-    ^ $(_ivar socketPath)
+    ^ socketPath
   ]
 
   # ========================================
@@ -265,11 +265,11 @@ ReplServer subclass: Object
   ]
 
   method: history [
-    ^ $(_ivar history)
+    ^ history
   ]
 
   method: clearHistory [
-    _ivar_set history "[]"
+    history := "[]"
   ]
 
   # ========================================

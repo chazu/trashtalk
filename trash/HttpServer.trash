@@ -26,12 +26,12 @@ HttpServer subclass: Object
 
   # Set the document root directory
   method: root: path [
-    _ivar_set root "$path"
+    root := path
   ]
 
   # Set the port to listen on
   method: port: p [
-    _ivar_set port "$p"
+    port := p
   ]
 
   # Quick start: serve a directory on a port
@@ -246,6 +246,6 @@ HANDLER_EOF
 
   # Stop the server
   method: stop [
-    _ivar_set running false
-    echo "Server stopped"
+    running := false
+    ^ "Server stopped"
   ]
