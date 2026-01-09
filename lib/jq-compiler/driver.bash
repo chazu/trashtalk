@@ -139,6 +139,109 @@ EOF
 }
 
 # ------------------------------------------------------------------------------
+# Helper: Collect inherited instance variables from parent classes
+# ------------------------------------------------------------------------------
+
+# Get the compiled file path for a qualified class name
+# Args: $1=qualified_class_name (e.g., "Yutani::Widget" or "Object")
+get_compiled_path() {
+    local class_name="$1"
+    local trashtalk_dir="${TRASHTALK_DIR:-$HOME/.trashtalk}"
+
+    # Convert Yutani::Widget to Yutani__Widget
+    local file_name="${class_name//::/__}"
+
+    echo "$trashtalk_dir/trash/.compiled/$file_name"
+}
+
+# Extract instance variable names from a compiled class file
+# Args: $1=compiled_file_path
+# Returns: space-separated list of ivar names
+extract_ivars_from_compiled() {
+    local compiled_file="$1"
+
+    if [[ ! -f "$compiled_file" ]]; then
+        return
+    fi
+
+    # Look for __ClassName__instanceVars="var1: var2: var3:" line
+    local ivars_line
+    ivars_line=$(grep '__instanceVars=' "$compiled_file" | head -1)
+
+    if [[ -z "$ivars_line" ]]; then
+        return
+    fi
+
+    # Extract the quoted value and parse var names
+    # Format: __Foo__instanceVars="var1: var2: var3:"
+    local ivars_value
+    ivars_value=$(echo "$ivars_line" | sed 's/.*__instanceVars="\([^"]*\)".*/\1/')
+
+    # Convert "var1: var2: var3:" to "var1 var2 var3"
+    echo "$ivars_value" | tr ':' ' ' | tr -s ' ' | xargs
+}
+
+# Get parent class from a compiled file
+# Args: $1=compiled_file_path
+extract_parent_from_compiled() {
+    local compiled_file="$1"
+
+    if [[ ! -f "$compiled_file" ]]; then
+        return
+    fi
+
+    # Look for __ClassName__superclass="ParentName" line
+    local parent_line
+    parent_line=$(grep '__superclass=' "$compiled_file" | head -1)
+
+    if [[ -z "$parent_line" ]]; then
+        return
+    fi
+
+    # Extract the parent class name
+    echo "$parent_line" | sed 's/.*__superclass="\([^"]*\)".*/\1/'
+}
+
+# Recursively collect all inherited ivars from parent chain
+# Args: $1=parent_class_name (qualified, e.g., "Yutani::Widget")
+# Returns: JSON array of ivar names
+collect_inherited_ivars() {
+    local class_name="$1"
+    local all_ivars=()
+
+    # Walk up the inheritance chain
+    while [[ -n "$class_name" && "$class_name" != "Object" ]]; do
+        local compiled_path
+        compiled_path=$(get_compiled_path "$class_name")
+
+        if [[ ! -f "$compiled_path" ]]; then
+            # Parent not compiled yet, stop here
+            break
+        fi
+
+        # Get this class's ivars
+        local ivars
+        ivars=$(extract_ivars_from_compiled "$compiled_path")
+
+        if [[ -n "$ivars" ]]; then
+            for ivar in $ivars; do
+                all_ivars+=("$ivar")
+            done
+        fi
+
+        # Get parent and continue up the chain
+        class_name=$(extract_parent_from_compiled "$compiled_path")
+    done
+
+    # Output as JSON array
+    if [[ ${#all_ivars[@]} -eq 0 ]]; then
+        echo "[]"
+    else
+        printf '%s\n' "${all_ivars[@]}" | jq -R . | jq -s .
+    fi
+}
+
+# ------------------------------------------------------------------------------
 # Commands
 # ------------------------------------------------------------------------------
 
@@ -238,10 +341,19 @@ cmd_compile() {
     source_hash=$(shasum -a 256 "$source_file" | cut -d' ' -f1)
     source_content=$(cat "$source_file")
 
-    # Add source metadata to AST (strip warnings, add source info)
+    # Collect inherited instance variables from parent classes
+    local parent_class inherited_ivars
+    parent_class=$(echo "$ast" | jq -r '.parent // empty')
+    if [[ -n "$parent_class" ]]; then
+        inherited_ivars=$(collect_inherited_ivars "$parent_class")
+    else
+        inherited_ivars="[]"
+    fi
+
+    # Add source metadata and inherited ivars to AST
     local ast_with_source
-    ast_with_source=$(echo "$ast" | jq --arg hash "$source_hash" --arg src "$source_content" \
-        'del(.warnings) | . + {sourceHash: $hash, sourceCode: $src}')
+    ast_with_source=$(echo "$ast" | jq --arg hash "$source_hash" --arg src "$source_content" --argjson inherited "$inherited_ivars" \
+        'del(.warnings) | . + {sourceHash: $hash, sourceCode: $src, inheritedInstanceVars: $inherited}')
 
     # Generate code
     local output
