@@ -2244,6 +2244,7 @@ def transformMethodBody($className; $isRaw):
       gsub(" \\]= "; "]=") |           # Fix array assignment: ]= → ]=
       gsub("\" \\*"; "\"*") |          # Fix pattern glob: "${prefix}" * → "${prefix}"*
       gsub("} \\*"; "}*") |            # Fix pattern glob: ${prefix} * → ${prefix}*
+      gsub("(?<a>[a-zA-Z0-9_]) \\*"; "\(.a)*") |  # Fix path glob: /path_ * → /path_*
       gsub("(?<a>[a-zA-Z0-9]) \\](?<b>[+*?$])"; "\(.a)]\(.b)") |  # Remove space before ] when followed by quantifier
       gsub("(?<a>[a-zA-Z0-9]) \\](?<b> \\]\\])"; "\(.a)]\(.b)") |  # Remove space before ] when followed by ]]
       gsub(" \\)"; ")") |              # Remove space before )

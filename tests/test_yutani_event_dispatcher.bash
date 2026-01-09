@@ -144,16 +144,11 @@ count_before=$(ls /tmp/yutani_handler_cleanup_*.txt 2>/dev/null | wc -l | tr -d 
 run_test "Handler files exist before cleanup" "2" "$count_before"
 
 # Run cleanup
-# Note: cleanup() has a known bug - space in glob pattern breaks cleanup
-# This test documents current (buggy) behavior
 @ $dispatcher3 cleanup
 
-# The buggy cleanup doesn't remove files - they should still exist
+# Files should be removed after cleanup
 count_after=$(ls /tmp/yutani_handler_*.txt 2>/dev/null | wc -l | tr -d ' ')
-run_test "Cleanup (known bug: files not removed)" "2" "$count_after"
-
-# Manual cleanup for subsequent tests
-rm -f /tmp/yutani_handler_*.txt 2>/dev/null
+run_test "Cleanup removes handler files" "0" "$count_after"
 
 # ============================================================================
 # Multiple Dispatchers Independence
