@@ -246,6 +246,6 @@ HANDLER_EOF
 
   # Stop the server
   method: stop [
-    running := false
+    _ivar_set running false
     ^ "Server stopped"
   ]
