@@ -1409,6 +1409,34 @@ declare -gA _SOURCED_COMPILED_CLASSES
 # ============================================
 # Routes native method calls through trashtalk-daemon instead of spawning
 # individual .native binaries. The daemon loads .dylib/.so plugins on demand.
+#
+# Socket-based communication provides fast Go/Bash interop:
+# - _native_daemon_available: check if daemon is reachable
+# - _send_native: direct socket dispatch (bypasses NativeDaemon class)
+# - send() tries native first, falls back on exit code 200
+
+# Default socket path for trashtalk-daemon
+_NATIVE_DAEMON_SOCKET="${TRASHTALK_DAEMON_SOCKET:-/tmp/trashtalk-daemon.sock}"
+export _NATIVE_DAEMON_SOCKET
+
+# Check if the native daemon is available (socket exists and responds)
+# Usage: if _native_daemon_available; then ... fi
+# Returns: 0 if daemon is reachable, 1 otherwise
+function _native_daemon_available {
+  # Quick check: socket file must exist
+  [[ -S "$_NATIVE_DAEMON_SOCKET" ]] || return 1
+
+  # Verify daemon responds with a ping (empty request returns error but proves connectivity)
+  # Using timeout to avoid hanging if daemon is stuck
+  if command -v timeout >/dev/null 2>&1; then
+    echo '{"class":"","selector":"ping","args":[]}' | timeout 1 nc -U "$_NATIVE_DAEMON_SOCKET" >/dev/null 2>&1
+  else
+    # macOS doesn't have timeout by default, use a simple socket test
+    echo '{"class":"","selector":"ping","args":[]}' | nc -U "$_NATIVE_DAEMON_SOCKET" >/dev/null 2>&1
+  fi
+  # Even an error response means daemon is alive
+  return 0
+}
 
 # Check if a native plugin exists for a class
 # Returns: 0 if plugin exists, 1 otherwise
@@ -1426,6 +1454,96 @@ function _has_native_plugin {
   _NATIVE_PLUGIN_PATH="$TRASHDIR/.compiled/${compiled_name}${ext}"
   [[ -f "$_NATIVE_PLUGIN_PATH" ]]
 }
+
+# Send a message directly to trashtalk-daemon via Unix socket
+# This bypasses the NativeDaemon Bash class for lower overhead
+# Usage: _send_native <class_name> <instance_id> <selector> [args...]
+# Returns: result on stdout
+# Exit codes: 0=success, 1=error, 200=no plugin (fallback to Bash)
+function _send_native {
+  local class_name="$1"
+  local instance_id="$2"
+  local selector="$3"
+  shift 3
+
+  local args_json request response exit_code result
+  local instance_json="" updated_json native_selector
+
+  # Build args as JSON array
+  if [[ $# -eq 0 ]]; then
+    args_json="[]"
+  else
+    args_json=$(printf '%s\n' "$@" | jq -R . | jq -s -c .)
+  fi
+
+  # Normalize selector: convert trailing underscores back to colons for native format
+  # Bash uses do_ for do:, native uses do_
+  native_selector="${selector}"
+
+  # Load instance data if this is an instance method
+  if [[ -n "$instance_id" ]]; then
+    instance_json=$(_env_get "$instance_id" 2>/dev/null)
+    if [[ -n "$instance_json" ]]; then
+      # Native expects string values for numbers
+      instance_json=$(echo "$instance_json" | jq -c 'walk(if type == "number" then tostring else . end)')
+    fi
+  fi
+
+  # Build JSON request
+  if [[ -n "$instance_json" ]]; then
+    request=$(jq -cn --arg c "$class_name" --arg i "$instance_json" --arg s "$native_selector" --argjson a "$args_json" \
+      '{class: $c, instance: $i, selector: $s, args: $a}')
+  else
+    request=$(jq -cn --arg c "$class_name" --arg i "" --arg s "$native_selector" --argjson a "$args_json" \
+      '{class: $c, instance: $i, selector: $s, args: $a}')
+  fi
+
+  msg_debug "[_send_native] Request: $request"
+
+  # Send to daemon via Unix socket
+  response=$(echo "$request" | nc -U "$_NATIVE_DAEMON_SOCKET" 2>/dev/null)
+
+  if [[ -z "$response" ]]; then
+    msg_debug "[_send_native] No response from daemon"
+    return 1
+  fi
+
+  msg_debug "[_send_native] Response: $response"
+
+  # Parse response
+  exit_code=$(echo "$response" | jq -r '.exit_code // 1')
+
+  # Exit code 200 = no native plugin, fallback to Bash
+  if [[ "$exit_code" == "200" ]]; then
+    return 200
+  fi
+
+  if [[ "$exit_code" != "0" ]]; then
+    local error
+    error=$(echo "$response" | jq -r '.error // "unknown error"')
+    echo "Error: $error" >&2
+    return 1
+  fi
+
+  # Update instance state if daemon returned modified instance
+  if [[ -n "$instance_id" && -n "$instance_json" ]]; then
+    updated_json=$(echo "$response" | jq -r '.instance // empty')
+    if [[ -n "$updated_json" && "$updated_json" != "null" ]]; then
+      # Convert string numbers back to actual numbers
+      local new_instance
+      new_instance=$(echo "$updated_json" | jq -c 'walk(if type == "string" and test("^-?[0-9]+$") then tonumber else . end)')
+      _env_set "$instance_id" "$new_instance"
+      _env_persist "$instance_id"
+    fi
+  fi
+
+  # Return result
+  result=$(echo "$response" | jq -r '.result // ""')
+  echo "$result"
+  return 0
+}
+
+export -f _native_daemon_available _send_native
 
 # Dispatch a method call through NativeDaemon
 # This calls NativeDaemon functions directly to avoid send() recursion
@@ -1630,23 +1748,43 @@ function send {
     skip_native=1
   fi
 
-  # Check for native plugin first (highest priority), unless bashOnly
-  # Routes through trashtalk-daemon which loads .dylib/.so plugins on demand
-  if [[ $skip_native -eq 0 ]] && _has_native_plugin "$class_name"; then
-    msg_debug "Found native plugin: $_NATIVE_PLUGIN_PATH"
-    _profile_route="native"
-    [[ -n "${TRASH_PROFILE:-}" ]] && _profile_log "→" "$_CLASS" "$_SELECTOR" "native"
-    _native_daemon_dispatch "$class_name" "${_INSTANCE:-}" "$_SELECTOR" "$@"
-    exit_code=$?
-    # Exit code 200 = unknown selector or no daemon, fall back to Bash dispatch
-    if [[ $exit_code -ne 200 ]]; then
-      # Daemon already updates the env store via _env_set in NativeDaemon dispatch
-      # No need to reload - the updated state is already in the env store
-      _send_cleanup $frame_ensure_start $frame_handler_start $exit_code "$_profile_start_ms" "$_profile_route"
-      return $exit_code
+  # ============================================
+  # Native dispatch (highest priority)
+  # ============================================
+  # Try native daemon first if available (fast socket-based Go interop)
+  # Falls back to Bash on exit code 200 (no plugin or unknown selector)
+  if [[ $skip_native -eq 0 ]]; then
+    # Fast path: check if daemon is available and try direct socket dispatch
+    if _native_daemon_available; then
+      msg_debug "Native daemon available, trying direct dispatch"
+      _profile_route="native:socket"
+      [[ -n "${TRASH_PROFILE:-}" ]] && _profile_log "→" "$_CLASS" "$_SELECTOR" "native:socket"
+      _send_native "$class_name" "${_INSTANCE:-}" "$_SELECTOR" "$@"
+      exit_code=$?
+      if [[ $exit_code -ne 200 ]]; then
+        # Success or error - _send_native already updated env store
+        _send_cleanup $frame_ensure_start $frame_handler_start $exit_code "$_profile_start_ms" "$_profile_route"
+        return $exit_code
+      fi
+      msg_debug "Native daemon returned 200, falling back to Bash"
+      _profile_route="native:socket→bash"
+    # Slow path: check for native plugin file and use NativeDaemon class
+    elif _has_native_plugin "$class_name"; then
+      msg_debug "Found native plugin: $_NATIVE_PLUGIN_PATH (daemon not running)"
+      _profile_route="native:daemon"
+      [[ -n "${TRASH_PROFILE:-}" ]] && _profile_log "→" "$_CLASS" "$_SELECTOR" "native:daemon"
+      _native_daemon_dispatch "$class_name" "${_INSTANCE:-}" "$_SELECTOR" "$@"
+      exit_code=$?
+      # Exit code 200 = unknown selector or no daemon, fall back to Bash dispatch
+      if [[ $exit_code -ne 200 ]]; then
+        # Daemon already updates the env store via _env_set in NativeDaemon dispatch
+        # No need to reload - the updated state is already in the env store
+        _send_cleanup $frame_ensure_start $frame_handler_start $exit_code "$_profile_start_ms" "$_profile_route"
+        return $exit_code
+      fi
+      msg_debug "Native plugin doesn't implement $_SELECTOR, falling back to Bash"
+      _profile_route="native:daemon→bash"
     fi
-    msg_debug "Native plugin doesn't implement $_SELECTOR, falling back to Bash"
-    _profile_route="native→bash"
   fi
 
   # Check for compiled version first (prevents namespace pollution)
