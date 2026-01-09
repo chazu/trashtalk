@@ -2583,8 +2583,8 @@ def generate:
   # Compute the function prefix and qualified name for namespaced classes
   funcPrefix as $funcPrefix |
   qualifiedName as $qname |
-  # Extract instance variable names for expression parser
-  ([.instanceVars[]? | .name] // []) as $ivars |
+  # Extract instance variable names for expression parser (own + inherited)
+  (([.instanceVars[]? | .name] // []) + (.inheritedInstanceVars // [])) as $ivars |
   # Extract class instance variable names for expression parser
   ([.classInstanceVars[]? | .name] // []) as $cvars |
   (
