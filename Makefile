@@ -71,7 +71,8 @@ define try_compile
 if [[ "$(TRASHTALK_COMPILER)" == "jq" ]]; then \
 	$(JQ_COMPILER) compile "$(1)" 2>/dev/null > "$(2)"; \
 else \
-	if ! $(JQ_COMPILER) parse "$(1)" 2>/dev/null | $(PROCYON) --mode=bash 2>/dev/null > "$(2)" \
+	srcpath="$$(cd "$$(dirname "$(1)")" && pwd)/$$(basename "$(1)")"; \
+	if ! $(JQ_COMPILER) parse "$(1)" 2>/dev/null | $(PROCYON) --mode=bash --source-file="$$srcpath" 2>/dev/null > "$(2)" \
 		|| [[ ! -s "$(2)" ]] \
 		|| ! bash -n "$(2)" 2>/dev/null; then \
 		$(JQ_COMPILER) compile "$(1)" 2>/dev/null > "$(2)"; \
@@ -110,7 +111,8 @@ compile-namespaces:
 		if [[ "$(TRASHTALK_COMPILER)" == "jq" ]]; then \
 			$(JQ_COMPILER) compile "$$src" 2>/dev/null > "$$outfile"; \
 		else \
-			if ! $(JQ_COMPILER) parse "$$src" 2>/dev/null | $(PROCYON) --mode=bash 2>/dev/null > "$$outfile" \
+			srcpath="$$(cd "$$(dirname "$$src")" && pwd)/$$(basename "$$src")"; \
+			if ! $(JQ_COMPILER) parse "$$src" 2>/dev/null | $(PROCYON) --mode=bash --source-file="$$srcpath" 2>/dev/null > "$$outfile" \
 				|| [[ ! -s "$$outfile" ]] \
 				|| ! bash -n "$$outfile" 2>/dev/null; then \
 				$(JQ_COMPILER) compile "$$src" 2>/dev/null > "$$outfile"; \
@@ -127,7 +129,8 @@ $(COMPILED_NAMESPACES): $(COMPILED_DIR)
 	if [[ "$(TRASHTALK_COMPILER)" == "jq" ]]; then \
 		$(JQ_COMPILER) compile "$$src" 2>/dev/null > "$@"; \
 	else \
-		if ! $(JQ_COMPILER) parse "$$src" 2>/dev/null | $(PROCYON) --mode=bash 2>/dev/null > "$@" \
+		srcpath="$$(cd "$$(dirname "$$src")" && pwd)/$$(basename "$$src")"; \
+		if ! $(JQ_COMPILER) parse "$$src" 2>/dev/null | $(PROCYON) --mode=bash --source-file="$$srcpath" 2>/dev/null > "$@" \
 			|| [[ ! -s "$@" ]] \
 			|| ! bash -n "$@" 2>/dev/null; then \
 			$(JQ_COMPILER) compile "$$src" 2>/dev/null > "$@"; \
@@ -275,7 +278,8 @@ endif
 	if [[ "$(TRASHTALK_COMPILER)" == "jq" ]]; then \
 		$(JQ_COMPILER) compile "$$srcfile" 2>/dev/null > "$$outfile"; \
 	else \
-		if ! $(JQ_COMPILER) parse "$$srcfile" 2>/dev/null | $(PROCYON) --mode=bash 2>/dev/null > "$$outfile" \
+		srcpath="$$(cd "$$(dirname "$$srcfile")" && pwd)/$$(basename "$$srcfile")"; \
+		if ! $(JQ_COMPILER) parse "$$srcfile" 2>/dev/null | $(PROCYON) --mode=bash --source-file="$$srcpath" 2>/dev/null > "$$outfile" \
 			|| [[ ! -s "$$outfile" ]] \
 			|| ! bash -n "$$outfile" 2>/dev/null; then \
 			$(JQ_COMPILER) compile "$$srcfile" 2>/dev/null > "$$outfile"; \
