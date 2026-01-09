@@ -12,11 +12,6 @@ FIFO subclass: Object
     echo "$id"
   ]
 
-  # Get the path of this FIFO
-  method: path [
-    _ivar path
-  ]
-
   # Create the named pipe on disk
   rawMethod: create [
     local p
@@ -132,11 +127,6 @@ FIFO subclass: Object
     _ivar_set writerPid "$writer_pid"
   ]
 
-  # Get the writer process PID
-  method: writerPid [
-    _ivar writerPid
-  ]
-
   # Stop the writer process
   rawMethod: stopWriter [
     local writer_pid
@@ -171,11 +161,6 @@ FIFO subclass: Object
     _ivar_set readerPid "$reader_pid"
   ]
 
-  # Get the reader process PID
-  method: readerPid [
-    _ivar readerPid
-  ]
-
   # Stop the reader process
   rawMethod: stopReader [
     local reader_pid
@@ -188,6 +173,6 @@ FIFO subclass: Object
   ]
 
   # Private setter
-  rawMethod: _setPath: aPath [
-    _ivar_set path "$aPath"
+  method: _setPath: aPath [
+    path := aPath
   ]

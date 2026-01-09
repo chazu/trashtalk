@@ -90,16 +90,6 @@ Coproc subclass: Object
     echo "$bg_pid"
   ]
 
-  # Get the output FIFO path (for use with tail -f or direct reading)
-  method: fifoOut [
-    _ivar fifoOut
-  ]
-
-  # Get the input FIFO path (for writing to the process)
-  method: fifoIn [
-    _ivar fifoIn
-  ]
-
   # Read a single line from the process output
   # NOTE: Opens/closes FIFO each time - use readLines for continuous reading
   rawMethod: readLine [
@@ -197,16 +187,6 @@ Coproc subclass: Object
     @ "$_RECEIVER" _cleanup
   ]
 
-  # Get the PID
-  method: pid [
-    _ivar pid
-  ]
-
-  # Get status
-  method: status [
-    _ivar status
-  ]
-
   # Clean up FIFOs
   rawMethod: _cleanup [
     local fifo_in fifo_out
@@ -221,11 +201,11 @@ Coproc subclass: Object
   ]
 
   # Private setters
-  rawMethod: _setCommand: cmd [
-    _ivar_set command "$cmd"
+  method: _setCommand: cmd [
+    command := cmd
   ]
 
-  rawMethod: _setStatus: s [
-    _ivar_set status "$s"
+  method: _setStatus: s [
+    status := s
   ]
 
