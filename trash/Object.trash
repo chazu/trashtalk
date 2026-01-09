@@ -3,9 +3,10 @@ Object subclass: nil
   # Create a new instance of this class
   # Subclasses inherit this - no need to define your own unless custom init needed
   rawClassMethod: new [
-    local id
-    id=$(_generate_instance_id "$_CLASS")
-    _create_instance "$_CLASS" "$id"
+    local id className
+    className=$(@ Runtime class)
+    id=$(@ Runtime generateId: "$className")
+    @ Runtime create: "$className" id: "$id"
     echo "$id"
   ]
 
@@ -27,62 +28,70 @@ Object subclass: nil
 
   # Check if this object is an instance of a given class
   rawMethod: isKindOf: className [
-    local current="$_CLASS"
+    local current
+    current=$(@ Runtime class)
     while [[ -n "$current" ]]; do
-      if [[ "$current" == "$className" ]]; then
+      if [[ "$current" == "$1" ]]; then
         echo "true"
         return 0
       fi
-      local super_var="__${current}__superclass"
-      current="${!super_var:-}"
+      current=$(@ Runtime superclassOf: "$current")
     done
     echo "false"
   ]
 
   # Check if this object conforms to a protocol
   rawMethod: conformsTo: protocolName [
-    _conforms_to "$_CLASS" "$protocolName"
+    local class
+    class=$(@ Runtime class)
+    _conforms_to "$class" "$1"
   ]
 
   # Delete this object from memory
   rawMethod: delete [
-    _delete_instance "$_INSTANCE"
+    local instance
+    instance=$(@ Runtime instance)
+    @ Runtime delete: "$instance"
   ]
 
   # Return a detailed inspection of this object
   # Shows class name, instance ID, and all instance variables with values
   rawMethod: inspect [
-    local data
-    data=$(_env_get "$_RECEIVER")
+    local data class instance
+    class=$(@ Runtime class)
+    instance=$(@ Runtime instance)
+    data=$(@ Runtime dataFor: "$_RECEIVER")
 
-    echo "a $_CLASS"
-    echo "  id: $_INSTANCE"
+    @ Console print: "a $class"
+    @ Console print: "  id: $instance"
 
     if [[ -n "$data" && "$data" != "{}" ]]; then
       echo "$data" | jq -r 'to_entries | .[] | "  \(.key): \(.value)"'
     else
-      @ Trash methodsFor $_RECEIVER
+      @ Trash methodsFor "$_RECEIVER"
     fi
   ]
 
   # Write inspection output to a file
   # Usage: @ $obj inspectTo: "/tmp/inspect.txt"
   rawMethod: inspectTo: filepath [
-    @ "$_RECEIVER" inspect > "$filepath"
-    echo "$filepath"
+    @ Shell exec: "@ \"$_RECEIVER\" inspect" outputTo: "$1"
+    echo "$1"
   ]
 
   # Return this object's data as JSON
   rawMethod: asJson [
-    _env_get "$_RECEIVER"
+    @ Runtime dataFor: "$_RECEIVER"
   ]
 
   # Edit this class's source file and recompile if changed
   # Usage: @ Counter edit
   rawClassMethod: edit [
-    local source_file="$TRASHDIR/${_CLASS}.trash"
-    local trait_source="$TRASHDIR/traits/${_CLASS}.trash"
-    local file_to_edit=""
+    local class source_file trait_source file_to_edit editor
+    class=$(@ Runtime class)
+    source_file="$TRASHDIR/${class}.trash"
+    trait_source="$TRASHDIR/traits/${class}.trash"
+    file_to_edit=""
 
     # Find source file
     if [[ -f "$source_file" ]]; then
@@ -90,25 +99,26 @@ Object subclass: nil
     elif [[ -f "$trait_source" ]]; then
       file_to_edit="$trait_source"
     else
-      echo "Error: No source file found for $_CLASS"
+      @ Console error: "Error: No source file found for $class"
       return 1
     fi
 
     # Get modification time before editing
     local before_mtime after_mtime
-    before_mtime=$(stat -f "%m" "$file_to_edit" 2>/dev/null || stat -c "%Y" "$file_to_edit" 2>/dev/null)
+    before_mtime=$(@ File modificationTime: "$file_to_edit")
 
     # Open in editor
-    ${EDITOR:-vi} "$file_to_edit" </dev/tty >/dev/tty
+    editor=$(@ Env editor)
+    "$editor" "$file_to_edit" </dev/tty >/dev/tty
 
     # Check if modified and recompile
-    after_mtime=$(stat -f "%m" "$file_to_edit" 2>/dev/null || stat -c "%Y" "$file_to_edit" 2>/dev/null)
+    after_mtime=$(@ File modificationTime: "$file_to_edit")
 
     if [[ "$before_mtime" != "$after_mtime" ]]; then
-      echo "File modified, compiling..."
-      @ Trash compileAndReload "$_CLASS"
+      @ Console print: "File modified, compiling..."
+      @ Trash compileAndReload "$class"
     else
-      echo "No changes detected"
+      @ Console print: "No changes detected"
     fi
   ]
 
