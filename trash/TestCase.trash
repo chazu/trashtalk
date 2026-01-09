@@ -31,10 +31,8 @@ TestCase subclass: Object
   ]
 
   # Snake_case alias for positional args: @ self assert_equals "a" "b"
-  rawMethod: assert_equals [
-    local actual="$1"
-    local expected="$2"
-    @ "$_RECEIVER" assert: "$actual" equals: "$expected"
+  method: assert_equals: actual to: expected [
+    @ self assert: actual equals: expected
   ]
 
   method: assert: actual notEquals: expected [
@@ -43,10 +41,8 @@ TestCase subclass: Object
   ]
 
   # Snake_case alias for positional args
-  rawMethod: assert_not_equals [
-    local actual="$1"
-    local expected="$2"
-    @ "$_RECEIVER" assert: "$actual" notEquals: "$expected"
+  method: assert_not_equals: actual to: expected [
+    @ self assert: actual notEquals: expected
   ]
 
   # ==========================================
@@ -103,22 +99,15 @@ TestCase subclass: Object
   # String Assertions
   # ==========================================
 
-  rawMethod: assert: haystack contains: needle [
-    if echo "$haystack" | grep -qF "$needle"; then
-      @ "$_RECEIVER" _pass
-    else
-      @ "$_RECEIVER" _fail: "Expected '$haystack' to contain '$needle'"
-    fi
+  method: assert: haystack contains: needle [
+    (@ String contains: haystack substring: needle)
+      ifTrue: [@ self _pass]
+      ifFalse: [@ self _fail: 'Expected string to contain substring']
   ]
 
-  rawMethod: assert_contains [
-    local haystack="$1"
-    local needle="$2"
-    if echo "$haystack" | grep -qF "$needle"; then
-      @ "$_RECEIVER" _pass
-    else
-      @ "$_RECEIVER" _fail: "Expected '$haystack' to contain '$needle'"
-    fi
+  # Snake_case alias for positional args
+  method: assert_contains: haystack needle: needle [
+    @ self assert: haystack contains: needle
   ]
 
   method: assert: actual matches: pattern [
@@ -126,14 +115,9 @@ TestCase subclass: Object
                               ifFalse: [@ self _fail: 'Pattern match failed']
   ]
 
-  rawMethod: assert_matches [
-    local actual="$1"
-    local pattern="$2"
-    if echo "$actual" | grep -qE "$pattern"; then
-      @ "$_RECEIVER" _pass
-    else
-      @ "$_RECEIVER" _fail: "Expected '$actual' to match pattern '$pattern'"
-    fi
+  # Snake_case alias for positional args
+  method: assert_matches: actual pattern: pattern [
+    @ self assert: actual matches: pattern
   ]
 
   # ==========================================
@@ -223,9 +207,7 @@ TestCase subclass: Object
   # ==========================================
 
   method: _pass [
-    | count |
-    count := $(@ self getPassed)
-    @ self setPassed: $((count + 1))
+    passed := passed + 1
   ]
 
   rawMethod: _fail: message [
