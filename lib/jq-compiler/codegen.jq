@@ -1010,11 +1010,20 @@ def expr_gen($locals; $ivars; $cvars):
     (.value.type == "string") as $is_string |
     (.value.type == "dstring") as $is_dstring |
     (.value.type == "message_send" or .value.type == "cascade") as $is_message |
+    # Check for arithmetic binary ops - generate Procyon-compatible code (no subshell wrapper)
+    (.value.type == "binary" and (.value.op == "+" or .value.op == "-" or .value.op == "*" or .value.op == "/" or .value.op == "%")) as $is_arithmetic |
+    # Also check for unary minus (negation)
+    (.value.type == "unary" and .value.op == "-") as $is_unary_arith |
     (.value | expr_gen($locals; $ivars; $cvars)) as $val_code |
     # For message sends, wrap in $() for command substitution
     (if $is_message then "$(\($val_code))" else $val_code end) as $final_val |
     if expr_is_local(.target; $locals) then
-      if $is_collection then "\(.target)=\($val_code)"
+      if $is_arithmetic then
+        # Use (( var = expr )) for Procyon compatibility - no subshell
+        "(( \(.target) = \(.value | expr_gen_arith($locals; $ivars; $cvars)) ))"
+      elif $is_unary_arith then
+        "(( \(.target) = \(.value | expr_gen_arith($locals; $ivars; $cvars)) ))"
+      elif $is_collection then "\(.target)=\($val_code)"
       elif $is_string then "\(.target)=\"\(.value.value)\""  # Use raw string value
       elif $is_dstring then "\(.target)=\($val_code)"  # dstrings already have quotes
       elif $is_message then "\(.target)=\"\($final_val)\""
@@ -1022,16 +1031,29 @@ def expr_gen($locals; $ivars; $cvars):
       end
     elif expr_is_ivar(.target; $ivars) then
       # For ivars, use _ivar_set (collection literals rare in loop bodies)
-      if $is_message then "_ivar_set \(.target) \"\($final_val)\""
+      if $is_arithmetic then
+        # Use temp var + arithmetic command for Procyon compatibility
+        "local __arith__; (( __arith__ = \(.value | expr_gen_arith($locals; $ivars; $cvars)) )); _ivar_set \(.target) \"$__arith__\""
+      elif $is_unary_arith then
+        "local __arith__; (( __arith__ = \(.value | expr_gen_arith($locals; $ivars; $cvars)) )); _ivar_set \(.target) \"$__arith__\""
+      elif $is_message then "_ivar_set \(.target) \"\($final_val)\""
       else "_ivar_set \(.target) \"\($val_code)\""
       end
     elif expr_is_cvar(.target; $cvars) then
       # For cvars, use _cvar_set
-      if $is_message then "_cvar_set \(.target) \"\($final_val)\""
+      if $is_arithmetic then
+        "local __arith__; (( __arith__ = \(.value | expr_gen_arith($locals; $ivars; $cvars)) )); _cvar_set \(.target) \"$__arith__\""
+      elif $is_unary_arith then
+        "local __arith__; (( __arith__ = \(.value | expr_gen_arith($locals; $ivars; $cvars)) )); _cvar_set \(.target) \"$__arith__\""
+      elif $is_message then "_cvar_set \(.target) \"\($final_val)\""
       else "_cvar_set \(.target) \"\($val_code)\""
       end
     else
-      if $is_collection then "\(.target)=\($val_code)"
+      if $is_arithmetic then
+        "(( \(.target) = \(.value | expr_gen_arith($locals; $ivars; $cvars)) ))"
+      elif $is_unary_arith then
+        "(( \(.target) = \(.value | expr_gen_arith($locals; $ivars; $cvars)) ))"
+      elif $is_collection then "\(.target)=\($val_code)"
       elif $is_string then "\(.target)=\"\(.value.value)\""  # Use raw string value
       elif $is_dstring then "\(.target)=\($val_code)"  # dstrings already have quotes
       elif $is_message then "\(.target)=\"\($final_val)\""
@@ -1709,12 +1731,19 @@ def expr_gen_stmts($locals; $ivars; $cvars):
       ($stmt.value.type == "string") as $is_string |
       ($stmt.value.type == "dstring") as $is_dstring |
       ($stmt.value.type == "message_send" or $stmt.value.type == "cascade") as $is_message |
+      # Check for arithmetic binary ops - generate Procyon-compatible code (no subshell wrapper)
+      ($stmt.value.type == "binary" and ($stmt.value.op == "+" or $stmt.value.op == "-" or $stmt.value.op == "*" or $stmt.value.op == "/" or $stmt.value.op == "%")) as $is_arithmetic |
+      # Also check for unary minus (negation)
+      ($stmt.value.type == "unary" and $stmt.value.op == "-") as $is_unary_arith |
       ($stmt.value | expr_gen($current_locals; $ivars; $cvars)) as $val_code |
       ($stmt.value | expr_gen_json($current_locals; $ivars; $cvars)) as $json_code |
       # For message sends, wrap in $() for command substitution
       (if $is_message then "$(\($val_code))" else $val_code end) as $msg_code |
       if expr_is_local($stmt.target; $current_locals) then
-        if $is_collection or $is_ansi_quoted then
+        if $is_arithmetic or $is_unary_arith then
+          # Use (( var = expr )) for Procyon compatibility - no subshell
+          .lines += ["  (( \($stmt.target) = \($stmt.value | expr_gen_arith($current_locals; $ivars; $cvars)) ))"]
+        elif $is_collection or $is_ansi_quoted then
           .lines += ["  \($stmt.target)=\($val_code)"]
         elif $is_string then
           .lines += ["  \($stmt.target)=\"\($stmt.value.value)\""]  # Use raw string value
@@ -1726,7 +1755,10 @@ def expr_gen_stmts($locals; $ivars; $cvars):
           .lines += ["  \($stmt.target)=\"\($val_code)\""]
         end
       elif expr_is_ivar($stmt.target; $ivars) then
-        if $is_collection then
+        if $is_arithmetic or $is_unary_arith then
+          # Use temp var + arithmetic command for Procyon compatibility - no subshell
+          .lines += ["  local __arith__; (( __arith__ = \($stmt.value | expr_gen_arith($current_locals; $ivars; $cvars)) )); _ivar_set \($stmt.target) \"$__arith__\""]
+        elif $is_collection then
           # Use JSON serialization for collection ivars
           .lines += ["  _ivar_set \($stmt.target) '\($json_code)'"]
         elif $is_ansi_quoted then
@@ -1741,7 +1773,10 @@ def expr_gen_stmts($locals; $ivars; $cvars):
           .lines += ["  _ivar_set \($stmt.target) \"\($val_code)\""]
         end
       elif expr_is_cvar($stmt.target; $cvars) then
-        if $is_collection then
+        if $is_arithmetic or $is_unary_arith then
+          # Use temp var + arithmetic command for Procyon compatibility - no subshell
+          .lines += ["  local __arith__; (( __arith__ = \($stmt.value | expr_gen_arith($current_locals; $ivars; $cvars)) )); _cvar_set \($stmt.target) \"$__arith__\""]
+        elif $is_collection then
           # Use JSON serialization for collection cvars
           .lines += ["  _cvar_set \($stmt.target) '\($json_code)'"]
         elif $is_ansi_quoted then
@@ -1753,7 +1788,10 @@ def expr_gen_stmts($locals; $ivars; $cvars):
         end
       else
         # Unknown target - treat as regular assignment (could be global/env var)
-        if $is_collection or $is_ansi_quoted then
+        if $is_arithmetic or $is_unary_arith then
+          # Use (( var = expr )) for Procyon compatibility - no subshell
+          .lines += ["  (( \($stmt.target) = \($stmt.value | expr_gen_arith($current_locals; $ivars; $cvars)) ))"]
+        elif $is_collection or $is_ansi_quoted then
           .lines += ["  \($stmt.target)=\($val_code)"]
         elif $is_message then
           .lines += ["  \($stmt.target)=\"\($msg_code)\""]
