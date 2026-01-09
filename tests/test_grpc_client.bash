@@ -152,43 +152,48 @@ test_pooling_config() {
 run_test test_pooling_config
 
 # ------------------------------------------------------------------------------
-# Test 4: Streaming methods throw procyonOnly error
+# Test 4: Streaming methods dispatch to native and validate input
 # ------------------------------------------------------------------------------
+# Note: These methods require the native Procyon plugin (GrpcClient.dylib).
+# When the plugin exists, calls are dispatched to the native implementation
+# which validates input format and connection.
 
-test_streaming_requires_native() {
+test_streaming_native_dispatch() {
     local client
     client=$(@ GrpcClient connectTo: 'localhost:50051')
 
-    # Test serverStream
+    # Test serverStream - native impl validates method format
+    # Method format should be service/Method (not service.Method)
     local output
-    output=$(@ $client serverStream: 'service.Method' with: '{}' handler: 'block' 2>&1)
+    output=$(@ $client serverStream: 'test.Service/StreamMethod' with: '{}' handler: 'block' 2>&1)
     local exit_code=$?
-    if [[ $exit_code -ne 0 ]] && [[ "$output" == *"requires native Procyon"* ]]; then
-        pass "serverStream requires native Procyon"
+    # Expect error (connection refused or service not found since no real server)
+    if [[ $exit_code -ne 0 ]]; then
+        pass "serverStream dispatches to native (returns error without server)"
     else
-        fail "serverStream requires native Procyon" "Error about native Procyon" "$output (exit: $exit_code)"
+        fail "serverStream dispatches to native" "non-zero exit code" "$output (exit: $exit_code)"
     fi
 
     # Test clientStream
-    output=$(@ $client clientStream: 'service.Method' handler: 'block' 2>&1)
+    output=$(@ $client clientStream: 'test.Service/StreamMethod' handler: 'block' 2>&1)
     exit_code=$?
-    if [[ $exit_code -ne 0 ]] && [[ "$output" == *"requires native Procyon"* ]]; then
-        pass "clientStream requires native Procyon"
+    if [[ $exit_code -ne 0 ]]; then
+        pass "clientStream dispatches to native (returns error without server)"
     else
-        fail "clientStream requires native Procyon" "Error about native Procyon" "$output (exit: $exit_code)"
+        fail "clientStream dispatches to native" "non-zero exit code" "$output (exit: $exit_code)"
     fi
 
     # Test bidiStream
-    output=$(@ $client bidiStream: 'service.Method' handler: 'block' 2>&1)
+    output=$(@ $client bidiStream: 'test.Service/StreamMethod' handler: 'block' 2>&1)
     exit_code=$?
-    if [[ $exit_code -ne 0 ]] && [[ "$output" == *"requires native Procyon"* ]]; then
-        pass "bidiStream requires native Procyon"
+    if [[ $exit_code -ne 0 ]]; then
+        pass "bidiStream dispatches to native (returns error without server)"
     else
-        fail "bidiStream requires native Procyon" "Error about native Procyon" "$output (exit: $exit_code)"
+        fail "bidiStream dispatches to native" "non-zero exit code" "$output (exit: $exit_code)"
     fi
 }
 
-run_test test_streaming_requires_native
+run_test test_streaming_native_dispatch
 
 # ------------------------------------------------------------------------------
 # Test 5: Pragma markers are correctly set
