@@ -80,8 +80,8 @@ Object subclass: nil
   ]
 
   # Return this object's data as JSON
-  rawMethod: asJson [
-    @ Runtime dataFor: "$_RECEIVER"
+  method: asJson [
+    ^ @ Runtime dataFor: self
   ]
 
   # Edit this class's source file and recompile if changed

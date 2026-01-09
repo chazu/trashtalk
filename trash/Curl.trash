@@ -21,62 +21,62 @@ Curl subclass: Tool
   ]
 
   # Simple GET request
-  rawClassMethod: get: url [
-    @ Http get: "$1"
+  classMethod: get: url [
+    ^ @ Http get: url
   ]
 
   # GET request with headers returned
-  rawClassMethod: getWithHeaders: url [
-    @ Http getWithHeaders: "$1"
+  classMethod: getWithHeaders: url [
+    ^ @ Http getWithHeaders: url
   ]
 
   # GET request, return just status code
-  rawClassMethod: status: url [
-    @ Http status: "$1"
+  classMethod: status: url [
+    ^ @ Http status: url
   ]
 
   # POST JSON data
-  rawClassMethod: post: data to: url [
-    @ Http post: "$1" to: "$2"
+  classMethod: post: data to: url [
+    ^ @ Http post: data to: url
   ]
 
   # PUT JSON data
-  rawClassMethod: put: data to: url [
-    @ Http put: "$1" to: "$2"
+  classMethod: put: data to: url [
+    ^ @ Http put: data to: url
   ]
 
   # DELETE request
-  rawClassMethod: delete: url [
-    @ Http delete: "$1"
+  classMethod: delete: url [
+    ^ @ Http delete: url
   ]
 
   # Download file to path
-  rawClassMethod: download: url to: filepath [
-    @ Http download: "$1" to: "$2"
+  classMethod: download: url to: filepath [
+    ^ @ Http download: url to: filepath
   ]
 
   # GET with custom header
-  rawClassMethod: get: url header: header [
-    @ Http get: "$1" header: "$2"
+  classMethod: get: url header: header [
+    ^ @ Http get: url header: header
   ]
 
   # GET with auth token (Bearer)
-  rawClassMethod: get: url token: token [
-    @ Http get: "$1" token: "$2"
+  classMethod: get: url token: token [
+    ^ @ Http get: url token: token
   ]
 
   # POST with auth token
-  rawClassMethod: post: data to: url token: token [
-    @ Http post: "$1" to: "$2" token: "$3"
+  classMethod: post: data to: url token: token [
+    ^ @ Http post: data to: url token: token
   ]
 
   # HEAD request - get headers only
-  rawClassMethod: head: url [
-    @ Http head: "$1"
+  classMethod: head: url [
+    ^ @ Http head: url
   ]
 
   # Check if URL is reachable
-  rawClassMethod: ping: url [
-    @ Http ping: "$1"
+  classMethod: ping: url [
+    ^ @ Http ping: url
   ]
 
