@@ -1731,6 +1731,10 @@ def expr_gen_stmts($locals; $ivars; $cvars):
           .lines += ["  _ivar_set \($stmt.target) '\($json_code)'"]
         elif $is_ansi_quoted then
           .lines += ["  _ivar_set \($stmt.target) \($val_code)"]
+        elif $is_string then
+          .lines += ["  _ivar_set \($stmt.target) \"\($stmt.value.value)\""]  # Use raw string value
+        elif $is_dstring then
+          .lines += ["  _ivar_set \($stmt.target) \($val_code)"]  # dstrings already have quotes
         elif $is_message then
           .lines += ["  _ivar_set \($stmt.target) \"\($msg_code)\""]
         else
@@ -1850,12 +1854,13 @@ def should_use_expr_parser:
     else
       # Check for patterns that indicate new Smalltalk-like syntax:
       any(range(0; ($tokens | length) - 2) as $i |
-        # Pattern 1: identifier := identifier (ivar inference)
+        # Pattern 1: identifier := identifier/string (ivar inference)
         ($tokens[$i].type == "IDENTIFIER" and
          $tokens[$i + 1].type == "ASSIGN" and
-         $tokens[$i + 2].type == "IDENTIFIER" and
-         ($tokens[$i + 2].value != null) and
-         ($tokens[$i + 2].value | test("^[a-z]")))
+         (($tokens[$i + 2].type == "IDENTIFIER" and
+           ($tokens[$i + 2].value != null) and
+           ($tokens[$i + 2].value | test("^[a-z]"))) or
+          $tokens[$i + 2].type == "STRING"))
         or
         # Pattern 2: identifier := number followed by DOT (Smalltalk-style)
         ($tokens[$i].type == "IDENTIFIER" and

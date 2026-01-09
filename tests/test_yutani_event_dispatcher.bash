@@ -66,12 +66,9 @@ echo "--- Running State ---"
 result=$(@ $dispatcher isRunning)
 run_test "isRunning returns true after new" "true" "$result"
 
-# Note: stop() method has known bug - uses plain assignment instead of _ivar_set
-# So isRunning still returns "true" after stop
-# This test documents current (buggy) behavior for regression detection
 @ $dispatcher stop
 result=$(@ $dispatcher isRunning)
-run_test "isRunning after stop (known bug: still returns true)" "true" "$result"
+run_test "isRunning returns false after stop" "false" "$result"
 
 # ============================================================================
 # Widget Handler Registration
