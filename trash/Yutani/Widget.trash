@@ -40,40 +40,46 @@ Widget subclass: Object
   ]
 
   # Delete this widget from the session
-  rawMethod: delete [
-    local session wid dispatcher
-    session="$(_ivar session)"
-    wid="$(_ivar widgetId)"
-    dispatcher="$(_ivar dispatcher)"
-    # Remove handler from dispatcher
-    if [[ -n "$dispatcher" && -n "$wid" ]]; then
-      @ "$dispatcher" removeHandlerFor: "$wid"
-    fi
-    # Delete from server
-    if [[ -n "$session" && -n "$wid" ]]; then
-      @ "$session" deleteWidget: "$wid"
-    fi
+  method: delete [
+    | s w d |
+    s := session.
+    w := widgetId.
+    d := dispatcher.
+    (d notEmpty) ifTrue: [
+      (w notEmpty) ifTrue: [
+        @ d removeHandlerFor: w
+      ]
+    ].
+    (s notEmpty) ifTrue: [
+      (w notEmpty) ifTrue: [
+        @ s deleteWidget: w
+      ]
+    ]
   ]
 
   # Focus this widget
-  rawMethod: focus [
-    local session wid
-    session="$(_ivar session)"
-    wid="$(_ivar widgetId)"
-    if [[ -n "$session" && -n "$wid" ]]; then
-      @ "$session" focusWidget: "$wid"
-    fi
+  method: focus [
+    | s w |
+    s := session.
+    w := widgetId.
+    (s notEmpty) ifTrue: [
+      (w notEmpty) ifTrue: [
+        @ s focusWidget: w
+      ]
+    ]
   ]
 
   # Register an event handler for this widget
   # Handler is eval'd with $__EVENT set to the Event instance
-  rawMethod: onEventDo: handler [
-    local handler="$1" dispatcher wid
-    dispatcher="$(_ivar dispatcher)"
-    wid="$(_ivar widgetId)"
-    if [[ -n "$dispatcher" && -n "$wid" ]]; then
-      @ "$dispatcher" onWidget: "$wid" do: "$handler"
-    fi
+  method: onEventDo: handler [
+    | d w |
+    d := dispatcher.
+    w := widgetId.
+    (d notEmpty) ifTrue: [
+      (w notEmpty) ifTrue: [
+        @ d onWidget: w do: handler
+      ]
+    ]
   ]
 
   # Convenience: Register handler for submission events
