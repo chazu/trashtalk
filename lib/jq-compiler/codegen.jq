@@ -171,7 +171,21 @@ def expr_parse_atom:
     if $tok.value == "self" then
       { state: (. | expr_advance), result: { type: "self" } }
     else
-      { state: (. | expr_advance), result: { type: "identifier", name: $tok.value } }
+      # Check for qualified name: Package::Class
+      (. | expr_advance) as $after_id |
+      if ($after_id | expr_peek_type) == "NAMESPACE_SEP" then
+        # Consume :: and get the class name
+        ($after_id | expr_advance) as $after_sep |
+        ($after_sep | expr_peek) as $class_tok |
+        if $class_tok != null and $class_tok.type == "IDENTIFIER" then
+          { state: ($after_sep | expr_advance), result: { type: "qualified_name", package: $tok.value, name: $class_tok.value } }
+        else
+          # Malformed qualified name, just return the first identifier
+          { state: $after_id, result: { type: "identifier", name: $tok.value } }
+        end
+      else
+        { state: $after_id, result: { type: "identifier", name: $tok.value } }
+      end
     end
   elif $tok.type == "VARIABLE" then
     { state: (. | expr_advance), result: { type: "variable", value: $tok.value } }
@@ -937,6 +951,9 @@ def expr_gen($locals; $ivars; $cvars):
     elif expr_is_cvar(.name; $cvars) then "$(_cvar \(.name))"
     else .name  # bare identifier (command name, etc.)
     end
+  elif .type == "qualified_name" then
+    # Qualified class reference: Package::Class
+    "\(.package)::\(.name)"
   elif .type == "variable" then .value
   elif .type == "subshell" then
     # Replace self with "$_RECEIVER" in subshell content
@@ -1025,6 +1042,30 @@ def expr_gen($locals; $ivars; $cvars):
     if .value == null then "return"
     elif .value.type == "string" then "echo \"\(.value.value)\"; return"
     elif .value.type == "symbol" then "echo \"\(.value.value)\"; return"
+    elif .value.type == "binary" then
+      # Handle comparison returns - evaluate and echo true/false
+      # Helper to get value - string literals use raw value, others use expr_gen
+      def str_val: if .type == "string" then .value else expr_gen($locals; $ivars; $cvars) end;
+      .value as $bin |
+      if $bin.op == "=" or $bin.op == "==" then
+        # String/value equality - use [[ ]] for safety with strings
+        ($bin.left | str_val) as $left |
+        ($bin.right | str_val) as $right |
+        "if [[ \"\($left)\" == \"\($right)\" ]]; then echo \"true\"; else echo \"false\"; fi; return"
+      elif $bin.op == "~=" or $bin.op == "!=" then
+        # Inequality
+        ($bin.left | str_val) as $left |
+        ($bin.right | str_val) as $right |
+        "if [[ \"\($left)\" != \"\($right)\" ]]; then echo \"true\"; else echo \"false\"; fi; return"
+      elif $bin.op == ">" or $bin.op == "<" or $bin.op == ">=" or $bin.op == "<=" then
+        # Numeric comparisons - use (( )) arithmetic
+        ($bin.left | expr_gen_arith($locals; $ivars; $cvars)) as $left |
+        ($bin.right | expr_gen_arith($locals; $ivars; $cvars)) as $right |
+        "if (( \($left) \($bin.op) \($right) )); then echo \"true\"; else echo \"false\"; fi; return"
+      else
+        # Unknown binary op - fall through to expr_gen
+        "echo \"\(.value | expr_gen($locals; $ivars; $cvars))\"; return"
+      end
     else "echo \"\(.value | expr_gen($locals; $ivars; $cvars))\"; return"
     end
   elif .type == "passthrough" then
@@ -1717,11 +1758,8 @@ def expr_gen_stmts($locals; $ivars; $cvars):
         end
       end
     elif $stmt.type == "return" then
-      if $stmt.value == null then
-        .lines += ["  return"]
-      else
-        .lines += ["  echo \"\($stmt.value | expr_gen($current_locals; $ivars; $cvars))\"; return"]
-      end
+      # Delegate to expr_gen which has proper comparison handling for returns
+      .lines += ["  \($stmt | expr_gen($current_locals; $ivars; $cvars))"]
     elif $stmt.type == "message_send" then
       .lines += ["  \($stmt | expr_gen($current_locals; $ivars; $cvars))"]
     elif $stmt.type == "cascade" then
@@ -1849,24 +1887,24 @@ def should_use_expr_parser:
           $tokens[$i].value == "ifNil:" or $tokens[$i].value == "ifNotNil:" or
           $tokens[$i].value == "to:"))
         or
-        # Pattern 7: Comparison operators between identifiers/numbers
-        (($tokens[$i].type == "IDENTIFIER" or $tokens[$i].type == "NUMBER" or $tokens[$i].type == "RPAREN") and
+        # Pattern 7: Comparison operators between identifiers/numbers/strings
+        (($tokens[$i].type == "IDENTIFIER" or $tokens[$i].type == "NUMBER" or $tokens[$i].type == "STRING" or $tokens[$i].type == "RPAREN") and
          ($tokens[$i + 1].type == "GT" or $tokens[$i + 1].type == "LT" or
           $tokens[$i + 1].type == "GE" or $tokens[$i + 1].type == "LE" or
           $tokens[$i + 1].type == "EQ" or $tokens[$i + 1].type == "NE") and
-         ($tokens[$i + 2].type == "IDENTIFIER" or $tokens[$i + 2].type == "NUMBER"))
+         ($tokens[$i + 2].type == "IDENTIFIER" or $tokens[$i + 2].type == "NUMBER" or $tokens[$i + 2].type == "STRING"))
         or
         # Pattern 8: Collection literals - SYMBOL, HASH_LPAREN (#array), HASH_LBRACE (#dict)
         ($tokens[$i].type == "SYMBOL" or
          $tokens[$i].type == "HASH_LPAREN" or
          $tokens[$i].type == "HASH_LBRACE")
         or
-        # Pattern 9: Message send to variable - AT IDENTIFIER (KEYWORD or IDENTIFIER)
-        # e.g., @ aBlock valueWith: or @ aBlock value
+        # Pattern 9: Message send to variable - AT IDENTIFIER (KEYWORD or IDENTIFIER or NAMESPACE_SEP)
+        # e.g., @ aBlock valueWith: or @ aBlock value or @ Yutani::Widget new
         # This enables proper variable expansion for message receivers
         ($tokens[$i].type == "AT" and
          $tokens[$i + 1].type == "IDENTIFIER" and
-         ($tokens[$i + 2].type == "KEYWORD" or $tokens[$i + 2].type == "IDENTIFIER"))
+         ($tokens[$i + 2].type == "KEYWORD" or $tokens[$i + 2].type == "IDENTIFIER" or $tokens[$i + 2].type == "NAMESPACE_SEP"))
         or
         # Pattern 10: Block literal - LBRACKET BLOCK_PARAM (e.g., [:x | ...])
         ($tokens[$i].type == "LBRACKET" and
