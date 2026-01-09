@@ -5,11 +5,11 @@ Array subclass: Object
   instanceVars: items:'[]'
 
   # Create a new array
-  method: new [
-    | array_id |
-    array_id := $(_generate_instance_id "Array")
+  rawClassMethod: new [
+    local array_id
+    array_id=$(_generate_instance_id "Array")
     _create_instance "Array" "$array_id"
-    ^ $array_id
+    echo "$array_id"
   ]
 
   # Accessor for items ivar
@@ -73,15 +73,8 @@ Array subclass: Object
   ]
 
   # Print array contents
-  rawMethod: show [
-    local items len
-    items="$(_ivar items)"
-    len=$(echo "$items" | jq 'length')
-    if [[ "$len" -eq 0 ]]; then
-      echo "(empty array)"
-    else
-      echo "$items" | jq -r '.[]' | nl -v0 | sed 's/^[ \t]*//'
-    fi
+  method: show [
+    (items arrayIsEmpty) ifTrue: [^ '(empty array)'] ifFalse: [^ items]
   ]
 
   # Initialize with values
