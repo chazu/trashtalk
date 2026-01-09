@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
 # Test Yutani::Event class functionality
 # Regression tests for native compilation refactoring
-#
-# NOTE: Some tests document KNOWN BUGS in current behavior:
-# - Mouse event parsing has field misalignment due to jq template bug
 
 # Determine script location and project root
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -128,7 +125,7 @@ run_test "isSubmission returns true for WIDGET_DONE" "true" "$result"
 # Mouse Event Parsing (known bug: field misalignment in jq template)
 # ============================================================================
 echo ""
-echo "--- Mouse Event Parsing (known bug: fields misaligned) ---"
+echo "--- Mouse Event Parsing ---"
 
 MOUSE_JSON='{"mouse":{"x":100,"y":200,"button":"LEFT"}}'
 mouseEvent=$(@ Yutani::Event fromJson: "$MOUSE_JSON")
@@ -136,19 +133,17 @@ mouseEvent=$(@ Yutani::Event fromJson: "$MOUSE_JSON")
 result=$(@ $mouseEvent eventType)
 run_test "Mouse event type is 'mouse'" "mouse" "$result"
 
-# Known bug: fields are shifted due to missing pipe in jq template
-# mouseX ends up in keyMods slot, etc.
 result=$(@ $mouseEvent keyMods)
-run_test "keyMods contains mouseX (known bug: misalignment)" "100" "$result"
+run_test "keyMods is empty for mouse event" "" "$result"
 
 result=$(@ $mouseEvent mouseX)
-run_test "mouseX contains mouseY (known bug: misalignment)" "200" "$result"
+run_test "mouseX returns correct X coordinate" "100" "$result"
 
 result=$(@ $mouseEvent mouseY)
-run_test "mouseY contains button (known bug: misalignment)" "LEFT" "$result"
+run_test "mouseY returns correct Y coordinate" "200" "$result"
 
 result=$(@ $mouseEvent mouseButton)
-run_test "mouseButton is empty (known bug: misalignment)" "" "$result"
+run_test "mouseButton returns correct button" "LEFT" "$result"
 
 # ============================================================================
 # Resize Event Parsing

@@ -31,7 +31,7 @@ Event subclass: Object
       elif .widget then
         "widget|\(.widget.widgetId.id // "")|||0|0||\(.widget.type // "")"
       elif .mouse then
-        "mouse|||\(.mouse.x // 0)|\(.mouse.y // 0)|\(.mouse.button // "")|"
+        "mouse||||\(.mouse.x // 0)|\(.mouse.y // 0)|\(.mouse.button // "")|"
       elif .resize then
         "resize|||0|0||"
       elif .focus then
