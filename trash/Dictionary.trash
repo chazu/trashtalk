@@ -6,8 +6,8 @@ Dictionary subclass: Object
   # Create a new dictionary
   rawClassMethod: new [
     local dict_id
-    dict_id=$(_generate_instance_id "Dictionary")
-    _create_instance "Dictionary" "$dict_id"
+    dict_id=$(@ Runtime generateId: "Dictionary")
+    @ Runtime create: "Dictionary" id: "$dict_id"
     echo "$dict_id"
   ]
 

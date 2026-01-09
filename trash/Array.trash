@@ -7,8 +7,8 @@ Array subclass: Object
   # Create a new array
   rawClassMethod: new [
     local array_id
-    array_id=$(_generate_instance_id "Array")
-    _create_instance "Array" "$array_id"
+    array_id=$(@ Runtime generateId: "Array")
+    @ Runtime create: "Array" id: "$array_id"
     echo "$array_id"
   ]
 

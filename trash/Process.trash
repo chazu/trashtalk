@@ -7,9 +7,10 @@ Process subclass: Object
   # Create a new process wrapper for a command
   # Usage: proc=$(@ Process for: "curl -s https://example.com")
   rawClassMethod: for: command [
-    local id=$(_generate_instance_id Process)
-    _create_instance Process "$id"
-    @ "$id" setCommand "$command"
+    local id
+    id=$(@ Runtime generateId: "Process")
+    @ Runtime create: "Process" id: "$id"
+    @ "$id" setCommand "$1"
     @ "$id" setStatus "created"
     echo "$id"
   ]
@@ -23,7 +24,7 @@ Process subclass: Object
 
     @ "$_RECEIVER" debug: "Running command: $cmd"
     _ivar_set status "running"
-    _ivar_set startTime "$(date +%s)"
+    _ivar_set startTime "$(@ Time now)"
 
     # Run command in subshell, capturing output
     # Subshell prevents exit/return from killing the method
@@ -33,7 +34,7 @@ Process subclass: Object
     _ivar_set exitCode "$exit_code"
     _ivar_set stdout "$(cat "$tmp_stdout" 2>/dev/null)"
     _ivar_set stderr "$(cat "$tmp_stderr" 2>/dev/null)"
-    _ivar_set endTime "$(date +%s)"
+    _ivar_set endTime "$(@ Time now)"
     _ivar_set status "completed"
 
     rm -f "$tmp_stdout" "$tmp_stderr"
@@ -44,17 +45,19 @@ Process subclass: Object
   # Start the command in the background (non-blocking)
   # Returns immediately, use wait or poll to check completion
   rawMethod: start [
-    local cmd=$(_ivar command)
-    local tmp_stdout="/tmp/proc_${_INSTANCE}_stdout"
-    local tmp_stderr="/tmp/proc_${_INSTANCE}_stderr"
+    local cmd instance tmp_stdout tmp_stderr bg_pid
+    cmd=$(_ivar command)
+    instance=$(@ Runtime instance)
+    tmp_stdout="/tmp/proc_${instance}_stdout"
+    tmp_stderr="/tmp/proc_${instance}_stderr"
 
     @ "$_RECEIVER" debug: "Starting background command: $cmd"
     _ivar_set status "running"
-    _ivar_set startTime "$(date +%s)"
+    _ivar_set startTime "$(@ Time now)"
 
     # Run command in background subshell
     (eval "$cmd") >"$tmp_stdout" 2>"$tmp_stderr" &
-    local bg_pid=$!
+    bg_pid=$!
     _ivar_set pid "$bg_pid"
 
     echo "$bg_pid"
@@ -63,8 +66,9 @@ Process subclass: Object
   # Wait for a background process to complete
   # Note: Uses polling since @ runs in subshells and can't use bash wait builtin
   rawMethod: wait [
-    local proc_pid=$(_ivar pid)
-    local proc_status=$(_ivar status)
+    local proc_pid proc_status instance tmp_stdout tmp_stderr exit_code
+    proc_pid=$(_ivar pid)
+    proc_status=$(_ivar status)
 
     if [[ "$proc_status" != "running" ]]; then
       @ "$_RECEIVER" debug: "Process not running (status: $proc_status)"
@@ -73,34 +77,33 @@ Process subclass: Object
     fi
 
     if [[ -z "$proc_pid" ]]; then
-      echo "Error: No PID - process was not started in background"
+      @ Console error: "Error: No PID - process was not started in background"
       return 1
     fi
 
     @ "$_RECEIVER" debug: "Waiting for PID $proc_pid"
 
     # Poll until process completes (can't use wait across subshells)
-    while kill -0 "$proc_pid" 2>/dev/null; do
-      sleep 0.1
+    while [[ "$(@ Shell isAlive: "$proc_pid")" == "true" ]]; do
+      @ Time sleep: 0.1
     done
 
     # Process completed - get exit code via /proc or assume 0 if file exists
-    # Note: Can't get actual exit code without wait, so check output files
-    local tmp_stdout="/tmp/proc_${_INSTANCE}_stdout"
-    local tmp_stderr="/tmp/proc_${_INSTANCE}_stderr"
+    instance=$(@ Runtime instance)
+    tmp_stdout="/tmp/proc_${instance}_stdout"
+    tmp_stderr="/tmp/proc_${instance}_stderr"
 
     # Wait a moment for files to be flushed
-    sleep 0.05
+    @ Time sleep: 0.05
 
     _ivar_set stdout "$(cat "$tmp_stdout" 2>/dev/null)"
     _ivar_set stderr "$(cat "$tmp_stderr" 2>/dev/null)"
     rm -f "$tmp_stdout" "$tmp_stderr"
 
     # Without wait, we can't get exact exit code
-    # Use 0 as default since process completed
-    local exit_code=0
+    exit_code=0
     _ivar_set exitCode "$exit_code"
-    _ivar_set endTime "$(date +%s)"
+    _ivar_set endTime "$(@ Time now)"
     _ivar_set status "completed"
 
     echo "$exit_code"
@@ -108,15 +111,16 @@ Process subclass: Object
 
   # Check if the process is still running
   rawMethod: isRunning [
-    local proc_pid=$(_ivar pid)
-    local proc_status=$(_ivar status)
+    local proc_pid proc_status
+    proc_pid=$(_ivar pid)
+    proc_status=$(_ivar status)
 
     if [[ "$proc_status" != "running" ]]; then
       echo "false"
       return 1
     fi
 
-    if kill -0 "$proc_pid" 2>/dev/null; then
+    if [[ "$(@ Shell isAlive: "$proc_pid")" == "true" ]]; then
       echo "true"
       return 0
     else
@@ -129,26 +133,31 @@ Process subclass: Object
 
   # Send a signal to the process
   rawMethod: signal: sig [
-    local proc_pid=$(_ivar pid)
+    local proc_pid
+    proc_pid=$(_ivar pid)
 
     if [[ -z "$proc_pid" ]]; then
-      echo "Error: No PID"
+      @ Console error: "Error: No PID"
       return 1
     fi
 
-    @ "$_RECEIVER" debug: "Sending signal $sig to PID $proc_pid"
-    kill "-$sig" "$proc_pid" 2>/dev/null
+    @ "$_RECEIVER" debug: "Sending signal $1 to PID $proc_pid"
+    @ Shell signal: "$1" to: "$proc_pid"
   ]
 
   # Terminate the process (SIGTERM)
   rawMethod: terminate [
-    @ "$_RECEIVER" signal: "TERM"
+    local proc_pid
+    proc_pid=$(_ivar pid)
+    @ Shell terminate: "$proc_pid"
     _ivar_set status "terminated"
   ]
 
   # Kill the process (SIGKILL)
   rawMethod: kill [
-    @ "$_RECEIVER" signal: "KILL"
+    local proc_pid
+    proc_pid=$(_ivar pid)
+    @ Shell kill: "$proc_pid"
     _ivar_set status "killed"
   ]
 
@@ -181,18 +190,18 @@ Process subclass: Object
 
   # Get process info
   rawMethod: info [
-    echo "Command: $(_ivar command)"
-    echo "PID: $(_ivar pid)"
-    echo "Status: $(_ivar status)"
-    echo "Exit Code: $(_ivar exitCode)"
-    echo "Started: $(date -r "$(_ivar startTime)" 2>/dev/null || echo "$(_ivar startTime)")"
-    local end=$(_ivar endTime)
+    local start end duration
+    @ Console print: "Command: $(_ivar command)"
+    @ Console print: "PID: $(_ivar pid)"
+    @ Console print: "Status: $(_ivar status)"
+    @ Console print: "Exit Code: $(_ivar exitCode)"
+    start=$(_ivar startTime)
+    @ Console print: "Started: $(@ Time formatISO: "$start")"
+    end=$(_ivar endTime)
     if [[ -n "$end" ]]; then
-      echo "Ended: $(date -r "$end" 2>/dev/null || echo "$end")"
-      local start=$(_ivar startTime)
-      if [[ -n "$start" ]]; then
-        echo "Duration: $((end - start))s"
-      fi
+      @ Console print: "Ended: $(@ Time formatISO: "$end")"
+      duration=$(@ Time from: "$start" to: "$end")
+      @ Console print: "Duration: ${duration}s"
     fi
   ]
 
@@ -201,48 +210,37 @@ Process subclass: Object
   # Run a command and return stdout (blocking, simple)
   # Usage: output=$(@ Process exec: "ls -la")
   rawClassMethod: exec: command [
-    local tmp_out="/tmp/proc_exec_$$"
-    eval "$command" >"$tmp_out" 2>&1
-    local exit_code=$?
-    cat "$tmp_out"
-    rm -f "$tmp_out"
-    return $exit_code
+    @ Shell execAll: "$1"
   ]
 
   # Run a command and return exit code only
   # Usage: @ Process run: "make test"
   rawClassMethod: run: command [
-    eval "$command"
+    @ Shell run: "$1"
   ]
 
   # Run a command in background, return PID
   # Usage: pid=$(@ Process spawn: "long-running-task")
   rawClassMethod: spawn: command [
-    eval "$command" >/dev/null 2>&1 &
-    echo $!
+    @ Shell spawn: "$1"
   ]
 
   # Wait for a PID to complete
   # Usage: @ Process waitPid: $pid
   rawClassMethod: waitPid: pid [
-    wait "$pid" 2>/dev/null
-    echo $?
+    @ Shell wait: "$1"
   ]
 
   # Check if a PID is running
   # Usage: @ Process isRunningPid: $pid
   rawClassMethod: isRunningPid: pid [
-    if kill -0 "$pid" 2>/dev/null; then
-      echo "true"
-    else
-      echo "false"
-    fi
+    @ Shell isAlive: "$1"
   ]
 
   # Kill a PID
   # Usage: @ Process killPid: $pid
   rawClassMethod: killPid: pid [
-    kill -TERM "$pid" 2>/dev/null
+    @ Shell terminate: "$1"
   ]
 
   # Show help
