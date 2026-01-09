@@ -1647,15 +1647,25 @@ function send {
     # First keyword (already have it)
     _SELECTOR="${_SELECTOR%:}"  # Remove trailing colon
 
-    # Process remaining arguments looking for more keywords
+    # Process remaining arguments: strict keyword-value alternation
+    # After each keyword, the next argument is ALWAYS a value (even if it looks like a keyword)
+    # This handles cases like: @ String endsWith: 'foo:' suffix: ':'
+    # where 'foo:' is a value, not a keyword
+    local expecting_value=1  # After first keyword, expect a value
     while [[ $# -gt 0 ]]; do
-      if [[ "$1" == *: ]]; then
-        # This is a keyword - append to selector
+      if [[ $expecting_value -eq 1 ]]; then
+        # This is a value - add to args regardless of pattern
+        _ARGS+=("$1")
+        shift
+        expecting_value=0  # Next could be a keyword
+      elif [[ "$1" =~ ^[a-zA-Z_][a-zA-Z0-9_]*:$ ]]; then
+        # This looks like a keyword - append to selector
         local keyword="${1%:}"  # Remove trailing colon
         _SELECTOR="${_SELECTOR}_${keyword}"
         shift
+        expecting_value=1  # After keyword, expect value
       else
-        # This is a value - add to args
+        # Not a keyword pattern, treat as value
         _ARGS+=("$1")
         shift
       fi
