@@ -1,0 +1,176 @@
+# Runtime - Reflection and object lifecycle primitives
+# Provides access to runtime context, object creation, and introspection
+#
+# Usage:
+#   className := @ Runtime class
+#   id := @ Runtime generateId: 'Counter'
+#   @ Runtime create: 'Counter' id: id
+#
+Runtime subclass: Object
+
+  # ==========================================
+  # Context Access
+  # ==========================================
+
+  # Get the current class name in context
+  # Usage: className := @ Runtime class
+  rawClassMethod: class [
+    echo "$_CLASS"
+  ]
+
+  # Get the current instance ID in context
+  # Usage: instanceId := @ Runtime instance
+  rawClassMethod: instance [
+    echo "$_INSTANCE"
+  ]
+
+  # Get the current receiver in context
+  # Usage: receiver := @ Runtime receiver
+  rawClassMethod: receiver [
+    echo "$_RECEIVER"
+  ]
+
+  # Get the current selector being executed
+  # Usage: selector := @ Runtime selector
+  rawClassMethod: selector [
+    echo "$_SELECTOR"
+  ]
+
+  # ==========================================
+  # Object Lifecycle
+  # ==========================================
+
+  # Generate a unique instance ID for a class
+  # Usage: id := @ Runtime generateId: 'Counter'
+  rawClassMethod: generateId: className [
+    _generate_instance_id "$1"
+  ]
+
+  # Create a new instance with a given ID
+  # Usage: @ Runtime create: 'Counter' id: 'counter_abc123'
+  rawClassMethod: create: className id: instanceId [
+    _create_instance "$1" "$2"
+  ]
+
+  # Delete an instance by ID
+  # Usage: @ Runtime delete: instanceId
+  rawClassMethod: delete: instanceId [
+    _delete_instance "$1"
+  ]
+
+  # ==========================================
+  # Instance Data Access
+  # ==========================================
+
+  # Get instance data as JSON
+  # Usage: json := @ Runtime dataFor: instanceId
+  rawClassMethod: dataFor: instanceId [
+    _env_get "$1"
+  ]
+
+  # Set instance data from JSON
+  # Usage: @ Runtime setData: '{"value":42}' for: instanceId
+  rawClassMethod: setData: json for: instanceId [
+    _env_set "$2" "$1"
+  ]
+
+  # Get an instance variable value
+  # Usage: value := @ Runtime ivar: 'count' of: instanceId
+  rawClassMethod: ivar: varName of: instanceId [
+    local data value
+    data=$(_env_get "$2")
+    echo "$data" | jq -r --arg k "$1" '.[$k] // empty'
+  ]
+
+  # Set an instance variable value
+  # Usage: @ Runtime ivar: 'count' of: instanceId set: 42
+  rawClassMethod: ivar: varName of: instanceId set: value [
+    local data
+    data=$(_env_get "$2")
+    data=$(echo "$data" | jq -c --arg k "$1" --arg v "$3" '.[$k] = $v')
+    _env_set "$2" "$data"
+  ]
+
+  # ==========================================
+  # Introspection
+  # ==========================================
+
+  # Get superclass of a class
+  # Usage: super := @ Runtime superclassOf: 'Counter'
+  rawClassMethod: superclassOf: className [
+    local super_var="__${1}__superclass"
+    echo "${!super_var:-}"
+  ]
+
+  # Check if a class exists
+  # Usage: exists := @ Runtime classExists: 'Counter'
+  rawClassMethod: classExists: className [
+    local meta_var="__${1}__class"
+    if [[ -n "${!meta_var:-}" ]]; then
+      echo "true"
+    else
+      echo "false"
+    fi
+  ]
+
+  # Get all methods for a class (as JSON array)
+  # Usage: methods := @ Runtime methodsFor: 'Counter'
+  rawClassMethod: methodsFor: className [
+    local methods="[]"
+    local prefix="__${1}__"
+    while IFS= read -r func; do
+      local method="${func#*$prefix}"
+      methods=$(echo "$methods" | jq -c --arg m "$method" '. + [$m]')
+    done < <(declare -F | grep "$prefix" | awk '{print $3}')
+    echo "$methods"
+  ]
+
+  # Get methods matching a pattern (for test discovery)
+  # Usage: tests := @ Runtime methodsFor: 'TestCounter' matching: 'test*'
+  rawClassMethod: methodsFor: className matching: pattern [
+    local methods="[]"
+    local prefix="__${1}__"
+    while IFS= read -r func; do
+      local method="${func#*$prefix}"
+      if [[ "$method" == $2 ]]; then
+        methods=$(echo "$methods" | jq -c --arg m "$method" '. + [$m]')
+      fi
+    done < <(declare -F | grep "$prefix" | awk '{print $3}')
+    echo "$methods"
+  ]
+
+  # Check if a class has a specific method
+  # Usage: has := @ Runtime class: 'Counter' hasMethod: 'increment'
+  rawClassMethod: class: className hasMethod: methodName [
+    local func="__${1}__${2}"
+    if declare -F "$func" >/dev/null 2>&1; then
+      echo "true"
+    else
+      echo "false"
+    fi
+  ]
+
+  # ==========================================
+  # Call Stack
+  # ==========================================
+
+  # Get current call depth
+  rawClassMethod: callDepth [
+    echo "${_CALL_DEPTH:-0}"
+  ]
+
+  # Get call stack as JSON array
+  rawClassMethod: callStack [
+    local stack="[]"
+    local i
+    for ((i=0; i<${#_CALL_STACK[@]}; i++)); do
+      stack=$(echo "$stack" | jq -c --arg s "${_CALL_STACK[$i]}" '. + [$s]')
+    done
+    echo "$stack"
+  ]
+
+  # Print stack trace to stderr
+  rawClassMethod: printStackTrace [
+    _print_stack_trace
+  ]
+

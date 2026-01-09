@@ -1,0 +1,250 @@
+# Shell - Command execution primitive class
+# Provides simple command execution without Process overhead
+#
+# Usage:
+#   output := @ Shell exec: 'ls -la'
+#   @ Shell run: 'make test'
+#   pid := @ Shell spawn: 'sleep 10'
+#
+Shell subclass: Object
+
+  # ==========================================
+  # Simple Execution
+  # ==========================================
+
+  # Execute command and return stdout
+  # Usage: output := @ Shell exec: 'ls -la'
+  rawClassMethod: exec: command [
+    eval "$1"
+  ]
+
+  # Execute command, return stdout, capture exit code in $?
+  # Usage: output := @ Shell run: 'make test'
+  rawClassMethod: run: command [
+    eval "$1"
+  ]
+
+  # Execute command silently (discard output)
+  # Usage: @ Shell silent: 'rm -f temp.txt'
+  rawClassMethod: silent: command [
+    eval "$1" >/dev/null 2>&1
+  ]
+
+  # Execute command and return exit code only
+  # Usage: code := @ Shell exitCode: 'make test'
+  rawClassMethod: exitCode: command [
+    eval "$1" >/dev/null 2>&1
+    echo $?
+  ]
+
+  # Execute command and return true/false based on success
+  # Usage: ok := @ Shell succeeds: 'make test'
+  rawClassMethod: succeeds: command [
+    if eval "$1" >/dev/null 2>&1; then
+      echo "true"
+    else
+      echo "false"
+    fi
+  ]
+
+  # Execute command and return true/false based on failure
+  # Usage: failed := @ Shell fails: 'make test'
+  rawClassMethod: fails: command [
+    if eval "$1" >/dev/null 2>&1; then
+      echo "false"
+    else
+      echo "true"
+    fi
+  ]
+
+  # ==========================================
+  # Output Capture
+  # ==========================================
+
+  # Execute command and return both stdout and stderr combined
+  # Usage: output := @ Shell execAll: 'make 2>&1'
+  rawClassMethod: execAll: command [
+    eval "$1" 2>&1
+  ]
+
+  # Execute command and return stderr only
+  # Usage: errors := @ Shell execErr: 'make test'
+  rawClassMethod: execErr: command [
+    eval "$1" 2>&1 >/dev/null
+  ]
+
+  # Execute command and return JSON with stdout, stderr, exitCode
+  # Usage: result := @ Shell execFull: 'make test'
+  rawClassMethod: execFull: command [
+    local stdout_file="/tmp/shell_$$_stdout"
+    local stderr_file="/tmp/shell_$$_stderr"
+
+    eval "$1" >"$stdout_file" 2>"$stderr_file"
+    local exit_code=$?
+
+    local stdout stderr
+    stdout=$(cat "$stdout_file" 2>/dev/null)
+    stderr=$(cat "$stderr_file" 2>/dev/null)
+    rm -f "$stdout_file" "$stderr_file"
+
+    jo stdout="$stdout" stderr="$stderr" exitCode="$exit_code"
+  ]
+
+  # ==========================================
+  # Background Execution
+  # ==========================================
+
+  # Spawn a command in the background, return PID
+  # Usage: pid := @ Shell spawn: 'sleep 10'
+  rawClassMethod: spawn: command [
+    eval "$1" >/dev/null 2>&1 &
+    echo $!
+  ]
+
+  # Spawn with output to file, return PID
+  # Usage: pid := @ Shell spawn: 'long-task' outputTo: '/tmp/out.log'
+  rawClassMethod: spawn: command outputTo: filepath [
+    eval "$1" >"$2" 2>&1 &
+    echo $!
+  ]
+
+  # Wait for a PID to complete
+  # Usage: @ Shell wait: pid
+  rawClassMethod: wait: pid [
+    wait "$1" 2>/dev/null
+    echo $?
+  ]
+
+  # ==========================================
+  # Process Control
+  # ==========================================
+
+  # Check if a PID is still running
+  # Usage: running := @ Shell isAlive: pid
+  rawClassMethod: isAlive: pid [
+    if kill -0 "$1" 2>/dev/null; then
+      echo "true"
+    else
+      echo "false"
+    fi
+  ]
+
+  # Send a signal to a PID
+  # Usage: @ Shell signal: 'TERM' to: pid
+  rawClassMethod: signal: signalName to: pid [
+    kill "-$1" "$2" 2>/dev/null
+  ]
+
+  # Send SIGTERM to a PID
+  # Usage: @ Shell terminate: pid
+  rawClassMethod: terminate: pid [
+    kill -TERM "$1" 2>/dev/null
+  ]
+
+  # Send SIGKILL to a PID
+  # Usage: @ Shell kill: pid
+  rawClassMethod: kill: pid [
+    kill -KILL "$1" 2>/dev/null
+  ]
+
+  # Send SIGSTOP to a PID (pause)
+  # Usage: @ Shell pause: pid
+  rawClassMethod: pause: pid [
+    kill -STOP "$1" 2>/dev/null
+  ]
+
+  # Send SIGCONT to a PID (resume)
+  # Usage: @ Shell resume: pid
+  rawClassMethod: resume: pid [
+    kill -CONT "$1" 2>/dev/null
+  ]
+
+  # ==========================================
+  # Piping and Chaining
+  # ==========================================
+
+  # Execute command and pipe output through another command
+  # Usage: result := @ Shell exec: 'cat file.txt' pipeTo: 'grep pattern'
+  rawClassMethod: exec: command pipeTo: pipeCommand [
+    eval "$1" | eval "$2"
+  ]
+
+  # Execute command and pipe through two more commands
+  # Usage: result := @ Shell exec: 'cat file' pipeTo: 'grep x' pipeTo: 'wc -l'
+  rawClassMethod: exec: command pipeTo: pipe1 pipeTo: pipe2 [
+    eval "$1" | eval "$2" | eval "$3"
+  ]
+
+  # ==========================================
+  # Input/Output
+  # ==========================================
+
+  # Execute command with stdin from string
+  # Usage: result := @ Shell exec: 'wc -w' withInput: 'hello world'
+  rawClassMethod: exec: command withInput: input [
+    echo "$2" | eval "$1"
+  ]
+
+  # Execute command with stdin from file
+  # Usage: result := @ Shell exec: 'wc -l' withInputFrom: '/tmp/data.txt'
+  rawClassMethod: exec: command withInputFrom: filepath [
+    eval "$1" < "$2"
+  ]
+
+  # Execute command with stdout to file
+  # Usage: @ Shell exec: 'ls -la' outputTo: '/tmp/listing.txt'
+  rawClassMethod: exec: command outputTo: filepath [
+    eval "$1" > "$2"
+  ]
+
+  # Execute command with stdout appended to file
+  # Usage: @ Shell exec: 'echo line' appendTo: '/tmp/log.txt'
+  rawClassMethod: exec: command appendTo: filepath [
+    eval "$1" >> "$2"
+  ]
+
+  # ==========================================
+  # Conditional Execution
+  # ==========================================
+
+  # Execute command only if another succeeds
+  # Usage: @ Shell if: 'test -f file' then: 'rm file'
+  rawClassMethod: if: condition then: command [
+    if eval "$1" >/dev/null 2>&1; then
+      eval "$2"
+    fi
+  ]
+
+  # Execute command only if another fails
+  # Usage: @ Shell unless: 'test -f file' then: 'touch file'
+  rawClassMethod: unless: condition then: command [
+    if ! eval "$1" >/dev/null 2>&1; then
+      eval "$2"
+    fi
+  ]
+
+  # Execute command with timeout
+  # Usage: result := @ Shell exec: 'slow-command' timeout: 5
+  rawClassMethod: exec: command timeout: seconds [
+    timeout "$2" bash -c "$1"
+  ]
+
+  # ==========================================
+  # Current Shell State
+  # ==========================================
+
+  # Get the current process ID
+  rawClassMethod: pid [
+    echo $$
+  ]
+
+  # Get the parent process ID
+  rawClassMethod: ppid [
+    echo $PPID
+  ]
+
+  # Get the last exit code
+  rawClassMethod: lastExitCode [
+    echo $?
+  ]
+
