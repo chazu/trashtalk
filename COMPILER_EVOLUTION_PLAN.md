@@ -5,9 +5,8 @@
 This document provides a detailed, actionable plan for evolving the Trashtalk compiler system from its current dual-compiler architecture to a unified system where Procyon becomes the single source of truth with dual backends (Go + Bash).
 
 **Current State (as of 2026-01-09):**
-- Phases 1-3 COMPLETE: Lexer, parser, IR, and Bash backend ported to Go
-- Phase 4 NOT STARTED: Runtime primitives
-- Phase 5 NOT STARTED: Minimize Bash fallback
+- Phases 1-4 COMPLETE: Lexer, parser, IR, Bash backend, and runtime primitives all in Go
+- Phase 5 IN PROGRESS: Minimize Bash fallback (several child tasks complete)
 - All Go code consolidated in `~/dev/go/procyon/`
 
 **Target State:**
@@ -25,8 +24,8 @@ This document provides a detailed, actionable plan for evolving the Trashtalk co
 | Phase 1: Qualified Names | ✅ COMPLETE | .trashtalk-8j4 | All tests pass |
 | Phase 2: IR Layer | ✅ COMPLETE | .trashtalk-e0y | ir.go, builder.go, tests |
 | Phase 3: Port to Procyon | ✅ COMPLETE | .trashtalk-59y | lexer, parser, bash_backend |
-| Phase 4: Runtime Primitives | ❌ NOT STARTED | .trashtalk-gsl | Blocked on Phase 3 |
-| Phase 5: Minimize Bash | ❌ NOT STARTED | .trashtalk-lea | Blocked on Phase 4 |
+| Phase 4: Runtime Primitives | ✅ COMPLETE | .trashtalk-gsl | Runtime core, handlers, Bash interop, integration tests |
+| Phase 5: Minimize Bash | 🔄 IN PROGRESS | .trashtalk-lea | Analysis script, dashboard, pattern docs done; DSL conversions ongoing |
 
 ### Phase 3 Deliverables (All in ~/dev/go/procyon/)
 
@@ -42,9 +41,9 @@ This document provides a detailed, actionable plan for evolving the Trashtalk co
 
 ### Known Gaps
 
-- **IR Builder**: Method body tokens not fully converted to IR statements yet (.trashtalk-p4j)
-- **Source Embedding**: Not available in IR compilation mode
-- **Output Parity**: Minor differences remain vs jq-compiler (trailing newlines, null vs [])
+- ~~**IR Builder**: Method body tokens not fully converted to IR statements yet (.trashtalk-p4j)~~ ✅ RESOLVED
+- **Source Embedding**: Not available in IR compilation mode (.trashtalk-xo6 tracks this)
+- **Output Parity**: Minor differences remain vs jq-compiler (.trashtalk-61f tracks remaining differences)
 
 ---
 
@@ -1338,11 +1337,11 @@ done
 - [ ] 95%+ of existing .trash files compile identically (partial - method bodies need work, see .trashtalk-p4j)
 - [ ] All runtime tests pass with Procyon-generated Bash (not yet tested end-to-end)
 
-**Remaining work tracked in:** .trashtalk-p4j (Complete IR builder method body conversion)
+**Remaining work:** Output parity tracked in .trashtalk-61f, source embedding in .trashtalk-xo6
 
 ---
 
-## Phase 4: Runtime Primitives ❌ NOT STARTED
+## Phase 4: Runtime Primitives ✅ COMPLETE
 
 ### 4.1 Procyon Runtime Design
 
@@ -1635,15 +1634,15 @@ send() {
 }
 ```
 
-**Success Metrics:**
-- [ ] Runtime can load/save instances from SQLite
-- [ ] Native handlers work for Object, Array, Dictionary
-- [ ] Bash fallback works when native handler unavailable
-- [ ] Round-trip: create in Bash, modify in Go, read in Bash works
+**Success Metrics:** ✅ ALL COMPLETE
+- [x] Runtime can load/save instances from SQLite
+- [x] Native handlers work for Object, Array, Dictionary
+- [x] Bash fallback works when native handler unavailable
+- [x] Round-trip: create in Bash, modify in Go, read in Bash works
 
 ---
 
-## Phase 5: Minimize Bash ❌ NOT STARTED
+## Phase 5: Minimize Bash Fallback 🔄 IN PROGRESS
 
 ### 5.1 Identify Remaining Bash-Only Patterns
 
@@ -1767,10 +1766,24 @@ procyon --global-stats ~/.trashtalk/trash 2>/dev/null | \
 ```
 
 **Success Metrics:**
-- [ ] Dashboard shows current native compilation rate
-- [ ] Rate improves from 12% to >60% after Phase 4
-- [ ] Top fallback reasons identified and addressed
-- [ ] Yutani classes achieve >80% native compilation
+- [x] Dashboard shows current native compilation rate (scripts/fallback_dashboard.bash)
+- [ ] Rate improves from 12% to >60% (in progress - arithmetic generation fixed)
+- [x] Top fallback reasons identified and addressed (.trashtalk-d7x complete)
+- [x] Yutani classes achieve >80% native compilation (.trashtalk-ct1 complete)
+
+### Phase 5 Child Task Status
+
+| Task | Status | Beads ID |
+|------|--------|----------|
+| Fallback analysis script | ✅ COMPLETE | .trashtalk-d7x |
+| Fallback tracking dashboard | ✅ COMPLETE | .trashtalk-r71 |
+| Pure-Trashtalk pattern docs | ✅ COMPLETE | .trashtalk-6st |
+| Yutani regression tests | ✅ COMPLETE | .trashtalk-vg3 |
+| Yutani native refactoring | ✅ COMPLETE | .trashtalk-ct1 |
+| Procyon-compatible arithmetic | ✅ COMPLETE | .trashtalk-bcv |
+| Convert Coproc/FIFO ivars | 🔄 OPEN | .trashtalk-78y |
+| Convert server class methods | 🔄 OPEN | .trashtalk-iec |
+| Convert IDE/Transcript methods | 🔄 OPEN | .trashtalk-3ie |
 
 ---
 
@@ -1805,21 +1818,21 @@ procyon --global-stats ~/.trashtalk/trash 2>/dev/null | \
 ## Dependency Graph
 
 ```
-Phase 1: Qualified Names
+Phase 1: Qualified Names ✅
     |
     v
-Phase 2: IR Layer -----> Phase 3: Port to Procyon
+Phase 2: IR Layer ✅ -----> Phase 3: Port to Procyon ✅
     |                           |
     v                           v
-Phase 4: Runtime <------------- (uses IR)
+Phase 4: Runtime ✅ <---------- (uses IR)
     |
     v
-Phase 5: Minimize Bash (ongoing)
+Phase 5: Minimize Bash 🔄 (in progress)
 ```
 
-**Critical path:** Phase 1 -> Phase 2 -> Phase 3 -> Phase 4
+**Critical path:** Phase 1 -> Phase 2 -> Phase 3 -> Phase 4 (ALL COMPLETE)
 
-Phase 5 can start after Phase 4 and continues indefinitely.
+Phase 5 is now in progress with several child tasks complete.
 
 ---
 
@@ -1843,17 +1856,17 @@ Phase 5 can start after Phase 4 and continues indefinitely.
 - [ ] jq-compiler can be deprecated
 - [ ] Build time improves by >50%
 
-### Phase 4 Complete When:
-- [ ] Native daemon handles instance CRUD
-- [ ] Object, Array, Dictionary fully native
-- [ ] Bash fallback works seamlessly
-- [ ] No functional regressions
+### Phase 4 Complete When: ✅ ALL COMPLETE
+- [x] Native daemon handles instance CRUD
+- [x] Object, Array, Dictionary fully native
+- [x] Bash fallback works seamlessly
+- [x] No functional regressions
 
-### Phase 5 Success:
-- [ ] Native compilation rate >60%
-- [ ] Yutani application runs with <20% Bash calls
+### Phase 5 Success: 🔄 IN PROGRESS
+- [ ] Native compilation rate >60% (improving, arithmetic generation fixed)
+- [x] Yutani application runs with <20% Bash calls (.trashtalk-ct1 complete)
 - [ ] Performance measurably improved
-- [ ] Developer experience remains good
+- [x] Developer experience remains good
 
 ---
 
@@ -1873,13 +1886,20 @@ Phase 5 can start after Phase 4 and continues indefinitely.
 
 ## Next Actions
 
-1. **Immediate (today):** Fix qualified name parsing in jq-compiler codegen.jq
-2. **This week:** Add QualifiedName to Procyon parser
-3. **Next week:** Begin IR design and implementation
-4. **Following weeks:** Port lexer and class parser to Go
+**Phase 5 In Progress - Remaining Work:**
+1. Convert Coproc/FIFO ivar accessors to pure DSL (.trashtalk-78y)
+2. Convert server class methods to pure DSL (.trashtalk-iec)
+3. Convert IDE/Transcript methods to pure DSL (.trashtalk-3ie)
+
+**Related Procyon Tasks:**
+1. Fix Procyon output parity differences (.trashtalk-61f)
+2. Add source embedding support to Procyon (.trashtalk-xo6)
+3. End-to-end Procyon compilation validation (.trashtalk-kuh)
+4. Benchmark Procyon vs jq-compiler build time (.trashtalk-ffr)
 
 ---
 
-*Document Version: 1.0*
+*Document Version: 1.1*
 *Created: 2026-01-08*
+*Updated: 2026-01-09*
 *Author: Generated with Claude Code*
