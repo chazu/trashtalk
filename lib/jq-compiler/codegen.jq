@@ -985,7 +985,8 @@ def expr_gen($locals; $ivars; $cvars):
       # Keyword method: interleave keywords and args
       # selector "at_put" with args [idx, val] -> "at: idx put: val"
       (.selector | split("_")) as $keywords |
-      ([(.args // [])[] | expr_gen($locals; $ivars; $cvars)]) as $arg_codes |
+      # Quote args that are variable expansions (start with $)
+      ([(.args // [])[] | expr_gen($locals; $ivars; $cvars) | if test("^\\$") then "\"\(.)\"" else . end]) as $arg_codes |
       ([$keywords, $arg_codes] | transpose | map("\(.[0]): \(.[1])") | join(" "))
     else
       # Unary method: just the selector
@@ -1088,6 +1089,9 @@ def expr_gen($locals; $ivars; $cvars):
         # Unknown binary op - fall through to expr_gen
         "echo \"\(.value | expr_gen($locals; $ivars; $cvars))\"; return"
       end
+    elif .value.type == "message_send" or .value.type == "cascade" then
+      # Message sends output directly, no echo wrapper needed
+      "\(.value | expr_gen($locals; $ivars; $cvars)); return"
     else "echo \"\(.value | expr_gen($locals; $ivars; $cvars))\"; return"
     end
   elif .type == "passthrough" then

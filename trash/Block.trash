@@ -5,14 +5,14 @@ Block subclass: Object
   # params: JSON array of parameter names ["x", "y"]
   # code: string of code to execute
   # captured: JSON object of captured variables {"_RECEIVER": "counter_abc123"}
-  classMethod: params: p code: c captured: cap [
-    | id |
-    id := $(_generate_instance_id Block)
+  rawClassMethod: params: p code: c captured: cap [
+    local id p="$1" c="$2" cap="$3"
+    id=$(_generate_instance_id Block)
     _create_instance Block "$id"
     @ "$id" setParams "$p"
     @ "$id" setCode "$c"
     @ "$id" setCaptured "$cap"
-    ^ "$id"
+    echo "$id"
   ]
 
   # Execute block with no arguments
@@ -105,8 +105,8 @@ Block subclass: Object
   ]
 
   # Return number of parameters
-  method: numArgs [
-    | p |
-    p := $(@ self getParams).
-    ^ $(echo "$p" | jq 'length')
+  rawMethod: numArgs [
+    local p
+    p=$(@ "$_RECEIVER" getParams)
+    echo "$p" | jq 'length'
   ]
