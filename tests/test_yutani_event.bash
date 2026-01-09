@@ -3,7 +3,6 @@
 # Regression tests for native compilation refactoring
 #
 # NOTE: Some tests document KNOWN BUGS in current behavior:
-# - Comparison methods (isKeyEvent, etc.) return expression strings instead of true/false
 # - Mouse event parsing has field misalignment due to jq template bug
 
 # Determine script location and project root
@@ -62,9 +61,8 @@ run_test "fromJson: creates key event instance" "yutani__event_" "${keyEvent:0:1
 result=$(@ $keyEvent eventType)
 run_test "Key event type is 'key'" "key" "$result"
 
-# Note: isKeyEvent has known bug - returns expression string instead of true/false
 result=$(@ $keyEvent isKeyEvent)
-run_test "isKeyEvent (known bug: returns expression)" "eventType == key" "$result"
+run_test "isKeyEvent returns true for key event" "true" "$result"
 
 result=$(@ $keyEvent keyName)
 run_test "keyName returns correct key" "KEY_ENTER" "$result"
@@ -76,7 +74,7 @@ result=$(@ $keyEvent widgetId)
 run_test "widgetId returns widget ID from key event" "wid_123" "$result"
 
 # ============================================================================
-# Key Helper Methods (document current buggy behavior)
+# Key Helper Methods
 # ============================================================================
 echo ""
 echo "--- Key Helper Methods ---"
@@ -84,16 +82,14 @@ echo "--- Key Helper Methods ---"
 ENTER_JSON='{"key":{"key":"KEY_ENTER"}}'
 enterEvent=$(@ Yutani::Event fromJson: "$ENTER_JSON")
 
-# These methods have bugs - they return expression strings or shell comparison exit codes
 result=$(@ $enterEvent isEnterKey)
-run_test "isEnterKey (known bug: returns expression)" "keyName == KEY_ENTER" "$result"
+run_test "isEnterKey returns true for KEY_ENTER" "true" "$result"
 
 result=$(@ $enterEvent isEscapeKey)
-run_test "isEscapeKey for KEY_ENTER (known bug: returns expression)" "keyName == KEY_ESC" "$result"
+run_test "isEscapeKey returns false for KEY_ENTER" "false" "$result"
 
-# isKey: returns bash comparison exit code (1 for false, 0 for true) but captured as string
 result=$(@ $enterEvent isKey: KEY_ENTER)
-run_test "isKey: KEY_ENTER (known bug: returns exit code)" "1" "$result"
+run_test "isKey: KEY_ENTER returns true" "true" "$result"
 
 # ============================================================================
 # Widget Event Parsing
@@ -107,9 +103,8 @@ widgetEvent=$(@ Yutani::Event fromJson: "$WIDGET_JSON")
 result=$(@ $widgetEvent eventType)
 run_test "Widget event type is 'widget'" "widget" "$result"
 
-# Known bug: returns expression string
 result=$(@ $widgetEvent isWidgetEvent)
-run_test "isWidgetEvent (known bug: returns expression)" "eventType == widget" "$result"
+run_test "isWidgetEvent returns true for widget event" "true" "$result"
 
 result=$(@ $widgetEvent widgetId)
 run_test "widgetId returns correct ID" "input_456" "$result"
@@ -126,9 +121,8 @@ echo "--- Widget Submission Detection ---"
 DONE_JSON='{"widget":{"widgetId":{"id":"input_789"},"type":"WIDGET_DONE","data":{"text":"submitted"}}}'
 doneEvent=$(@ Yutani::Event fromJson: "$DONE_JSON")
 
-# isSubmission has known bug - returns bash comparison exit code
 result=$(@ $doneEvent isSubmission)
-run_test "isSubmission (known bug: returns exit code)" "1" "$result"
+run_test "isSubmission returns true for WIDGET_DONE" "true" "$result"
 
 # ============================================================================
 # Mouse Event Parsing (known bug: field misalignment in jq template)
@@ -168,9 +162,8 @@ resizeEvent=$(@ Yutani::Event fromJson: "$RESIZE_JSON")
 result=$(@ $resizeEvent eventType)
 run_test "Resize event type is 'resize'" "resize" "$result"
 
-# Known bug: returns expression string
 result=$(@ $resizeEvent isResizeEvent)
-run_test "isResizeEvent (known bug: returns expression)" "eventType == resize" "$result"
+run_test "isResizeEvent returns true for resize event" "true" "$result"
 
 # ============================================================================
 # Focus Event Parsing
@@ -184,9 +177,8 @@ focusEvent=$(@ Yutani::Event fromJson: "$FOCUS_JSON")
 result=$(@ $focusEvent eventType)
 run_test "Focus event type is 'focus'" "focus" "$result"
 
-# Known bug: returns expression string
 result=$(@ $focusEvent isFocusEvent)
-run_test "isFocusEvent (known bug: returns expression)" "eventType == focus" "$result"
+run_test "isFocusEvent returns true for focus event" "true" "$result"
 
 # Print summary
 print_summary
