@@ -11,6 +11,12 @@ USER_DIR := $(TRASH_DIR)/user
 LIB_DIR := lib
 TESTS_DIR := tests
 
+# Compiler selection: procyon (default) or jq
+# Override with: make TRASHTALK_COMPILER=jq
+TRASHTALK_COMPILER ?= procyon
+PROCYON := $(LIB_DIR)/procyon/procyon
+JQ_COMPILER := $(LIB_DIR)/jq-compiler/driver.bash
+
 # Parallel build settings - detect CPU count
 NPROCS := $(shell sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)
 
@@ -58,23 +64,38 @@ $(COMPILED_DIR):
 $(COMPILED_TRAITS_DIR):
 	@mkdir -p $(COMPILED_TRAITS_DIR)
 
-# Pattern rule for compiling classes (using jq-based compiler)
-$(COMPILED_DIR)/%: $(TRASH_DIR)/%.trash $(LIB_DIR)/jq-compiler/driver.bash
+# Compile helper: tries Procyon first, falls back to jq-compiler on error
+# Usage: $(call try_compile,source.trash,output)
+# Falls back if: Procyon fails, output is empty, or output has bash syntax errors
+define try_compile
+if [[ "$(TRASHTALK_COMPILER)" == "jq" ]]; then \
+	$(JQ_COMPILER) compile "$(1)" 2>/dev/null > "$(2)"; \
+else \
+	if ! $(JQ_COMPILER) parse "$(1)" 2>/dev/null | $(PROCYON) --mode=bash 2>/dev/null > "$(2)" \
+		|| [[ ! -s "$(2)" ]] \
+		|| ! bash -n "$(2)" 2>/dev/null; then \
+		$(JQ_COMPILER) compile "$(1)" 2>/dev/null > "$(2)"; \
+	fi; \
+fi
+endef
+
+# Pattern rule for compiling classes
+$(COMPILED_DIR)/%: $(TRASH_DIR)/%.trash $(JQ_COMPILER)
 	@echo "Compiling $<..."
-	@$(LIB_DIR)/jq-compiler/driver.bash compile "$<" 2>/dev/null > "$@"
+	@$(call try_compile,$<,$@)
 	@echo "  → $@"
 
-# Pattern rule for compiling traits (using jq-based compiler)
-$(COMPILED_TRAITS_DIR)/%: $(TRASH_DIR)/traits/%.trash $(LIB_DIR)/jq-compiler/driver.bash
+# Pattern rule for compiling traits
+$(COMPILED_TRAITS_DIR)/%: $(TRASH_DIR)/traits/%.trash $(JQ_COMPILER)
 	@echo "Compiling trait $<..."
-	@$(LIB_DIR)/jq-compiler/driver.bash compile "$<" 2>/dev/null > "$@"
+	@$(call try_compile,$<,$@)
 	@echo "  → $@"
 
 # Pattern rule for compiling user classes (output to .compiled, not .compiled/user)
 # Note: This rule must come before the main class rule to take precedence
-$(COMPILED_DIR)/%: $(USER_DIR)/%.trash $(LIB_DIR)/jq-compiler/driver.bash
+$(COMPILED_DIR)/%: $(USER_DIR)/%.trash $(JQ_COMPILER)
 	@echo "Compiling user class $<..."
-	@$(LIB_DIR)/jq-compiler/driver.bash compile "$<" 2>/dev/null > "$@"
+	@$(call try_compile,$<,$@)
 	@echo "  → $@"
 
 # Compile namespace classes (e.g., trash/Yutani/Widget.trash -> .compiled/Yutani__Widget)
@@ -86,7 +107,15 @@ compile-namespaces:
 		outname=$$(echo "$$outname" | sed 's/\//__/g'); \
 		outfile="$(COMPILED_DIR)/$$outname"; \
 		echo "Compiling namespace class $$src..."; \
-		$(LIB_DIR)/jq-compiler/driver.bash compile "$$src" 2>/dev/null > "$$outfile"; \
+		if [[ "$(TRASHTALK_COMPILER)" == "jq" ]]; then \
+			$(JQ_COMPILER) compile "$$src" 2>/dev/null > "$$outfile"; \
+		else \
+			if ! $(JQ_COMPILER) parse "$$src" 2>/dev/null | $(PROCYON) --mode=bash 2>/dev/null > "$$outfile" \
+				|| [[ ! -s "$$outfile" ]] \
+				|| ! bash -n "$$outfile" 2>/dev/null; then \
+				$(JQ_COMPILER) compile "$$src" 2>/dev/null > "$$outfile"; \
+			fi; \
+		fi; \
 		echo "  → $$outfile"; \
 	done
 
@@ -95,7 +124,15 @@ compile-namespaces:
 $(COMPILED_NAMESPACES): $(COMPILED_DIR)
 	@src="$(TRASH_DIR)/$$(echo '$(@F)' | sed 's/__/\//g').trash"; \
 	echo "Compiling namespace class $$src..."; \
-	$(LIB_DIR)/jq-compiler/driver.bash compile "$$src" 2>/dev/null > "$@"; \
+	if [[ "$(TRASHTALK_COMPILER)" == "jq" ]]; then \
+		$(JQ_COMPILER) compile "$$src" 2>/dev/null > "$@"; \
+	else \
+		if ! $(JQ_COMPILER) parse "$$src" 2>/dev/null | $(PROCYON) --mode=bash 2>/dev/null > "$@" \
+			|| [[ ! -s "$@" ]] \
+			|| ! bash -n "$@" 2>/dev/null; then \
+			$(JQ_COMPILER) compile "$$src" 2>/dev/null > "$@"; \
+		fi; \
+	fi; \
 	echo "  → $@"
 
 # Run all tests
@@ -235,7 +272,15 @@ endif
 	else \
 		outfile="$(COMPILED_DIR)/$(CLASS)"; \
 	fi; \
-	$(LIB_DIR)/jq-compiler/driver.bash compile "$$srcfile" 2>/dev/null > "$$outfile"; \
+	if [[ "$(TRASHTALK_COMPILER)" == "jq" ]]; then \
+		$(JQ_COMPILER) compile "$$srcfile" 2>/dev/null > "$$outfile"; \
+	else \
+		if ! $(JQ_COMPILER) parse "$$srcfile" 2>/dev/null | $(PROCYON) --mode=bash 2>/dev/null > "$$outfile" \
+			|| [[ ! -s "$$outfile" ]] \
+			|| ! bash -n "$$outfile" 2>/dev/null; then \
+			$(JQ_COMPILER) compile "$$srcfile" 2>/dev/null > "$$outfile"; \
+		fi; \
+	fi; \
 	echo "✓ $(CLASS) compiled → $$outfile"
 
 # =====================
@@ -347,6 +392,10 @@ help:
 	@echo "  make              - Parallel compile all .trash files (default)"
 	@echo "  make compile      - Sequential compile (for debugging)"
 	@echo "  make single CLASS=Name - Compile a single class"
+	@echo ""
+	@echo "Compiler Selection (default: procyon):"
+	@echo "  make TRASHTALK_COMPILER=jq    - Use jq-compiler (legacy)"
+	@echo "  make TRASHTALK_COMPILER=procyon - Use Procyon (default)"
 	@echo ""
 	@echo "Native Build (bash + daemon + dylib plugins):"
 	@echo "  make native       - Full build: bash + daemon + all dylib plugins"
