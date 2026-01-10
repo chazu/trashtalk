@@ -4,7 +4,7 @@ Trash subclass: Object
   include: Debuggable
 
   # Get system information
-  method: info [
+  rawMethod: info [
     echo "=== Trash System Information ==="
     echo "Version: 0.1.0"
     echo "Directory: $TRASHDIR"
@@ -15,14 +15,14 @@ Trash subclass: Object
   ]
 
   # List all available objects (compiled classes)
-  method: listObjects [
+  rawMethod: listObjects [
     find "$TRASHDIR/.compiled" -maxdepth 1 -type f 2>/dev/null | while read -r file; do
       basename "$file"
     done | sort
   ]
 
   # List all available traits (compiled traits)
-  method: listTraits [
+  rawMethod: listTraits [
     if [[ -d "$TRASHDIR/.compiled/traits" ]]; then
       find "$TRASHDIR/.compiled/traits" -type f 2>/dev/null | while read -r file; do
         basename "$file"
@@ -225,9 +225,9 @@ EOF
   ]
 
   # Remove an object (with confirmation)
-  method: removeObject: object_name [
-    | object_file confirmation |
-    object_file := "$TRASHDIR/$object_name"
+  rawMethod: removeObject: object_name [
+    local object_file confirmation
+    object_file="$TRASHDIR/$object_name"
     if [[ ! -f "$object_file" ]]; then
       echo "Object $object_name not found"
       return 1
@@ -243,7 +243,7 @@ EOF
   ]
 
   # Reload all object stubs
-  method: reload [
+  rawMethod: reload [
     echo "Reloading all object stubs..."
     initialize_trash
     echo "Reload complete"
@@ -368,7 +368,7 @@ EOF
   ]
 
   # Show system statistics
-  method: stats [
+  rawMethod: stats [
     echo "=== Trash System Statistics ==="
     echo "Objects: $(@ self listObjects | wc -l)"
     echo "Traits: $(@ self listTraits | wc -l)"
@@ -379,14 +379,14 @@ EOF
   ]
 
   # Clean up system
-  method: cleanup [
+  rawMethod: cleanup [
     echo "Cleaning up trash system..."
     @ Process listProcesses >/dev/null 2>&1
     echo "Cleanup complete"
   ]
 
   # Show help
-  method: help [
+  rawMethod: help [
     echo "=== Trash System Commands ==="
     echo "@ Trash info                    - Show system information"
     echo "@ Trash listObjects             - List all objects"
@@ -422,7 +422,7 @@ EOF
   ]
 
   # Show version information
-  method: version [
+  rawMethod: version [
     echo "Trash System v$TRASH_VERSION"
     echo "Author: $TRASH_AUTHOR"
     echo "Description: $TRASH_DESCRIPTION"
@@ -488,14 +488,14 @@ EOF
   ]
 
   # Detailed object inspection
-  method: inspect: object_name [
-    | object_file traits state |
+  rawMethod: inspect: object_name [
+    local object_file traits state
     if [[ -z "$object_name" ]]; then
       echo "Usage: @ Trash inspect <object_name>"
       return 1
     fi
     echo "=== Detailed Inspection: $object_name ==="
-    object_file := "$TRASHDIR/$object_name"
+    object_file="$TRASHDIR/$object_name"
     if [[ ! -f "$object_file" ]]; then
       echo "Object $object_name not found"
       return 1
@@ -508,7 +508,7 @@ EOF
     echo ""
     @ self methodsFor: "$object_name"
     echo ""
-    traits := $(grep "^include" "$object_file" | awk '{print $2}')
+    traits=$(grep "^include" "$object_file" | awk '{print $2}')
     if [[ -n "$traits" ]]; then
       echo "Traits:"
       echo "$traits" | sed 's/^/  /'

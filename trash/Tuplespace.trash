@@ -5,7 +5,7 @@ Tuplespace subclass: Object
   requires: '$SCRIPT_DIR/vendor/tuplespace/tuplespace.bash'
 
   # Initialize the tuplespace system
-  method: init [
+  rawMethod: init [
     @ "$_RECEIVER" debug: "Initializing tuplespace system"
     ts_init
     echo "Tuplespace initialized at $TUPLESPACE_DIR"
@@ -36,24 +36,24 @@ Tuplespace subclass: Object
   ]
 
   # Listen for events on tuples of a specific type
-  method: listen: tuple_type command: command [
+  rawMethod: listen: tuple_type command: command [
     @ "$_RECEIVER" debug: "Setting up listener for type: $tuple_type"
     ts_listen "$tuple_type" "$command"
   ]
 
   # Stop a listener
-  method: stopListener: tuple_type process: process_id [
+  rawMethod: stopListener: tuple_type process: process_id [
     @ "$_RECEIVER" debug: "Stopping listener for type: $tuple_type, process: $process_id"
     ts_stop_listener "$tuple_type" "$process_id"
   ]
 
   # Extract field from tuple record
-  method: field: tuple_record name: field_name [
+  rawMethod: field: tuple_record name: field_name [
     ts_field "$tuple_record" "$field_name"
   ]
 
   # List all tuples in the space
-  method: list [
+  rawMethod: list [
     @ "$_RECEIVER" debug: "Listing all tuples"
     ts_list
   ]
@@ -70,13 +70,13 @@ Tuplespace subclass: Object
   ]
 
   # Clear all tuples from the space
-  method: clear [
+  rawMethod: clear [
     @ "$_RECEIVER" debug: "Clearing all tuples from tuplespace"
     ts_clear
   ]
 
   # Put a key-value pair
-  method: putKV: key value: value [
+  rawMethod: putKV: key value: value [
     @ "$_RECEIVER" debug: "Putting key-value: $key = $value"
     ts_kv_put "$key" "$value"
   ]
@@ -88,7 +88,7 @@ Tuplespace subclass: Object
   ]
 
   # Get value by key
-  method: getKV: key [
+  rawMethod: getKV: key [
     @ "$_RECEIVER" debug: "Getting value for key: $key"
     ts_kv_get "$key"
   ]
@@ -100,7 +100,7 @@ Tuplespace subclass: Object
   ]
 
   # Put an event
-  method: putEvent: event_name data: data [
+  rawMethod: putEvent: event_name data: data [
     @ "$_RECEIVER" debug: "Putting event: $event_name"
     ts_event_put "$event_name" "$data"
   ]
@@ -112,12 +112,12 @@ Tuplespace subclass: Object
   ]
 
   # Run the demo/test suite
-  method: test [
+  rawMethod: test [
     ts_demo
   ]
 
   # System information
-  method: info [
+  rawMethod: info [
     echo "=== Tuplespace System Information ==="
     echo "Directory: $TUPLESPACE_DIR"
     echo "Database: $TUPLESPACE_DB"
@@ -191,7 +191,7 @@ Tuplespace subclass: Object
   ]
 
   # Show help
-  method: help [
+  rawMethod: help [
     echo "=== Tuplespace Commands ==="
     echo ""
     echo "Basic Operations:"
