@@ -19,19 +19,19 @@ GrpcClient subclass: Object
   # Class methods - Factory constructors
   # ==========================================================================
 
-  classMethod: connectTo: addr [
-    | client |
-    client := @ GrpcClient new.
-    @ $client _setAddress: addr.
-    ^ $client
+  rawClassMethod: connectTo: addr [
+    local client
+    client=$(@ GrpcClient new)
+    @ "$client" _setAddress: "$addr"
+    echo "$client"
   ]
 
-  classMethod: connectTo: addr withProto: proto [
-    | client |
-    client := @ GrpcClient connectTo: addr.
-    @ $client _setProtoFile: proto.
-    @ $client _setUseReflection: 'no'.
-    ^ $client
+  rawClassMethod: connectTo: addr withProto: proto [
+    local client
+    client=$(@ GrpcClient connectTo: "$addr")
+    @ "$client" _setProtoFile: "$proto"
+    @ "$client" _setUseReflection: 'no'
+    echo "$client"
   ]
 
   # ==========================================================================
@@ -40,7 +40,6 @@ GrpcClient subclass: Object
   # ==========================================================================
 
   rawMethod: call: method with: jsonPayload [
-    pragma: procyonNative
     pragma: direct
     local addr proto result plaintext_flag
     addr="$(_ivar address)"
@@ -71,7 +70,6 @@ GrpcClient subclass: Object
 
   # Unary call with empty payload
   rawMethod: call: method [
-    pragma: procyonNative
     pragma: direct
     local addr proto result plaintext_flag
     addr="$(_ivar address)"
@@ -101,27 +99,24 @@ GrpcClient subclass: Object
   # Server Streaming RPC - Procyon only
   # ==========================================================================
 
-  method: serverStream: method with: payload handler: block [
-    pragma: procyonOnly
-    "Server streaming requires native Procyon runtime"
+  rawMethod: serverStream: method with: payload handler: block [
+    echo "Server streaming requires native Procyon runtime"
   ]
 
   # ==========================================================================
   # Client Streaming RPC - Procyon only
   # ==========================================================================
 
-  method: clientStream: method handler: block [
-    pragma: procyonOnly
-    "Client streaming requires native Procyon runtime"
+  rawMethod: clientStream: method handler: block [
+    echo "Client streaming requires native Procyon runtime"
   ]
 
   # ==========================================================================
   # Bidirectional Streaming RPC - Procyon only
   # ==========================================================================
 
-  method: bidiStream: method handler: block [
-    pragma: procyonOnly
-    "Bidirectional streaming requires native Procyon runtime"
+  rawMethod: bidiStream: method handler: block [
+    echo "Bidirectional streaming requires native Procyon runtime"
   ]
 
   # ==========================================================================
@@ -129,7 +124,6 @@ GrpcClient subclass: Object
   # ==========================================================================
 
   rawMethod: listServices [
-    pragma: procyonNative
     pragma: direct
     local addr result plaintext_flag
     addr="$(_ivar address)"
@@ -151,7 +145,6 @@ GrpcClient subclass: Object
 
   # List methods for a service
   rawMethod: listMethods: service [
-    pragma: procyonNative
     pragma: direct
     local addr result plaintext_flag
     addr="$(_ivar address)"
