@@ -2645,4 +2645,9 @@ def generate:
 # Entry Point
 # ==============================================================================
 
-generate
+# Handle both plain Class input and CompilationUnit { "class": {...}, "traits": {...} }
+if .class != null then
+  .class | generate
+else
+  generate
+end

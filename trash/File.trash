@@ -65,7 +65,7 @@ File subclass: Object
   ]
 
   # Check if it's a FIFO
-  rawMethod: isFifo [
+  primitiveMethod: isFifo [
     [[ -p "$(_ivar path)" ]] && echo "true" || echo "false"
   ]
 
@@ -75,8 +75,9 @@ File subclass: Object
   ]
 
   # Read file as lines (one per line)
-  method: readLines [
-    (path isFile) ifTrue: [^ $(cat "$(_ivar path)")] ifFalse: [^ '']
+  primitiveMethod: readLines [
+    local p=$(_ivar path)
+    [[ -f "$p" ]] && cat "$p" || echo ""
   ]
 
   # Write contents to file (overwrites)
@@ -86,7 +87,7 @@ File subclass: Object
   ]
 
   # Write contents with newline
-  rawMethod: writeLine: contents [
+  primitiveMethod: writeLine: contents [
     local p=$(_ivar path)
     printf '%s\n' "$contents" > "$p"
   ]
@@ -98,7 +99,7 @@ File subclass: Object
   ]
 
   # Append contents with newline
-  rawMethod: appendLine: contents [
+  primitiveMethod: appendLine: contents [
     local p=$(_ivar path)
     printf '%s\n' "$contents" >> "$p"
   ]
@@ -144,7 +145,7 @@ File subclass: Object
   ]
 
   # Get filename without extension
-  rawMethod: stem [
+  primitiveMethod: stem [
     local p=$(_ivar path)
     local base
     base=$(basename "$p")
@@ -152,26 +153,26 @@ File subclass: Object
   ]
 
   # Copy file to destination
-  rawMethod: copyTo: destPath [
+  primitiveMethod: copyTo: destPath [
     local p=$(_ivar path)
     cp "$p" "$destPath"
   ]
 
   # Move/rename file
-  rawMethod: moveTo: destPath [
+  primitiveMethod: moveTo: destPath [
     local p=$(_ivar path)
     mv "$p" "$destPath"
     _ivar_set path "$destPath"
   ]
 
   # Touch file (create empty or update timestamp)
-  rawMethod: touch [
+  primitiveMethod: touch [
     local p=$(_ivar path)
     touch "$p"
   ]
 
   # Get modification time as unix timestamp
-  rawMethod: modificationTime [
+  primitiveMethod: modificationTime [
     local p=$(_ivar path)
     if [[ -e "$p" ]]; then
       stat -f%m "$p" 2>/dev/null || stat -c%Y "$p" 2>/dev/null || echo "0"
@@ -181,7 +182,7 @@ File subclass: Object
   ]
 
   # Print file info
-  rawMethod: info [
+  primitiveMethod: info [
     local p=$(_ivar path)
     echo "Path: $p"
     echo "Exists: $(@ "$_RECEIVER" exists)"
@@ -192,7 +193,7 @@ File subclass: Object
   ]
 
   # String representation
-  rawMethod: printString [
+  primitiveMethod: printString [
     local p=$(_ivar path)
     echo "<File $p>"
   ]
@@ -219,67 +220,67 @@ File subclass: Object
   ]
 
   # Test if path is a symbolic link
-  rawClassMethod: isSymlink: path [
+  primitiveClassMethod: isSymlink: path [
     [[ -L "$path" ]] && echo "true" || echo "false"
   ]
 
   # Test if path is a named pipe (FIFO)
-  rawClassMethod: isFifo: path [
+  primitiveClassMethod: isFifo: path [
     [[ -p "$path" ]] && echo "true" || echo "false"
   ]
 
   # Test if path is a socket
-  rawClassMethod: isSocket: path [
+  primitiveClassMethod: isSocket: path [
     [[ -S "$path" ]] && echo "true" || echo "false"
   ]
 
   # Test if path is a block device
-  rawClassMethod: isBlockDevice: path [
+  primitiveClassMethod: isBlockDevice: path [
     [[ -b "$path" ]] && echo "true" || echo "false"
   ]
 
   # Test if path is a character device
-  rawClassMethod: isCharDevice: path [
+  primitiveClassMethod: isCharDevice: path [
     [[ -c "$path" ]] && echo "true" || echo "false"
   ]
 
   # Test if file is readable
-  rawClassMethod: isReadable: path [
+  primitiveClassMethod: isReadable: path [
     [[ -r "$path" ]] && echo "true" || echo "false"
   ]
 
   # Test if file is writable
-  rawClassMethod: isWritable: path [
+  primitiveClassMethod: isWritable: path [
     [[ -w "$path" ]] && echo "true" || echo "false"
   ]
 
   # Test if file is executable
-  rawClassMethod: isExecutable: path [
+  primitiveClassMethod: isExecutable: path [
     [[ -x "$path" ]] && echo "true" || echo "false"
   ]
 
   # Test if file is empty (zero size)
-  rawClassMethod: isEmpty: path [
+  primitiveClassMethod: isEmpty: path [
     [[ ! -s "$path" ]] && echo "true" || echo "false"
   ]
 
   # Test if file is not empty (has content)
-  rawClassMethod: notEmpty: path [
+  primitiveClassMethod: notEmpty: path [
     [[ -s "$path" ]] && echo "true" || echo "false"
   ]
 
   # Test if file1 is newer than file2
-  rawClassMethod: isNewer: path1 than: path2 [
+  primitiveClassMethod: isNewer: path1 than: path2 [
     [[ "$path1" -nt "$path2" ]] && echo "true" || echo "false"
   ]
 
   # Test if file1 is older than file2
-  rawClassMethod: isOlder: path1 than: path2 [
+  primitiveClassMethod: isOlder: path1 than: path2 [
     [[ "$path1" -ot "$path2" ]] && echo "true" || echo "false"
   ]
 
   # Test if two paths refer to the same file (same inode)
-  rawClassMethod: isSame: path1 as: path2 [
+  primitiveClassMethod: isSame: path1 as: path2 [
     [[ "$path1" -ef "$path2" ]] && echo "true" || echo "false"
   ]
 
