@@ -256,8 +256,8 @@ cmd_tokenize() {
     "$TOKENIZER" "$source_file"
 }
 
-# Parse a .trash file to JSON AST
-cmd_parse() {
+# Internal: Parse a single .trash file to JSON AST (no trait merging)
+_parse_single_file() {
     local source_file="$1"
 
     if [[ ! -f "$source_file" ]]; then
@@ -299,9 +299,9 @@ cmd_parse() {
     echo "$ast"
 }
 
-# Parse a .trash file along with its included traits
-# Outputs a CompilationUnit JSON: { "class": {...}, "traits": {"TraitName": {...}, ...} }
-cmd_parse_with_traits() {
+# Parse a .trash file to CompilationUnit JSON (includes traits automatically)
+# Outputs: { "class": {...}, "traits": {"TraitName": {...}, ...} }
+cmd_parse() {
     local source_file="$1"
     local trashtalk_dir="${TRASHTALK_DIR:-$HOME/.trashtalk}"
     local traits_dir="$trashtalk_dir/trash/traits"
@@ -312,7 +312,7 @@ cmd_parse_with_traits() {
 
     # Parse the main class
     local class_ast
-    class_ast=$(cmd_parse "$source_file")
+    class_ast=$(_parse_single_file "$source_file")
     if [[ $? -ne 0 ]]; then
         exit 1
     fi
@@ -329,7 +329,7 @@ cmd_parse_with_traits() {
         local trait_file="$traits_dir/$trait_name.trash"
         if [[ -f "$trait_file" ]]; then
             local trait_ast
-            trait_ast=$(cmd_parse "$trait_file" 2>/dev/null)
+            trait_ast=$(_parse_single_file "$trait_file" 2>/dev/null)
             if [[ $? -eq 0 ]]; then
                 # Add trait to the traits object
                 traits_json=$(echo "$traits_json" | jq --arg name "$trait_name" --argjson ast "$trait_ast" '. + {($name): $ast}')
@@ -344,6 +344,11 @@ cmd_parse_with_traits() {
     # Output the CompilationUnit
     jq -n --argjson class "$class_ast" --argjson traits "$traits_json" \
         '{ "class": $class, "traits": $traits }'
+}
+
+# Alias for backwards compatibility
+cmd_parse_with_traits() {
+    cmd_parse "$@"
 }
 
 # Pretty-print the AST
