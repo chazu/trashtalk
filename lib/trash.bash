@@ -1753,7 +1753,10 @@ function send {
   # Check for pragma: bashOnly marker - skip native dispatch if set
   local bashOnly_marker="${func_prefix}__${normalized_selector}__bashOnly"
   local skip_native=0
-  if [[ -n "${!bashOnly_marker:-}" ]]; then
+  if [[ -n "${TRASHTALK_DISABLE_NATIVE:-}" ]]; then
+    msg_debug "TRASHTALK_DISABLE_NATIVE set, skipping native dispatch"
+    skip_native=1
+  elif [[ -n "${!bashOnly_marker:-}" ]]; then
     msg_debug "bashOnly pragma set for $_SELECTOR, skipping native dispatch"
     skip_native=1
   fi
