@@ -316,25 +316,39 @@ native: fast $(COMPILED_DIR)/.build
 		echo "  ✗ daemon build failed (procyon source not found at $(PROCYON_SRC))"; \
 	fi
 	@echo ""
-	@echo "Building native plugins..."
+	@echo "Building native plugins (4 parallel jobs)..."
 	@cd $(COMPILED_DIR)/.build && \
 		go mod init trashtalk-native 2>/dev/null || true && \
 		go get github.com/mattn/go-sqlite3 github.com/google/uuid google.golang.org/grpc google.golang.org/protobuf github.com/jhump/protoreflect 2>/dev/null || true
-	@for src in $(ALL_NATIVE_CANDIDATES); do \
+	@_build_plugin() { \
+		src="$$1"; \
 		relpath=$${src#$(TRASH_DIR)/}; \
 		outname=$${relpath%.trash}; \
 		outname=$$(echo "$$outname" | sed 's/\//__/g'); \
-		echo "  Building $$outname.$(DYLIB_EXT)..."; \
 		$(LIB_DIR)/jq-compiler/driver.bash parse "$$src" 2>/dev/null | \
 			$(PROCYON) --mode=plugin 2>/dev/null > "$(COMPILED_DIR)/.build/$$outname.go" 2>/dev/null; \
 		if [[ -s "$(COMPILED_DIR)/.build/$$outname.go" ]]; then \
 			(cd $(COMPILED_DIR)/.build && \
 				CGO_ENABLED=1 go build -buildmode=c-shared -o ../$$outname.$(DYLIB_EXT) $$outname.go 2>/dev/null) && \
-			echo "    ✓ $$outname.$(DYLIB_EXT)" || echo "    ✗ $$outname (build failed)"; \
+			echo "  ✓ $$outname.$(DYLIB_EXT)" || echo "  ✗ $$outname (build failed)"; \
 		else \
-			echo "    - $$outname (skipped, not supported by procyon)"; \
+			echo "  - $$outname (skipped)"; \
 		fi; \
-	done
+	}; \
+	pids=(); \
+	for src in $(ALL_NATIVE_CANDIDATES); do \
+		while [[ $${#pids[@]} -ge 4 ]]; do \
+			wait -n 2>/dev/null || true; \
+			new_pids=(); \
+			for p in "$${pids[@]}"; do \
+				kill -0 "$$p" 2>/dev/null && new_pids+=("$$p"); \
+			done; \
+			pids=("$${new_pids[@]}"); \
+		done; \
+		_build_plugin "$$src" & \
+		pids+=($$!); \
+	done; \
+	wait
 	@echo ""
 	@echo "✓ Native build complete"
 	@echo "  Bash:    $(COMPILED_DIR)/*"
