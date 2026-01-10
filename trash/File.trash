@@ -45,33 +45,33 @@ File subclass: Object
   ]
 
   # Get the file path
-  rawMethod: path [
+  primitiveMethod: path [
     _ivar path
   ]
 
   # Check if file exists
-  method: exists [
-    (path fileExists) ifTrue: [^ 'true'] ifFalse: [^ 'false']
+  primitiveMethod: exists [
+    [[ -e "$(_ivar path)" ]] && echo "true" || echo "false"
   ]
 
   # Check if it's a regular file
-  method: isFile [
-    (path isFile) ifTrue: [^ 'true'] ifFalse: [^ 'false']
+  primitiveMethod: isFile [
+    [[ -f "$(_ivar path)" ]] && echo "true" || echo "false"
   ]
 
   # Check if it's a directory
-  method: isDirectory [
-    (path isDirectory) ifTrue: [^ 'true'] ifFalse: [^ 'false']
+  primitiveMethod: isDirectory [
+    [[ -d "$(_ivar path)" ]] && echo "true" || echo "false"
   ]
 
   # Check if it's a FIFO
-  method: isFifo [
-    (path isFifo) ifTrue: [^ 'true'] ifFalse: [^ 'false']
+  rawMethod: isFifo [
+    [[ -p "$(_ivar path)" ]] && echo "true" || echo "false"
   ]
 
   # Read entire file contents
-  method: read [
-    (path isFile) ifTrue: [^ $(cat "$(_ivar path)")] ifFalse: [^ '']
+  primitiveMethod: read [
+    cat "$(_ivar path)" 2>/dev/null
   ]
 
   # Read file as lines (one per line)
@@ -80,7 +80,7 @@ File subclass: Object
   ]
 
   # Write contents to file (overwrites)
-  rawMethod: write: contents [
+  primitiveMethod: write: contents [
     local p=$(_ivar path)
     printf '%s' "$contents" > "$p"
   ]
@@ -92,7 +92,7 @@ File subclass: Object
   ]
 
   # Append contents to file
-  rawMethod: append: contents [
+  primitiveMethod: append: contents [
     local p=$(_ivar path)
     printf '%s' "$contents" >> "$p"
   ]
@@ -104,13 +104,13 @@ File subclass: Object
   ]
 
   # Delete the file
-  rawMethod: delete [
+  primitiveMethod: delete [
     local p=$(_ivar path)
     rm -f "$p"
   ]
 
   # Get file size in bytes
-  rawMethod: size [
+  primitiveMethod: size [
     local p=$(_ivar path)
     if [[ -f "$p" ]]; then
       stat -f%z "$p" 2>/dev/null || stat -c%s "$p" 2>/dev/null || echo "0"
@@ -120,19 +120,19 @@ File subclass: Object
   ]
 
   # Get parent directory
-  rawMethod: directory [
+  primitiveMethod: directory [
     local p=$(_ivar path)
     dirname "$p"
   ]
 
   # Get basename (filename without directory)
-  rawMethod: basename [
+  primitiveMethod: basename [
     local p=$(_ivar path)
     basename "$p"
   ]
 
   # Get file extension
-  rawMethod: extension [
+  primitiveMethod: extension [
     local p=$(_ivar path)
     local base
     base=$(basename "$p")
@@ -204,17 +204,17 @@ File subclass: Object
   # Usage: (@ File exists: myPath) ifTrue: [ ... ]
 
   # Test if path exists (file, directory, symlink, etc.)
-  rawClassMethod: exists: path [
+  primitiveClassMethod: exists: path [
     [[ -e "$path" ]] && echo "true" || echo "false"
   ]
 
   # Test if path is a regular file
-  rawClassMethod: isFile: path [
+  primitiveClassMethod: isFile: path [
     [[ -f "$path" ]] && echo "true" || echo "false"
   ]
 
   # Test if path is a directory
-  rawClassMethod: isDirectory: path [
+  primitiveClassMethod: isDirectory: path [
     [[ -d "$path" ]] && echo "true" || echo "false"
   ]
 
@@ -288,17 +288,17 @@ File subclass: Object
   # ========================================
 
   # Quick read
-  rawClassMethod: read: filepath [
+  primitiveClassMethod: read: filepath [
     cat "$filepath" 2>/dev/null
   ]
 
   # Quick write
-  rawClassMethod: write: contents to: filepath [
+  primitiveClassMethod: write: contents to: filepath [
     printf '%s' "$contents" > "$filepath"
   ]
 
   # Quick delete
-  rawClassMethod: delete: filepath [
+  primitiveClassMethod: delete: filepath [
     rm -f "$filepath"
   ]
 
