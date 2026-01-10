@@ -46,7 +46,7 @@ TestBlock subclass: Object
 EOF
 
 output=$("$DRIVER" compile /tmp/test_block1.trash 2>/dev/null)
-if echo "$output" | grep -q 'Block params_code_captured.*\["x"\]'; then
+if echo "$output" | grep -q 'Block params:.*\["x"\].*code:.*captured:'; then
     pass "Block literal generates Block creation"
 else
     fail "Block literal should generate Block creation"
@@ -67,7 +67,7 @@ TestBlock subclass: Object
 EOF
 
 output=$("$DRIVER" compile /tmp/test_block2.trash 2>/dev/null)
-if echo "$output" | grep -q 'Block params_code_captured.*\["x","y"\]'; then
+if echo "$output" | grep -q 'Block params:.*\["x","y"\].*code:.*captured:'; then
     pass "Two-param block generates correct params"
 else
     fail "Two-param block should have [\"x\",\"y\"] params"
@@ -98,7 +98,7 @@ TestBlock subclass: Object
 EOF
 
 output=$("$DRIVER" compile /tmp/test_block3.trash 2>/dev/null)
-if echo "$output" | grep -q 'Block params_code_captured.*\[\]'; then
+if echo "$output" | grep -q 'Block params:.*\[\].*code:.*captured:'; then
     pass "No-param block creates Block with empty params"
 else
     fail "No-param block should create Block with empty params"
@@ -120,12 +120,12 @@ echo ""
 echo "Test 6: Runtime block execution"
 if [[ -f "$TRASHTALK_ROOT/trash/.compiled/Block" ]]; then
     # Create a block directly using the class method
-    block_id=$(@ Block params_code_captured '["x"]' 'echo $(( $x + 1 ))' '{}' 2>/dev/null)
+    block_id=$(@ Block params: '["x"]' code: 'echo $(( $x + 1 ))' captured: '{}' 2>/dev/null)
     if [[ "$block_id" =~ ^block_ ]]; then
         pass "Block created: $block_id"
 
         # Execute the block with an argument
-        result=$(@ "$block_id" valueWith 5 2>/dev/null)
+        result=$(@ "$block_id" valueWith: 5 2>/dev/null)
         if [[ "$result" == "6" ]]; then
             pass "Block valueWith: returned correct result (6)"
         else
@@ -146,12 +146,12 @@ if [[ -f "$TRASHTALK_ROOT/trash/.compiled/Array" ]] && [[ -f "$TRASHTALK_ROOT/tr
     if [[ ! "$arr" =~ ^array_ ]]; then
         fail "Array new failed: $arr"
     else
-        @ $arr push 1 >/dev/null 2>&1
-        @ $arr push 2 >/dev/null 2>&1
-        @ $arr push 3 >/dev/null 2>&1
+        @ $arr push: 1 >/dev/null 2>&1
+        @ $arr push: 2 >/dev/null 2>&1
+        @ $arr push: 3 >/dev/null 2>&1
 
-        block=$(@ Block params_code_captured '["x"]' 'echo "item:$x"' '{}')
-        output=$(@ $arr do $block)
+        block=$(@ Block params: '["x"]' code: 'echo "item:$x"' captured: '{}')
+        output=$(@ $arr do: "$block")
 
         if echo "$output" | grep -q "item" ; then
             pass "Array do: iterates over all elements"
@@ -169,15 +169,15 @@ echo ""
 echo "Test 8: Array collect: mapping"
 if [[ -f "$TRASHTALK_ROOT/trash/.compiled/Array" ]] && [[ -f "$TRASHTALK_ROOT/trash/.compiled/Block" ]]; then
     arr=$(@ Array new 2>/dev/null)
-    @ $arr push 1 >/dev/null 2>&1
-    @ $arr push 2 >/dev/null 2>&1
-    @ $arr push 3 >/dev/null 2>&1
+    @ $arr push: 1 >/dev/null 2>&1
+    @ $arr push: 2 >/dev/null 2>&1
+    @ $arr push: 3 >/dev/null 2>&1
 
-    block=$(@ Block params_code_captured '["x"]' 'echo $(( $x * 2 ))' '{}' 2>/dev/null)
-    doubled=$(@ $arr collect $block 2>&1)
+    block=$(@ Block params: '["x"]' code: 'echo $(( $x * 2 ))' captured: '{}' 2>/dev/null)
+    doubled=$(@ $arr collect: "$block" 2>&1)
 
     # Check by showing the doubled array
-    items=$(@ $doubled show 2>&1)
+    items=$(@ $doubled asJson 2>&1)
     if echo "$items" | grep -qE "[246]"; then
         pass "Array collect: maps elements through block"
     else
