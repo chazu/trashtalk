@@ -6,7 +6,7 @@ File subclass: Object
 
   # Create a File object for a given path
   # Usage: file=$(@ File at: "/tmp/foo.txt")
-  rawClassMethod: at: filepath [
+  primitiveClassMethod: at: filepath [
     local id=$(_generate_instance_id File)
     _create_instance File "$id"
     @ "$id" setPath "$filepath"
@@ -16,7 +16,7 @@ File subclass: Object
   # Create a temporary file with optional prefix
   # Usage: file=$(@ File temp)
   # Usage: file=$(@ File tempWithPrefix: "st-inspect-")
-  rawClassMethod: temp [
+  primitiveClassMethod: temp [
     local tmpfile
     tmpfile=$(mktemp)
     local id=$(_generate_instance_id File)
@@ -25,7 +25,7 @@ File subclass: Object
     echo "$id"
   ]
 
-  rawClassMethod: tempWithPrefix: prefix [
+  primitiveClassMethod: tempWithPrefix: prefix [
     local tmpfile
     tmpfile=$(mktemp -t "${prefix}XXXXXX")
     local id=$(_generate_instance_id File)
@@ -36,7 +36,7 @@ File subclass: Object
 
   # Create a named pipe (FIFO)
   # Usage: fifo=$(@ File mkfifo: "/tmp/myfifo")
-  rawClassMethod: mkfifo: filepath [
+  primitiveClassMethod: mkfifo: filepath [
     mkfifo "$filepath" 2>/dev/null
     local id=$(_generate_instance_id File)
     _create_instance File "$id"
