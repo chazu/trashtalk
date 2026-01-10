@@ -5,3 +5,6 @@ trash/.compiled/*.dylib
 trash/.compiled/*.so
 trash/.compiled/*.h
 trash/.compiled/.build/
+
+# bv (beads viewer) local config and caches
+.bv/
