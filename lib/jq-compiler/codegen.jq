@@ -32,6 +32,7 @@
 def expr_infix_bp:
   {
     ":=": [2, 1],       # assignment, right-assoc
+    ",":  [3, 4],       # string concatenation, left-assoc
     ">":  [5, 6],       # comparison, left-assoc
     "<":  [5, 6],       # comparison, left-assoc
     ">=": [5, 6],       # comparison, left-assoc
@@ -84,7 +85,8 @@ def expr_is_operator:
     $tok.type == "GT" or $tok.type == "LT" or
     $tok.type == "GE" or $tok.type == "LE" or
     $tok.type == "EQ" or $tok.type == "NE" or
-    $tok.type == "EQUALS" or $tok.type == "STR_NE" or $tok.type == "MATCH"
+    $tok.type == "EQUALS" or $tok.type == "STR_NE" or $tok.type == "MATCH" or
+    $tok.type == "COMMA"
   );
 
 def expr_op_value:
@@ -105,6 +107,7 @@ def expr_op_value:
   elif $tok.type == "EQUALS" then "="
   elif $tok.type == "STR_NE" then "~="
   elif $tok.type == "MATCH" then "=~"
+  elif $tok.type == "COMMA" then ","
   else null
   end;
 
@@ -975,7 +978,39 @@ def expr_gen($locals; $ivars; $cvars):
       "\(.op)\(.operand | expr_gen($locals; $ivars; $cvars))"
     end
   elif .type == "binary" then
-    "$(( \(.left | expr_gen_arith($locals; $ivars; $cvars)) \(.op) \(.right | expr_gen_arith($locals; $ivars; $cvars)) ))"
+    if .op == "," then
+      # String concatenation: generate proper bash string concat
+      # Each part needs to be suitable for embedding in double quotes
+      def concat_part:
+        if .type == "string" then
+          # String literal (single-quoted) - use raw value
+          .value
+        elif .type == "dstring" then
+          # Double-quoted string - strip the quotes from value
+          .value | .[1:-1]
+        elif .type == "identifier" then
+          # Variable reference - use ${var} form
+          if expr_is_local(.name; $locals) then "${\(.name)}"
+          elif expr_is_ivar(.name; $ivars) then "$(_ivar \(.name))"
+          elif expr_is_cvar(.name; $cvars) then "$(_cvar \(.name))"
+          else "${\(.name)}"
+          end
+        elif .type == "binary" and .op == "," then
+          # Nested concat - recurse
+          (.left | concat_part) + (.right | concat_part)
+        else
+          # Other expressions - generate and wrap
+          expr_gen($locals; $ivars; $cvars) as $code |
+          if ($code | test("^\\$")) then $code
+          elif ($code | test("^'.*'$")) then ($code | .[1:-1])  # Strip single quotes
+          elif ($code | test("^\".*\"$")) then ($code | .[1:-1])  # Strip double quotes
+          else $code
+          end
+        end;
+      (.left | concat_part) + (.right | concat_part)
+    else
+      "$(( \(.left | expr_gen_arith($locals; $ivars; $cvars)) \(.op) \(.right | expr_gen_arith($locals; $ivars; $cvars)) ))"
+    end
   elif .type == "message_send" then
     (.receiver | expr_gen($locals; $ivars; $cvars)) as $recv |
     # Quote receiver if it's a variable expansion (contains $)
