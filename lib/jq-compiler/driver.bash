@@ -299,6 +299,53 @@ cmd_parse() {
     echo "$ast"
 }
 
+# Parse a .trash file along with its included traits
+# Outputs a CompilationUnit JSON: { "class": {...}, "traits": {"TraitName": {...}, ...} }
+cmd_parse_with_traits() {
+    local source_file="$1"
+    local trashtalk_dir="${TRASHTALK_DIR:-$HOME/.trashtalk}"
+    local traits_dir="$trashtalk_dir/trash/traits"
+
+    if [[ ! -f "$source_file" ]]; then
+        error "Source file not found: $source_file"
+    fi
+
+    # Parse the main class
+    local class_ast
+    class_ast=$(cmd_parse "$source_file")
+    if [[ $? -ne 0 ]]; then
+        exit 1
+    fi
+
+    # Extract trait names
+    local trait_names
+    trait_names=$(echo "$class_ast" | jq -r '.traits[]? // empty')
+
+    # Start building the CompilationUnit
+    local traits_json="{}"
+
+    # Parse each trait
+    for trait_name in $trait_names; do
+        local trait_file="$traits_dir/$trait_name.trash"
+        if [[ -f "$trait_file" ]]; then
+            local trait_ast
+            trait_ast=$(cmd_parse "$trait_file" 2>/dev/null)
+            if [[ $? -eq 0 ]]; then
+                # Add trait to the traits object
+                traits_json=$(echo "$traits_json" | jq --arg name "$trait_name" --argjson ast "$trait_ast" '. + {($name): $ast}')
+            else
+                echo "Warning: Failed to parse trait $trait_name from $trait_file" >&2
+            fi
+        else
+            echo "Warning: Trait file not found: $trait_file" >&2
+        fi
+    done
+
+    # Output the CompilationUnit
+    jq -n --argjson class "$class_ast" --argjson traits "$traits_json" \
+        '{ "class": $class, "traits": $traits }'
+}
+
 # Pretty-print the AST
 cmd_ast() {
     local source_file="$1"
@@ -410,6 +457,13 @@ main() {
                 error "Missing source file"
             fi
             cmd_parse "$1"
+            ;;
+
+        parse-with-traits)
+            if [[ $# -lt 1 ]]; then
+                error "Missing source file"
+            fi
+            cmd_parse_with_traits "$1"
             ;;
 
         ast)
