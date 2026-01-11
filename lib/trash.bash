@@ -1243,9 +1243,11 @@ function _class_has_method {
   local class_name="$1"
   local selector="$2"
 
-  # Normalize selector: do: -> do, inject:into: -> inject_into
-  local normalized="${selector%:}"
-  normalized="${normalized//:/_}"
+  # Normalize selector to function suffix: incrementBy: -> incrementBy_, at:put: -> at_put_
+  # Step 1: Replace all colons with underscores
+  local normalized="${selector//:/_}"
+  # Step 2: Ensure no double underscores (from empty keywords)
+  normalized="${normalized//__/_}"
 
   # Walk the inheritance chain
   local current_class="$class_name"

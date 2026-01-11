@@ -130,10 +130,11 @@ source='Child subclass: Parent
     x := 2
   ]'
 result=$(compile_method "$source" "foo")
-if [[ "$result" == *'x=1'* ]] && [[ "$result" == *'super'* ]] && [[ "$result" == *'x=2'* ]]; then
+# Check for x="1" (quoted) or x=1 (unquoted) patterns
+if [[ "$result" == *'x="1"'* || "$result" == *'x=1'* ]] && [[ "$result" == *'super'* ]] && [[ "$result" == *'x="2"'* || "$result" == *'x=2'* ]]; then
   pass "Super call in middle of method"
 else
-  fail "Super call in middle of method" 'x=1, super, x=2 in order' "$result"
+  fail "Super call in middle of method" 'x=1/x="1", super, x=2/x="2" in order' "$result"
 fi
 
 # Test 7: Return super result

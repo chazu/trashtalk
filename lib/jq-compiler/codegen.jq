@@ -2332,8 +2332,10 @@ def transformMethodBody($className; $isRaw):
       gsub("\\( "; "(") |              # Remove space after (
       gsub("> /"; ">/") |              # Remove space after > before path
       gsub("< (?<c>[^<])"; "<\(.c)") |  # Remove space after < unless followed by < (process substitution)
-      gsub("(?<a>[a-zA-Z0-9_]) = (?<c>[0-9\"'$])"; "\(.a)=\(.c)") |  # Fix assignments
-      gsub("(?<a>[a-zA-Z0-9_]) = (?<c>[a-zA-Z])"; "\(.a)= \(.c)")   # Keep space for env var assignments
+      gsub("(?<a>[a-zA-Z0-9_]) = (?<c>[0-9\"'$])"; "\(.a)=\(.c)") |  # Fix assignments: var = "val" → var="val"
+      gsub("(?<a>[a-zA-Z0-9_])= (?<c>true|false|yes|no)(?<d>[ \n;)$])"; "\(.a)=\(.c)\(.d)") |  # Fix bool: var= true → var=true
+      gsub("(?<a>[a-zA-Z0-9_]) = (?<c>true|false|yes|no)(?<d>[ \n;)$])"; "\(.a)=\(.c)\(.d)") |  # Fix bool: var = true → var=true
+      gsub("(?<a>[a-zA-Z0-9_]) = (?<c>[a-zA-Z])"; "\(.a)= \(.c)")   # Keep space for env var assignments: IFS= read
     else
       # Normal mode: full DSL normalization
       gsub(" \\| "; " | ") |           # Normalize pipe spacing
@@ -2686,7 +2688,11 @@ def generate:
 
 # Handle both plain Class input and CompilationUnit { "class": {...}, "traits": {...} }
 if .class != null then
-  .class | generate
+  # When using CompilationUnit, merge top-level metadata into the class before generating
+  (.inheritedInstanceVars // []) as $inherited |
+  (.sourceHash // "") as $hash |
+  (.sourceCode // "") as $src |
+  .class + {inheritedInstanceVars: $inherited, sourceHash: $hash, sourceCode: $src} | generate
 else
   generate
 end
