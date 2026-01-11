@@ -1,8 +1,13 @@
+#!/usr/bin/env bash
 # ==============================================================================
 # Codegen Tests
 # ==============================================================================
 # Tests for codegen.jq - validates generated bash code
 # ==============================================================================
+
+# Source shared test helper for standalone execution
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/test_helper.bash"
 
 DRIVER="$COMPILER_DIR/driver.bash"
 TMPFILE="/tmp/test_codegen_$$.trash"

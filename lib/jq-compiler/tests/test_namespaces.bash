@@ -1,8 +1,13 @@
+#!/usr/bin/env bash
 # ==============================================================================
 # Namespace Tests
 # ==============================================================================
 # Tests for namespace parsing - package declarations, imports, and qualified refs
 # ==============================================================================
+
+# Source shared test helper for standalone execution
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/test_helper.bash"
 
 TOKENIZER="$COMPILER_DIR/tokenizer.bash"
 PARSER="$COMPILER_DIR/parser.jq"
