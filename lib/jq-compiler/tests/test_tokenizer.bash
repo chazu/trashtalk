@@ -1,8 +1,13 @@
+#!/usr/bin/env bash
 # ==============================================================================
 # Tokenizer Tests
 # ==============================================================================
 # Tests for tokenizer.bash - validates token types and values
 # ==============================================================================
+
+# Source shared test helper for standalone execution
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/test_helper.bash"
 
 TOKENIZER="$COMPILER_DIR/tokenizer.bash"
 

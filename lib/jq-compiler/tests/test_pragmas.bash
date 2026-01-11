@@ -1,8 +1,13 @@
+#!/usr/bin/env bash
 # ==============================================================================
 # Pragma Tests
 # ==============================================================================
 # Tests for pragma: directive parsing and code generation
 # ==============================================================================
+
+# Source shared test helper for standalone execution
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/test_helper.bash"
 
 TOKENIZER="$COMPILER_DIR/tokenizer.bash"
 PARSER="$COMPILER_DIR/parser.jq"

@@ -1,8 +1,13 @@
+#!/usr/bin/env bash
 # ==============================================================================
 # Integration Tests
 # ==============================================================================
 # Tests that compile actual .trash files and compare with expected output
 # ==============================================================================
+
+# Source shared test helper for standalone execution
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/test_helper.bash"
 
 DRIVER="$COMPILER_DIR/driver.bash"
 TRASHTALK_DIR="$(dirname "$(dirname "$COMPILER_DIR")")"
