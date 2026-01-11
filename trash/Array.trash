@@ -91,6 +91,7 @@ Array subclass: Object
   # Iterate over each element, calling block with each value
   # Usage: @ myArray do: [:each | @ Console print: each]
   method: do: aBlock [
+    pragma: bashOnly
     | i len |
     len := items arrayLength.
     i := 0.
@@ -103,6 +104,7 @@ Array subclass: Object
   # Map each element through a block, returning new array
   # Usage: doubled := @ myArray collect: [:x | x * 2]
   method: collect: aBlock [
+    pragma: bashOnly
     | i len newItems result newArray |
     len := items arrayLength.
     newItems := '[]'.
@@ -120,6 +122,7 @@ Array subclass: Object
   # Select elements where block returns true (non-empty string)
   # Usage: evens := @ myArray select: [:x | x % 2 == 0]
   method: select: aBlock [
+    pragma: bashOnly
     | i len newItems element result newArray |
     len := items arrayLength.
     newItems := '[]'.
@@ -140,6 +143,7 @@ Array subclass: Object
   # Reduce array to single value using block
   # Usage: sum := @ myArray inject: 0 into: [:acc :each | acc + each]
   method: inject: initial into: aBlock [
+    pragma: bashOnly
     | i len acc |
     len := items arrayLength.
     acc := initial.
