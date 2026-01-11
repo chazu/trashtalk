@@ -96,7 +96,8 @@ TestCat subclass: Object
   method: setValue: v [^ 2]
 EOF
 result=$("$COMPILER_DIR/driver.bash" compile /tmp/TestCat.trash 2>&1 | grep '__TestCat__methodCategories')
-expected='__TestCat__methodCategories="getValue:accessing setValue:accessing"'
+# Note: keyword selectors compile with underscores, so setValue: becomes setValue_
+expected='__TestCat__methodCategories="getValue:accessing setValue_:accessing"'
 if [[ "$result" == "$expected" ]]; then
     pass "methodCategories metadata generated correctly"
 else

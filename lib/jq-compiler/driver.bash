@@ -177,8 +177,9 @@ extract_ivars_from_compiled() {
     local ivars_value
     ivars_value=$(echo "$ivars_line" | sed 's/.*__instanceVars="\([^"]*\)".*/\1/')
 
-    # Convert "var1: var2: var3:" to "var1 var2 var3"
-    echo "$ivars_value" | tr ':' ' ' | tr -s ' ' | xargs
+    # Convert "var1:default1 var2:default2" to "var1 var2"
+    # Split on spaces, extract only the name part (before colon), rejoin
+    echo "$ivars_value" | tr ' ' '\n' | sed 's/:.*$//' | tr '\n' ' ' | xargs
 }
 
 # Get parent class from a compiled file
@@ -395,7 +396,7 @@ cmd_compile() {
 
     # Collect inherited instance variables from parent classes
     local parent_class inherited_ivars
-    parent_class=$(echo "$ast" | jq -r '.parent // empty')
+    parent_class=$(echo "$ast" | jq -r '.class.parent // empty')
     if [[ -n "$parent_class" ]]; then
         inherited_ivars=$(collect_inherited_ivars "$parent_class")
     else

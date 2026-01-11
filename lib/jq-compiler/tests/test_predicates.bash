@@ -50,7 +50,7 @@ source='TestPred subclass: Object
   ]'
 result=$(compile_method "$source" "test")
 expected='local path
-path="'"'"'/tmp/foo'"'"'"
+path="/tmp/foo"
 if [[ -e "$path" ]]; then ok="1"; fi'
 if [[ "$result" == "$expected" ]]; then
   pass "fileExists generates [[ -e ... ]]"
