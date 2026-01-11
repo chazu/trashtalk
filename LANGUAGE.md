@@ -848,6 +848,7 @@ task=$(@ Task titled "Write docs")
 
 - **Method name collision**: Keyword methods (e.g., `skip:`) and unary methods with the same base name (e.g., `skip`) compile to the same function. Avoid this pattern.
 - **Negative numbers in arguments**: Arguments like `0 -1` may be mangled. Use variables instead of negative literals in method calls.
+- **Non-local returns in custom methods**: Early return (`^`) works correctly inside compiler-recognized control flow (`ifTrue:`, `ifFalse:`, `whileTrue:`, `timesRepeat:`, `to:do:`) and collection methods (`do:`, `collect:`, `select:`). However, blocks passed to custom methods cannot perform non-local returns due to bash limitations. The `return` only exits the block evaluation, not the enclosing method. This is a bash-specific limitation; the Go/Procyon runtime supports non-local returns in all contexts.
 
 ## Development Workflow
 
