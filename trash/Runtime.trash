@@ -95,6 +95,12 @@ Runtime subclass: Object
   # Introspection
   # ==========================================
 
+  # Get class name from an instance ID
+  # Usage: class := @ Runtime classFor: instanceId
+  rawClassMethod: classFor: instanceId [
+    _get_instance_class "$1"
+  ]
+
   # Get superclass of a class
   # Usage: super := @ Runtime superclassOf: 'Counter'
   rawClassMethod: superclassOf: className [
