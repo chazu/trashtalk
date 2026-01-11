@@ -14,31 +14,26 @@ Time subclass: Object
 
   # Get current Unix timestamp (seconds since epoch)
   # Usage: ts := @ Time now
-  rawClassMethod: now [
+  primitiveClassMethod: now [
     date +%s
   ]
 
-  # Get current time in milliseconds
+  # Get current time in milliseconds (approximate from seconds)
   # Usage: ms := @ Time nowMillis
-  rawClassMethod: nowMillis [
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-      # macOS: use perl for milliseconds
-      perl -MTime::HiRes=time -e 'printf "%.0f\n", time * 1000'
-    else
-      # Linux: date supports nanoseconds
-      date +%s%3N
-    fi
+  # Note: Returns seconds * 1000 for portability
+  primitiveClassMethod: nowMillis [
+    echo "$(( $(date +%s) * 1000 ))"
   ]
 
   # Get current time formatted
   # Usage: str := @ Time nowFormatted: '%Y-%m-%d %H:%M:%S'
-  rawClassMethod: nowFormatted: format [
+  primitiveClassMethod: nowFormatted: format [
     date +"$1"
   ]
 
   # Get ISO 8601 formatted current time
   # Usage: iso := @ Time nowISO
-  rawClassMethod: nowISO [
+  primitiveClassMethod: nowISO [
     date -u +"%Y-%m-%dT%H:%M:%SZ"
   ]
 
@@ -48,7 +43,7 @@ Time subclass: Object
 
   # Format a Unix timestamp
   # Usage: str := @ Time format: timestamp as: '%Y-%m-%d'
-  rawClassMethod: format: timestamp as: format [
+  primitiveClassMethod: format: timestamp as: format [
     if [[ "$OSTYPE" == "darwin"* ]]; then
       date -r "$1" +"$2"
     else
@@ -58,7 +53,7 @@ Time subclass: Object
 
   # Format timestamp as ISO 8601
   # Usage: iso := @ Time formatISO: timestamp
-  rawClassMethod: formatISO: timestamp [
+  primitiveClassMethod: formatISO: timestamp [
     if [[ "$OSTYPE" == "darwin"* ]]; then
       date -r "$1" -u +"%Y-%m-%dT%H:%M:%SZ"
     else
@@ -90,7 +85,7 @@ Time subclass: Object
 
   # Parse a date string to Unix timestamp
   # Usage: ts := @ Time parse: '2024-01-15' format: '%Y-%m-%d'
-  rawClassMethod: parse: dateString format: format [
+  primitiveClassMethod: parse: dateString format: format [
     if [[ "$OSTYPE" == "darwin"* ]]; then
       date -j -f "$2" "$1" +%s 2>/dev/null || echo ""
     else
@@ -104,12 +99,13 @@ Time subclass: Object
 
   # Sleep for specified seconds (supports decimals)
   # Usage: @ Time sleep: 0.5
-  rawClassMethod: sleep: seconds [
+  primitiveClassMethod: sleep: seconds [
     sleep "$1"
   ]
 
   # Sleep for specified milliseconds
   # Usage: @ Time sleepMillis: 100
+  # Note: rawClassMethod due to bc pipe that confuses compiler
   rawClassMethod: sleepMillis: millis [
     sleep "$(echo "scale=3; $1 / 1000" | bc)"
   ]
@@ -188,7 +184,7 @@ Time subclass: Object
   # ==========================================
 
   # Get timestamp for start of today
-  rawClassMethod: today [
+  primitiveClassMethod: today [
     if [[ "$OSTYPE" == "darwin"* ]]; then
       date -j -f "%Y-%m-%d" "$(date +%Y-%m-%d)" +%s
     else
