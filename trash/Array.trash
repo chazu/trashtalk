@@ -140,6 +140,39 @@ Array subclass: Object
     ^ newArray
   ]
 
+  # Find first element where block returns true
+  # Usage: found := @ myArray detect: [:x | x > 5]
+  # Returns empty string if no match found
+  method: detect: aBlock [
+    pragma: bashOnly
+    | i len element result |
+    len := items arrayLength.
+    i := 0.
+    [i < len] whileTrue: [
+      element := items arrayAt: i.
+      result := @ aBlock valueWith: element.
+      result notEmpty ifTrue: [^ element].
+      i := i + 1
+    ].
+    ^ ''
+  ]
+
+  # Find first element where block returns true, with default
+  # Usage: found := @ myArray detect: [:x | x > 5] ifNone: ['not found']
+  method: detect: aBlock ifNone: defaultBlock [
+    pragma: bashOnly
+    | i len element result |
+    len := items arrayLength.
+    i := 0.
+    [i < len] whileTrue: [
+      element := items arrayAt: i.
+      result := @ aBlock valueWith: element.
+      result notEmpty ifTrue: [^ element].
+      i := i + 1
+    ].
+    ^ @ defaultBlock value
+  ]
+
   # Reduce array to single value using block
   # Usage: sum := @ myArray inject: 0 into: [:acc :each | acc + each]
   method: inject: initial into: aBlock [
