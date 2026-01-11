@@ -1292,6 +1292,10 @@ def expr_gen($locals; $ivars; $cvars):
         end
       elif $cond.type == "variable" then {code: $cond.value, needs_wrapper: true}
       elif $cond.type == "boolean" then {code: (if $cond.value then "1" else "0" end), needs_wrapper: true}
+      elif $cond.type == "json_primitive" and ($cond.operation == "objectHasKey" or $cond.operation == "objectIsEmpty" or $cond.operation == "arrayIsEmpty") then
+        # Boolean json_primitives return "true"/"false" strings - use string comparison
+        ($cond | expr_gen($locals; $ivars; $cvars)) as $code |
+        {code: "[[ \"\($code)\" == \"true\" ]]", needs_wrapper: false}
       else {code: ($cond | expr_gen($locals; $ivars; $cvars)), needs_wrapper: true}
       end;
     # Handle nil checks separately (they use .subject not .condition)
