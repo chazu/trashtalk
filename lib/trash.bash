@@ -2117,14 +2117,33 @@ function @ {
   fi
 
   # Check for pragma: direct marker on the method
-  # Marker format: __ClassName__selector__direct=1
+  # Marker format: __ClassName__[class__]selector__direct=1
   if [[ -n "$___class" ]]; then
     local ___func_prefix=$(_to_func_prefix "$___class")
-    # Normalize selector: do: -> do_, inject:into: -> inject_into_
-    local ___normalized="${___selector%:}"
+    # Reconstruct full selector from all keyword arguments (ending with :)
+    # e.g., "Env" "set:" "x" "to:" "y" -> "set:to:"
+    local ___full_selector=""
+    local ___i ___arg
+    for ((___i=2; ___i<=$#; ___i++)); do
+      ___arg="${!___i}"
+      [[ "$___arg" == *: ]] && ___full_selector+="$___arg"
+    done
+    # Normalize selector: set:to: -> set_to_
+    local ___normalized="${___full_selector%:}"
     ___normalized="${___normalized//:/_}"
-    [[ "$___selector" == *: ]] && ___normalized="${___normalized}_"
-    local ___direct_marker="${___func_prefix}__${___normalized}__direct"
+    [[ "$___full_selector" == *: ]] && ___normalized="${___normalized}_"
+
+    # Determine if this is a class method call (receiver is class name) or instance call
+    local ___method_type=""
+    if [[ "$___receiver" =~ ^[a-z] && "$___receiver" == *_* ]]; then
+      # Instance method: marker is __ClassName__selector__direct
+      ___method_type=""
+    else
+      # Class method: marker is __ClassName__class__selector__direct
+      ___method_type="class__"
+    fi
+
+    local ___direct_marker="${___func_prefix}__${___method_type}${___normalized}__direct"
     if [[ -n "${!___direct_marker:-}" ]]; then
       send "$@"
       return $?
@@ -2132,7 +2151,7 @@ function @ {
 
     # Check for pragma: procyonOnly marker
     # If set, ensure native plugin exists before attempting dispatch
-    local ___procyonOnly_marker="${___func_prefix}__${___normalized}__procyonOnly"
+    local ___procyonOnly_marker="${___func_prefix}__${___method_type}${___normalized}__procyonOnly"
     if [[ -n "${!___procyonOnly_marker:-}" ]]; then
       if ! _has_native_plugin "$___class"; then
         echo "Error: Method $___selector requires native Procyon plugin for $___class" >&2
