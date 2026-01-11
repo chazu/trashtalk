@@ -444,6 +444,9 @@ def parse_simple_arg:
     { state: (. | expr_advance), result: { type: "arithmetic", value: $tok.value } }
   elif $tok.type == "PATH" then
     { state: (. | expr_advance), result: { type: "path", value: $tok.value } }
+  elif $tok.type == "LBRACKET" then
+    # Block literal as argument (e.g., arr do: [:x | ...])
+    parse_block
   else
     { state: ., result: null }
   end;
