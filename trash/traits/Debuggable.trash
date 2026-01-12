@@ -2,16 +2,20 @@
 Debuggable trait
 
   # Output debug message (respects TRASH_DEBUG env var)
-  method: debug: message [
+  # pragma: bashOnly (outputs to stderr, must not go through native daemon)
+  rawMethod: debug: message [
+    pragma: bashOnly
     [[ "${TRASH_DEBUG:-1}" == "0" ]] && return 0
-    | timestamp |
-    timestamp := $(date '+%Y-%m-%d %H:%M:%S')
-    echo "[$timestamp] DEBUG ($_RECEIVER): $message" >&2
+    local timestamp
+    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    echo "[$timestamp] DEBUG ($_RECEIVER): $1" >&2
   ]
 
   # Trace a method call
-  method: trace: method_name args: args [
-    @ self debug: "Calling $method_name with args: $args"
+  # pragma: bashOnly (calls debug: which outputs to stderr)
+  rawMethod: trace: method_name args: args [
+    pragma: bashOnly
+    @ "$_RECEIVER" debug: "Calling $1 with args: $2"
   ]
 
   # Inspect object details

@@ -25,8 +25,20 @@ fail() {
     echo "    Got: $3"
 }
 
+skip() {
+    ((TESTS_RUN++))
+    echo "  SKIP: $1 ($2)"
+}
+
 echo "=== NativeDaemon Tests (Single-Daemon Mode) ==="
 echo ""
+
+# Check if Counter.dylib exists (needed for dispatch tests)
+COUNTER_DYLIB="$TRASHDIR/.compiled/Counter.dylib"
+HAS_COUNTER_PLUGIN=false
+if [[ -f "$COUNTER_DYLIB" ]]; then
+    HAS_COUNTER_PLUGIN=true
+fi
 
 # Clean up any existing daemon
 @ NativeDaemon reset 2>/dev/null || true
@@ -51,11 +63,15 @@ fi
 
 # Test 3: hasNative returns true for Counter (checks .dylib)
 echo "Test 3: hasNative returns true for Counter"
-hasCounter=$(@ "$daemon1" hasNative: Counter)
-if [[ "$hasCounter" == "true" ]]; then
-    pass "hasNative: Counter returns true"
+if [[ "$HAS_COUNTER_PLUGIN" == "true" ]]; then
+    hasCounter=$(@ "$daemon1" hasNative: Counter)
+    if [[ "$hasCounter" == "true" ]]; then
+        pass "hasNative: Counter returns true"
+    else
+        fail "hasNative: Counter returns true" "true" "$hasCounter"
+    fi
 else
-    fail "hasNative: Counter returns true" "true" "$hasCounter"
+    skip "hasNative: Counter returns true" "Counter.dylib not available"
 fi
 
 # Test 4: hasNative returns false for NonExistent
@@ -69,83 +85,115 @@ fi
 
 # Test 5: listNatives includes Counter
 echo "Test 5: listNatives includes Counter"
-natives=$(@ "$daemon1" listNatives)
-if echo "$natives" | grep -q "Counter"; then
-    pass "listNatives includes Counter"
+if [[ "$HAS_COUNTER_PLUGIN" == "true" ]]; then
+    natives=$(@ "$daemon1" listNatives)
+    if echo "$natives" | grep -q "Counter"; then
+        pass "listNatives includes Counter"
+    else
+        fail "listNatives includes Counter" "Counter in list" "$natives"
+    fi
 else
-    fail "listNatives includes Counter" "Counter in list" "$natives"
+    skip "listNatives includes Counter" "Counter.dylib not available"
 fi
 
 # Test 6: dispatch getValue on instance
 echo "Test 6: dispatch getValue on instance"
-# Create a test instance in env store
-testCounter=$(_generate_instance_id Counter)
-_env_set "$testCounter" '{"class":"Counter","value":"0","step":"1"}'
+if [[ "$HAS_COUNTER_PLUGIN" == "true" ]]; then
+    # Create a test instance in env store
+    testCounter=$(_generate_instance_id Counter)
+    _env_set "$testCounter" '{"class":"Counter","value":"0","step":"1"}'
 
-value=$(@ "$daemon1" dispatch: Counter instance: "$testCounter" selector: getValue args: "[]")
-if [[ "$value" == "0" ]]; then
-    pass "getValue returns initial value 0"
+    value=$(@ "$daemon1" dispatch: Counter instance: "$testCounter" selector: getValue args: "[]")
+    if [[ "$value" == "0" ]]; then
+        pass "getValue returns initial value 0"
+    else
+        fail "getValue returns initial value 0" "0" "$value"
+    fi
 else
-    fail "getValue returns initial value 0" "0" "$value"
+    skip "getValue returns initial value 0" "Counter.dylib not available"
 fi
 
 # Test 7: dispatch creates working daemon (may exit after request due to FIFO semantics)
 echo "Test 7: multiple dispatches work correctly"
-# Just verify another dispatch works - daemon restarts as needed
-value2=$(@ "$daemon1" dispatch: Counter instance: "$testCounter" selector: getValue args: "[]")
-if [[ "$value2" == "0" ]]; then
-    pass "second dispatch works correctly"
+if [[ "$HAS_COUNTER_PLUGIN" == "true" ]]; then
+    # Just verify another dispatch works - daemon restarts as needed
+    value2=$(@ "$daemon1" dispatch: Counter instance: "$testCounter" selector: getValue args: "[]")
+    if [[ "$value2" == "0" ]]; then
+        pass "second dispatch works correctly"
+    else
+        fail "second dispatch works correctly" "0" "$value2"
+    fi
 else
-    fail "second dispatch works correctly" "0" "$value2"
+    skip "second dispatch works correctly" "Counter.dylib not available"
 fi
 
 # Test 8: dispatch increment
 echo "Test 8: dispatch increment"
-@ "$daemon1" dispatch: Counter instance: "$testCounter" selector: increment args: "[]" >/dev/null
-value=$(@ "$daemon1" dispatch: Counter instance: "$testCounter" selector: getValue args: "[]")
-if [[ "$value" == "1" ]]; then
-    pass "increment increases value to 1"
+if [[ "$HAS_COUNTER_PLUGIN" == "true" ]]; then
+    @ "$daemon1" dispatch: Counter instance: "$testCounter" selector: increment args: "[]" >/dev/null
+    value=$(@ "$daemon1" dispatch: Counter instance: "$testCounter" selector: getValue args: "[]")
+    if [[ "$value" == "1" ]]; then
+        pass "increment increases value to 1"
+    else
+        fail "increment increases value to 1" "1" "$value"
+    fi
 else
-    fail "increment increases value to 1" "1" "$value"
+    skip "increment increases value to 1" "Counter.dylib not available"
 fi
 
 # Test 9: dispatch incrementBy_ (keyword selector)
 echo "Test 9: dispatch incrementBy_ (keyword selector)"
-@ "$daemon1" dispatch: Counter instance: "$testCounter" selector: incrementBy_ args: '["5"]' >/dev/null
-value=$(@ "$daemon1" dispatch: Counter instance: "$testCounter" selector: getValue args: "[]")
-if [[ "$value" == "6" ]]; then
-    pass "incrementBy_ 5 increases value to 6"
+if [[ "$HAS_COUNTER_PLUGIN" == "true" ]]; then
+    @ "$daemon1" dispatch: Counter instance: "$testCounter" selector: incrementBy_ args: '["5"]' >/dev/null
+    value=$(@ "$daemon1" dispatch: Counter instance: "$testCounter" selector: getValue args: "[]")
+    if [[ "$value" == "6" ]]; then
+        pass "incrementBy_ 5 increases value to 6"
+    else
+        fail "incrementBy_ 5 increases value to 6" "6" "$value"
+    fi
 else
-    fail "incrementBy_ 5 increases value to 6" "6" "$value"
+    skip "incrementBy_ 5 increases value to 6" "Counter.dylib not available"
 fi
 
 # Test 10: State persisted to Bash env
 echo "Test 10: State persisted to Bash env"
-bashValue=$(echo "$(_env_get "$testCounter")" | jq -r '.value')
-if [[ "$bashValue" == "6" ]]; then
-    pass "Updated value persisted to Bash env"
+if [[ "$HAS_COUNTER_PLUGIN" == "true" ]]; then
+    bashValue=$(echo "$(_env_get "$testCounter")" | jq -r '.value')
+    if [[ "$bashValue" == "6" ]]; then
+        pass "Updated value persisted to Bash env"
+    else
+        fail "Updated value persisted to Bash env" "6" "$bashValue"
+    fi
 else
-    fail "Updated value persisted to Bash env" "6" "$bashValue"
+    skip "Updated value persisted to Bash env" "Counter.dylib not available"
 fi
 
 # Test 11: dispatch decrement
 echo "Test 11: dispatch decrement"
-@ "$daemon1" dispatch: Counter instance: "$testCounter" selector: decrement args: "[]" >/dev/null
-value=$(@ "$daemon1" dispatch: Counter instance: "$testCounter" selector: getValue args: "[]")
-if [[ "$value" == "5" ]]; then
-    pass "decrement decreases value to 5"
+if [[ "$HAS_COUNTER_PLUGIN" == "true" ]]; then
+    @ "$daemon1" dispatch: Counter instance: "$testCounter" selector: decrement args: "[]" >/dev/null
+    value=$(@ "$daemon1" dispatch: Counter instance: "$testCounter" selector: getValue args: "[]")
+    if [[ "$value" == "5" ]]; then
+        pass "decrement decreases value to 5"
+    else
+        fail "decrement decreases value to 5" "5" "$value"
+    fi
 else
-    fail "decrement decreases value to 5" "5" "$value"
+    skip "decrement decreases value to 5" "Counter.dylib not available"
 fi
 
 # Test 12: dispatch reset
 echo "Test 12: dispatch reset"
-@ "$daemon1" dispatch: Counter instance: "$testCounter" selector: reset args: "[]" >/dev/null
-value=$(@ "$daemon1" dispatch: Counter instance: "$testCounter" selector: getValue args: "[]")
-if [[ "$value" == "0" ]]; then
-    pass "reset sets value to 0"
+if [[ "$HAS_COUNTER_PLUGIN" == "true" ]]; then
+    @ "$daemon1" dispatch: Counter instance: "$testCounter" selector: reset args: "[]" >/dev/null
+    value=$(@ "$daemon1" dispatch: Counter instance: "$testCounter" selector: getValue args: "[]")
+    if [[ "$value" == "0" ]]; then
+        pass "reset sets value to 0"
+    else
+        fail "reset sets value to 0" "0" "$value"
+    fi
 else
-    fail "reset sets value to 0" "0" "$value"
+    skip "reset sets value to 0" "Counter.dylib not available"
 fi
 
 # Test 13: fallback for non-native class (exit code 200)
@@ -172,18 +220,28 @@ fi
 
 # Test 15: hasNative correctly identifies plugin availability
 echo "Test 15: hasNative identifies plugins"
-hasCounter=$(@ "$daemon1" hasNative: Counter)
-hasNonExistent=$(@ "$daemon1" hasNative: NonExistent)
-if [[ "$hasCounter" == "true" ]] && [[ "$hasNonExistent" == "false" ]]; then
-    pass "hasNative correctly identifies plugin availability"
+if [[ "$HAS_COUNTER_PLUGIN" == "true" ]]; then
+    hasCounter=$(@ "$daemon1" hasNative: Counter)
+    hasNonExistent=$(@ "$daemon1" hasNative: NonExistent)
+    if [[ "$hasCounter" == "true" ]] && [[ "$hasNonExistent" == "false" ]]; then
+        pass "hasNative correctly identifies plugin availability"
+    else
+        fail "hasNative correctly identifies plugin availability" "true/false" "$hasCounter/$hasNonExistent"
+    fi
 else
-    fail "hasNative correctly identifies plugin availability" "true/false" "$hasCounter/$hasNonExistent"
+    # Without Counter.dylib, just verify NonExistent returns false
+    hasNonExistent=$(@ "$daemon1" hasNative: NonExistent)
+    if [[ "$hasNonExistent" == "false" ]]; then
+        pass "hasNative correctly identifies plugin availability"
+    else
+        fail "hasNative correctly identifies plugin availability" "false for NonExistent" "$hasNonExistent"
+    fi
 fi
 
 # Test 16: pid returns last known daemon PID (may not be running)
 echo "Test 16: pid returns last known daemon PID"
-# Do a dispatch first to ensure daemon was started
-@ "$daemon1" dispatch: Counter instance: "$testCounter" selector: getValue args: "[]" >/dev/null
+# Do a dispatch first to ensure daemon was started (use any available plugin)
+@ "$daemon1" dispatch: Object instance: "" selector: class args: "[]" >/dev/null 2>&1
 pid=$(@ "$daemon1" pid)
 if [[ "$pid" =~ ^[0-9]+$ ]]; then
     pass "pid returns a valid process ID (daemon may have exited due to FIFO semantics)"

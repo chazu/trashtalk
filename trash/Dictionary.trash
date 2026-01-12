@@ -188,7 +188,9 @@ Dictionary subclass: Object
 
   # Get value at key, or default if missing
   # Usage: @ dict at: 'missing' ifAbsent: 'default'
+  # pragma: bashOnly (Go codegen bug with boolean conditionals)
   method: at: key ifAbsent: default [
+    pragma: bashOnly
     (items objectHasKey: key) ifTrue: [^ items objectAt: key] ifFalse: [^ default]
   ]
 
@@ -204,7 +206,9 @@ Dictionary subclass: Object
   ]
 
   # Create dictionary from JSON string
+  # pragma: bashOnly (Go codegen issue with class methods returning objects)
   classMethod: fromJson: json [
+    pragma: bashOnly
     | dict |
     dict := (@ Dictionary new)
     @ dict setItems: json

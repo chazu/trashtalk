@@ -96,11 +96,11 @@ FIFO subclass: Object
   # The current line is available in $__FIFO_LINE
   # Exits when the writer closes the FIFO
   rawMethod: readLinesDo: handler [
-    local p handler="$1"
+    local p
     p="$(_ivar path)"
 
-    while IFS= read -r __FIFO_LINE; do
-      eval "$handler"
+    while IFS='' read -r __FIFO_LINE; do
+      eval "$1"
     done < "$p"
   ]
 
