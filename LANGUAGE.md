@@ -346,7 +346,11 @@ Console subclass: Object
 - Classes with complete native implementations
 - Performance-critical classes that should never fall back to Bash
 
-**Note:** All methods in a primitive class should use `primitiveMethod:` or `primitiveClassMethod:` to provide both native and Bash implementations.
+**Restrictions:**
+- All methods must use `primitiveMethod:`, `primitiveClassMethod:`, `rawMethod:`, or `rawClassMethod:`
+- Cannot include traits (`include:` is not allowed)
+
+The compiler will emit an error if a primitiveClass contains regular `method:` or `classMethod:` definitions, or if it attempts to include any traits.
 
 ### Class Methods
 
