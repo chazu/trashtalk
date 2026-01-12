@@ -6,7 +6,7 @@ Process subclass: Object
 
   # Create a new process wrapper for a command
   # Usage: proc=$(@ Process for: "curl -s https://example.com")
-  rawClassMethod: for: command [
+  primitiveClassMethod: for: command [
     local id
     id=$(@ Runtime generateId: "Process")
     @ Runtime create: "Process" id: "$id"
@@ -17,7 +17,7 @@ Process subclass: Object
 
   # Run the command in the foreground (blocking)
   # Captures stdout/stderr and exit code
-  rawMethod: run [
+  primitiveMethod: run [
     local cmd=$(_ivar command)
     local tmp_stdout="/tmp/proc_$$_stdout"
     local tmp_stderr="/tmp/proc_$$_stderr"
@@ -44,7 +44,7 @@ Process subclass: Object
 
   # Start the command in the background (non-blocking)
   # Returns immediately, use wait or poll to check completion
-  rawMethod: start [
+  primitiveMethod: start [
     local cmd instance tmp_stdout tmp_stderr bg_pid
     cmd=$(_ivar command)
     instance=$(@ Runtime instance)
@@ -65,7 +65,7 @@ Process subclass: Object
 
   # Wait for a background process to complete
   # Note: Uses polling since @ runs in subshells and can't use bash wait builtin
-  rawMethod: wait [
+  primitiveMethod: wait [
     local proc_pid proc_status instance tmp_stdout tmp_stderr exit_code
     proc_pid=$(_ivar pid)
     proc_status=$(_ivar status)
@@ -110,7 +110,7 @@ Process subclass: Object
   ]
 
   # Check if the process is still running
-  rawMethod: isRunning [
+  primitiveMethod: isRunning [
     local proc_pid proc_status
     proc_pid=$(_ivar pid)
     proc_status=$(_ivar status)
@@ -132,7 +132,7 @@ Process subclass: Object
   ]
 
   # Send a signal to the process
-  rawMethod: signal: sig [
+  primitiveMethod: signal: sig [
     local proc_pid
     proc_pid=$(_ivar pid)
 
@@ -146,7 +146,7 @@ Process subclass: Object
   ]
 
   # Terminate the process (SIGTERM)
-  rawMethod: terminate [
+  primitiveMethod: terminate [
     local proc_pid
     proc_pid=$(_ivar pid)
     @ Shell terminate: "$proc_pid"
@@ -154,7 +154,7 @@ Process subclass: Object
   ]
 
   # Kill the process (SIGKILL)
-  rawMethod: kill [
+  primitiveMethod: kill [
     local proc_pid
     proc_pid=$(_ivar pid)
     @ Shell kill: "$proc_pid"
@@ -162,22 +162,22 @@ Process subclass: Object
   ]
 
   # Get stdout from the process
-  rawMethod: output [
+  primitiveMethod: output [
     _ivar stdout
   ]
 
   # Get stderr from the process
-  rawMethod: errors [
+  primitiveMethod: errors [
     _ivar stderr
   ]
 
   # Get exit code
-  rawMethod: exitCode [
+  primitiveMethod: exitCode [
     _ivar exitCode
   ]
 
   # Check if process succeeded (exit code 0)
-  rawMethod: succeeded [
+  primitiveMethod: succeeded [
     local code=$(_ivar exitCode)
     if [[ "$code" == "0" ]]; then
       echo "true"
@@ -189,7 +189,7 @@ Process subclass: Object
   ]
 
   # Get process info
-  rawMethod: info [
+  primitiveMethod: info [
     local start end duration
     @ Console print: "Command: $(_ivar command)"
     @ Console print: "PID: $(_ivar pid)"
