@@ -506,6 +506,21 @@ function _ensure_class_sourced {
   if [[ -f "$compiled_file" ]]; then
     source "$compiled_file"
     _SOURCED_COMPILED_CLASSES[$class_name]=1
+
+    # Also source included traits (for bashOnly markers)
+    local traits_var="${func_prefix}__traits"
+    if [[ -n "${!traits_var:-}" ]]; then
+      local trait_name trait_file
+      for trait_name in ${!traits_var}; do
+        if [[ -z "${_SOURCED_COMPILED_CLASSES[$trait_name]:-}" ]]; then
+          trait_file="$TRASHDIR/.compiled/traits/$trait_name"
+          if [[ -f "$trait_file" ]]; then
+            source "$trait_file"
+            _SOURCED_COMPILED_CLASSES[$trait_name]=1
+          fi
+        fi
+      done
+    fi
     return 0
   fi
 
@@ -1753,7 +1768,9 @@ function send {
   [[ "$_SELECTOR" == *: ]] && normalized_selector="${normalized_selector}_"
 
   # Check for pragma: bashOnly marker - skip native dispatch if set
+  # Check both instance method marker and class method marker
   local bashOnly_marker="${func_prefix}__${normalized_selector}__bashOnly"
+  local bashOnly_class_marker="${func_prefix}__class__${normalized_selector}__bashOnly"
   local skip_native=0
   if [[ -n "${TRASHTALK_DISABLE_NATIVE:-}" ]]; then
     msg_debug "TRASHTALK_DISABLE_NATIVE set, skipping native dispatch"
@@ -1761,6 +1778,24 @@ function send {
   elif [[ -n "${!bashOnly_marker:-}" ]]; then
     msg_debug "bashOnly pragma set for $_SELECTOR, skipping native dispatch"
     skip_native=1
+  elif [[ -z "$_INSTANCE" && -n "${!bashOnly_class_marker:-}" ]]; then
+    msg_debug "bashOnly pragma set for class method $_SELECTOR, skipping native dispatch"
+    skip_native=1
+  fi
+  # Also check trait bashOnly markers for included traits
+  if [[ $skip_native -eq 0 ]]; then
+    local traits_var="${func_prefix}__traits"
+    if [[ -n "${!traits_var:-}" ]]; then
+      local trait_name trait_bashOnly_marker
+      for trait_name in ${!traits_var}; do
+        trait_bashOnly_marker="__${trait_name}__${normalized_selector}__bashOnly"
+        if [[ -n "${!trait_bashOnly_marker:-}" ]]; then
+          msg_debug "bashOnly pragma set for trait $trait_name method $_SELECTOR, skipping native dispatch"
+          skip_native=1
+          break
+        fi
+      done
+    fi
   fi
 
   # ============================================

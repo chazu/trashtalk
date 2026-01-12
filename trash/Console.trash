@@ -14,35 +14,44 @@ Console subclass: Object
 
   # Print message to stdout with newline
   # Usage: @ Console print: 'Hello'
+  # pragma: bashOnly (output must go to stdout, not native daemon)
   primitiveClassMethod: print: message [
+    pragma: bashOnly
     echo "$1"
   ]
 
   # Print message to stdout without newline
   # Usage: @ Console write: 'Enter name: '
+  # pragma: bashOnly (output must go to stdout, not native daemon)
   primitiveClassMethod: write: message [
+    pragma: bashOnly
     printf "%s" "$1"
   ]
 
   # Print message to stderr with newline
   # Usage: @ Console error: 'Error: file not found'
+  # pragma: bashOnly (output must go to stderr, not native daemon)
   primitiveClassMethod: error: message [
+    pragma: bashOnly
     echo "$1" >&2
   ]
 
   # Print formatted message to stdout
   # Usage: @ Console printf: '%s: %d' with: name and: count
   rawClassMethod: printf: format with: arg1 [
+    pragma: bashOnly
     printf "$1" "$2"
   ]
 
   # Print formatted message with two args
   rawClassMethod: printf: format with: arg1 and: arg2 [
+    pragma: bashOnly
     printf "$1" "$2" "$3"
   ]
 
   # Print formatted message with three args
   rawClassMethod: printf: format with: arg1 and: arg2 and: arg3 [
+    pragma: bashOnly
     printf "$1" "$2" "$3" "$4"
   ]
 

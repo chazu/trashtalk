@@ -16,6 +16,8 @@ counter=$(@ Counter new)
 echo "   Created: $counter"
 @ $counter increment
 @ $counter increment
+# Save to persist the updated value (Bash-only classes need explicit save)
+@ $counter save
 echo "   Value: $(@ $counter getValue)"
 echo ""
 
