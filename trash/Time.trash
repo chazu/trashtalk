@@ -7,6 +7,7 @@
 #   formatted := @ Time format: now as: '%Y-%m-%d'
 #
 Time subclass: Object
+  pragma: primitiveClass
 
   # ==========================================
   # Current Time

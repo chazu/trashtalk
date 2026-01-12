@@ -72,7 +72,8 @@ def isSyncPoint:
   current.value == "category:" or
   current.value == "alias:" or
   current.value == "before:" or
-  current.value == "after:";
+  current.value == "after:" or
+  current.value == "pragma:";
 
 # Synchronization points for error recovery
 # Skips tokens until we find a class-level keyword to resume parsing
@@ -512,6 +513,23 @@ def parseAdvice:
     fail
   end;
 
+# Parse: pragma: pragmaName (class-level pragma)
+# Valid class pragmas: primitiveClass
+def parseClassPragma:
+  if current.value == "pragma:" then
+    # Capture location from pragma: keyword
+    {line: current.line, col: current.col} as $location |
+    advance | skipNewlines |
+    if current.type == "IDENTIFIER" then
+      .result = {type: "classPragma", name: current.value, location: $location} |
+      advance
+    else
+      fail
+    end
+  else
+    fail
+  end;
+
 # Extract pragmas from the start of method body tokens
 # Pragma format: pragma: <name> (e.g., pragma: direct)
 # Returns {pragmas: [...], remaining_tokens: [...]}
@@ -643,7 +661,7 @@ def parseMethod:
 
 # Parse class body elements
 def parseClassBody:
-  {instanceVars: [], classInstanceVars: [], traits: [], requires: [], methodRequirements: [], methods: [], aliases: [], advice: [], errors: [], currentCategory: null, state: .} |
+  {instanceVars: [], classInstanceVars: [], traits: [], requires: [], methodRequirements: [], methods: [], aliases: [], advice: [], classPragmas: [], errors: [], currentCategory: null, state: .} |
   until((.state | atEnd);
     .state |= skipNewlines |
     if (.state | atEnd) then
@@ -747,6 +765,20 @@ def parseClassBody:
         }] |
         .state |= (advance | synchronize)
       end
+    elif (.state | current.value) == "pragma:" then
+      (.state | parseClassPragma) as $r |
+      if $r.result != null then
+        .classPragmas += [$r.result.name] |
+        .state = $r
+      else
+        .errors += [{
+          type: "parse_error",
+          message: "Failed to parse class pragma declaration",
+          token: (.state | current),
+          context: "pragma"
+        }] |
+        .state |= (advance | synchronize)
+      end
     elif (.state | current.value) == "before:" or (.state | current.value) == "after:" then
       (.state | parseAdvice) as $r |
       if $r.result != null then
@@ -805,7 +837,8 @@ def parseClassBody:
     methodRequirements: .methodRequirements,
     methods: .methods,
     aliases: .aliases,
-    advice: .advice
+    advice: .advice,
+    classPragmas: .classPragmas
   } as $body |
   .errors as $errors |
   .state | .errors = (.errors + $errors) | .result = $body;
@@ -875,7 +908,7 @@ def parseClass:
         $class + {package: null, imports: []}
       end)
     else
-      ($header + {instanceVars: [], classInstanceVars: [], traits: [], requires: [], methodRequirements: [], methods: [], aliases: [], advice: []}) as $class |
+      ($header + {instanceVars: [], classInstanceVars: [], traits: [], requires: [], methodRequirements: [], methods: [], aliases: [], advice: [], classPragmas: []}) as $class |
       .result = (if $pkgDecl != null then
         $class + {package: $pkgDecl.package, imports: $pkgDecl.imports}
       else
