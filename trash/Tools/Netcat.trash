@@ -1,0 +1,112 @@
+# Netcat tool wrapper - Network utility for TCP/UDP connections
+# Provides a Trashtalk interface to the nc command
+# Built on Tool/Shell primitives - no raw bash required.
+#
+# Usage:
+#   @ Tools::Netcat ensure                     # Verify nc is available
+#   @ Tools::Netcat listen: 8080               # Listen on a port
+#   @ Tools::Netcat connect: 'host' port: 80   # Connect to a host
+#   @ Tools::Netcat send: 'data' to: 'host' port: 80
+
+package: Tools
+
+Netcat subclass: Tool
+
+  classMethod: name [
+    ^ "nc"
+  ]
+
+  classMethod: installCommand [
+    ^ "nc is typically pre-installed on Unix systems"
+  ]
+
+  # Listen on a port, return received data
+  # Usage: @ Tools::Netcat listen: 8080
+  classMethod: listen: port [
+    | cmd |
+    @ self ensure
+    cmd := @ String concat: "nc -l " with: "$port"
+    ^ @ Shell exec: "$cmd"
+  ]
+
+  # Listen on a port with timeout
+  # Usage: @ Tools::Netcat listen: 8080 timeout: 30
+  classMethod: listen: port timeout: seconds [
+    | cmd |
+    @ self ensure
+    cmd := @ String concat: "timeout " with: "$seconds"
+    cmd := @ String concat: "$cmd" with: " nc -l " with: "$port"
+    ^ @ Shell exec: "$cmd"
+  ]
+
+  # Listen and execute handler for each line received
+  # Usage: @ Tools::Netcat listen: 8080 handler: 'echo "Got: $line"'
+  classMethod: listen: port handler: handlerCode [
+    | cmd |
+    @ self ensure
+    cmd := @ String concat: "nc -l " with: "$port"
+    cmd := @ String concat: "$cmd" with: " | while IFS= read -r line; do "
+    cmd := @ String concat: "$cmd" with: "$handlerCode" with: "; done"
+    ^ @ Shell exec: "$cmd"
+  ]
+
+  # Connect to a host and port
+  # Usage: @ Tools::Netcat connect: 'example.com' port: 80
+  classMethod: connect: host port: port [
+    | cmd |
+    @ self ensure
+    cmd := @ String concat: "nc " with: "$host" with: " "
+    cmd := @ String concat: "$cmd" with: "$port"
+    ^ @ Shell exec: "$cmd"
+  ]
+
+  # Send data to a host and port
+  # Usage: @ Tools::Netcat send: 'GET / HTTP/1.0\r\n\r\n' to: 'example.com' port: 80
+  classMethod: send: data to: host port: port [
+    | cmd |
+    @ self ensure
+    cmd := @ String concat: "echo -e '" with: "$data" with: "' | nc "
+    cmd := @ String concat: "$cmd" with: "$host" with: " " with: "$port"
+    ^ @ Shell exec: "$cmd"
+  ]
+
+  # Send data and get response with timeout
+  # Usage: @ Tools::Netcat send: 'data' to: 'host' port: 80 timeout: 5
+  classMethod: send: data to: host port: port timeout: seconds [
+    | cmd |
+    @ self ensure
+    cmd := @ String concat: "echo -e '" with: "$data" with: "' | timeout "
+    cmd := @ String concat: "$cmd" with: "$seconds" with: " nc "
+    cmd := @ String concat: "$cmd" with: "$host" with: " " with: "$port"
+    ^ @ Shell exec: "$cmd"
+  ]
+
+  # Check if a port is open on a host
+  # Usage: @ Tools::Netcat isOpen: 'example.com' port: 80
+  classMethod: isOpen: host port: port [
+    | cmd |
+    @ self ensure
+    cmd := @ String concat: "nc -z " with: "$host" with: " " with: "$port"
+    ^ @ Shell succeeds: "$cmd"
+  ]
+
+  # Scan a range of ports on a host
+  # Usage: @ Tools::Netcat scan: 'localhost' ports: '80-90'
+  classMethod: scan: host ports: range [
+    | cmd |
+    @ self ensure
+    cmd := @ String concat: "nc -z " with: "$host" with: " " with: "$range"
+    ^ @ Shell execAll: "$cmd"
+  ]
+
+  # Create a simple TCP server that echoes back input
+  # Usage: @ Tools::Netcat echoServer: 8080
+  # Note: This is a blocking, infinite loop server
+  classMethod: echoServer: port [
+    | cmd |
+    @ self ensure
+    @ Console print: "Starting echo server on port $port (Ctrl+C to stop)"
+    cmd := @ String concat: "while true; do nc -l " with: "$port"
+    cmd := @ String concat: "$cmd" with: " | while IFS= read -r line; do echo \"Echo: $line\"; done; done"
+    ^ @ Shell exec: "$cmd"
+  ]
