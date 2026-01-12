@@ -2059,12 +2059,26 @@ def funcPrefixFromName($name):
 
 # Validates that a class with pragma: primitiveClass contains only primitive/raw methods
 # Returns: the class unchanged if valid, halts with error if invalid
+# Note: This validates only the class's own methods. Trait methods are validated
+# separately at the entry point using validatePrimitiveClassWithTraits.
 def validatePrimitiveClass:
   if ((.classPragmas // []) | index("primitiveClass")) then
     # Find all methods that are neither primitive nor raw
     [.methods[] | select(.primitive != true and .raw != true) | .selector] as $nonPrimitive |
     if ($nonPrimitive | length) > 0 then
       "Error: Class '\(.name)' has pragma: primitiveClass but contains non-primitive methods:\n  \($nonPrimitive | join(", "))\nAll methods in a primitiveClass must use primitiveMethod:, primitiveClassMethod:, rawMethod:, or rawClassMethod:" | halt_error
+    else .
+    end
+  else .
+  end;
+
+# Validates primitiveClass constraint: no traits allowed
+# Input: CompilationUnit { "class": {...}, "traits": {...} }
+def validatePrimitiveClassWithTraits:
+  if (.class.classPragmas // []) | index("primitiveClass") then
+    # Primitive classes cannot include traits
+    if ((.class.traits // []) | length) > 0 then
+      "Error: Class '\(.class.name)' has pragma: primitiveClass but includes traits: \(.class.traits | join(", "))\nPrimitive classes cannot include traits." | halt_error
     else .
     end
   else .
@@ -2711,6 +2725,8 @@ def generate:
 
 # Handle both plain Class input and CompilationUnit { "class": {...}, "traits": {...} }
 if .class != null then
+  # Validate primitiveClass constraint including trait methods
+  validatePrimitiveClassWithTraits |
   # When using CompilationUnit, merge top-level metadata into the class before generating
   (.inheritedInstanceVars // []) as $inherited |
   (.sourceHash // "") as $hash |
