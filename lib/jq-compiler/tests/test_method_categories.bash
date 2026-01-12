@@ -124,7 +124,7 @@ EOF
 # Test 6: Runtime categoriesFor works
 echo "Test 6: Runtime categoriesFor works"
 if [[ -f "$TRASHDIR/.compiled/TestCatRuntime" ]]; then
-    result=$(@ Trash categoriesFor TestCatRuntime 2>&1 | grep -E "^ " | tr -d ' ' | sort | tr '\n' ',')
+    result=$(@ Trash categoriesFor: TestCatRuntime 2>&1 | grep -E "^ " | tr -d ' ' | sort | tr '\n' ',')
     expected="accessing,arithmetic,"
     if [[ "$result" == "$expected" ]]; then
         pass "categoriesFor returns correct categories"
@@ -138,8 +138,8 @@ fi
 # Test 7: Runtime methodsIn_category works
 echo "Test 7: Runtime methodsIn_category works"
 if [[ -f "$TRASHDIR/.compiled/TestCatRuntime" ]]; then
-    result=$(@ Trash methodsIn_category TestCatRuntime accessing 2>&1 | grep -E "^ " | tr -d ' ' | sort | tr '\n' ',')
-    expected="getValue,setValue,"
+    result=$(@ Trash methodsIn: TestCatRuntime category: accessing 2>&1 | grep -E "^ " | tr -d ' ' | sort | tr '\n' ',')
+    expected="getValue,setValue_,"
     if [[ "$result" == "$expected" ]]; then
         pass "methodsIn_category returns correct methods"
     else
