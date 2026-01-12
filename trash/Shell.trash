@@ -82,7 +82,8 @@ Shell subclass: Object
     local stdout_file="/tmp/shell_$$_stdout"
     local stderr_file="/tmp/shell_$$_stderr"
 
-    eval "$1" >"$stdout_file" 2>"$stderr_file"
+    # Run in subshell to capture exit code even for 'exit N' commands
+    (eval "$1") >"$stdout_file" 2>"$stderr_file"
     local exit_code=$?
 
     local stdout stderr
