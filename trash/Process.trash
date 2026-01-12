@@ -10,8 +10,8 @@ Process subclass: Object
     local id
     id=$(@ Runtime generateId: "Process")
     @ Runtime create: "Process" id: "$id"
-    @ "$id" setCommand "$1"
-    @ "$id" setStatus "created"
+    @ "$id" setCommand: "$1"
+    @ "$id" setStatus: "created"
     echo "$id"
   ]
 
