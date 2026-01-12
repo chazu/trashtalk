@@ -1,5 +1,6 @@
 # Tool - Abstract base class for wrapping external command-line tools
 # Provides detection, installation, and execution of external programs
+# Built on Shell primitives - no raw bash required.
 #
 # Tool subclasses are singletons - use class methods directly:
 #   @ JqTool ensure
@@ -24,54 +25,70 @@ Tool subclass: Object
   ]
 
   # Check if the tool is installed and on PATH
-  rawClassMethod: isInstalled [
-    local tool_name
-    tool_name=$(@ "$_CLASS" name)
-    if command -v "$tool_name" >/dev/null 2>&1; then
-      echo "true"
-    else
-      echo "false"
-    fi
+  primitiveClassMethod: isInstalled [
+    local toolName checkCmd
+    toolName=$(@ "$_RECEIVER" name)
+    checkCmd="command -v ${toolName}"
+    @ Shell succeeds: "$checkCmd"
   ]
 
   # Get the path to the tool executable
-  rawClassMethod: path [
-    local tool_name
-    tool_name=$(@ "$_CLASS" name)
-    command -v "$tool_name" 2>/dev/null
+  primitiveClassMethod: path [
+    local toolName checkCmd
+    toolName=$(@ "$_RECEIVER" name)
+    checkCmd="command -v ${toolName}"
+    @ Shell exec: "$checkCmd"
   ]
 
   # Get the version of the tool (override for tool-specific parsing)
-  rawClassMethod: version [
-    local tool_name tool_path
-    tool_name=$(@ "$_CLASS" name)
-    tool_path=$(command -v "$tool_name" 2>/dev/null)
-    if [[ -z "$tool_path" ]]; then
+  primitiveClassMethod: version [
+    local toolName toolPath versionCmd result
+    toolName=$(@ "$_RECEIVER" name)
+    toolPath=$(@ "$_RECEIVER" path)
+
+    if [[ -z "$toolPath" ]]; then
       echo "not installed"
-      return 1
+      return
     fi
-    # Try common version flags
-    "$tool_path" --version 2>/dev/null | head -1 || \
-    "$tool_path" -version 2>/dev/null | head -1 || \
-    "$tool_path" -V 2>/dev/null | head -1 || \
+
+    # Try --version first
+    versionCmd="${toolPath} --version 2>/dev/null | head -1"
+    result=$(@ Shell exec: "$versionCmd")
+    if [[ -n "$result" ]]; then echo "$result"; return; fi
+
+    # Try -version
+    versionCmd="${toolPath} -version 2>/dev/null | head -1"
+    result=$(@ Shell exec: "$versionCmd")
+    if [[ -n "$result" ]]; then echo "$result"; return; fi
+
+    # Try -V
+    versionCmd="${toolPath} -V 2>/dev/null | head -1"
+    result=$(@ Shell exec: "$versionCmd")
+    if [[ -n "$result" ]]; then echo "$result"; return; fi
+
     echo "unknown"
   ]
 
   # Install the tool - override in subclasses for custom behavior
-  rawClassMethod: install [
-    local install_cmd
-    install_cmd=$(@ "$_CLASS" installCommand)
-    if [[ -z "$install_cmd" ]]; then
-      _throw "InstallError" "No install command defined for $(@ "$_CLASS" name)"
-      return 1
+  primitiveClassMethod: install [
+    local installCmd toolName
+    installCmd=$(@ "$_RECEIVER" installCommand)
+    toolName=$(@ "$_RECEIVER" name)
+
+    if [[ -z "$installCmd" ]]; then
+      _throw "InstallError" "No install command defined for $toolName"
+      echo ""
+      return
     fi
-    echo "Installing $(@ "$_CLASS" name)..."
-    if eval "$install_cmd"; then
-      echo "Successfully installed $(@ "$_CLASS" name)"
-      return 0
+
+    @ Console print: "Installing $toolName..."
+
+    if @ Shell succeeds: "$installCmd"; then
+      @ Console print: "Successfully installed $toolName"
+      echo "true"
     else
-      _throw "InstallError" "Failed to install $(@ "$_CLASS" name)"
-      return 1
+      _throw "InstallError" "Failed to install $toolName"
+      echo ""
     fi
   ]
 
@@ -80,91 +97,91 @@ Tool subclass: Object
   # - Installs if not
   # - Verifies it's on PATH after install
   # Returns: "true" on success, throws error on failure
-  rawClassMethod: ensure [
-    local tool_name is_installed
-    tool_name=$(@ "$_CLASS" name)
+  primitiveClassMethod: ensure [
+    local toolName isInstalledVal
+    toolName=$(@ "$_RECEIVER" name)
 
-    if [[ -z "$tool_name" ]]; then
+    if [[ -z "$toolName" ]]; then
       _throw "ToolError" "Tool name not set"
-      return 1
+      echo ""
+      return
     fi
 
     # Check if already installed
-    is_installed=$(@ "$_CLASS" isInstalled)
-    if [[ "$is_installed" == "true" ]]; then
+    isInstalledVal=$(@ "$_RECEIVER" isInstalled)
+    if [[ "$isInstalledVal" == "true" ]]; then
       echo "true"
-      return 0
+      return
     fi
 
     # Try to install
-    echo "$tool_name not found, attempting install..." >&2
-    if ! @ "$_CLASS" install; then
-      # install already threw an error
-      return 1
-    fi
+    @ Console error: "$toolName not found, attempting install..."
+    @ "$_RECEIVER" install
+
+    # Refresh command hash table
+    @ Shell silent: "hash -r"
 
     # Verify installation succeeded
-    # Refresh command hash table
-    hash -r 2>/dev/null
-
-    is_installed=$(@ "$_CLASS" isInstalled)
-    if [[ "$is_installed" == "true" ]]; then
+    isInstalledVal=$(@ "$_RECEIVER" isInstalled)
+    if [[ "$isInstalledVal" == "true" ]]; then
       echo "true"
-      return 0
     else
-      _throw "PathError" "$tool_name installed but not found on PATH"
-      return 1
+      _throw "PathError" "$toolName installed but not found on PATH"
+      echo ""
     fi
   ]
 
   # Run the tool with arguments (synchronous)
-  rawClassMethod: run: args [
-    local tool_name tool_path
-    tool_name=$(@ "$_CLASS" name)
-    tool_path=$(command -v "$tool_name" 2>/dev/null)
+  primitiveClassMethod: run: args [
+    local args="$1" toolName toolPath runCmd
+    toolName=$(@ "$_RECEIVER" name)
+    toolPath=$(@ "$_RECEIVER" path)
 
-    if [[ -z "$tool_path" ]]; then
-      _throw "ToolError" "$tool_name is not installed"
-      return 1
+    if [[ -z "$toolPath" ]]; then
+      _throw "ToolError" "$toolName is not installed"
+      echo ""
+      return
     fi
 
-    "$tool_path" $1
+    runCmd="${toolPath} ${args}"
+    @ Shell exec: "$runCmd"
   ]
 
-  # Run the tool with arguments, capturing stdout
-  rawClassMethod: runCapture: args [
-    local tool_name tool_path result
-    tool_name=$(@ "$_CLASS" name)
-    tool_path=$(command -v "$tool_name" 2>/dev/null)
+  # Run the tool with arguments, capturing stdout and stderr
+  primitiveClassMethod: runCapture: args [
+    local args="$1" toolName toolPath runCmd
+    toolName=$(@ "$_RECEIVER" name)
+    toolPath=$(@ "$_RECEIVER" path)
 
-    if [[ -z "$tool_path" ]]; then
-      _throw "ToolError" "$tool_name is not installed"
-      return 1
+    if [[ -z "$toolPath" ]]; then
+      _throw "ToolError" "$toolName is not installed"
+      echo ""
+      return
     fi
 
-    result=$("$tool_path" $1 2>&1)
-    echo "$result"
+    runCmd="${toolPath} ${args}"
+    @ Shell execAll: "$runCmd"
   ]
 
   # Run the tool asynchronously, returning a Future
-  rawClassMethod: runAsync: args [
-    local tool_name tool_path
-    tool_name=$(@ "$_CLASS" name)
-    tool_path=$(command -v "$tool_name" 2>/dev/null)
+  primitiveClassMethod: runAsync: args [
+    local args="$1" toolName toolPath futureCmd
+    toolName=$(@ "$_RECEIVER" name)
+    toolPath=$(@ "$_RECEIVER" path)
 
-    if [[ -z "$tool_path" ]]; then
-      _throw "ToolError" "$tool_name is not installed"
-      return 1
+    if [[ -z "$toolPath" ]]; then
+      _throw "ToolError" "$toolName is not installed"
+      echo ""
+      return
     fi
 
-    @ Future value: "$tool_path $1"
+    futureCmd="${toolPath} ${args}"
+    @ Future value: "$futureCmd"
   ]
 
   # Check if a command exists on the system (utility method)
-  rawClassMethod: commandExists: commandName [
-    if command -v "$1" >/dev/null 2>&1; then
-      echo "true"
-    else
-      echo "false"
-    fi
+  primitiveClassMethod: commandExists: commandName [
+    local commandName="$1" checkCmd
+    checkCmd="command -v ${commandName}"
+    @ Shell succeeds: "$checkCmd"
   ]

@@ -1,0 +1,79 @@
+# Tools::Jq - Wrapper for the jq JSON processor
+# Example of how to subclass Tool for a specific external program
+# Built on Tool/Shell primitives - no raw bash required.
+#
+# Usage:
+#   @ Tools::Jq ensure
+#   @ Tools::Jq parse: '.name' on: '{"name": "test"}'
+#
+package: Tools
+
+Jq subclass: Tool
+
+  classMethod: name [
+    ^ "jq"
+  ]
+
+  classMethod: installCommand [
+    ^ "brew install jq"
+  ]
+
+  # Parse JSON with a jq filter
+  primitiveClassMethod: parse: filter on: json [
+    local filter="$1" json="$2" toolPath cmd
+    toolPath=$(@ "$_RECEIVER" path)
+
+    if [[ -z "$toolPath" ]]; then
+      _throw "ToolError" "jq is not installed"
+      echo ""
+      return
+    fi
+
+    cmd="echo '${json}' | ${toolPath} '${filter}'"
+    @ Shell exec: "$cmd"
+  ]
+
+  # Parse JSON from a file
+  primitiveClassMethod: parseFile: filepath with: filter [
+    local filepath="$1" filter="$2" toolPath cmd
+    toolPath=$(@ "$_RECEIVER" path)
+
+    if [[ -z "$toolPath" ]]; then
+      _throw "ToolError" "jq is not installed"
+      echo ""
+      return
+    fi
+
+    cmd="${toolPath} '${filter}' ${filepath}"
+    @ Shell exec: "$cmd"
+  ]
+
+  # Compact output (no pretty printing)
+  primitiveClassMethod: compact: json [
+    local json="$1" toolPath cmd
+    toolPath=$(@ "$_RECEIVER" path)
+
+    if [[ -z "$toolPath" ]]; then
+      _throw "ToolError" "jq is not installed"
+      echo ""
+      return
+    fi
+
+    cmd="echo '${json}' | ${toolPath} -c '.'"
+    @ Shell exec: "$cmd"
+  ]
+
+  # Get a specific key from JSON (raw output)
+  primitiveClassMethod: get: key from: json [
+    local key="$1" json="$2" toolPath cmd
+    toolPath=$(@ "$_RECEIVER" path)
+
+    if [[ -z "$toolPath" ]]; then
+      _throw "ToolError" "jq is not installed"
+      echo ""
+      return
+    fi
+
+    cmd="echo '${json}' | ${toolPath} -r '.${key}'"
+    @ Shell exec: "$cmd"
+  ]
