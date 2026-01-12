@@ -59,12 +59,12 @@ Object subclass: nil
   # Shows class name, instance ID, and all instance variables with values
   rawMethod: inspect [
     local data class instance
-    class=$(@ Runtime class)
-    instance=$(@ Runtime instance)
+    class="$_CLASS"
+    instance="$_INSTANCE"
     data=$(@ Runtime dataFor: "$_RECEIVER")
 
-    @ Console print: "a $class"
-    @ Console print: "  id: $instance"
+    echo "a $class"
+    echo "  id: $instance"
 
     if [[ -n "$data" && "$data" != "{}" ]]; then
       echo "$data" | jq -r 'to_entries | .[] | "  \(.key): \(.value)"'
