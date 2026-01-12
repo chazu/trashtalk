@@ -2089,6 +2089,10 @@ def generateMetadata:
     if ($cats | length) > 0 then
       "\($prefix)__methodCategories=\"\($cats | join(" "))\""
     else empty end),
+    # Generate class-level pragma markers
+    (if (.classPragmas // []) | index("primitiveClass") then
+      "\($prefix)__primitiveClass=\"1\""
+    else empty end),
     ""
   end;
 

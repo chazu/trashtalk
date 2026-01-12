@@ -7,6 +7,7 @@
 #   pid := @ Shell spawn: 'sleep 10'
 #
 Shell subclass: Object
+  pragma: primitiveClass
 
   # ==========================================
   # Simple Execution
@@ -63,14 +64,16 @@ Shell subclass: Object
 
   # Execute command and return both stdout and stderr combined
   # Usage: output := @ Shell execAll: 'make 2>&1'
+  # Note: Using bash -c to avoid tokenizer mangling 2>&1 into 2 >& 1
   rawClassMethod: execAll: command [
-    eval "$1" 2>&1
+    bash -c "$1 2>&1"
   ]
 
   # Execute command and return stderr only
   # Usage: errors := @ Shell execErr: 'make test'
+  # Note: Using bash -c to avoid tokenizer mangling redirects
   rawClassMethod: execErr: command [
-    eval "$1" 2>&1 >/dev/null
+    bash -c "$1 2>&1 >/dev/null"
   ]
 
   # Execute command and return JSON with stdout, stderr, exitCode
@@ -96,15 +99,17 @@ Shell subclass: Object
 
   # Spawn a command in the background, return PID
   # Usage: pid := @ Shell spawn: 'sleep 10'
+  # Note: Using subshell to avoid tokenizer mangling redirects
   rawClassMethod: spawn: command [
-    eval "$1" >/dev/null 2>&1 &
+    ( eval "$1" ) > /dev/null &
     echo $!
   ]
 
   # Spawn with output to file, return PID
   # Usage: pid := @ Shell spawn: 'long-task' outputTo: '/tmp/out.log'
+  # Note: Using subshell to avoid tokenizer mangling redirects
   rawClassMethod: spawn: command outputTo: filepath [
-    eval "$1" >"$2" 2>&1 &
+    ( eval "$1" ) > "$2" &
     echo $!
   ]
 
@@ -121,8 +126,9 @@ Shell subclass: Object
 
   # Check if a PID is still running
   # Usage: running := @ Shell isAlive: pid
+  # Note: Using ps instead of kill -0 to avoid tokenizer mangling 2>/dev/null
   rawClassMethod: isAlive: pid [
-    if kill -0 "$1" 2>/dev/null; then
+    if ps -p "$1" > /dev/null; then
       echo "true"
     else
       echo "false"

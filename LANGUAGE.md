@@ -314,6 +314,40 @@ rawMethod: readLinesWithCallback: block [
 - Block iteration patterns that rely on bash semantics
 - Temporary workaround when Procyon doesn't support a construct
 
+### Class-Level Pragmas
+
+Class-level pragmas are placed after the class declaration to modify how the entire class is compiled or behaves at runtime.
+
+#### `pragma: primitiveClass`
+
+Marks a class as a primitive class, indicating that it should have semantically identical implementations in both Procyon (native Go) and Bash. When using Procyon-compiled dylibs, no fallback to Bash should be required for any message sends to this class.
+
+```smalltalk
+# Console - Standard I/O primitive class
+Console subclass: Object
+  pragma: primitiveClass
+
+  primitiveClassMethod: print: message [
+    echo "$1"
+  ]
+
+  primitiveClassMethod: error: message [
+    echo "$1" >&2
+  ]
+```
+
+**How it works:**
+1. The compiler emits a marker: `__ClassName__primitiveClass="1"`
+2. Procyon sees this marker and ensures all methods have native implementations
+3. The runtime can optimize dispatch knowing no fallback is needed
+
+**Use cases:**
+- System primitives: Console, Env, Time, File, Shell
+- Classes with complete native implementations
+- Performance-critical classes that should never fall back to Bash
+
+**Note:** All methods in a primitive class should use `primitiveMethod:` or `primitiveClassMethod:` to provide both native and Bash implementations.
+
 ### Class Methods
 
 Called on the class itself, not instances:
