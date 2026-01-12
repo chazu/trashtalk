@@ -4,12 +4,14 @@ Application subclass: Object
   instanceVars: session:'' dispatcher:'' rootWidget:'' running:''
 
   # Launch application on default host
-  rawClassMethod: launch [
+  classMethod: launch [
+    pragma: primitive
     @ "$_CLASS" launchOn: "localhost:7755"
   ]
 
   # Launch application on specified host
-  rawClassMethod: launchOn: host [
+  classMethod: launchOn: host [
+    pragma: primitive
     local host="$1"
     local app session dispatcher
 
@@ -47,7 +49,8 @@ Application subclass: Object
   ]
 
   # Main event loop - tries native streaming first, falls back to coproc
-  rawMethod: run [
+  method: run [
+    pragma: primitive
     local session dispatcher
     session="$(_ivar session)"
     dispatcher="$(_ivar dispatcher)"
@@ -64,7 +67,8 @@ Application subclass: Object
 
   # Native event loop using GrpcClient.serverStream
   # Returns true if native streaming was successful
-  rawMethod: _tryNativeEventLoop [
+  method: _tryNativeEventLoop [
+    pragma: primitive
     local session dispatcher
     session="$(_ivar session)"
     dispatcher="$(_ivar dispatcher)"
@@ -74,7 +78,8 @@ Application subclass: Object
   ]
 
   # Fallback: coproc-based event loop (uses grpcurl subprocess)
-  rawMethod: _runCoprocEventLoop [
+  method: _runCoprocEventLoop [
+    pragma: primitive
     local session dispatcher
     session="$(_ivar session)"
     dispatcher="$(_ivar dispatcher)"
@@ -98,7 +103,8 @@ Application subclass: Object
   ]
 
   # Cleanup resources
-  rawMethod: cleanup [
+  method: cleanup [
+    pragma: primitive
     local session dispatcher
     session="$(_ivar session)"
     dispatcher="$(_ivar dispatcher)"
@@ -115,7 +121,8 @@ Application subclass: Object
   # === Widget Creation Helpers ===
   # These create widgets with dispatcher already set
 
-  rawMethod: createTextView: title [
+  method: createTextView: title [
+    pragma: primitive
     local title="$1"
     local session dispatcher widget
     session="$(_ivar session)"
@@ -125,7 +132,8 @@ Application subclass: Object
     echo "$widget"
   ]
 
-  rawMethod: createTextView: title text: initialText [
+  method: createTextView: title text: initialText [
+    pragma: primitive
     local title="$1" initialText="$2"
     local session dispatcher widget
     session="$(_ivar session)"
@@ -135,7 +143,8 @@ Application subclass: Object
     echo "$widget"
   ]
 
-  rawMethod: createInputField: label [
+  method: createInputField: label [
+    pragma: primitive
     local label="$1"
     local session dispatcher widget
     session="$(_ivar session)"
@@ -145,7 +154,8 @@ Application subclass: Object
     echo "$widget"
   ]
 
-  rawMethod: createInputField: label placeholder: placeholder [
+  method: createInputField: label placeholder: placeholder [
+    pragma: primitive
     local label="$1" placeholder="$2"
     local session dispatcher widget
     session="$(_ivar session)"
@@ -155,7 +165,8 @@ Application subclass: Object
     echo "$widget"
   ]
 
-  rawMethod: createListView: title [
+  method: createListView: title [
+    pragma: primitive
     local title="$1"
     local session dispatcher widget
     session="$(_ivar session)"
@@ -165,7 +176,8 @@ Application subclass: Object
     echo "$widget"
   ]
 
-  rawMethod: createVerticalLayout [
+  method: createVerticalLayout [
+    pragma: primitive
     local session dispatcher widget
     session="$(_ivar session)"
     dispatcher="$(_ivar dispatcher)"
@@ -174,7 +186,8 @@ Application subclass: Object
     echo "$widget"
   ]
 
-  rawMethod: createHorizontalLayout [
+  method: createHorizontalLayout [
+    pragma: primitive
     local session dispatcher widget
     session="$(_ivar session)"
     dispatcher="$(_ivar dispatcher)"

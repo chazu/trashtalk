@@ -85,7 +85,8 @@ Widget subclass: Object
   # Convenience: Register handler for submission events
   # Handler receives $__EVENT and $__TEXT (submitted text)
   # Note: WIDGET_CHANGED stores text, WIDGET_DONE triggers handler with stored text
-  rawMethod: onSubmitDo: handler [
+  method: onSubmitDo: handler [
+    pragma: primitive
     local handler="$1" dispatcher wid wrappedHandler storageVar
     dispatcher="$(_ivar dispatcher)"
     wid="$(_ivar widgetId)"

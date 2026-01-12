@@ -4,7 +4,8 @@ TextView subclass: Yutani::Widget
   instanceVars: text:''
 
   # Create a new TextView with given title
-  rawClassMethod: titled: title inSession: session [
+  classMethod: titled: title inSession: session [
+    pragma: primitive
     local title="$1" session="$2"
     local instance wid
     instance=$(_generate_instance_id "Yutani__TextView")
@@ -18,7 +19,8 @@ TextView subclass: Yutani::Widget
   ]
 
   # Create a new TextView with title and initial text
-  rawClassMethod: titled: title text: initialText inSession: session [
+  classMethod: titled: title text: initialText inSession: session [
+    pragma: primitive
     local title="$1" initialText="$2" session="$3"
     local instance wid
     instance=$(_generate_instance_id "Yutani__TextView")
@@ -43,7 +45,8 @@ TextView subclass: Yutani::Widget
   ]
 
   # Set text content (updates server)
-  rawMethod: setText: newText [
+  method: setText: newText [
+    pragma: primitive
     local newText="$1" session wid
     session="$(_ivar session)"
     wid="$(_ivar widgetId)"
@@ -52,7 +55,8 @@ TextView subclass: Yutani::Widget
   ]
 
   # Append text
-  rawMethod: appendText: moreText [
+  method: appendText: moreText [
+    pragma: primitive
     local moreText="$1" session wid currentText
     session="$(_ivar session)"
     wid="$(_ivar widgetId)"
@@ -63,7 +67,8 @@ TextView subclass: Yutani::Widget
   ]
 
   # Clear text
-  rawMethod: clear [
+  method: clear [
+    pragma: primitive
     local session wid
     session="$(_ivar session)"
     wid="$(_ivar widgetId)"

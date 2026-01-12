@@ -1,7 +1,8 @@
 IDE subclass: Object
   instanceVars: session:'' outputView:'' inputField:'' layout:''
 
-  rawClassMethod: open [
+  classMethod: open [
+    pragma: primitive
     local ide session
     echo "[IDE] open called" >&2
     ide=$(@ IDE new)
@@ -23,7 +24,8 @@ IDE subclass: Object
     session := s
   ]
 
-  rawMethod: setup [
+  method: setup [
+    pragma: primitive
     local session output_view input_field layout
     session="$(_ivar session)"
 
@@ -49,7 +51,8 @@ IDE subclass: Object
     echo "[IDE] Setup complete. Output=$output_view Input=$input_field" >&2
   ]
 
-  rawMethod: runEventLoop [
+  method: runEventLoop [
+    pragma: primitive
     local session
     session="$(_ivar session)"
 
@@ -72,7 +75,8 @@ IDE subclass: Object
   ]
 
   # Handle a single event line (reads from $__COPROC_LINE)
-  rawMethod: handleEvent [
+  method: handleEvent [
+    pragma: primitive
     local session key_name eventLine
     session="$(_ivar session)"
     eventLine="$__COPROC_LINE"
@@ -102,7 +106,8 @@ IDE subclass: Object
     fi
   ]
 
-  rawMethod: doEval [
+  method: doEval [
+    pragma: primitive
     local session input_field output_view text result history
     session="$(_ivar session)"
     input_field="$(_ivar inputField)"

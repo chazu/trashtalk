@@ -3,7 +3,8 @@ Debuggable trait
 
   # Output debug message (respects TRASH_DEBUG env var)
   # pragma: bashOnly (outputs to stderr, must not go through native daemon)
-  rawMethod: debug: message [
+  method: debug: message [
+    pragma: primitive
     pragma: bashOnly
     [[ "${TRASH_DEBUG:-1}" == "0" ]] && return 0
     local timestamp
@@ -13,7 +14,8 @@ Debuggable trait
 
   # Trace a method call
   # pragma: bashOnly (calls debug: which outputs to stderr)
-  rawMethod: trace: method_name args: args [
+  method: trace: method_name args: args [
+    pragma: primitive
     pragma: bashOnly
     @ "$_RECEIVER" debug: "Calling $1 with args: $2"
   ]

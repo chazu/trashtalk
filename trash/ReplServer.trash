@@ -22,7 +22,8 @@ ReplServer subclass: Object
   include: Debuggable
   instanceVars: socketPath history serverPid
 
-  rawClassMethod: new [
+  classMethod: new [
+    pragma: primitive
     local id
     id=$(_generate_instance_id ReplServer)
     _create_instance ReplServer "$id"
@@ -34,12 +35,14 @@ ReplServer subclass: Object
   ]
 
   # Set the socket path
-  rawMethod: socketPath: path [
+  method: socketPath: path [
+    pragma: primitive
     _ivar_set socketPath "$path"
   ]
 
   # Get the socket path
-  rawMethod: socketPath [
+  method: socketPath [
+    pragma: primitive
     echo "$(_ivar socketPath)"
   ]
 
@@ -48,7 +51,8 @@ ReplServer subclass: Object
   # ========================================
 
   # Main request dispatcher - called by the connection handler
-  rawMethod: handleRequest: request [
+  method: handleRequest: request [
+    pragma: primitive
     local command payload
 
     # Parse request: COMMAND:payload
@@ -97,7 +101,8 @@ ReplServer subclass: Object
   # EVAL - Evaluate Trashtalk code
   # ========================================
 
-  rawMethod: handleEval: code [
+  method: handleEval: code [
+    pragma: primitive
     local result exitCode decoded_code
 
     # Handle base64-encoded multiline code
@@ -137,7 +142,8 @@ ReplServer subclass: Object
   # COMPLETE - Tab completion
   # ========================================
 
-  rawMethod: handleComplete: prefix [
+  method: handleComplete: prefix [
+    pragma: primitive
     local completions=""
 
     # Get class names from compiled directory
@@ -164,7 +170,8 @@ ReplServer subclass: Object
   # INFO - Class/instance introspection
   # ========================================
 
-  rawMethod: handleInfo: target [
+  method: handleInfo: target [
+    pragma: primitive
     local result
 
     if [[ -z "$target" ]]; then
@@ -186,7 +193,8 @@ ReplServer subclass: Object
     echo "INFO:$result"
   ]
 
-  rawMethod: _instanceInfo: instanceId [
+  method: _instanceInfo: instanceId [
+    pragma: primitive
     local data class
 
     # Try ephemeral storage first
@@ -212,7 +220,8 @@ ReplServer subclass: Object
   # METHODS - List methods for a class
   # ========================================
 
-  rawMethod: handleMethods: className [
+  method: handleMethods: className [
+    pragma: primitive
     local result
 
     if [[ -z "$className" ]]; then
@@ -229,7 +238,8 @@ ReplServer subclass: Object
   # RELOAD - Hot reload a class
   # ========================================
 
-  rawMethod: handleReload: className [
+  method: handleReload: className [
+    pragma: primitive
     local result exitCode
 
     if [[ -z "$className" ]]; then
@@ -252,7 +262,8 @@ ReplServer subclass: Object
   # History
   # ========================================
 
-  rawMethod: addToHistory: code [
+  method: addToHistory: code [
+    pragma: primitive
     # Simple history tracking (could be enhanced with jq)
     local current
     current=$(_ivar history)
@@ -264,11 +275,13 @@ ReplServer subclass: Object
     fi
   ]
 
-  rawMethod: history [
+  method: history [
+    pragma: primitive
     echo "$(_ivar history)"
   ]
 
-  rawMethod: clearHistory [
+  method: clearHistory [
+    pragma: primitive
     _ivar_set history "[]"
   ]
 
@@ -277,14 +290,16 @@ ReplServer subclass: Object
   # ========================================
 
   # Class method to create and start a server in one call
-  rawClassMethod: start [
+  classMethod: start [
+    pragma: primitive
     local server
     server=$(@ ReplServer new)
     @ "$server" start
   ]
 
   # Start the REPL server - blocks and handles requests
-  rawMethod: start [
+  method: start [
+    pragma: primitive
     local socketPath cmd response
     socketPath=$(_ivar socketPath)
 
@@ -324,7 +339,8 @@ ReplServer subclass: Object
   ]
 
   # Stop the server
-  rawMethod: stop [
+  method: stop [
+    pragma: primitive
     local pid socketPath
     pid=$(_ivar serverPid)
     socketPath=$(_ivar socketPath)
@@ -339,7 +355,8 @@ ReplServer subclass: Object
   ]
 
   # Check if server is running
-  rawMethod: isRunning [
+  method: isRunning [
+    pragma: primitive
     local pid
     pid=$(_ivar serverPid)
     [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null

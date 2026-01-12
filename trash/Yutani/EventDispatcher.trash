@@ -11,7 +11,8 @@ EventDispatcher subclass: Object
   # ============================================================================
 
   # Create a new dispatcher with its own handler registry
-  rawClassMethod: new [
+  classMethod: new [
+    pragma: primitive
     local instance
     instance=$(_generate_instance_id "Yutani__EventDispatcher")
     _create_instance "Yutani::EventDispatcher" "$instance"
@@ -26,14 +27,16 @@ EventDispatcher subclass: Object
   # Register a handler for a specific widget
   # Handler is a bash command that will be eval'd with $__EVENT set
   # Uses file-based storage to survive subshell boundaries
-  rawMethod: onWidget: widgetId do: handler [
+  method: onWidget: widgetId do: handler [
+    pragma: primitive
     local widgetId="$1" handler="$2"
     local handlerFile="/tmp/yutani_handler_${widgetId}.txt"
     echo "$handler" > "$handlerFile"
   ]
 
   # Remove handler for a widget
-  rawMethod: removeHandlerFor: widgetId [
+  method: removeHandlerFor: widgetId [
+    pragma: primitive
     local widgetId="$1"
     local handlerFile="/tmp/yutani_handler_${widgetId}.txt"
     rm -f "$handlerFile"
@@ -68,7 +71,8 @@ EventDispatcher subclass: Object
   # ============================================================================
 
   # Dispatch an event to the appropriate handler
-  rawMethod: dispatch: event [
+  method: dispatch: event [
+    pragma: primitive
     pragma: direct
     local event="$1"
     local eventType widgetId handler
@@ -121,7 +125,8 @@ EventDispatcher subclass: Object
   ]
 
   # Dispatch a raw JSON event (creates Event, then dispatches)
-  rawMethod: dispatchJson: json [
+  method: dispatchJson: json [
+    pragma: primitive
     pragma: direct
     local json="$1" event
 
@@ -149,7 +154,8 @@ EventDispatcher subclass: Object
   ]
 
   # Clean up all handlers for this dispatcher
-  rawMethod: cleanup [
+  method: cleanup [
+    pragma: primitive
     # Remove all handler files (simple cleanup - removes all yutani handlers)
     rm -f /tmp/yutani_handler_*.txt 2>/dev/null
     rm -f /tmp/yutani_text_*.txt 2>/dev/null

@@ -4,7 +4,8 @@ ListView subclass: Yutani::Widget
   instanceVars: items:''
 
   # Create a new ListView with given title
-  rawClassMethod: titled: title inSession: session [
+  classMethod: titled: title inSession: session [
+    pragma: primitive
     local title="$1" session="$2"
     local instance wid
     instance=$(_generate_instance_id "Yutani__ListView")
@@ -18,7 +19,8 @@ ListView subclass: Yutani::Widget
   ]
 
   # Add an item to the list
-  rawMethod: addItem: text [
+  method: addItem: text [
+    pragma: primitive
     local text="$1" session wid
     session="$(_ivar session)"
     wid="$(_ivar widgetId)"
@@ -26,7 +28,8 @@ ListView subclass: Yutani::Widget
   ]
 
   # Add an item with secondary text
-  rawMethod: addItem: mainText secondary: secondaryText [
+  method: addItem: mainText secondary: secondaryText [
+    pragma: primitive
     local mainText="$1" secondaryText="$2" session wid
     session="$(_ivar session)"
     wid="$(_ivar widgetId)"
@@ -34,7 +37,8 @@ ListView subclass: Yutani::Widget
   ]
 
   # Clear all items
-  rawMethod: clear [
+  method: clear [
+    pragma: primitive
     local session wid
     session="$(_ivar session)"
     wid="$(_ivar widgetId)"

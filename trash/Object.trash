@@ -1,9 +1,10 @@
 # Object - Base class for all Trashtalk objects
 Object subclass: nil
+  pragma: primitiveClass
 
   # Create a new instance of this class
   # Subclasses inherit this - no need to define your own unless custom init needed
-  primitiveClassMethod: new [
+  classMethod: new [
     local id
     # Use $_CLASS directly - it's already set by dispatcher to the calling class
     # Don't use @ Runtime class - that makes a nested send which changes $_CLASS
@@ -14,22 +15,22 @@ Object subclass: nil
 
   # Return a canonical string representation of this object
   # Format: <ClassName instanceId>
-  primitiveMethod: printString [
+  method: printString [
     echo "<${_CLASS} ${_INSTANCE}>"
   ]
 
   # Return the class name of this object
-  primitiveMethod: class [
+  method: class [
     echo "$_CLASS"
   ]
 
   # Return the instance ID of this object
-  primitiveMethod: id [
+  method: id [
     echo "$_INSTANCE"
   ]
 
   # Check if this object is an instance of a given class
-  primitiveMethod: isKindOf: className [
+  method: isKindOf: className [
     local current="$1"
     local my_class="$_CLASS"
     current="$my_class"
@@ -44,21 +45,21 @@ Object subclass: nil
   ]
 
   # Check if this object conforms to a protocol
-  primitiveMethod: conformsTo: protocolName [
+  method: conformsTo: protocolName [
     local class="$_CLASS"
     _conforms_to "$class" "$1"
   ]
 
   # Delete this object from memory
   method: delete [
-    | instance |
-    instance := @ Runtime instance
-    @ Runtime delete: instance
+    local instance
+    instance=$(@ Runtime instance)
+    @ Runtime delete: "$instance"
   ]
 
   # Return a detailed inspection of this object
   # Shows class name, instance ID, and all instance variables with values
-  primitiveMethod: inspect [
+  method: inspect [
     local data class instance
     class="$_CLASS"
     instance="$_INSTANCE"
@@ -76,19 +77,19 @@ Object subclass: nil
 
   # Write inspection output to a file
   method: inspectTo: filepath [
-    | output |
-    output := @ self inspect
-    @ File write: output to: filepath
-    ^ filepath
+    local output filepath="$1"
+    output=$(@ "$_RECEIVER" inspect)
+    @ File write: "$output" to: "$filepath"
+    echo "$filepath"
   ]
 
   # Return this object's data as JSON
   method: asJson [
-    ^ @ Runtime dataFor: self
+    @ Runtime dataFor: "$_RECEIVER"
   ]
 
   # Edit this class's source file and recompile if changed
-  primitiveClassMethod: edit [
+  classMethod: edit [
     local class source_file trait_source file_to_edit editor
     class="$_CLASS"
     source_file="$TRASHDIR/${class}.trash"

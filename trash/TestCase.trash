@@ -4,7 +4,8 @@
 TestCase subclass: Object
   instanceVars: passed:0 failed:0 skipped:0 currentTest:'unknown'
 
-  rawClassMethod: new [
+  classMethod: new [
+    pragma: primitive
     local id class
     class=$(@ Runtime class)
     id=$(@ Runtime generateId: "$class")
@@ -159,7 +160,8 @@ TestCase subclass: Object
   # Test Control
   # ==========================================
 
-  rawMethod: skip: reason [
+  method: skip: reason [
+    pragma: primitive
     local test count
     test=$(@ "$_RECEIVER" getCurrentTest)
     count=$(@ "$_RECEIVER" getSkipped)
@@ -168,7 +170,8 @@ TestCase subclass: Object
     return 77  # Special return code to signal skip
   ]
 
-  rawMethod: skip [
+  method: skip [
+    pragma: primitive
     local test count
     test=$(@ "$_RECEIVER" getCurrentTest)
     count=$(@ "$_RECEIVER" getSkipped)
@@ -177,7 +180,8 @@ TestCase subclass: Object
     return 77
   ]
 
-  rawMethod: pending: description [
+  method: pending: description [
+    pragma: primitive
     local test count
     test=$(@ "$_RECEIVER" getCurrentTest)
     count=$(@ "$_RECEIVER" getSkipped)
@@ -186,7 +190,8 @@ TestCase subclass: Object
     return 77
   ]
 
-  rawMethod: pending [
+  method: pending [
+    pragma: primitive
     local test count
     test=$(@ "$_RECEIVER" getCurrentTest)
     count=$(@ "$_RECEIVER" getSkipped)
@@ -211,7 +216,8 @@ TestCase subclass: Object
     passed := passed + 1
   ]
 
-  rawMethod: _fail: message [
+  method: _fail: message [
+    pragma: primitive
     local count test
     count=$(@ "$_RECEIVER" getFailed)
     test=$(@ "$_RECEIVER" getCurrentTest)
@@ -223,7 +229,8 @@ TestCase subclass: Object
   # Test Runner
   # ==========================================
 
-  rawMethod: runTest: methodName [
+  method: runTest: methodName [
+    pragma: primitive
     @ "$_RECEIVER" setCurrentTest: "$methodName"
     @ "$_RECEIVER" setUp
     @ "$_RECEIVER" "$methodName"
@@ -232,7 +239,8 @@ TestCase subclass: Object
     return $result
   ]
 
-  rawClassMethod: runAll [
+  classMethod: runAll [
+    pragma: primitive
     local instance passed failed skipped total class methods
     class=$(@ Runtime class)
     instance=$(@ "$class" new)

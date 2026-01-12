@@ -3,7 +3,8 @@ package: Yutani
 HorizontalLayout subclass: Yutani::FlexLayout
 
   # Create a new HorizontalLayout
-  rawClassMethod: inSession: session [
+  classMethod: inSession: session [
+    pragma: primitive
     local session="$1"
     local instance wid
     instance=$(_generate_instance_id "Yutani__HorizontalLayout")

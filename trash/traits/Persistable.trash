@@ -22,23 +22,27 @@
 Persistable trait
 
   # Save this object to the Store (idempotent - creates or updates)
-  rawMethod: save [
+  method: save [
+    pragma: primitive
     _env_persist "$_RECEIVER"
   ]
 
   # Delete this object from the Store (keeps it in memory)
-  rawMethod: unpersist [
+  method: unpersist [
+    pragma: primitive
     db_delete "$_RECEIVER" 2>/dev/null
   ]
 
   # Delete this object from both memory and Store
-  rawMethod: delete [
+  method: delete [
+    pragma: primitive
     db_delete "$_RECEIVER" 2>/dev/null
     _env_delete "$_RECEIVER"
   ]
 
   # Check if this object is persisted in the Store
-  rawMethod: isPersisted [
+  method: isPersisted [
+    pragma: primitive
     if _env_is_persisted "$_RECEIVER"; then
       echo "true"
     else
@@ -47,19 +51,22 @@ Persistable trait
   ]
 
   # Reload this object from the Store (discards in-memory changes)
-  rawMethod: reload [
+  method: reload [
+    pragma: primitive
     _env_load "$_RECEIVER"
   ]
 
   # Return this object's data as JSON
-  rawMethod: asJson [
+  method: asJson [
+    pragma: primitive
     _ensure_loaded "$_RECEIVER"
     _env_get "$_RECEIVER"
   ]
 
   # Create a new instance and immediately save it to the Store
   # Usage: counter=$(@ Counter create)
-  rawClassMethod: create [
+  classMethod: create [
+    pragma: primitive
     local instance_id
     instance_id=$(_generate_instance_id "$_CLASS")
     _create_instance "$_CLASS" "$instance_id"
@@ -69,13 +76,15 @@ Persistable trait
 
   # Return all persisted instance IDs for this class
   # Usage: @ Counter findAll
-  rawClassMethod: findAll [
+  classMethod: findAll [
+    pragma: primitive
     db_find_by_class "$_CLASS"
   ]
 
   # Return count of persisted instances for this class
   # Usage: @ Counter count
-  rawClassMethod: count [
+  classMethod: count [
+    pragma: primitive
     db_count_by_class "$_CLASS"
   ]
 
@@ -83,7 +92,8 @@ Persistable trait
   # Usage: @ Counter find 'value > 5'
   # Supports: =, !=, >, <, >=, <=
   # Returns: newline-separated list of instance IDs
-  rawClassMethod: find [
+  classMethod: find [
+    pragma: primitive
     local predicate="$1"
 
     if [[ -z "$predicate" ]]; then
@@ -96,7 +106,8 @@ Persistable trait
 
   # Load all persisted instances of this class into memory
   # Usage: @ Counter loadAll
-  rawClassMethod: loadAll [
+  classMethod: loadAll [
+    pragma: primitive
     local ids id
     ids=$(db_find_by_class "$_CLASS")
     for id in $ids; do

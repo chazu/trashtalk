@@ -65,7 +65,8 @@ Process subclass: Object
   ]
 
   # Wait for a background process to complete
-  primitiveMethod: wait [
+  method: wait [
+    pragma: primitive
     local procPid procStatus instance tmpStdout tmpStderr exitCodeVal stdoutVal stderrVal
     procPid=$(_ivar pid)
     procStatus=$(_ivar status)
@@ -115,7 +116,8 @@ Process subclass: Object
   ]
 
   # Check if the process is still running
-  primitiveMethod: isRunning [
+  method: isRunning [
+    pragma: primitive
     local procPid procStatus isAlive
     procPid=$(_ivar pid)
     procStatus=$(_ivar status)
@@ -137,7 +139,8 @@ Process subclass: Object
   ]
 
   # Send a signal to the process
-  primitiveMethod: signal: sig [
+  method: signal: sig [
+    pragma: primitive
     local procPid="$1"
     procPid=$(_ivar pid)
 
@@ -183,7 +186,8 @@ Process subclass: Object
   ]
 
   # Check if process succeeded (exit code 0)
-  primitiveMethod: succeeded [
+  method: succeeded [
+    pragma: primitive
     local code
     code=$(_ivar exitCode)
     if [[ "$code" == "0" ]]; then
@@ -194,7 +198,8 @@ Process subclass: Object
   ]
 
   # Get process info
-  primitiveMethod: info [
+  method: info [
+    pragma: primitive
     local start endTimeVal duration
     @ Console print: "Command: $(_ivar command)"
     @ Console print: "PID: $(_ivar pid)"
