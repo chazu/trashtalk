@@ -88,6 +88,13 @@ Store subclass: Object
     db_find_by_class "$class_name"
   ]
 
+  # Find instances of a class matching a predicate
+  # Usage: @ Store findByClass: 'Counter' where: 'value > 5'
+  # Supports: =, !=, >, <, >=, <=
+  classMethod: findByClass: class_name where: predicate [
+    _find_with_predicate "$class_name" "$predicate"
+  ]
+
   # Count instances of a class
   # Usage: @ Store countByClass <class_name>
   classMethod: countByClass: class_name [
