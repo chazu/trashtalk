@@ -1,10 +1,11 @@
 # Future - Simple async computation with result retrieval
 Future subclass: Object
+  pragma: primitiveClass
   instanceVars: command pid result_file status exit_code
 
   # Create a future for a command (does not start it yet)
   # Usage: future=$(@ Future for: '@ Counter expensiveCalculation')
-  rawClassMethod: for: command [
+  primitiveClassMethod: for: command [
     local future_id
     future_id=$(_generate_instance_id Future)
 
@@ -26,7 +27,7 @@ Future subclass: Object
 
   # Start the computation in background
   # Returns the PID of the background process
-  rawMethod: start [
+  primitiveMethod: start [
     local cmd result_file exit_file
     cmd=$(_ivar command)
     result_file=$(_ivar result_file)
@@ -43,7 +44,7 @@ Future subclass: Object
   ]
 
   # Block until the computation completes, return result
-  rawMethod: await [
+  primitiveMethod: await [
     local pid result_file exit_file
     pid=$(_ivar pid)
     result_file=$(_ivar result_file)
@@ -68,7 +69,7 @@ Future subclass: Object
   ]
 
   # Check if computation is done without blocking
-  rawMethod: poll [
+  primitiveMethod: poll [
     local pid
     pid=$(_ivar pid)
 
@@ -82,14 +83,14 @@ Future subclass: Object
   ]
 
   # Check if done (returns 0 if done, 1 if pending)
-  rawMethod: isDone [
+  primitiveMethod: isDone [
     local pid
     pid=$(_ivar pid)
     ! kill -0 "$pid" 2>/dev/null
   ]
 
   # Cancel the computation
-  rawMethod: cancel [
+  primitiveMethod: cancel [
     local pid
     pid=$(_ivar pid)
 
@@ -105,7 +106,7 @@ Future subclass: Object
   ]
 
   # Get current status
-  rawMethod: status [
+  primitiveMethod: status [
     local pid status
     status=$(_ivar status)
     pid=$(_ivar pid)
@@ -120,12 +121,12 @@ Future subclass: Object
   ]
 
   # Get exit code (empty if still pending)
-  rawMethod: exitCode [
+  primitiveMethod: exitCode [
     _ivar exit_code
   ]
 
   # Clean up resources
-  rawMethod: cleanup [
+  primitiveMethod: cleanup [
     local result_file
     result_file=$(_ivar result_file)
     rm -f "$result_file" "${result_file}.exit" 2>/dev/null
@@ -133,7 +134,7 @@ Future subclass: Object
   ]
 
   # Show help
-  classMethod: help [
+  primitiveClassMethod: help [
     echo "=== Future - Async Computation ==="
     echo ""
     echo "Usage (two-call pattern - recommended):"
