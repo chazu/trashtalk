@@ -54,16 +54,16 @@ Dictionary subclass: Object
     ^ oldValue
   ]
 
-  # Get all keys as JSON array
-  # Usage: keys := @ dict keys  # Returns '["key1","key2"]'
-  method: keys [
-    ^ items objectKeys
+  # Get all keys, one per line
+  # Usage: keys := @ dict keys  # Returns newline-separated keys
+  rawMethod: keys [
+    echo "$(_ivar items)" | jq -r 'keys[]'
   ]
 
-  # Get all values as JSON array
-  # Usage: values := @ dict values  # Returns '["val1","val2"]'
-  method: values [
-    ^ items objectValues
+  # Get all values, one per line
+  # Usage: values := @ dict values  # Returns newline-separated values
+  rawMethod: values [
+    echo "$(_ivar items)" | jq -r '.[]'
   ]
 
   # Get dictionary size (number of keys)
@@ -199,8 +199,8 @@ Dictionary subclass: Object
   ]
 
   # Return as JSON string (compact format)
-  method: asJson [
-    ^ items
+  rawMethod: asJson [
+    echo "$(_ivar items)" | jq -c '.'
   ]
 
   # Create dictionary from JSON string

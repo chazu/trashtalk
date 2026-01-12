@@ -41,6 +41,7 @@ GrpcClient subclass: Object
 
   rawMethod: call: method with: jsonPayload [
     pragma: direct
+    pragma: procyonNative
     local addr proto result plaintext_flag
     addr="$(_ivar address)"
     proto="$(_ivar protoFile)"
@@ -100,6 +101,7 @@ GrpcClient subclass: Object
   # ==========================================================================
 
   rawMethod: serverStream: method with: payload handler: block [
+    pragma: procyonOnly
     echo "Server streaming requires native Procyon runtime"
   ]
 
@@ -108,6 +110,7 @@ GrpcClient subclass: Object
   # ==========================================================================
 
   rawMethod: clientStream: method handler: block [
+    pragma: procyonOnly
     echo "Client streaming requires native Procyon runtime"
   ]
 
@@ -116,6 +119,7 @@ GrpcClient subclass: Object
   # ==========================================================================
 
   rawMethod: bidiStream: method handler: block [
+    pragma: procyonOnly
     echo "Bidirectional streaming requires native Procyon runtime"
   ]
 
@@ -125,6 +129,7 @@ GrpcClient subclass: Object
 
   rawMethod: listServices [
     pragma: direct
+    pragma: procyonNative
     local addr result plaintext_flag
     addr="$(_ivar address)"
 

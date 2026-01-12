@@ -2130,6 +2130,10 @@ function @ {
       ___arg="${!___i}"
       [[ "$___arg" == *: ]] && ___full_selector+="$___arg"
     done
+    # For unary methods (no colons), use the selector directly
+    if [[ -z "$___full_selector" ]]; then
+      ___full_selector="$___selector"
+    fi
     # Normalize selector: set:to: -> set_to_
     local ___normalized="${___full_selector%:}"
     ___normalized="${___normalized//:/_}"
@@ -2150,11 +2154,31 @@ function @ {
       send "$@"
       return $?
     fi
+    # Also check for instance method marker when calling on class name
+    # (some methods may be defined without class__ prefix but called on class)
+    if [[ -n "$___method_type" ]]; then
+      local ___instance_direct_marker="${___func_prefix}__${___normalized}__direct"
+      if [[ -n "${!___instance_direct_marker:-}" ]]; then
+        send "$@"
+        return $?
+      fi
+    fi
 
     # Check for pragma: procyonOnly marker
     # If set, ensure native plugin exists before attempting dispatch
     local ___procyonOnly_marker="${___func_prefix}__${___method_type}${___normalized}__procyonOnly"
+    local ___has_procyonOnly=""
     if [[ -n "${!___procyonOnly_marker:-}" ]]; then
+      ___has_procyonOnly=1
+    fi
+    # Also check for instance method marker when calling on class name
+    if [[ -z "$___has_procyonOnly" && -n "$___method_type" ]]; then
+      local ___instance_procyonOnly_marker="${___func_prefix}__${___normalized}__procyonOnly"
+      if [[ -n "${!___instance_procyonOnly_marker:-}" ]]; then
+        ___has_procyonOnly=1
+      fi
+    fi
+    if [[ -n "$___has_procyonOnly" ]]; then
       if ! _has_native_plugin "$___class"; then
         echo "Error: Method $___selector requires native Procyon plugin for $___class" >&2
         return 1
