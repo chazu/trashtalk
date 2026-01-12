@@ -80,18 +80,10 @@ Persistable trait
   # Find persisted instances matching a predicate
   # Usage: @ Counter find 'value > 5'
   # Supports: =, !=, >, <, >=, <=
-  # Returns: newline-separated list of instance IDs
-  # Note: Uses raw bash for predicate parsing
+  # When no predicate given, returns all (same as findAll)
   classMethod: find: predicate [
-    pragma: primitive
-    local predicate="$1"
-
-    if [[ -z "$predicate" ]]; then
-      @ Store findByClass: "$_RECEIVER"
-      return
-    fi
-
-    _find_with_predicate "$_RECEIVER" "$predicate"
+    predicate isEmpty ifTrue: [^ @ self findAll].
+    ^ @ Store findByClass: self where: predicate
   ]
 
   # Load all persisted instances of this class into memory
