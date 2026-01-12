@@ -118,8 +118,9 @@ def expr_is_control_flow:
   ($tok.value == "ifTrue:" or $tok.value == "ifFalse:" or
    $tok.value == "whileTrue:" or $tok.value == "whileFalse:" or
    $tok.value == "timesRepeat:" or $tok.value == "try:" or
-   $tok.value == "ifNil:" or $tok.value == "ifNotNil:" or
-   $tok.value == "to:");
+   $tok.value == "ifNil:" or $tok.value == "ifNotNil:");
+   # Note: "to:" removed - conflicts with keyword messages like "from:to:"
+   # Range syntax "1 to: 10 do: [...]" is handled separately
 
 # ==============================================================================
 # JSON Primitive Detection
@@ -492,28 +493,8 @@ def expr_parse_expr(min_bp):
         (.state | expr_peek.value) as $keyword |
         .state |= expr_advance |
         .state |= expr_skip_ws |
-        # Special handling for to:do: - takes expression then do: with block
-        if $keyword == "to:" then
-          (.state | expr_parse_atom) as $end_expr |
-          ($end_expr.state | expr_skip_ws) as $after_end |
-          if ($after_end | expr_peek_type) == "KEYWORD" and ($after_end | expr_peek.value) == "do:" then
-            (($after_end | expr_advance | expr_skip_ws) | expr_parse_block) as $do_block |
-            {
-              state: $do_block.state,
-              result: {
-                type: "control_flow",
-                kind: "range_do",
-                start: $receiver,
-                end: $end_expr.result,
-                block: $do_block.result
-              }
-            }
-            | infix_loop
-          else
-            { state: $after_end, result: { type: "error", message: "Expected 'do:' after 'to: end'" } }
-          end
         # Parse block argument (use expr_parse_block to avoid infix continuation)
-        elif (.state | expr_peek_type) == "LBRACKET" then
+        if (.state | expr_peek_type) == "LBRACKET" then
           (.state | expr_parse_block) as $block |
           # Check for ifTrue:ifFalse: pattern
           (if $keyword == "ifTrue:" then
@@ -940,13 +921,29 @@ def expr_gen_arith($locals; $ivars; $cvars):
     end
   end;
 
+# Transform instance variable references in a dstring
+# Replaces $ivar and ${ivar} with $(_ivar ivar) for each known instance variable
+def dstring_transform_ivars($ivars):
+  . as $str |
+  if ($ivars | length) == 0 then $str
+  else
+    # Process each ivar name
+    reduce ($ivars // [])[] as $ivar (
+      $str;
+      # Replace ${ivar} form first (more specific)
+      gsub("\\$\\{\($ivar)\\}"; "$(_ivar \($ivar))") |
+      # Replace $ivar form (word boundary - followed by non-identifier char or end)
+      gsub("\\$\($ivar)(?=[^a-zA-Z0-9_]|$)"; "$(_ivar \($ivar))")
+    )
+  end;
+
 # Generate code for an expression
 def expr_gen($locals; $ivars; $cvars):
   if . == null then ""
   elif .type == "number" then .value
   elif .type == "string" then "'\(.value)'"
   elif .type == "triplestring" then "$'\(.value | ansi_c_escape)'"
-  elif .type == "dstring" then .value
+  elif .type == "dstring" then .value | dstring_transform_ivars($ivars)
   elif .type == "self" then "\"$_RECEIVER\""
   elif .type == "identifier" then
     if expr_is_local(.name; $locals) then "$\(.name)"
@@ -1264,8 +1261,12 @@ def expr_gen($locals; $ivars; $cvars):
         {code: "[[ \"\($subj)\" =~ \($pat) ]]", needs_wrapper: false}
       elif $cond.type == "binary" then
         # String comparison operators generate [[ ]] syntax, arithmetic use (( ))
-        # Helper to get value - string literals use raw value, others use expr_gen
-        def str_val: if .type == "string" then .value else expr_gen($locals; $ivars; $cvars) end;
+        # Helper to get value - string literals use raw value, message sends wrapped in $(), others use expr_gen
+        def str_val:
+          if .type == "string" then .value
+          elif .type == "message_send" or .type == "cascade" then "$(\(expr_gen($locals; $ivars; $cvars)))"
+          else expr_gen($locals; $ivars; $cvars)
+          end;
         if $cond.op == "=" then
           # String equality
           ($cond.left | str_val) as $left |
@@ -1440,12 +1441,16 @@ def expr_gen($locals; $ivars; $cvars):
         [(.block.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
       else "" end) as $block_code |
       if .condition.type == "block" then
-        # Inline condition generation: parse block and wrap binary in (( ))
+        # Parse condition block and use gen_cond_part for proper string/arithmetic handling
         (if .condition.tokens != null then
           ({ tokens: .condition.tokens, pos: 0 } | expr_parse_stmts) as $cond_parsed |
-          if ($cond_parsed.body | length) == 1 and ($cond_parsed.body[0].type == "binary") then
-            $cond_parsed.body[0] as $bin |
-            "(( \($bin.left | expr_gen_arith($locals; $ivars; $cvars)) \($bin.op) \($bin.right | expr_gen_arith($locals; $ivars; $cvars)) ))"
+          if ($cond_parsed.body | length) == 1 then
+            (gen_cond_part($cond_parsed.body[0])) as $cond_info |
+            if $cond_info.needs_wrapper then
+              "(( \($cond_info.code) ))"
+            else
+              $cond_info.code
+            end
           else
             [($cond_parsed.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
           end
@@ -1462,12 +1467,16 @@ def expr_gen($locals; $ivars; $cvars):
         [(.block.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
       else "" end) as $block_code |
       if .condition.type == "block" then
-        # Inline condition generation: parse block and wrap binary in (( ))
+        # Parse condition block and use gen_cond_part for proper string/arithmetic handling
         (if .condition.tokens != null then
           ({ tokens: .condition.tokens, pos: 0 } | expr_parse_stmts) as $cond_parsed |
-          if ($cond_parsed.body | length) == 1 and ($cond_parsed.body[0].type == "binary") then
-            $cond_parsed.body[0] as $bin |
-            "(( !(\($bin.left | expr_gen_arith($locals; $ivars; $cvars)) \($bin.op) \($bin.right | expr_gen_arith($locals; $ivars; $cvars))) ))"
+          if ($cond_parsed.body | length) == 1 then
+            (gen_cond_part($cond_parsed.body[0])) as $cond_info |
+            if $cond_info.needs_wrapper then
+              "(( !(\($cond_info.code)) ))"
+            else
+              "! \($cond_info.code)"
+            end
           else
             [($cond_parsed.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
           end
@@ -1901,10 +1910,12 @@ def should_use_expr_parser:
     # Check for exclusions: bash constructs that shouldn't use expr parser
     # Bash commands that appear as bare identifiers (not after @)
     def is_bash_command:
+      # Note: "wait" removed - commonly used as method name in OOP
+      # Note: "kill" removed - commonly used as method name in OOP
       . as $v | ["echo", "printf", "jq", "sed", "awk", "grep", "cat", "ls", "cd",
                  "read", "eval", "exec", "export", "source", "test", "true", "false",
                  "local", "declare", "typeset", "unset", "shift", "exit", "return",
-                 "break", "continue", "wait", "kill", "trap", "set", "shopt"] | any(. == $v);
+                 "break", "continue", "trap", "set", "shopt"] | any(. == $v);
 
     # Bash control keywords
     def is_bash_control:
@@ -1912,12 +1923,13 @@ def should_use_expr_parser:
                  "while", "until", "case", "esac", "function"] | any(. == $v);
 
     # Check for bash construct exclusions
-    (any($tokens[] |
+    (any(range(0; $tokens | length) as $i |
       # Bash control keyword anywhere
-      (.type == "IDENTIFIER" and (.value | is_bash_control))
+      ($tokens[$i].type == "IDENTIFIER" and ($tokens[$i].value | is_bash_control))
       or
-      # Bare bash command (not preceded by @ in context - simplify: just check if common cmd exists)
-      (.type == "IDENTIFIER" and (.value | is_bash_command))
+      # Bare bash command (not preceded by @ which would make it a message send)
+      ($tokens[$i].type == "IDENTIFIER" and ($tokens[$i].value | is_bash_command) and
+       ($i == 0 or $tokens[$i - 1].type != "AT"))
     )) as $has_bash_constructs |
 
     # Check for pipe used for command chaining (not local var decl)
@@ -1965,19 +1977,21 @@ def should_use_expr_parser:
          (($tokens[$i + 2].type // "END") == "DOT" or ($tokens[$i + 2].type // "END") == "NEWLINE" or ($tokens[$i + 2].type // "END") == "END"))
         or
         # Pattern 6: Control flow keywords (ifTrue:, ifFalse:, whileTrue:, timesRepeat:, try:, and:, or:, ifNil:, ifNotNil:)
+        # Note: "to:" removed - conflicts with keyword messages like "from:to:"
         ($tokens[$i].type == "KEYWORD" and
          ($tokens[$i].value == "ifTrue:" or $tokens[$i].value == "ifFalse:" or
           $tokens[$i].value == "whileTrue:" or $tokens[$i].value == "whileFalse:" or
           $tokens[$i].value == "timesRepeat:" or $tokens[$i].value == "try:" or
           $tokens[$i].value == "and:" or $tokens[$i].value == "or:" or
-          $tokens[$i].value == "ifNil:" or $tokens[$i].value == "ifNotNil:" or
-          $tokens[$i].value == "to:"))
+          $tokens[$i].value == "ifNil:" or $tokens[$i].value == "ifNotNil:"))
         or
         # Pattern 7: Comparison operators between identifiers/numbers/strings
+        # Note: EQUALS is "=", EQ is "==", NE is "!="
         (($tokens[$i].type == "IDENTIFIER" or $tokens[$i].type == "NUMBER" or $tokens[$i].type == "STRING" or $tokens[$i].type == "RPAREN") and
          ($tokens[$i + 1].type == "GT" or $tokens[$i + 1].type == "LT" or
           $tokens[$i + 1].type == "GE" or $tokens[$i + 1].type == "LE" or
-          $tokens[$i + 1].type == "EQ" or $tokens[$i + 1].type == "NE") and
+          $tokens[$i + 1].type == "EQ" or $tokens[$i + 1].type == "NE" or
+          $tokens[$i + 1].type == "EQUALS" or $tokens[$i + 1].type == "STR_NE") and
          ($tokens[$i + 2].type == "IDENTIFIER" or $tokens[$i + 2].type == "NUMBER" or $tokens[$i + 2].type == "STRING"))
         or
         # Pattern 8: Collection literals - SYMBOL, HASH_LPAREN (#array), HASH_LBRACE (#dict)
