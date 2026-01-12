@@ -1,8 +1,9 @@
+# Object - Base class for all Trashtalk objects
 Object subclass: nil
 
   # Create a new instance of this class
   # Subclasses inherit this - no need to define your own unless custom init needed
-  rawClassMethod: new [
+  primitiveClassMethod: new [
     local id
     # Use $_CLASS directly - it's already set by dispatcher to the calling class
     # Don't use @ Runtime class - that makes a nested send which changes $_CLASS
@@ -13,24 +14,25 @@ Object subclass: nil
 
   # Return a canonical string representation of this object
   # Format: <ClassName instanceId>
-  rawMethod: printString [
+  primitiveMethod: printString [
     echo "<${_CLASS} ${_INSTANCE}>"
   ]
 
   # Return the class name of this object
-  rawMethod: class [
+  primitiveMethod: class [
     echo "$_CLASS"
   ]
 
   # Return the instance ID of this object
-  rawMethod: id [
+  primitiveMethod: id [
     echo "$_INSTANCE"
   ]
 
   # Check if this object is an instance of a given class
-  rawMethod: isKindOf: className [
-    local current
-    current=$(@ Runtime class)
+  primitiveMethod: isKindOf: className [
+    local current="$1"
+    local my_class="$_CLASS"
+    current="$my_class"
     while [[ -n "$current" ]]; do
       if [[ "$current" == "$1" ]]; then
         echo "true"
@@ -42,22 +44,21 @@ Object subclass: nil
   ]
 
   # Check if this object conforms to a protocol
-  rawMethod: conformsTo: protocolName [
-    local class
-    class=$(@ Runtime class)
+  primitiveMethod: conformsTo: protocolName [
+    local class="$_CLASS"
     _conforms_to "$class" "$1"
   ]
 
   # Delete this object from memory
-  rawMethod: delete [
-    local instance
-    instance=$(@ Runtime instance)
-    @ Runtime delete: "$instance"
+  method: delete [
+    | instance |
+    instance := @ Runtime instance
+    @ Runtime delete: instance
   ]
 
   # Return a detailed inspection of this object
   # Shows class name, instance ID, and all instance variables with values
-  rawMethod: inspect [
+  primitiveMethod: inspect [
     local data class instance
     class="$_CLASS"
     instance="$_INSTANCE"
@@ -69,15 +70,16 @@ Object subclass: nil
     if [[ -n "$data" && "$data" != "{}" ]]; then
       echo "$data" | jq -r 'to_entries | .[] | "  \(.key): \(.value)"'
     else
-      @ Trash methodsFor "$_RECEIVER"
+      @ Trash methodsFor: "$_RECEIVER"
     fi
   ]
 
   # Write inspection output to a file
-  # Usage: @ $obj inspectTo: "/tmp/inspect.txt"
-  rawMethod: inspectTo: filepath [
-    @ Shell exec: "@ \"$_RECEIVER\" inspect" outputTo: "$1"
-    echo "$1"
+  method: inspectTo: filepath [
+    | output |
+    output := @ self inspect
+    @ File write: output to: filepath
+    ^ filepath
   ]
 
   # Return this object's data as JSON
@@ -86,10 +88,9 @@ Object subclass: nil
   ]
 
   # Edit this class's source file and recompile if changed
-  # Usage: @ Counter edit
-  rawClassMethod: edit [
+  primitiveClassMethod: edit [
     local class source_file trait_source file_to_edit editor
-    class=$(@ Runtime class)
+    class="$_CLASS"
     source_file="$TRASHDIR/${class}.trash"
     trait_source="$TRASHDIR/traits/${class}.trash"
     file_to_edit=""
@@ -117,9 +118,8 @@ Object subclass: nil
 
     if [[ "$before_mtime" != "$after_mtime" ]]; then
       @ Console print: "File modified, compiling..."
-      @ Trash compileAndReload "$class"
+      @ Trash compileAndReload: "$class"
     else
       @ Console print: "No changes detected"
     fi
   ]
-

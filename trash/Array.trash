@@ -5,11 +5,11 @@ Array subclass: Object
   instanceVars: items:'[]'
 
   # Create a new array
-  rawClassMethod: new [
-    local array_id
-    array_id=$(@ Runtime generateId: "Array")
-    @ Runtime create: "Array" id: "$array_id"
-    echo "$array_id"
+  classMethod: new [
+    | id |
+    id := @ Runtime generateId: "Array"
+    @ Runtime create: "Array" id: id
+    ^ id
   ]
 
   # Accessor for items ivar
@@ -78,7 +78,7 @@ Array subclass: Object
   ]
 
   # Initialize with values
-  rawMethod: withValues: values [
+  primitiveMethod: withValues: values [
     local items value
     items="[]"
     for value in $1; do

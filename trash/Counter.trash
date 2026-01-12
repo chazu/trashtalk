@@ -4,11 +4,11 @@ Counter subclass: Object
   include: Persistable
   instanceVars: value:0 step:1
 
-  rawClassMethod: new [
-    local id
-    id=$(@ Runtime generateId: "Counter")
-    @ Runtime create: "Counter" id: "$id"
-    echo "$id"
+  classMethod: new [
+    | id |
+    id := @ Runtime generateId: "Counter"
+    @ Runtime create: "Counter" id: id
+    ^ id
   ]
 
   method: getValue [
