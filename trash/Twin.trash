@@ -14,7 +14,8 @@ Twin subclass: Object
   # Then inside Twin, source Trashtalk and use @ Twin open: etc.
 
   # Show how to start Twin
-  rawClassMethod: howToStart [
+  classMethod: howToStart [
+    pragma: primitive
     echo "Twin cannot be started via @ (needs direct terminal control)."
     echo ""
     echo "Start Twin directly:"
@@ -30,19 +31,22 @@ Twin subclass: Object
 
   # Open a new terminal window running a command
   # Usage: @ Twin open: "vim /tmp/scratch.st"
-  rawClassMethod: open: command [
+  classMethod: open: command [
+    pragma: primitive
     twsendmsg "twin" open "$command" 2>/dev/null
   ]
 
   # Open an empty terminal window
   # Usage: @ Twin openTerminal
-  rawClassMethod: openTerminal [
+  classMethod: openTerminal [
+    pragma: primitive
     twsendmsg "twin" open "" 2>/dev/null
   ]
 
   # Open a file in the default editor
   # Usage: @ Twin edit: "/path/to/file"
-  rawClassMethod: edit: filepath [
+  classMethod: edit: filepath [
+    pragma: primitive
     local editor="${EDITOR:-vi}"
     twsendmsg "twin" open "$editor $filepath" 2>/dev/null
   ]
@@ -50,7 +54,8 @@ Twin subclass: Object
   # Open an inspector window for an object
   # Writes object info to temp file and opens in less
   # Usage: @ Twin inspect: $someObject
-  rawClassMethod: inspect: object [
+  classMethod: inspect: object [
+    pragma: primitive
     local tmpfile
     tmpfile=$(mktemp -t "st-inspect-XXXXXX")
 
@@ -64,7 +69,8 @@ Twin subclass: Object
   # Open a workspace file
   # Creates temp file and opens in editor, optionally evaluates on save
   # Usage: @ Twin workspace
-  rawClassMethod: workspace [
+  classMethod: workspace [
+    pragma: primitive
     local tmpfile
     tmpfile=$(mktemp -t "st-workspace-XXXXXX.bash")
 
@@ -79,13 +85,15 @@ Twin subclass: Object
 
   # Open a viewer for any command output
   # Usage: @ Twin view: "ls -la"
-  rawClassMethod: view: command [
+  classMethod: view: command [
+    pragma: primitive
     twsendmsg "twin" open "bash -c '$command | less'" 2>/dev/null
   ]
 
   # Open htop or top for system monitoring
   # Usage: @ Twin monitor
-  rawClassMethod: monitor [
+  classMethod: monitor [
+    pragma: primitive
     if command -v htop >/dev/null 2>&1; then
       twsendmsg "twin" open "htop" 2>/dev/null
     else
@@ -95,7 +103,8 @@ Twin subclass: Object
 
   # Check if Twin is available
   # Usage: @ Twin isAvailable
-  rawClassMethod: isAvailable [
+  classMethod: isAvailable [
+    pragma: primitive
     if command -v twsendmsg >/dev/null 2>&1; then
       echo "true"
     else
@@ -106,7 +115,8 @@ Twin subclass: Object
   # Open a FIFO-connected window for streaming data
   # Returns the FIFO path for writing data to the window
   # Usage: fifo=$(@ Twin openStream: "Logs")
-  rawClassMethod: openStream: title [
+  classMethod: openStream: title [
+    pragma: primitive
     local fifoPath
     fifoPath=$(mktemp -u -t "st-stream-XXXXXX")
     mkfifo "$fifoPath"
@@ -119,13 +129,15 @@ Twin subclass: Object
 
   # Send data to a stream FIFO
   # Usage: @ Twin sendTo: $fifoPath data: "log message"
-  rawClassMethod: sendTo: fifoPath data: message [
+  classMethod: sendTo: fifoPath data: message [
+    pragma: primitive
     echo "$message" >> "$fifoPath"
   ]
 
   # Close a stream by sending EOF
   # Usage: @ Twin closeStream: $fifoPath
-  rawClassMethod: closeStream: fifoPath [
+  classMethod: closeStream: fifoPath [
+    pragma: primitive
     # Close the FIFO
     exec 3>"$fifoPath"
     exec 3>&-
@@ -133,7 +145,8 @@ Twin subclass: Object
   ]
 
   # Show help
-  rawClassMethod: help [
+  classMethod: help [
+    pragma: primitive
     echo "=== Twin Window Manager ==="
     echo ""
     echo "Starting Twin (run directly, not via @):"

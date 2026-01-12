@@ -13,7 +13,8 @@ FlexLayout subclass: Yutani::Widget
   ]
 
   # Add a child widget (proportional sizing)
-  rawMethod: addChild: child [
+  method: addChild: child [
+    pragma: primitive
     local child="$1" session wid childWid
     session="$(_ivar session)"
     wid="$(_ivar widgetId)"
@@ -23,7 +24,8 @@ FlexLayout subclass: Yutani::Widget
   ]
 
   # Add a child widget with fixed size
-  rawMethod: addChild: child fixedSize: size [
+  method: addChild: child fixedSize: size [
+    pragma: primitive
     local child="$1" size="$2" session wid childWid
     session="$(_ivar session)"
     wid="$(_ivar widgetId)"
@@ -32,7 +34,8 @@ FlexLayout subclass: Yutani::Widget
   ]
 
   # Add a child widget with fixed size and focus
-  rawMethod: addChild: child fixedSize: size focus: shouldFocus [
+  method: addChild: child fixedSize: size focus: shouldFocus [
+    pragma: primitive
     local child="$1" size="$2" shouldFocus="$3" session wid childWid
     session="$(_ivar session)"
     wid="$(_ivar widgetId)"
@@ -41,7 +44,8 @@ FlexLayout subclass: Yutani::Widget
   ]
 
   # Set this layout as the root widget
-  rawMethod: setAsRoot [
+  method: setAsRoot [
+    pragma: primitive
     local session wid
     session="$(_ivar session)"
     wid="$(_ivar widgetId)"

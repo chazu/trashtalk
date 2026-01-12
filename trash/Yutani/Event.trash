@@ -12,7 +12,8 @@ Event subclass: Object
 
   # Parse a JSON event string into an Event object
   # Uses single jq invocation to extract all fields at once
-  rawClassMethod: fromJson: json [
+  classMethod: fromJson: json [
+    pragma: primitive
     local json="$1"
     local instance parsed type_field
     local wid kname kmods mx my mbutton wdata
@@ -61,23 +62,28 @@ Event subclass: Object
   # Type Checking
   # ============================================================================
 
-  rawMethod: isKeyEvent [
+  method: isKeyEvent [
+    pragma: primitive
     [[ "$(_ivar eventType)" == "key" ]] && echo "true" || echo "false"
   ]
 
-  rawMethod: isWidgetEvent [
+  method: isWidgetEvent [
+    pragma: primitive
     [[ "$(_ivar eventType)" == "widget" ]] && echo "true" || echo "false"
   ]
 
-  rawMethod: isMouseEvent [
+  method: isMouseEvent [
+    pragma: primitive
     [[ "$(_ivar eventType)" == "mouse" ]] && echo "true" || echo "false"
   ]
 
-  rawMethod: isResizeEvent [
+  method: isResizeEvent [
+    pragma: primitive
     [[ "$(_ivar eventType)" == "resize" ]] && echo "true" || echo "false"
   ]
 
-  rawMethod: isFocusEvent [
+  method: isFocusEvent [
+    pragma: primitive
     [[ "$(_ivar eventType)" == "focus" ]] && echo "true" || echo "false"
   ]
 
@@ -115,32 +121,39 @@ Event subclass: Object
   # Key Event Helpers
   # ============================================================================
 
-  rawMethod: isKey: keyToCheck [
+  method: isKey: keyToCheck [
+    pragma: primitive
     local keyToCheck="$1"
     [[ "$(_ivar keyName)" == "$keyToCheck" ]] && echo "true" || echo "false"
   ]
 
-  rawMethod: isEnterKey [
+  method: isEnterKey [
+    pragma: primitive
     [[ "$(_ivar keyName)" == "KEY_ENTER" ]] && echo "true" || echo "false"
   ]
 
-  rawMethod: isEscapeKey [
+  method: isEscapeKey [
+    pragma: primitive
     [[ "$(_ivar keyName)" == "KEY_ESC" ]] && echo "true" || echo "false"
   ]
 
-  rawMethod: isTabKey [
+  method: isTabKey [
+    pragma: primitive
     [[ "$(_ivar keyName)" == "KEY_TAB" ]] && echo "true" || echo "false"
   ]
 
-  rawMethod: isCtrlC [
+  method: isCtrlC [
+    pragma: primitive
     [[ "$(_ivar keyName)" == "KEY_CTRL_C" ]] && echo "true" || echo "false"
   ]
 
-  rawMethod: isCtrlD [
+  method: isCtrlD [
+    pragma: primitive
     [[ "$(_ivar keyName)" == "KEY_CTRL_D" ]] && echo "true" || echo "false"
   ]
 
-  rawMethod: isCtrlL [
+  method: isCtrlL [
+    pragma: primitive
     [[ "$(_ivar keyName)" == "KEY_CTRL_L" ]] && echo "true" || echo "false"
   ]
 
@@ -149,7 +162,8 @@ Event subclass: Object
   # ============================================================================
 
   # Check if widget event is submission (WIDGET_DONE from Yutani)
-  rawMethod: isSubmission [
+  method: isSubmission [
+    pragma: primitive
     local wt
     wt=$(@ "$_RECEIVER" widgetEventType)
     [[ "$wt" == "WIDGET_DONE" ]] && echo "true" || echo "false"

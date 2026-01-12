@@ -9,17 +9,18 @@
 package: Tools
 
 Jq subclass: Tool
+  pragma: primitiveClass
 
   classMethod: name [
-    ^ "jq"
+    echo "jq"
   ]
 
   classMethod: installCommand [
-    ^ "brew install jq"
+    echo "brew install jq"
   ]
 
   # Parse JSON with a jq filter
-  primitiveClassMethod: parse: filter on: json [
+  classMethod: parse: filter on: json [
     local filter="$1" json="$2" toolPath cmd
     toolPath=$(@ "$_RECEIVER" path)
 
@@ -34,7 +35,7 @@ Jq subclass: Tool
   ]
 
   # Parse JSON from a file
-  primitiveClassMethod: parseFile: filepath with: filter [
+  classMethod: parseFile: filepath with: filter [
     local filepath="$1" filter="$2" toolPath cmd
     toolPath=$(@ "$_RECEIVER" path)
 
@@ -49,7 +50,7 @@ Jq subclass: Tool
   ]
 
   # Compact output (no pretty printing)
-  primitiveClassMethod: compact: json [
+  classMethod: compact: json [
     local json="$1" toolPath cmd
     toolPath=$(@ "$_RECEIVER" path)
 
@@ -64,7 +65,7 @@ Jq subclass: Tool
   ]
 
   # Get a specific key from JSON (raw output)
-  primitiveClassMethod: get: key from: json [
+  classMethod: get: key from: json [
     local key="$1" json="$2" toolPath cmd
     toolPath=$(@ "$_RECEIVER" path)
 

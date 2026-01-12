@@ -4,7 +4,8 @@ InputField subclass: Yutani::Widget
   instanceVars: label:'' placeholder:''
 
   # Create a new InputField with given label
-  rawClassMethod: labeled: label inSession: session [
+  classMethod: labeled: label inSession: session [
+    pragma: primitive
     local label="$1" session="$2"
     local instance wid
     instance=$(_generate_instance_id "Yutani__InputField")
@@ -18,7 +19,8 @@ InputField subclass: Yutani::Widget
   ]
 
   # Create a new InputField with label and placeholder
-  rawClassMethod: labeled: label placeholder: placeholder inSession: session [
+  classMethod: labeled: label placeholder: placeholder inSession: session [
+    pragma: primitive
     local label="$1" placeholder="$2" session="$3"
     local instance wid
     instance=$(_generate_instance_id "Yutani__InputField")
@@ -51,7 +53,8 @@ InputField subclass: Yutani::Widget
   ]
 
   # Get current text from server
-  rawMethod: getText [
+  method: getText [
+    pragma: primitive
     local session wid
     session="$(_ivar session)"
     wid="$(_ivar widgetId)"
@@ -59,7 +62,8 @@ InputField subclass: Yutani::Widget
   ]
 
   # Set text (updates server)
-  rawMethod: setText: newText [
+  method: setText: newText [
+    pragma: primitive
     local newText="$1" session wid
     session="$(_ivar session)"
     wid="$(_ivar widgetId)"
@@ -67,7 +71,8 @@ InputField subclass: Yutani::Widget
   ]
 
   # Clear input
-  rawMethod: clear [
+  method: clear [
+    pragma: primitive
     local session wid
     session="$(_ivar session)"
     wid="$(_ivar widgetId)"

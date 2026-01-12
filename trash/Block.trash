@@ -6,7 +6,7 @@ Block subclass: Object
   # params: JSON array of parameter names ["x", "y"]
   # code: string of code to execute
   # captured: JSON object of captured variables {"_RECEIVER": "counter_abc123"}
-  primitiveClassMethod: params: p code: c captured: cap [
+  classMethod: params: p code: c captured: cap [
     local id p="$1" c="$2" cap="$3"
     id=$(_generate_instance_id Block)
     _create_instance Block "$id"
@@ -17,7 +17,7 @@ Block subclass: Object
   ]
 
   # Execute block with no arguments
-  primitiveMethod: value [
+  method: value [
     local code params captured
     code=$(@ "$_RECEIVER" getCode)
     params=$(@ "$_RECEIVER" getParams)
@@ -42,7 +42,7 @@ Block subclass: Object
 
   # Execute block with one argument
   # Note: Named valueWith: to avoid collision with value (0-arg version)
-  primitiveMethod: valueWith: arg [
+  method: valueWith: arg [
     local code params captured arg1="$1"
     code=$(@ "$_RECEIVER" getCode)
     params=$(@ "$_RECEIVER" getParams)
@@ -74,7 +74,7 @@ Block subclass: Object
   ]
 
   # Execute block with two arguments
-  primitiveMethod: valueWith: a and: b [
+  method: valueWith: a and: b [
     local code params captured arg1="$1" arg2="$2"
     code=$(@ "$_RECEIVER" getCode)
     params=$(@ "$_RECEIVER" getParams)
@@ -106,7 +106,7 @@ Block subclass: Object
   ]
 
   # Return number of parameters
-  primitiveMethod: numArgs [
+  method: numArgs [
     local p
     p=$(@ "$_RECEIVER" getParams)
     echo "$p" | jq 'length'

@@ -2054,23 +2054,31 @@ def funcPrefixFromName($name):
   "__\($name | gsub("::"; "__"))";
 
 # ------------------------------------------------------------------------------
-# Validation: primitiveClass pragma
+# Transform: primitiveClass pragma
 # ------------------------------------------------------------------------------
 
-# Validates that a class with pragma: primitiveClass contains only primitive/raw methods
-# Returns: the class unchanged if valid, halts with error if invalid
-# Note: This validates only the class's own methods. Trait methods are validated
-# separately at the entry point using validatePrimitiveClassWithTraits.
-def validatePrimitiveClass:
+# Transforms a class with pragma: primitiveClass by setting raw=true on all methods.
+# This allows primitiveClass classes to use plain method:/classMethod: syntax while
+# having the compiler treat them as raw bash (no code transformation).
+# Returns: the class with all methods marked as raw
+def transformPrimitiveClass:
   if ((.classPragmas // []) | index("primitiveClass")) then
-    # Find all methods that are neither primitive nor raw
-    [.methods[] | select(.primitive != true and .raw != true) | .selector] as $nonPrimitive |
-    if ($nonPrimitive | length) > 0 then
-      "Error: Class '\(.name)' has pragma: primitiveClass but contains non-primitive methods:\n  \($nonPrimitive | join(", "))\nAll methods in a primitiveClass must use primitiveMethod:, primitiveClassMethod:, rawMethod:, or rawClassMethod:" | halt_error
-    else .
-    end
+    # Transform all methods to have raw=true (skip code transformation)
+    .methods = [.methods[] | . + {raw: true}]
   else .
   end;
+
+# Transforms methods with pragma: primitive to skip code transformation.
+# This allows non-primitiveClass classes to have individual methods that use
+# raw bash code without needing primitiveMethod: keyword.
+# Returns: the class with primitive-pragma methods marked as raw
+def transformPrimitiveMethods:
+  .methods = [.methods[] |
+    if ((.pragmas // []) | index("primitive")) then
+      . + {raw: true}
+    else .
+    end
+  ];
 
 # Validates primitiveClass constraint: no traits allowed
 # Input: CompilationUnit { "class": {...}, "traits": {...} }
@@ -2697,8 +2705,10 @@ def generateAdvice($funcPrefix; $qualifiedName; $ivars; $cvars):
 # ------------------------------------------------------------------------------
 
 def generate:
-  # Validate primitiveClass pragma constraint
-  validatePrimitiveClass |
+  # Transform primitiveClass: all methods become raw (skip code transformation)
+  transformPrimitiveClass |
+  # Transform methods with pragma: primitive to skip code transformation
+  transformPrimitiveMethods |
   . as $class |
   # Compute the function prefix and qualified name for namespaced classes
   funcPrefix as $funcPrefix |

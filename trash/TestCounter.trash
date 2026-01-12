@@ -2,7 +2,8 @@
 # Run with: @ TestCounter runAll
 TestCounter subclass: TestCase
 
-  rawMethod: testIncrement [
+  method: testIncrement [
+    pragma: primitive
     local c val
     c=$(@ Counter new)
     @ "$c" increment >/dev/null
@@ -10,7 +11,8 @@ TestCounter subclass: TestCase
     @ "$_RECEIVER" assert_equals "$val" 1
   ]
 
-  rawMethod: testIncrementBy [
+  method: testIncrementBy [
+    pragma: primitive
     local c val
     c=$(@ Counter new)
     @ "$c" incrementBy: 5
@@ -18,7 +20,8 @@ TestCounter subclass: TestCase
     @ "$_RECEIVER" assert_equals "$val" 5
   ]
 
-  rawMethod: testDecrement [
+  method: testDecrement [
+    pragma: primitive
     local c val
     c=$(@ Counter new)
     @ "$c" setValue: 10
@@ -27,7 +30,8 @@ TestCounter subclass: TestCase
     @ "$_RECEIVER" assert_equals "$val" 9
   ]
 
-  rawMethod: testReset [
+  method: testReset [
+    pragma: primitive
     local c val
     c=$(@ Counter new)
     @ "$c" increment >/dev/null
@@ -36,7 +40,8 @@ TestCounter subclass: TestCase
     @ "$_RECEIVER" assert_equals "$val" 0
   ]
 
-  rawMethod: testStep [
+  method: testStep [
+    pragma: primitive
     local c val
     c=$(@ Counter new)
     @ "$c" setStep: 5

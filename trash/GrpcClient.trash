@@ -19,14 +19,16 @@ GrpcClient subclass: Object
   # Class methods - Factory constructors
   # ==========================================================================
 
-  rawClassMethod: connectTo: addr [
+  classMethod: connectTo: addr [
+    pragma: primitive
     local client
     client=$(@ GrpcClient new)
     @ "$client" _setAddress: "$addr"
     echo "$client"
   ]
 
-  rawClassMethod: connectTo: addr withProto: proto [
+  classMethod: connectTo: addr withProto: proto [
+    pragma: primitive
     local client
     client=$(@ GrpcClient connectTo: "$addr")
     @ "$client" _setProtoFile: "$proto"
@@ -39,7 +41,8 @@ GrpcClient subclass: Object
   # procyonNative: Bash uses grpcurl, Procyon uses native gRPC
   # ==========================================================================
 
-  rawMethod: call: method with: jsonPayload [
+  method: call: method with: jsonPayload [
+    pragma: primitive
     pragma: direct
     pragma: procyonNative
     local addr proto result plaintext_flag
@@ -70,7 +73,8 @@ GrpcClient subclass: Object
   ]
 
   # Unary call with empty payload
-  rawMethod: call: method [
+  method: call: method [
+    pragma: primitive
     pragma: direct
     local addr proto result plaintext_flag
     addr="$(_ivar address)"
@@ -100,7 +104,8 @@ GrpcClient subclass: Object
   # Server Streaming RPC - Procyon only
   # ==========================================================================
 
-  rawMethod: serverStream: method with: payload handler: block [
+  method: serverStream: method with: payload handler: block [
+    pragma: primitive
     pragma: procyonOnly
     echo "Server streaming requires native Procyon runtime"
   ]
@@ -109,7 +114,8 @@ GrpcClient subclass: Object
   # Client Streaming RPC - Procyon only
   # ==========================================================================
 
-  rawMethod: clientStream: method handler: block [
+  method: clientStream: method handler: block [
+    pragma: primitive
     pragma: procyonOnly
     echo "Client streaming requires native Procyon runtime"
   ]
@@ -118,7 +124,8 @@ GrpcClient subclass: Object
   # Bidirectional Streaming RPC - Procyon only
   # ==========================================================================
 
-  rawMethod: bidiStream: method handler: block [
+  method: bidiStream: method handler: block [
+    pragma: primitive
     pragma: procyonOnly
     echo "Bidirectional streaming requires native Procyon runtime"
   ]
@@ -127,7 +134,8 @@ GrpcClient subclass: Object
   # List available services (reflection mode)
   # ==========================================================================
 
-  rawMethod: listServices [
+  method: listServices [
+    pragma: primitive
     pragma: direct
     pragma: procyonNative
     local addr result plaintext_flag
@@ -149,7 +157,8 @@ GrpcClient subclass: Object
   ]
 
   # List methods for a service
-  rawMethod: listMethods: service [
+  method: listMethods: service [
+    pragma: primitive
     pragma: direct
     local addr result plaintext_flag
     addr="$(_ivar address)"
@@ -170,7 +179,8 @@ GrpcClient subclass: Object
   ]
 
   # Describe a service or method
-  rawMethod: describe: target [
+  method: describe: target [
+    pragma: primitive
     pragma: direct
     local addr result plaintext_flag
     addr="$(_ivar address)"
@@ -194,31 +204,38 @@ GrpcClient subclass: Object
   # Configuration methods
   # ==========================================================================
 
-  rawMethod: enablePooling [
+  method: enablePooling [
+    pragma: primitive
     _ivar_set poolConnections 'yes'
   ]
 
-  rawMethod: disablePooling [
+  method: disablePooling [
+    pragma: primitive
     _ivar_set poolConnections 'no'
   ]
 
-  rawMethod: enableTLS [
+  method: enableTLS [
+    pragma: primitive
     _ivar_set usePlaintext 'no'
   ]
 
-  rawMethod: enablePlaintext [
+  method: enablePlaintext [
+    pragma: primitive
     _ivar_set usePlaintext 'yes'
   ]
 
-  rawMethod: address [
+  method: address [
+    pragma: primitive
     echo "$(_ivar address)"
   ]
 
-  rawMethod: isUsingReflection [
+  method: isUsingReflection [
+    pragma: primitive
     echo "$(_ivar useReflection)"
   ]
 
-  rawMethod: isPoolingEnabled [
+  method: isPoolingEnabled [
+    pragma: primitive
     echo "$(_ivar poolConnections)"
   ]
 
@@ -226,14 +243,17 @@ GrpcClient subclass: Object
   # Private setters
   # ==========================================================================
 
-  rawMethod: _setAddress: a [
+  method: _setAddress: a [
+    pragma: primitive
     _ivar_set address "$1"
   ]
 
-  rawMethod: _setProtoFile: p [
+  method: _setProtoFile: p [
+    pragma: primitive
     _ivar_set protoFile "$1"
   ]
 
-  rawMethod: _setUseReflection: r [
+  method: _setUseReflection: r [
+    pragma: primitive
     _ivar_set useReflection "$1"
   ]

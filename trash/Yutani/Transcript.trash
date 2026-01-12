@@ -4,7 +4,8 @@ Transcript subclass: Yutani::Application
   instanceVars: outputView:'' inputField:'' layout:'' history:''
 
   # Override setup to build the UI
-  rawMethod: setup [
+  method: setup [
+    pragma: primitive
     local layout outputView inputField initialText
 
     # Store self in global for event handlers
@@ -39,7 +40,8 @@ Type code and press Enter to evaluate. Ctrl+C to exit.
   ]
 
   # Handle key events
-  rawMethod: handleKey: event [
+  method: handleKey: event [
+    pragma: primitive
     local event="$1" keyName inputField
 
     keyName=$(@ "$event" keyName)
@@ -63,7 +65,8 @@ Type code and press Enter to evaluate. Ctrl+C to exit.
   ]
 
   # Evaluate input text
-  rawMethod: evaluateInput: text [
+  method: evaluateInput: text [
+    pragma: primitive
     local text="$1" result inputField newText
 
     if [[ -z "$text" ]]; then
@@ -90,7 +93,8 @@ ${result}
   ]
 
   # Append text to output
-  rawMethod: appendOutput: text [
+  method: appendOutput: text [
+    pragma: primitive
     local text="$1" outputView history
     outputView="$(_ivar outputView)"
     history="$(_ivar history)"
@@ -102,7 +106,8 @@ ${result}
   ]
 
   # Clear output
-  rawMethod: clearOutput [
+  method: clearOutput [
+    pragma: primitive
     local outputView
     outputView="$(_ivar outputView)"
     _ivar_set history ""

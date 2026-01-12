@@ -17,7 +17,8 @@ HttpServer subclass: Object
   include: Debuggable
   instanceVars: port:8080 root:. running:false
 
-  rawClassMethod: new [
+  classMethod: new [
+    pragma: primitive
     local id
     id=$(_generate_instance_id HttpServer)
     _create_instance HttpServer "$id"
@@ -25,17 +26,20 @@ HttpServer subclass: Object
   ]
 
   # Set the document root directory
-  rawMethod: root: path [
+  method: root: path [
+    pragma: primitive
     _ivar_set root "$path"
   ]
 
   # Set the port to listen on
-  rawMethod: port: p [
+  method: port: p [
+    pragma: primitive
     _ivar_set port "$p"
   ]
 
   # Quick start: serve a directory on a port
-  rawClassMethod: serveDirectory: dir onPort: port [
+  classMethod: serveDirectory: dir onPort: port [
+    pragma: primitive
     local server
     server=$(@ HttpServer new)
     @ "$server" root: "$dir"
@@ -44,7 +48,8 @@ HttpServer subclass: Object
   ]
 
   # Start the server (foreground, blocking)
-  rawMethod: start [
+  method: start [
+    pragma: primitive
     local port root pipe_dir request_pipe response_pipe
     port=$(_ivar port)
     root=$(_ivar root)
@@ -82,7 +87,8 @@ HttpServer subclass: Object
   ]
 
   # Handle a single HTTP connection
-  rawMethod: _handleConnection: port root: root [
+  method: _handleConnection: port root: root [
+    pragma: primitive
     local request method path version response_file
     local status_code status_text content_type body
 
@@ -169,7 +175,8 @@ HANDLER_EOF
   ]
 
   # Simple fallback handler without -c support
-  rawMethod: _handleSimple: port root: root [
+  method: _handleSimple: port root: root [
+    pragma: primitive
     local request_file="/tmp/http_req_$$"
     local response_file="/tmp/http_resp_$$"
 
@@ -222,7 +229,8 @@ HANDLER_EOF
   ]
 
   # Determine MIME type from file extension
-  rawMethod: _mimeType: filepath [
+  method: _mimeType: filepath [
+    pragma: primitive
     local ext="${filepath##*.}"
     case "${ext,,}" in
       html|htm) echo "text/html" ;;
@@ -245,7 +253,8 @@ HANDLER_EOF
   ]
 
   # Stop the server
-  rawMethod: stop [
+  method: stop [
+    pragma: primitive
     _ivar_set running false
     echo "Server stopped"
   ]

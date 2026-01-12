@@ -56,13 +56,15 @@ Dictionary subclass: Object
 
   # Get all keys, one per line
   # Usage: keys := @ dict keys  # Returns newline-separated keys
-  primitiveMethod: keys [
+  method: keys [
+    pragma: primitive
     echo "$(_ivar items)" | jq -r 'keys[]'
   ]
 
   # Get all values, one per line
   # Usage: values := @ dict values  # Returns newline-separated values
-  primitiveMethod: values [
+  method: values [
+    pragma: primitive
     echo "$(_ivar items)" | jq -r '.[]'
   ]
 
@@ -83,7 +85,8 @@ Dictionary subclass: Object
 
   # Create dictionary from pairs
   # Usage: @ dict withPairs: 'name:Alice age:30'
-  primitiveMethod: withPairs: pairs [
+  method: withPairs: pairs [
+    pragma: primitive
     local pairs="$1"
     local items pair key value
     items="{}"
@@ -98,7 +101,8 @@ Dictionary subclass: Object
 
   # Iterate over each key-value pair, calling block with key and value
   # Usage: @ dict do: [:key :value | echo "$key = $value"]
-  primitiveMethod: do: block [
+  method: do: block [
+    pragma: primitive
     local items keys_json key value block_id="$1"
     items="$(_ivar items)"
 
@@ -111,7 +115,8 @@ Dictionary subclass: Object
 
   # Iterate over keys only
   # Usage: @ dict keysDo: [:key | echo "Key: $key"]
-  primitiveMethod: keysDo: block [
+  method: keysDo: block [
+    pragma: primitive
     local items key block_id="$1"
     items="$(_ivar items)"
 
@@ -122,7 +127,8 @@ Dictionary subclass: Object
 
   # Iterate over values only
   # Usage: @ dict valuesDo: [:value | echo "Value: $value"]
-  primitiveMethod: valuesDo: block [
+  method: valuesDo: block [
+    pragma: primitive
     local items value block_id="$1"
     items="$(_ivar items)"
 
@@ -133,7 +139,8 @@ Dictionary subclass: Object
 
   # Map values through a block, returning new dictionary with same keys
   # Usage: doubled := @ dict collect: [:v | v * 2]
-  primitiveMethod: collect: block [
+  method: collect: block [
+    pragma: primitive
     local items key value result new_items block_id="$1"
     items="$(_ivar items)"
     new_items="{}"
@@ -153,7 +160,8 @@ Dictionary subclass: Object
 
   # Select key-value pairs where block returns true
   # Usage: evens := @ dict select: [:k :v | (v % 2) == 0]
-  primitiveMethod: select: block [
+  method: select: block [
+    pragma: primitive
     local items key value result new_items block_id="$1"
     items="$(_ivar items)"
     new_items="{}"
@@ -176,7 +184,8 @@ Dictionary subclass: Object
 
   # Merge another dictionary into this one (modifies self)
   # Usage: @ dict merge: otherDict
-  primitiveMethod: merge: other [
+  method: merge: other [
+    pragma: primitive
     local other="$1"
     local items other_items merged
     items=$(_ivar items)
@@ -201,7 +210,8 @@ Dictionary subclass: Object
   ]
 
   # Return as JSON string (compact format)
-  primitiveMethod: asJson [
+  method: asJson [
+    pragma: primitive
     echo "$(_ivar items)" | jq -c '.'
   ]
 

@@ -78,7 +78,8 @@ Array subclass: Object
   ]
 
   # Initialize with values
-  primitiveMethod: withValues: values [
+  method: withValues: values [
+    pragma: primitive
     local items value
     items="[]"
     for value in $1; do

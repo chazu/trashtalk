@@ -1,7 +1,8 @@
 Transcript subclass: Object
   instanceVars: session:'' outputView:'' inputField:'' layout:'' running:'' transcriptHistory:''
 
-  rawClassMethod: open [
+  classMethod: open [
+    pragma: primitive
     local transcript session
     transcript=$(@ Transcript new)
     session=$(@ YutaniSession connect 2>&1 | grep -v "^\[INFO\]" | tail -1)
@@ -16,7 +17,8 @@ Transcript subclass: Object
     @ "$transcript" run
   ]
 
-  rawClassMethod: openOn: host [
+  classMethod: openOn: host [
+    pragma: primitive
     local transcript session host="$1"
     transcript=$(@ Transcript new)
     session=$(@ YutaniSession connectTo: "$host" 2>&1 | grep -v "^\[INFO\]" | tail -1)
@@ -39,7 +41,8 @@ Transcript subclass: Object
     ^ session
   ]
 
-  rawMethod: setup [
+  method: setup [
+    pragma: primitive
     local session output_view input_field layout initial_text
     session="$(_ivar session)"
 
@@ -70,7 +73,8 @@ Type code and press Enter to evaluate. Ctrl+C to exit.
     _ivar_set running "true"
   ]
 
-  rawMethod: run [
+  method: run [
+    pragma: primitive
     local session event sid fifo
     session="$(_ivar session)"
 
@@ -114,7 +118,8 @@ Type code and press Enter to evaluate. Ctrl+C to exit.
     @ "$session" disconnect
   ]
 
-  rawMethod: handleWidgetEvent: event [
+  method: handleWidgetEvent: event [
+    pragma: primitive
     local widget_id event_type text input_field
     input_field="$(_ivar inputField)"
 
@@ -134,7 +139,8 @@ Type code and press Enter to evaluate. Ctrl+C to exit.
     fi
   ]
 
-  rawMethod: handleKeyEvent: event [
+  method: handleKeyEvent: event [
+    pragma: primitive
     local key_name session input_field text
     session="$(_ivar session)"
     input_field="$(_ivar inputField)"
@@ -174,7 +180,8 @@ Type code and press Enter to evaluate. Ctrl+C to exit.
     esac
   ]
 
-  rawMethod: evaluateInput: text [
+  method: evaluateInput: text [
+    pragma: primitive
     local result session output_view input_field new_text
     session="$(_ivar session)"
     output_view="$(_ivar outputView)"
@@ -203,7 +210,8 @@ ${result}
     @ "$session" focusWidget: "$input_field"
   ]
 
-  rawMethod: appendText: text [
+  method: appendText: text [
+    pragma: primitive
     local session output_view history
     session="$(_ivar session)"
     output_view="$(_ivar outputView)"
@@ -215,7 +223,8 @@ ${result}
     @ "$session" setText: "$history" on: "$output_view"
   ]
 
-  rawMethod: clear [
+  method: clear [
+    pragma: primitive
     local session output_view
     session="$(_ivar session)"
     output_view="$(_ivar outputView)"

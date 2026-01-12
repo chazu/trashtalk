@@ -5,7 +5,7 @@ Coproc subclass: Object
   instanceVars: command:'' pid:'' fifoIn:'' fifoOut:'' status:''
 
   # Create a coproc for a command (does not start it yet)
-  primitiveClassMethod: for: cmd [
+  classMethod: for: cmd [
     local id
     id=$(_generate_instance_id Coproc)
     _create_instance Coproc "$id"
@@ -16,7 +16,7 @@ Coproc subclass: Object
 
   # Start the coprocess in read-only mode (no stdin needed)
   # Better for commands that just produce output (like grpcurl subscribe)
-  primitiveMethod: startReadOnly [
+  method: startReadOnly [
     local cmd bg_pid fifo_out pidfile
     cmd="$(_ivar command)"
 
@@ -55,7 +55,7 @@ Coproc subclass: Object
   ]
 
   # Start with bidirectional communication
-  primitiveMethod: start [
+  method: start [
     local cmd bg_pid fifo_in fifo_out pidfile
     cmd="$(_ivar command)"
 
@@ -93,7 +93,7 @@ Coproc subclass: Object
 
   # Read a single line from the process output
   # NOTE: Opens/closes FIFO each time - use readLines for continuous reading
-  primitiveMethod: readLine [
+  method: readLine [
     local fifo_out line
     fifo_out="$(_ivar fifoOut)"
 
@@ -114,7 +114,7 @@ Coproc subclass: Object
   # Usage: @ $coproc readLinesDo: '@ $obj handleLine'
   # The handler can access the current line via $__COPROC_LINE
   # (Using a global avoids quote escaping issues with JSON content)
-  primitiveMethod: readLinesDo: handler [
+  method: readLinesDo: handler [
     local fifo_out handler="$1"
     fifo_out="$(_ivar fifoOut)"
 
@@ -130,7 +130,7 @@ Coproc subclass: Object
   ]
 
   # Write a line to the process stdin
-  primitiveMethod: writeLine: text [
+  method: writeLine: text [
     local fifo_in text="$1"
     fifo_in="$(_ivar fifoIn)"
 
@@ -143,7 +143,7 @@ Coproc subclass: Object
   ]
 
   # Check if the coprocess is still running
-  primitiveMethod: isRunning [
+  method: isRunning [
     local proc_pid
     proc_pid="$(_ivar pid)"
 
@@ -163,7 +163,7 @@ Coproc subclass: Object
   ]
 
   # Terminate the coprocess (SIGTERM)
-  primitiveMethod: terminate [
+  method: terminate [
     local proc_pid
     proc_pid="$(_ivar pid)"
 
@@ -176,7 +176,7 @@ Coproc subclass: Object
   ]
 
   # Kill the coprocess (SIGKILL)
-  primitiveMethod: kill [
+  method: kill [
     local proc_pid
     proc_pid="$(_ivar pid)"
 
@@ -189,7 +189,7 @@ Coproc subclass: Object
   ]
 
   # Clean up FIFOs
-  primitiveMethod: _cleanup [
+  method: _cleanup [
     local fifo_in fifo_out
 
     fifo_in="$(_ivar fifoIn)"
@@ -202,11 +202,11 @@ Coproc subclass: Object
   ]
 
   # Private setters
-  primitiveMethod: _setCommand: cmd [
+  method: _setCommand: cmd [
     _ivar_set command "$1"
   ]
 
-  primitiveMethod: _setStatus: s [
+  method: _setStatus: s [
     _ivar_set status "$1"
   ]
 

@@ -4,7 +4,8 @@ IDE subclass: Yutani::Application
   instanceVars: outputView:'' inputField:'' layout:'' history:''
 
   # Override setup to build the UI
-  rawMethod: setup [
+  method: setup [
+    pragma: primitive
     local layout outputView inputField initialText
 
     # Create layout
@@ -39,7 +40,8 @@ IDE subclass: Yutani::Application
   ]
 
   # Handle key events
-  rawMethod: handleKey: event [
+  method: handleKey: event [
+    pragma: primitive
     local event="$1" keyName inputField
 
     keyName=$(@ "$event" keyName)
@@ -60,7 +62,8 @@ IDE subclass: Yutani::Application
   ]
 
   # Evaluate input text
-  rawMethod: evaluateInput: text [
+  method: evaluateInput: text [
+    pragma: primitive
     local text="$1" result inputField outputView newText
 
     if [[ -z "$text" ]]; then
@@ -88,7 +91,8 @@ ${result}
   ]
 
   # Append text to output
-  rawMethod: appendOutput: text [
+  method: appendOutput: text [
+    pragma: primitive
     local text="$1" outputView history
     outputView="$(_ivar outputView)"
     history="$(_ivar history)"

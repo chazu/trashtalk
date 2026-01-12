@@ -6,13 +6,15 @@ TestTestCase subclass: TestCase
   # Equality Tests
   # ==========================================
 
-  rawMethod: testAssertEquals [
+  method: testAssertEquals [
+    pragma: primitive
     @ "$_RECEIVER" assert_equals "hello" "hello"
     @ "$_RECEIVER" assert_equals 42 42
     @ "$_RECEIVER" assert_equals "" ""
   ]
 
-  rawMethod: testAssertNotEquals [
+  method: testAssertNotEquals [
+    pragma: primitive
     @ "$_RECEIVER" assert_not_equals "hello" "world"
     @ "$_RECEIVER" assert_not_equals 1 2
   ]
@@ -21,12 +23,14 @@ TestTestCase subclass: TestCase
   # Boolean Tests
   # ==========================================
 
-  rawMethod: testAssertTrue [
+  method: testAssertTrue [
+    pragma: primitive
     @ "$_RECEIVER" assert_true "true"
     @ "$_RECEIVER" assert_true "1"
   ]
 
-  rawMethod: testAssertFalse [
+  method: testAssertFalse [
+    pragma: primitive
     @ "$_RECEIVER" assert_false "false"
     @ "$_RECEIVER" assert_false "0"
     @ "$_RECEIVER" assert_false ""
@@ -36,12 +40,14 @@ TestTestCase subclass: TestCase
   # Nil Tests
   # ==========================================
 
-  rawMethod: testAssertNil [
+  method: testAssertNil [
+    pragma: primitive
     @ "$_RECEIVER" assert_nil ""
     @ "$_RECEIVER" assert_nil "null"
   ]
 
-  rawMethod: testAssertNotNil [
+  method: testAssertNotNil [
+    pragma: primitive
     @ "$_RECEIVER" assert_not_nil "something"
     @ "$_RECEIVER" assert_not_nil "0"
   ]
@@ -50,12 +56,14 @@ TestTestCase subclass: TestCase
   # String Tests
   # ==========================================
 
-  rawMethod: testAssertContains [
+  method: testAssertContains [
+    pragma: primitive
     @ "$_RECEIVER" assert_contains "hello world" "world"
     @ "$_RECEIVER" assert_contains "foobar" "oba"
   ]
 
-  rawMethod: testAssertMatches [
+  method: testAssertMatches [
+    pragma: primitive
     @ "$_RECEIVER" assert_matches "hello123" "^hello[0-9]+"
     @ "$_RECEIVER" assert_matches "test@example.com" "@"
   ]
@@ -64,12 +72,14 @@ TestTestCase subclass: TestCase
   # Numeric Tests
   # ==========================================
 
-  rawMethod: testAssertGreaterThan [
+  method: testAssertGreaterThan [
+    pragma: primitive
     @ "$_RECEIVER" assert_greater_than 10 5
     @ "$_RECEIVER" assert_greater_than 100 50
   ]
 
-  rawMethod: testAssertLessThan [
+  method: testAssertLessThan [
+    pragma: primitive
     @ "$_RECEIVER" assert_less_than 5 10
     @ "$_RECEIVER" assert_less_than 1 100
   ]
@@ -78,10 +88,12 @@ TestTestCase subclass: TestCase
   # Skip/Pending Tests
   # ==========================================
 
-  rawMethod: testSkip [
+  method: testSkip [
+    pragma: primitive
     @ "$_RECEIVER" skip: "Demonstrating skip functionality"
   ]
 
-  rawMethod: testPending [
+  method: testPending [
+    pragma: primitive
     @ "$_RECEIVER" pending: "Feature not yet implemented"
   ]
