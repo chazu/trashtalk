@@ -68,6 +68,84 @@ rawMethod: complexOperation [
 ]
 ```
 
+### Primitive Methods
+
+Primitive methods are thin wrappers around bash builtins or simple operations. Like raw methods, they receive no transformation, but they're semantically marked as fundamental operations that other methods build upon.
+
+```smalltalk
+primitiveMethod: exists [
+  [[ -e "$(_ivar path)" ]]
+]
+
+primitiveClassMethod: now [
+  date +%s
+]
+```
+
+**`primitiveMethod:`** - Instance-level primitive. The method body has access to `$_RECEIVER` and can use `_ivar` to access instance variables.
+
+**`primitiveClassMethod:`** - Class-level primitive. Called on the class itself, typically for factory methods or utility operations.
+
+**Comparison with rawMethod:**
+
+| Aspect | `rawMethod:` | `primitiveMethod:` |
+|--------|--------------|-------------------|
+| Transformation | None | None |
+| Intent | Complex bash logic | Simple builtin wrapper |
+| Typical length | Multi-line | Single expression |
+| Examples | Loops, heredocs | File tests, env access |
+
+**Use cases for primitives:**
+- File system predicates (`exists`, `isFile`, `isDirectory`)
+- Environment variable access (`get:`, `has:`)
+- Time operations (`now`, `sleep:`)
+- Console I/O (`print:`, `error:`)
+
+**Example - File class primitives:**
+
+```smalltalk
+File subclass: Object
+  instanceVars: path
+
+  primitiveMethod: exists [
+    [[ -e "$(_ivar path)" ]]
+  ]
+
+  primitiveMethod: isFile [
+    [[ -f "$(_ivar path)" ]]
+  ]
+
+  primitiveMethod: isDirectory [
+    [[ -d "$(_ivar path)" ]]
+  ]
+
+  primitiveMethod: read [
+    cat "$(_ivar path)"
+  ]
+
+  primitiveClassMethod: exists: path [
+    [[ -e "$1" ]]
+  ]
+```
+
+**Example - Env class primitives:**
+
+```smalltalk
+Env subclass: Object
+
+  primitiveClassMethod: get: name [
+    echo "${!1}"
+  ]
+
+  primitiveClassMethod: has: name [
+    [[ -v "$1" ]]
+  ]
+
+  primitiveClassMethod: home [
+    echo "$HOME"
+  ]
+```
+
 ### Pragmas
 
 Pragmas are method-level directives that modify how a method is compiled or executed. Place them at the start of the method body.
@@ -168,6 +246,73 @@ echo "$MY_VAR"  # "new_value"
    ```
 
 4. **Only for `rawMethod:`**: Use with `rawMethod:` since you're working at the Bash level. Regular `method:` blocks apply transformations that may interfere.
+
+#### `pragma: procyonNative`
+
+Marks a method as having both a Bash implementation (in the method body) and a native Go implementation (in Procyon). When the native daemon is available, Procyon uses its native implementation; otherwise Bash uses the fallback.
+
+```smalltalk
+rawMethod: call: method with: payload [
+  pragma: procyonNative
+  # Bash implementation using grpcurl
+  grpcurl -plaintext -d "$2" "$(_ivar address)" "$1"
+]
+```
+
+**How it works:**
+1. The compiler emits a marker: `declare -g __ClassName__methodName__procyonNative=1`
+2. The Bash fallback in the method body is always available
+3. Procyon checks the marker and uses its native implementation when running natively
+
+**Use cases:**
+- gRPC calls (native Go gRPC vs grpcurl CLI)
+- Database operations (native SQLite bindings vs sqlite3 CLI)
+- File I/O (native Go vs shell commands)
+
+#### `pragma: procyonOnly`
+
+Marks a method as requiring the native Procyon runtime. The Bash body typically just prints an error message. Calling such a method without the native plugin will fail.
+
+```smalltalk
+rawMethod: serverStream: method with: payload handler: block [
+  pragma: procyonOnly
+  echo "Server streaming requires native Procyon runtime"
+]
+```
+
+**How it works:**
+1. The compiler emits a marker: `declare -g __ClassName__methodName__procyonOnly=1`
+2. At runtime, the `@` dispatcher checks for native plugin availability
+3. If no plugin exists, returns an error instead of executing the Bash fallback
+
+**Use cases:**
+- Streaming APIs (gRPC streams, WebSockets)
+- Features that cannot be implemented in Bash
+- Performance-critical operations with no reasonable Bash fallback
+
+#### `pragma: bashOnly`
+
+Marks a method as Bash-only. The method will not be compiled to native code by Procyon, even if the class has other native methods.
+
+```smalltalk
+rawMethod: readLinesWithCallback: block [
+  pragma: bashOnly
+  # Complex bash-specific iteration
+  while IFS= read -r line; do
+    @ "$block" valueWith: "$line"
+  done < <(echo "$(_ivar items)" | jq -r '.[]')
+]
+```
+
+**How it works:**
+1. The compiler emits a marker: `declare -g __ClassName__methodName__bashOnly=1`
+2. Procyon sees this marker and skips native code generation for this method
+3. The method always runs as Bash, even when the native daemon is active
+
+**Use cases:**
+- Methods using bash-specific features (process substitution, complex redirects)
+- Block iteration patterns that rely on bash semantics
+- Temporary workaround when Procyon doesn't support a construct
 
 ### Class Methods
 
