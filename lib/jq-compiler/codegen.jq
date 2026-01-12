@@ -2054,6 +2054,23 @@ def funcPrefixFromName($name):
   "__\($name | gsub("::"; "__"))";
 
 # ------------------------------------------------------------------------------
+# Validation: primitiveClass pragma
+# ------------------------------------------------------------------------------
+
+# Validates that a class with pragma: primitiveClass contains only primitive/raw methods
+# Returns: the class unchanged if valid, halts with error if invalid
+def validatePrimitiveClass:
+  if ((.classPragmas // []) | index("primitiveClass")) then
+    # Find all methods that are neither primitive nor raw
+    [.methods[] | select(.primitive != true and .raw != true) | .selector] as $nonPrimitive |
+    if ($nonPrimitive | length) > 0 then
+      "Error: Class '\(.name)' has pragma: primitiveClass but contains non-primitive methods:\n  \($nonPrimitive | join(", "))\nAll methods in a primitiveClass must use primitiveMethod:, primitiveClassMethod:, rawMethod:, or rawClassMethod:" | halt_error
+    else .
+    end
+  else .
+  end;
+
+# ------------------------------------------------------------------------------
 # Code Generation: Header
 # ------------------------------------------------------------------------------
 
@@ -2666,6 +2683,8 @@ def generateAdvice($funcPrefix; $qualifiedName; $ivars; $cvars):
 # ------------------------------------------------------------------------------
 
 def generate:
+  # Validate primitiveClass pragma constraint
+  validatePrimitiveClass |
   . as $class |
   # Compute the function prefix and qualified name for namespaced classes
   funcPrefix as $funcPrefix |
