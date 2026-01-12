@@ -8,38 +8,39 @@
 #   result := @ String trimSuffix: ".trash" from: filename
 #
 String subclass: Object
+  pragma: primitiveClass
 
   # ========================================
   # String Tests
   # ========================================
 
   # Test if string is empty (replaces [[ -z "$str" ]])
-  rawClassMethod: isEmpty: str [
+  primitiveClassMethod: isEmpty: str [
     [[ -z "$str" ]] && echo "true" || echo "false"
   ]
 
   # Test if string is not empty (replaces [[ -n "$str" ]])
-  rawClassMethod: notEmpty: str [
+  primitiveClassMethod: notEmpty: str [
     [[ -n "$str" ]] && echo "true" || echo "false"
   ]
 
   # Test if string contains substring
-  rawClassMethod: contains: str substring: sub [
+  primitiveClassMethod: contains: str substring: sub [
     [[ "$str" == *"$sub"* ]] && echo "true" || echo "false"
   ]
 
   # Test if string starts with prefix
-  rawClassMethod: startsWith: str prefix: prefix [
+  primitiveClassMethod: startsWith: str prefix: prefix [
     [[ "$str" == "$prefix"* ]] && echo "true" || echo "false"
   ]
 
   # Test if string ends with suffix
-  rawClassMethod: endsWith: str suffix: suffix [
+  primitiveClassMethod: endsWith: str suffix: suffix [
     [[ "$str" == *"$suffix" ]] && echo "true" || echo "false"
   ]
 
   # Test if two strings are equal
-  rawClassMethod: equals: a to: b [
+  primitiveClassMethod: equals: a to: b [
     [[ "$a" == "$b" ]] && echo "true" || echo "false"
   ]
 
@@ -48,52 +49,52 @@ String subclass: Object
   # ========================================
 
   # Remove prefix pattern from string (replaces ${str##pattern})
-  rawClassMethod: trimPrefix: pattern from: str [
+  primitiveClassMethod: trimPrefix: pattern from: str [
     echo "${str##$pattern}"
   ]
 
   # Remove suffix pattern from string (replaces ${str%%pattern})
-  rawClassMethod: trimSuffix: pattern from: str [
+  primitiveClassMethod: trimSuffix: pattern from: str [
     echo "${str%%$pattern}"
   ]
 
   # Remove shortest prefix match (replaces ${str#pattern})
-  rawClassMethod: trimShortPrefix: pattern from: str [
+  primitiveClassMethod: trimShortPrefix: pattern from: str [
     echo "${str#$pattern}"
   ]
 
   # Remove shortest suffix match (replaces ${str%pattern})
-  rawClassMethod: trimShortSuffix: pattern from: str [
+  primitiveClassMethod: trimShortSuffix: pattern from: str [
     echo "${str%$pattern}"
   ]
 
   # Replace first occurrence (replaces ${str/old/new})
-  rawClassMethod: replace: old with: new in: str [
+  primitiveClassMethod: replace: old with: new in: str [
     echo "${str/$old/$new}"
   ]
 
   # Replace all occurrences (replaces ${str//old/new})
-  rawClassMethod: replaceAll: old with: new in: str [
+  primitiveClassMethod: replaceAll: old with: new in: str [
     echo "${str//$old/$new}"
   ]
 
   # Get substring (replaces ${str:start:length})
-  rawClassMethod: substring: str from: start length: len [
+  primitiveClassMethod: substring: str from: start length: len [
     echo "${str:$start:$len}"
   ]
 
   # Get string length
-  rawClassMethod: length: str [
+  primitiveClassMethod: length: str [
     echo "${#str}"
   ]
 
   # Convert to uppercase
-  rawClassMethod: uppercase: str [
+  primitiveClassMethod: uppercase: str [
     echo "${str^^}"
   ]
 
   # Convert to lowercase
-  rawClassMethod: lowercase: str [
+  primitiveClassMethod: lowercase: str [
     echo "${str,,}"
   ]
 
@@ -102,7 +103,7 @@ String subclass: Object
   # ========================================
 
   # Split string on delimiter, return as newline-separated values
-  rawClassMethod: split: str on: delim [
+  primitiveClassMethod: split: str on: delim [
     local IFS="$delim"
     local parts
     read -ra parts <<< "$str"
@@ -110,12 +111,12 @@ String subclass: Object
   ]
 
   # Get part before delimiter (replaces ${str%%delim*})
-  rawClassMethod: before: delim in: str [
+  primitiveClassMethod: before: delim in: str [
     echo "${str%%$delim*}"
   ]
 
   # Get part after delimiter (replaces ${str#*delim})
-  rawClassMethod: after: delim in: str [
+  primitiveClassMethod: after: delim in: str [
     echo "${str#*$delim}"
   ]
 
@@ -124,23 +125,23 @@ String subclass: Object
   # ========================================
 
   # Concatenate two strings
-  rawClassMethod: concat: a with: b [
+  primitiveClassMethod: concat: a with: b [
     echo "${a}${b}"
   ]
 
   # Concatenate three strings
-  rawClassMethod: concat: a with: b with: c [
+  primitiveClassMethod: concat: a with: b with: c [
     echo "${a}${b}${c}"
   ]
 
   # Join array elements with delimiter
-  rawClassMethod: join: delimiter values: values [
+  primitiveClassMethod: join: delimiter values: values [
     local IFS="$delimiter"
     echo "$values"
   ]
 
   # Repeat string n times
-  rawClassMethod: repeat: str times: n [
+  primitiveClassMethod: repeat: str times: n [
     local result=""
     local i
     for ((i=0; i<n; i++)); do
@@ -154,7 +155,7 @@ String subclass: Object
   # ========================================
 
   # Trim leading and trailing whitespace (using extglob)
-  rawClassMethod: trim: str [
+  primitiveClassMethod: trim: str [
     shopt -s extglob
     str="${str##+([[:space:]])}"
     str="${str%%+([[:space:]])}"
@@ -163,13 +164,13 @@ String subclass: Object
   ]
 
   # Trim leading whitespace (using extglob)
-  rawClassMethod: trimLeft: str [
+  primitiveClassMethod: trimLeft: str [
     shopt -s extglob
     echo "${str##+([[:space:]])}"
   ]
 
   # Trim trailing whitespace (using extglob)
-  rawClassMethod: trimRight: str [
+  primitiveClassMethod: trimRight: str [
     shopt -s extglob
     echo "${str%%+([[:space:]])}"
   ]
