@@ -24,18 +24,21 @@ Persistable trait
   # Save this object to the Store (idempotent - creates or updates)
   method: save [
     pragma: primitive
+    pragma: bashOnly
     _env_persist "$_RECEIVER"
   ]
 
   # Delete this object from the Store (keeps it in memory)
   method: unpersist [
     pragma: primitive
+    pragma: bashOnly
     db_delete "$_RECEIVER" 2>/dev/null
   ]
 
   # Delete this object from both memory and Store
   method: delete [
     pragma: primitive
+    pragma: bashOnly
     db_delete "$_RECEIVER" 2>/dev/null
     _env_delete "$_RECEIVER"
   ]
@@ -43,6 +46,7 @@ Persistable trait
   # Check if this object is persisted in the Store
   method: isPersisted [
     pragma: primitive
+    pragma: bashOnly
     if _env_is_persisted "$_RECEIVER"; then
       echo "true"
     else
@@ -53,12 +57,14 @@ Persistable trait
   # Reload this object from the Store (discards in-memory changes)
   method: reload [
     pragma: primitive
+    pragma: bashOnly
     _env_load "$_RECEIVER"
   ]
 
   # Return this object's data as JSON
   method: asJson [
     pragma: primitive
+    pragma: bashOnly
     _ensure_loaded "$_RECEIVER"
     _env_get "$_RECEIVER"
   ]
@@ -67,6 +73,7 @@ Persistable trait
   # Usage: counter=$(@ Counter create)
   classMethod: create [
     pragma: primitive
+    pragma: bashOnly
     local instance_id
     instance_id=$(_generate_instance_id "$_CLASS")
     _create_instance "$_CLASS" "$instance_id"
@@ -78,6 +85,7 @@ Persistable trait
   # Usage: @ Counter findAll
   classMethod: findAll [
     pragma: primitive
+    pragma: bashOnly
     db_find_by_class "$_CLASS"
   ]
 
@@ -85,6 +93,7 @@ Persistable trait
   # Usage: @ Counter count
   classMethod: count [
     pragma: primitive
+    pragma: bashOnly
     db_count_by_class "$_CLASS"
   ]
 
@@ -94,6 +103,7 @@ Persistable trait
   # Returns: newline-separated list of instance IDs
   classMethod: find [
     pragma: primitive
+    pragma: bashOnly
     local predicate="$1"
 
     if [[ -z "$predicate" ]]; then
@@ -108,6 +118,7 @@ Persistable trait
   # Usage: @ Counter loadAll
   classMethod: loadAll [
     pragma: primitive
+    pragma: bashOnly
     local ids id
     ids=$(db_find_by_class "$_CLASS")
     for id in $ids; do
