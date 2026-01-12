@@ -136,3 +136,22 @@ Store subclass: Object
   classMethod: clear [
     db_clear
   ]
+
+  # Raw put - stores JSON data without modification
+  # Usage: @ Store put: instanceId data: json
+  # This is used by Persistable to save instance state directly
+  classMethod: put: instanceId data: json [
+    db_put "$1" "$2"
+  ]
+
+  # Check if an instance exists in the store
+  # Usage: @ Store exists: instanceId
+  classMethod: exists: instanceId [
+    local data
+    data=$(db_get "$1" 2>/dev/null)
+    if [[ -n "$data" ]]; then
+      echo "true"
+    else
+      echo "false"
+    fi
+  ]
