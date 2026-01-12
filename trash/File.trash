@@ -2,7 +2,6 @@
 # Provides an interface for reading, writing, and managing files
 File subclass: Object
   pragma: primitiveClass
-  include: Debuggable
   instanceVars: path
 
   # Create a File object for a given path
