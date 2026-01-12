@@ -23,106 +23,86 @@ Persistable trait
 
   # Save this object to the Store (idempotent - creates or updates)
   method: save [
-    pragma: primitive
-    pragma: bashOnly
-    _env_persist "$_RECEIVER"
+    | data |
+    data := @ Runtime dataFor: self
+    @ Store put: self data: data
   ]
 
   # Delete this object from the Store (keeps it in memory)
   method: unpersist [
-    pragma: primitive
-    pragma: bashOnly
-    db_delete "$_RECEIVER" 2>/dev/null
+    @ Store deleteInstance: self
   ]
 
   # Delete this object from both memory and Store
   method: delete [
-    pragma: primitive
-    pragma: bashOnly
-    db_delete "$_RECEIVER" 2>/dev/null
-    _env_delete "$_RECEIVER"
+    @ Store deleteInstance: self
+    @ Runtime delete: self
   ]
 
   # Check if this object is persisted in the Store
   method: isPersisted [
-    pragma: primitive
-    pragma: bashOnly
-    if _env_is_persisted "$_RECEIVER"; then
-      echo "true"
-    else
-      echo "false"
-    fi
+    ^ @ Store exists: self
   ]
 
   # Reload this object from the Store (discards in-memory changes)
   method: reload [
-    pragma: primitive
-    pragma: bashOnly
-    _env_load "$_RECEIVER"
+    | data |
+    data := @ Store getInstance: self
+    @ Runtime setData: data for: self
   ]
 
   # Return this object's data as JSON
   method: asJson [
-    pragma: primitive
-    pragma: bashOnly
-    _ensure_loaded "$_RECEIVER"
-    _env_get "$_RECEIVER"
+    ^ @ Runtime dataFor: self
   ]
 
   # Create a new instance and immediately save it to the Store
   # Usage: counter=$(@ Counter create)
   classMethod: create [
-    pragma: primitive
-    pragma: bashOnly
-    local instance_id
-    instance_id=$(_generate_instance_id "$_CLASS")
-    _create_instance "$_CLASS" "$instance_id"
-    _env_persist "$instance_id"
-    echo "$instance_id"
+    | id |
+    id := @ self new
+    @ id save
+    ^ id
   ]
 
   # Return all persisted instance IDs for this class
   # Usage: @ Counter findAll
   classMethod: findAll [
-    pragma: primitive
-    pragma: bashOnly
-    db_find_by_class "$_CLASS"
+    ^ @ Store findByClass: self
   ]
 
   # Return count of persisted instances for this class
   # Usage: @ Counter count
   classMethod: count [
-    pragma: primitive
-    pragma: bashOnly
-    db_count_by_class "$_CLASS"
+    ^ @ Store countByClass: self
   ]
 
   # Find persisted instances matching a predicate
   # Usage: @ Counter find 'value > 5'
   # Supports: =, !=, >, <, >=, <=
   # Returns: newline-separated list of instance IDs
-  classMethod: find [
+  # Note: Uses raw bash for predicate parsing
+  classMethod: find: predicate [
     pragma: primitive
-    pragma: bashOnly
     local predicate="$1"
 
     if [[ -z "$predicate" ]]; then
-      db_find_by_class "$_CLASS"
+      @ Store findByClass: "$_RECEIVER"
       return
     fi
 
-    _find_with_predicate "$_CLASS" "$predicate"
+    _find_with_predicate "$_RECEIVER" "$predicate"
   ]
 
   # Load all persisted instances of this class into memory
   # Usage: @ Counter loadAll
+  # Note: Uses raw bash for iteration over newline-separated IDs
   classMethod: loadAll [
     pragma: primitive
-    pragma: bashOnly
     local ids id
-    ids=$(db_find_by_class "$_CLASS")
+    ids=$(@ Store findByClass: "$_RECEIVER")
     for id in $ids; do
-      _env_load "$id" 2>/dev/null
+      @ "$id" reload 2>/dev/null
     done
   ]
 
