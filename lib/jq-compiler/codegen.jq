@@ -149,7 +149,8 @@ def expr_is_json_unary:
   ($tok.value == "arrayLength" or $tok.value == "arrayFirst" or
    $tok.value == "arrayLast" or $tok.value == "arrayIsEmpty" or
    $tok.value == "objectKeys" or $tok.value == "objectValues" or
-   $tok.value == "objectLength" or $tok.value == "objectIsEmpty");
+   $tok.value == "objectLength" or $tok.value == "objectIsEmpty" or
+   $tok.value == "stringToJsonArray");
 
 # Combined check for any JSON primitive
 def expr_is_json_primitive:
@@ -1574,6 +1575,10 @@ def expr_gen($locals; $ivars; $cvars):
     elif .operation == "objectIsEmpty" then
       # obj objectIsEmpty -> $(echo "$obj" | jq 'length == 0')
       "$(echo \($quoted_recv) | jq 'length == 0')"
+    elif .operation == "stringToJsonArray" then
+      # str stringToJsonArray -> $(echo "$str" | jq -Rc '[., inputs]')
+      # Converts newline-separated string to JSON array
+      "$(echo \($quoted_recv) | jq -Rc '[., inputs]')"
     else
       "# ERROR: unknown json_primitive operation \(.operation)"
     end
@@ -1895,7 +1900,8 @@ def should_use_expr_parser:
     # JSON primitive unary identifiers
     def is_json_primitive_unary: . as $v |
       ["arrayLength", "arrayFirst", "arrayLast", "arrayIsEmpty",
-       "objectKeys", "objectValues", "objectLength", "objectIsEmpty"] | index($v) != null;
+       "objectKeys", "objectValues", "objectLength", "objectIsEmpty",
+       "stringToJsonArray"] | index($v) != null;
     (any($tokens[]; .type == "SYMBOL" or .type == "HASH_LPAREN" or .type == "HASH_LBRACE" or .type == "TRIPLESTRING" or
                     (.type == "IDENTIFIER" and (.value | is_test_predicate)))) as $has_collection_literals |
     (any($tokens[]; .type == "KEYWORD" and .value == "try:")) as $has_try_catch |

@@ -96,13 +96,10 @@ Persistable trait
 
   # Load all persisted instances of this class into memory
   # Usage: @ Counter loadAll
-  # Note: Uses raw bash for iteration over newline-separated IDs
   classMethod: loadAll [
-    pragma: primitive
-    local ids id
-    ids=$(@ Store findByClass: "$_RECEIVER")
-    for id in $ids; do
-      @ "$id" reload 2>/dev/null
-    done
+    | ids arr |
+    ids := @ Store findByClass: self.
+    arr := @ Array fromLines: ids.
+    arr do: [:id | @ id reload]
   ]
 

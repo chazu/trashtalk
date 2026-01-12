@@ -12,6 +12,17 @@ Array subclass: Object
     ^ id
   ]
 
+  # Create array from newline-separated text
+  # Usage: arr := @ Array fromLines: "a\nb\nc"
+  # Returns array containing ["a", "b", "c"]
+  classMethod: fromLines: text [
+    | arr jsonArray |
+    arr := @ Array new.
+    jsonArray := text stringToJsonArray.
+    @ arr setItems: jsonArray.
+    ^ arr
+  ]
+
   # Accessor for items ivar
   method: getItems [
     ^ items
