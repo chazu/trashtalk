@@ -1562,6 +1562,152 @@ function _send_native {
 
 export -f _native_daemon_available _send_native
 
+# ============================================
+# Bytecode Block Support via Daemon
+# ============================================
+# These functions enable invoking bytecode-compiled blocks through
+# the trashtalk-daemon instead of executing Bash code.
+
+# Check if a block ID is a bytecode block (registered with daemon)
+# Usage: if _is_bytecode_block "$block_id"; then ... fi
+function _is_bytecode_block {
+  [[ "$1" == bytecode_block_* ]]
+}
+
+# Register a bytecode block with the daemon
+# Usage: block_id=$(_register_bytecode_block "$hex_bytecode" "$captures_json")
+# Returns: block_id on stdout
+function _register_bytecode_block {
+  local bytecode_hex="$1"
+  local captures_json="${2:-[]}"
+
+  if ! _native_daemon_available; then
+    echo "Error: daemon not available for block registration" >&2
+    return 1
+  fi
+
+  local request response exit_code block_id
+  request=$(jq -cn \
+    --arg op "register" \
+    --arg data "$bytecode_hex" \
+    --arg caps "$captures_json" \
+    '{block_op: $op, block_data: $data, block_captures: $caps}')
+
+  response=$(echo "$request" | nc -U "$_NATIVE_DAEMON_SOCKET" 2>/dev/null)
+
+  if [[ -z "$response" ]]; then
+    echo "Error: no response from daemon" >&2
+    return 1
+  fi
+
+  exit_code=$(echo "$response" | jq -r '.exit_code // 1')
+  if [[ "$exit_code" != "0" ]]; then
+    local error
+    error=$(echo "$response" | jq -r '.error // "unknown error"')
+    echo "Error: $error" >&2
+    return 1
+  fi
+
+  block_id=$(echo "$response" | jq -r '.block_id // ""')
+  echo "$block_id"
+}
+
+# Invoke a bytecode block through the daemon
+# Usage: result=$(_invoke_bytecode_block "$block_id" [args...])
+# Returns: result on stdout
+function _invoke_bytecode_block {
+  local block_id="$1"
+  shift
+
+  if ! _native_daemon_available; then
+    echo "Error: daemon not available for block invocation" >&2
+    return 1
+  fi
+
+  local args_json request response exit_code result
+
+  # Build args as JSON array
+  if [[ $# -eq 0 ]]; then
+    args_json="[]"
+  else
+    args_json=$(printf '%s\n' "$@" | jq -R . | jq -s -c .)
+  fi
+
+  request=$(jq -cn \
+    --arg op "invoke" \
+    --arg id "$block_id" \
+    --arg data "$args_json" \
+    '{block_op: $op, block_id: $id, block_data: $data}')
+
+  msg_debug "[_invoke_bytecode_block] Request: $request"
+
+  response=$(echo "$request" | nc -U "$_NATIVE_DAEMON_SOCKET" 2>/dev/null)
+
+  if [[ -z "$response" ]]; then
+    echo "Error: no response from daemon" >&2
+    return 1
+  fi
+
+  msg_debug "[_invoke_bytecode_block] Response: $response"
+
+  exit_code=$(echo "$response" | jq -r '.exit_code // 1')
+
+  # Exit code 200 = fallback to Bash block
+  if [[ "$exit_code" == "200" ]]; then
+    return 200
+  fi
+
+  if [[ "$exit_code" != "0" ]]; then
+    local error
+    error=$(echo "$response" | jq -r '.error // "unknown error"')
+    echo "Error: $error" >&2
+    return 1
+  fi
+
+  result=$(echo "$response" | jq -r '.result // ""')
+  echo "$result"
+  return 0
+}
+
+# Serialize a bytecode block for cross-process transfer
+# Usage: data=$(_serialize_bytecode_block "$block_id")
+# Returns: JSON with block_data and captures on stdout
+function _serialize_bytecode_block {
+  local block_id="$1"
+
+  if ! _native_daemon_available; then
+    echo "Error: daemon not available" >&2
+    return 1
+  fi
+
+  local request response exit_code
+
+  request=$(jq -cn \
+    --arg op "serialize" \
+    --arg id "$block_id" \
+    '{block_op: $op, block_id: $id}')
+
+  response=$(echo "$request" | nc -U "$_NATIVE_DAEMON_SOCKET" 2>/dev/null)
+
+  if [[ -z "$response" ]]; then
+    echo "Error: no response from daemon" >&2
+    return 1
+  fi
+
+  exit_code=$(echo "$response" | jq -r '.exit_code // 1')
+  if [[ "$exit_code" != "0" ]]; then
+    local error
+    error=$(echo "$response" | jq -r '.error // "unknown error"')
+    echo "Error: $error" >&2
+    return 1
+  fi
+
+  # Return the full response which contains block_data and block_id (captures)
+  echo "$response"
+}
+
+export -f _is_bytecode_block _register_bytecode_block _invoke_bytecode_block _serialize_bytecode_block
+
 # Dispatch a method call through NativeDaemon
 # This calls NativeDaemon functions directly to avoid send() recursion
 # Returns: result on stdout, exit code from dispatch
