@@ -1,49 +1,55 @@
 # Debuggable trait - provides debugging capabilities to objects
+# All methods are pure Trashtalk (no pragmas) for native compilation
 Debuggable trait
 
-  # Output debug message (respects TRASH_DEBUG env var)
-  # pragma: bashOnly (outputs to stderr, must not go through native daemon)
+  # Output debug message to stderr with timestamp
+  # Usage: @ self debug: 'Something happened'
   method: debug: message [
-    pragma: primitive
-    pragma: bashOnly
-    [[ "${TRASH_DEBUG:-1}" == "0" ]] && return 0
-    local timestamp
-    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-    echo "[$timestamp] DEBUG ($_RECEIVER): $1" >&2
+    | timestamp output |
+    timestamp := @ Time nowFormatted: '%Y-%m-%d %H:%M:%S'.
+    output := "[" , timestamp , "] DEBUG (" , self , "): " , message.
+    @ Console error: output
   ]
 
   # Trace a method call
-  # pragma: bashOnly (calls debug: which outputs to stderr)
-  method: trace: method_name args: args [
-    pragma: primitive
-    pragma: bashOnly
-    @ "$_RECEIVER" debug: "Calling $1 with args: $2"
+  # Usage: @ self trace: 'increment' args: '5'
+  method: trace: methodName args: args [
+    | msg |
+    msg := "Calling " , methodName , " with args: " , args.
+    @ self debug: msg
   ]
 
-  # Inspect object details
+  # Inspect object details - shows class and available methods
+  # Usage: @ self inspect
   method: inspect [
-    echo "Object: $_RECEIVER"
-    echo "Class: $_SUPERCLASS"
-    echo "Methods:"
-    get_fcn_list "$(receiver_path $_RECEIVER)" | sed 's/^/  /'
+    | className methods line |
+    className := @ Runtime classFor: self.
+    methods := @ Runtime methodsFor: className.
+    line := "Object: " , self.
+    @ Console print: line.
+    line := "Class: " , className.
+    @ Console print: line.
+    @ Console print: 'Methods:'.
+    line := "  " , methods.
+    @ Console print: line
   ]
 
-  # Show the inheritance chain
+  # Show the inheritance chain for this object's class
+  # Usage: @ self ancestry
   method: ancestry [
-    | current_class super |
-    current_class := "$_RECEIVER"
-    echo "Inheritance chain for $_RECEIVER:"
-    while [[ -n "$current_class" ]]; do
-      echo "  $current_class"
-      if [[ -f "$TRASHDIR/$current_class" ]]; then
-        super := $(grep "^is_a" "$TRASHDIR/$current_class" | awk '{print $2}')
-        current_class := "$super"
-        if [[ "$current_class" == "Object" ]]; then
-          echo "  Object"
-          break
-        fi
-      else
-        break
-      fi
-    done
+    | className currentClass superclass line |
+    className := @ Runtime classFor: self.
+    line := "Inheritance chain for " , self.
+    @ Console print: line.
+    line := "  " , className.
+    @ Console print: line.
+    currentClass := className.
+    [currentClass notEmpty] whileTrue: [
+      superclass := @ Runtime superclassOf: currentClass.
+      superclass notEmpty ifTrue: [
+        line := "  " , superclass.
+        @ Console print: line
+      ].
+      currentClass := superclass
+    ]
   ]

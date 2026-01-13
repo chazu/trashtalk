@@ -165,16 +165,25 @@ Process subclass: Object
 
   # Get process info
   method: info [
-    | duration |
-    @ Console print: "Command: $command".
-    @ Console print: "PID: $pid".
-    @ Console print: "Status: $status".
-    @ Console print: "Exit Code: $exitCode".
-    @ Console print: "Started: $(@ Time formatISO: startTime)".
+    | duration formattedStart formattedEnd line |
+    line := 'Command: ' , command.
+    @ Console print: line.
+    line := 'PID: ' , pid.
+    @ Console print: line.
+    line := 'Status: ' , status.
+    @ Console print: line.
+    line := 'Exit Code: ' , exitCode.
+    @ Console print: line.
+    formattedStart := @ Time formatISO: startTime.
+    line := 'Started: ' , formattedStart.
+    @ Console print: line.
     endTime notEmpty ifTrue: [
-      @ Console print: "Ended: $(@ Time formatISO: endTime)".
+      formattedEnd := @ Time formatISO: endTime.
+      line := 'Ended: ' , formattedEnd.
+      @ Console print: line.
       duration := @ Time from: startTime to: endTime.
-      @ Console print: "Duration: ${duration}s"
+      line := 'Duration: ' , duration , 's'.
+      @ Console print: line
     ]
   ]
 

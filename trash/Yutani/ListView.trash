@@ -4,37 +4,27 @@ ListView subclass: Yutani::Widget
   instanceVars: items:''
 
   # Create a new ListView with given title
-  # (bash-specific: subshell expressions for message sends)
-  rawClassMethod: titled: title inSession: session [
-    pragma: bashOnly
-    local title="$1" session="$2" instance wid
-    instance=$(@ Yutani::ListView new)
-    @ "$instance" setSession: "$session"
-    @ "$instance" setTitle: "$title"
-    wid=$(@ "$session" createList: "$title")
-    @ "$instance" setWidgetId: "$wid"
-    echo "$instance"
+  classMethod: titled: title inSession: sess [
+    | instance wid |
+    instance := @ Yutani::ListView new.
+    @ instance setSession: sess.
+    @ instance setTitle: title.
+    wid := @ sess createList: title.
+    @ instance setWidgetId: wid.
+    ^ instance
   ]
 
   # Add an item to the list
-  # (bash-specific: needs explicit ivar access for inherited vars)
-  rawMethod: addItem: text [
-    pragma: bashOnly
-    local text="$1"
-    @ "$(_ivar session)" addItem: "$text" to: "$(_ivar widgetId)"
+  method: addItem: text [
+    @ session addItem: text to: widgetId.
   ]
 
   # Add an item with secondary text
-  # (bash-specific: needs explicit ivar access for inherited vars)
-  rawMethod: addItem: mainText secondary: secondaryText [
-    pragma: bashOnly
-    local mainText="$1" secondaryText="$2"
-    @ "$(_ivar session)" addItem: "$mainText" secondary: "$secondaryText" to: "$(_ivar widgetId)"
+  method: addItem: mainText secondary: secondaryText [
+    @ session addItem: mainText secondary: secondaryText to: widgetId.
   ]
 
   # Clear all items
-  # (bash-specific: needs explicit ivar access for inherited vars)
-  rawMethod: clear [
-    pragma: bashOnly
-    @ "$(_ivar session)" clearList: "$(_ivar widgetId)"
+  method: clear [
+    @ session clearList: widgetId.
   ]
