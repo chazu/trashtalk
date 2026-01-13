@@ -161,42 +161,42 @@ TestCase subclass: Object
   # ==========================================
 
   method: skip: reason [
-    pragma: primitive
-    local test count
-    test=$(@ "$_RECEIVER" getCurrentTest)
-    count=$(@ "$_RECEIVER" getSkipped)
-    @ "$_RECEIVER" setSkipped: $((count + 1))
-    @ Console print: "  SKIP: $test - $1"
+    pragma: bashOnly
+    | test count |
+    test := @ self getCurrentTest.
+    count := @ self getSkipped.
+    @ self setSkipped: (count + 1).
+    @ Console print: ('  SKIP: ' , test , ' - ' , reason).
     return 77  # Special return code to signal skip
   ]
 
   method: skip [
-    pragma: primitive
-    local test count
-    test=$(@ "$_RECEIVER" getCurrentTest)
-    count=$(@ "$_RECEIVER" getSkipped)
-    @ "$_RECEIVER" setSkipped: $((count + 1))
-    @ Console print: "  SKIP: $test - No reason given"
+    pragma: bashOnly
+    | test count |
+    test := @ self getCurrentTest.
+    count := @ self getSkipped.
+    @ self setSkipped: (count + 1).
+    @ Console print: ('  SKIP: ' , test , ' - No reason given').
     return 77
   ]
 
   method: pending: description [
-    pragma: primitive
-    local test count
-    test=$(@ "$_RECEIVER" getCurrentTest)
-    count=$(@ "$_RECEIVER" getSkipped)
-    @ "$_RECEIVER" setSkipped: $((count + 1))
-    @ Console print: "  PENDING: $test - $1"
+    pragma: bashOnly
+    | test count |
+    test := @ self getCurrentTest.
+    count := @ self getSkipped.
+    @ self setSkipped: (count + 1).
+    @ Console print: ('  PENDING: ' , test , ' - ' , description).
     return 77
   ]
 
   method: pending [
-    pragma: primitive
-    local test count
-    test=$(@ "$_RECEIVER" getCurrentTest)
-    count=$(@ "$_RECEIVER" getSkipped)
-    @ "$_RECEIVER" setSkipped: $((count + 1))
-    @ Console print: "  PENDING: $test - Not yet implemented"
+    pragma: bashOnly
+    | test count |
+    test := @ self getCurrentTest.
+    count := @ self getSkipped.
+    @ self setSkipped: (count + 1).
+    @ Console print: ('  PENDING: ' , test , ' - Not yet implemented').
     return 77
   ]
 
@@ -217,12 +217,11 @@ TestCase subclass: Object
   ]
 
   method: _fail: message [
-    pragma: primitive
-    local count test
-    count=$(@ "$_RECEIVER" getFailed)
-    test=$(@ "$_RECEIVER" getCurrentTest)
-    @ "$_RECEIVER" setFailed: $((count + 1))
-    @ Console error: "  FAIL: $test - $1"
+    | count test |
+    count := @ self getFailed.
+    test := @ self getCurrentTest.
+    @ self setFailed: (count + 1).
+    @ Console error: ('  FAIL: ' , test , ' - ' , message)
   ]
 
   # ==========================================
