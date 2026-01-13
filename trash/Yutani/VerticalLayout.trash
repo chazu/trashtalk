@@ -4,15 +4,11 @@ VerticalLayout subclass: Yutani::FlexLayout
 
   # Create a new VerticalLayout
   classMethod: inSession: session [
-    pragma: primitive
-    local session="$1"
-    local instance wid
-    instance=$(_generate_instance_id "Yutani__VerticalLayout")
-    _create_instance "Yutani::VerticalLayout" "$instance"
-    @ "$instance" setSession: "$session"
-    @ "$instance" setDirection: "FLEX_ROW"
-    # Create the widget on the server
-    wid=$(@ "$session" createVerticalLayout)
-    @ "$instance" setWidgetId: "$wid"
-    echo "$instance"
+    | instance wid |
+    instance := $(@ Yutani::VerticalLayout new).
+    @ instance setSession: session.
+    @ instance setDirection: 'FLEX_ROW'.
+    wid := $(@ session createVerticalLayout).
+    @ instance setWidgetId: wid.
+    ^ instance
   ]

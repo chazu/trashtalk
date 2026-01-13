@@ -352,6 +352,97 @@ Console subclass: Object
 
 The compiler will emit an error if a primitiveClass contains regular `method:` or `classMethod:` definitions, or if it attempts to include any traits.
 
+#### `pragma: primitive`
+
+Marks a method body as requiring no code transformation (like `rawMethod:`), but applied via pragma syntax. This is useful when you want to apply the "primitive" semantic to a method defined with regular `method:` syntax.
+
+```smalltalk
+method: directAccess [
+  pragma: primitive
+  echo "$(_ivar value)"
+]
+```
+
+The compiler sets `raw=true` on the method, skipping all DSL transformations.
+
+### Pragma Cross-Compiler Reference
+
+Pragmas create a **contract** between the three compilers (jq-compiler, Procyon bash backend, Procyon dylib backend) and the runtime dispatcher. The jq-compiler emits marker variables that other components check.
+
+#### Marker Format
+
+The jq-compiler generates `declare -g` statements for pragma markers:
+
+```bash
+# Method-level markers
+declare -g __ClassName__methodName__direct=1
+declare -g __ClassName__methodName__bashOnly=1
+declare -g __ClassName__methodName__procyonOnly=1
+declare -g __ClassName__methodName__procyonNative=1
+
+# For keyword methods like set:to:, colons become underscores with trailing _
+declare -g __ClassName__set_to___bashOnly=1
+
+# Class-level markers
+declare -g __ClassName__primitiveClass=1
+
+# Namespaced classes use Package__Class format
+declare -g __MyApp__Counter__increment__direct=1
+```
+
+#### Cross-Compiler Behavior Matrix
+
+| Pragma | jq-compiler | Procyon (Bash backend) | Procyon (Dylib backend) | Runtime Dispatch |
+|--------|-------------|------------------------|-------------------------|------------------|
+| `primitive` | Sets `raw=true` on method (no DSL transformation) | N/A (method already raw) | N/A (method already raw) | Normal dispatch |
+| `direct` | Emits `__direct=1` marker | N/A (Bash-only concept) | N/A (Bash-only concept) | Bypasses subshell capture |
+| `bashOnly` | Emits `__bashOnly=1` marker | **Skips** native code generation | **Skips** native code generation | Forces Bash execution path |
+| `procyonOnly` | Emits `__procyonOnly=1` marker + error stub | Generates native implementation | Generates native implementation | Errors if no native plugin |
+| `procyonNative` | Emits `__procyonNative=1` marker | Generates native impl (Bash fallback exists) | Generates native impl | Uses native if available, else Bash |
+| `primitiveClass` | Emits `__primitiveClass=1` marker; validates restrictions | **Skips entire class** | **Skips entire class** | Normal dispatch |
+
+#### Runtime Marker Checking
+
+The dispatcher (`lib/trash.bash`) checks pragma markers before routing message sends:
+
+**bashOnly check** (skips native daemon/plugin):
+```bash
+local bashOnly_marker="${func_prefix}__${normalized_selector}__bashOnly"
+if [[ -n "${!bashOnly_marker:-}" ]]; then
+  skip_native=1  # Force Bash execution
+fi
+```
+
+**direct check** (bypasses subshell):
+```bash
+local direct_marker="${func_prefix}__${normalized_selector}__direct"
+if [[ -n "${!direct_marker:-}" ]]; then
+  # Call method directly instead of via $(...)
+fi
+```
+
+**procyonOnly check** (requires native):
+```bash
+local procyonOnly_marker="${func_prefix}__${normalized_selector}__procyonOnly"
+if [[ -n "${!procyonOnly_marker:-}" ]]; then
+  if ! _has_native_plugin "$class"; then
+    echo "Error: Method requires native Procyon plugin"
+    return 1
+  fi
+fi
+```
+
+#### Pragma Decision Guide
+
+| Scenario | Recommended Pragma |
+|----------|-------------------|
+| Method modifies parent shell variables | `pragma: direct` |
+| Method uses Bash-specific features (process substitution, heredocs) | `pragma: bashOnly` |
+| Method has Bash fallback but prefers native (gRPC, DB) | `pragma: procyonNative` |
+| Method cannot be implemented in Bash (streaming) | `pragma: procyonOnly` |
+| Entire class is primitive with identical Bash/native behavior | `pragma: primitiveClass` |
+| Method body needs no DSL transformation | `pragma: primitive` or use `rawMethod:` |
+
 ### Class Methods
 
 Called on the class itself, not instances:

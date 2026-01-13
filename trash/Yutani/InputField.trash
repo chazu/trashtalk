@@ -5,33 +5,25 @@ InputField subclass: Yutani::Widget
 
   # Create a new InputField with given label
   classMethod: labeled: label inSession: session [
-    pragma: primitive
-    local label="$1" session="$2"
-    local instance wid
-    instance=$(_generate_instance_id "Yutani__InputField")
-    _create_instance "Yutani::InputField" "$instance"
-    @ "$instance" setSession: "$session"
-    @ "$instance" setLabel: "$label"
-    # Create the widget on the server
-    wid=$(@ "$session" createInputField: "$label")
-    @ "$instance" setWidgetId: "$wid"
-    echo "$instance"
+    | instance wid |
+    instance := $(@ Yutani::InputField new).
+    @ instance setSession: session.
+    @ instance setLabel: label.
+    wid := $(@ session createInputField: label).
+    @ instance setWidgetId: wid.
+    ^ instance
   ]
 
   # Create a new InputField with label and placeholder
   classMethod: labeled: label placeholder: placeholder inSession: session [
-    pragma: primitive
-    local label="$1" placeholder="$2" session="$3"
-    local instance wid
-    instance=$(_generate_instance_id "Yutani__InputField")
-    _create_instance "Yutani::InputField" "$instance"
-    @ "$instance" setSession: "$session"
-    @ "$instance" setLabel: "$label"
-    @ "$instance" setPlaceholder: "$placeholder"
-    # Create the widget on the server
-    wid=$(@ "$session" createInputFieldWithPlaceholder: "$label" placeholder: "$placeholder")
-    @ "$instance" setWidgetId: "$wid"
-    echo "$instance"
+    | instance wid |
+    instance := $(@ Yutani::InputField new).
+    @ instance setSession: session.
+    @ instance setLabel: label.
+    @ instance setPlaceholder: placeholder.
+    wid := $(@ session createInputFieldWithPlaceholder: label placeholder: placeholder).
+    @ instance setWidgetId: wid.
+    ^ instance
   ]
 
   # Label accessor
@@ -54,27 +46,15 @@ InputField subclass: Yutani::Widget
 
   # Get current text from server
   method: getText [
-    pragma: primitive
-    local session wid
-    session="$(_ivar session)"
-    wid="$(_ivar widgetId)"
-    @ "$session" getInputText: "$wid"
+    ^ $(@ session getInputText: widgetId)
   ]
 
   # Set text (updates server)
   method: setText: newText [
-    pragma: primitive
-    local newText="$1" session wid
-    session="$(_ivar session)"
-    wid="$(_ivar widgetId)"
-    @ "$session" setInputText: "$newText" on: "$wid"
+    @ session setInputText: newText on: widgetId
   ]
 
   # Clear input
   method: clear [
-    pragma: primitive
-    local session wid
-    session="$(_ivar session)"
-    wid="$(_ivar widgetId)"
-    @ "$session" setInputText: "" on: "$wid"
+    @ session setInputText: '' on: widgetId
   ]

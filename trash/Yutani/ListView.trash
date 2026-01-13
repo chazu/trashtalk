@@ -5,42 +5,26 @@ ListView subclass: Yutani::Widget
 
   # Create a new ListView with given title
   classMethod: titled: title inSession: session [
-    pragma: primitive
-    local title="$1" session="$2"
-    local instance wid
-    instance=$(_generate_instance_id "Yutani__ListView")
-    _create_instance "Yutani::ListView" "$instance"
-    @ "$instance" setSession: "$session"
-    @ "$instance" setTitle: "$title"
-    # Create the widget on the server
-    wid=$(@ "$session" createList: "$title")
-    @ "$instance" setWidgetId: "$wid"
-    echo "$instance"
+    | instance wid |
+    instance := $(@ Yutani::ListView new).
+    @ instance setSession: session.
+    @ instance setTitle: title.
+    wid := $(@ session createList: title).
+    @ instance setWidgetId: wid.
+    ^ instance
   ]
 
   # Add an item to the list
   method: addItem: text [
-    pragma: primitive
-    local text="$1" session wid
-    session="$(_ivar session)"
-    wid="$(_ivar widgetId)"
-    @ "$session" addItem: "$text" to: "$wid"
+    @ session addItem: text to: widgetId
   ]
 
   # Add an item with secondary text
   method: addItem: mainText secondary: secondaryText [
-    pragma: primitive
-    local mainText="$1" secondaryText="$2" session wid
-    session="$(_ivar session)"
-    wid="$(_ivar widgetId)"
-    @ "$session" addItem: "$mainText" secondary: "$secondaryText" to: "$wid"
+    @ session addItem: mainText secondary: secondaryText to: widgetId
   ]
 
   # Clear all items
   method: clear [
-    pragma: primitive
-    local session wid
-    session="$(_ivar session)"
-    wid="$(_ivar widgetId)"
-    @ "$session" clearList: "$wid"
+    @ session clearList: widgetId
   ]

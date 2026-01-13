@@ -10,8 +10,9 @@ Session subclass: Object
   # Factory Methods
   # ============================================================================
 
-  classMethod: connectTo: host [
-    pragma: primitive
+  # Uses jo/jq for JSON construction and parsing (bash-specific)
+  rawClassMethod: connectTo: host [
+    pragma: bashOnly
     local host="$1"
     local session client response sid
 
@@ -34,7 +35,6 @@ Session subclass: Object
   ]
 
   classMethod: connect [
-    pragma: primitive
     @ Yutani::Session connectTo: 'localhost:7755'
   ]
 
@@ -55,8 +55,8 @@ Session subclass: Object
     @ self stopEventStream
   ]
 
-  method: destroySession [
-    pragma: primitive
+  rawMethod: destroySession [
+    pragma: bashOnly
     local sid client json
     sid="$(_ivar sessionId)"
     client="$(_ivar grpcClient)"
@@ -64,8 +64,8 @@ Session subclass: Object
     @ "$client" call: 'industries.loosh.yutani.v1.SessionService/DestroySession' with: "$json"
   ]
 
-  method: ping [
-    pragma: primitive
+  rawMethod: ping [
+    pragma: bashOnly
     local ts client json
     ts=$(date +%s)
     client="$(_ivar grpcClient)"
@@ -74,18 +74,15 @@ Session subclass: Object
   ]
 
   method: serverInfo [
-    pragma: primitive
-    local client
-    client="$(_ivar grpcClient)"
-    @ "$client" call: 'industries.loosh.yutani.v1.SessionService/GetServerInfo' with: '{}'
+    @ grpcClient call: 'industries.loosh.yutani.v1.SessionService/GetServerInfo' with: '{}'
   ]
 
   # ============================================================================
   # Screen Operations
   # ============================================================================
 
-  method: screenSize [
-    pragma: primitive
+  rawMethod: screenSize [
+    pragma: bashOnly
     local sid client json
     sid="$(_ivar sessionId)"
     client="$(_ivar grpcClient)"
@@ -93,8 +90,8 @@ Session subclass: Object
     @ "$client" call: 'industries.loosh.yutani.v1.ScreenService/GetSize' with: "$json"
   ]
 
-  method: clearScreen [
-    pragma: primitive
+  rawMethod: clearScreen [
+    pragma: bashOnly
     local sid client json
     sid="$(_ivar sessionId)"
     client="$(_ivar grpcClient)"
@@ -102,8 +99,8 @@ Session subclass: Object
     @ "$client" call: 'industries.loosh.yutani.v1.ScreenService/Clear' with: "$json"
   ]
 
-  method: sync [
-    pragma: primitive
+  rawMethod: sync [
+    pragma: bashOnly
     local sid client json
     sid="$(_ivar sessionId)"
     client="$(_ivar grpcClient)"
@@ -115,8 +112,8 @@ Session subclass: Object
   # Widget Creation
   # ============================================================================
 
-  method: createList: title [
-    pragma: primitive
+  rawMethod: createList: title [
+    pragma: bashOnly
     local sid client json response title="$1"
     sid="$(_ivar sessionId)"
     client="$(_ivar grpcClient)"
@@ -125,8 +122,8 @@ Session subclass: Object
     echo "$response" | jq -r '.widgetId.id'
   ]
 
-  method: createTextView: title [
-    pragma: primitive
+  rawMethod: createTextView: title [
+    pragma: bashOnly
     local sid client json response title="$1"
     sid="$(_ivar sessionId)"
     client="$(_ivar grpcClient)"
@@ -137,8 +134,8 @@ Session subclass: Object
     echo "$response" | jq -r '.widgetId.id'
   ]
 
-  method: createTextViewWithText: title text: text [
-    pragma: primitive
+  rawMethod: createTextViewWithText: title text: text [
+    pragma: bashOnly
     local sid client json response title="$1" text="$2"
     sid="$(_ivar sessionId)"
     client="$(_ivar grpcClient)"
@@ -149,8 +146,8 @@ Session subclass: Object
     echo "$response" | jq -r '.widgetId.id'
   ]
 
-  method: createInputField: label [
-    pragma: primitive
+  rawMethod: createInputField: label [
+    pragma: bashOnly
     local sid client json response label="$1"
     sid="$(_ivar sessionId)"
     client="$(_ivar grpcClient)"
@@ -160,8 +157,8 @@ Session subclass: Object
     echo "$response" | jq -r '.widgetId.id'
   ]
 
-  method: createInputFieldWithPlaceholder: label placeholder: placeholder [
-    pragma: primitive
+  rawMethod: createInputFieldWithPlaceholder: label placeholder: placeholder [
+    pragma: bashOnly
     local sid client json response label="$1" placeholder="$2"
     sid="$(_ivar sessionId)"
     client="$(_ivar grpcClient)"
@@ -171,8 +168,8 @@ Session subclass: Object
     echo "$response" | jq -r '.widgetId.id'
   ]
 
-  method: createHorizontalLayout [
-    pragma: primitive
+  rawMethod: createHorizontalLayout [
+    pragma: bashOnly
     local sid client json response
     sid="$(_ivar sessionId)"
     client="$(_ivar grpcClient)"
@@ -183,8 +180,8 @@ Session subclass: Object
     echo "$response" | jq -r '.widgetId.id'
   ]
 
-  method: createVerticalLayout [
-    pragma: primitive
+  rawMethod: createVerticalLayout [
+    pragma: bashOnly
     local sid client json response
     sid="$(_ivar sessionId)"
     client="$(_ivar grpcClient)"
@@ -199,8 +196,8 @@ Session subclass: Object
   # Widget Operations
   # ============================================================================
 
-  method: setText: text on: widgetId [
-    pragma: primitive
+  rawMethod: setText: text on: widgetId [
+    pragma: bashOnly
     local sid client json text="$1" widgetId="$2"
     sid="$(_ivar sessionId)"
     client="$(_ivar grpcClient)"
@@ -209,8 +206,8 @@ Session subclass: Object
     @ "$client" call: 'industries.loosh.yutani.v1.WidgetService/SetProperties' with: "$json"
   ]
 
-  method: setInputText: text on: widgetId [
-    pragma: primitive
+  rawMethod: setInputText: text on: widgetId [
+    pragma: bashOnly
     local sid client json text="$1" widgetId="$2"
     sid="$(_ivar sessionId)"
     client="$(_ivar grpcClient)"
@@ -219,8 +216,8 @@ Session subclass: Object
     @ "$client" call: 'industries.loosh.yutani.v1.WidgetService/SetProperties' with: "$json"
   ]
 
-  method: getInputText: widgetId [
-    pragma: primitive
+  rawMethod: getInputText: widgetId [
+    pragma: bashOnly
     local sid client json response widgetId="$1"
     sid="$(_ivar sessionId)"
     client="$(_ivar grpcClient)"
@@ -230,8 +227,8 @@ Session subclass: Object
     echo "$response" | jq -r '.properties.inputField.text // .properties.input_field.text // ""'
   ]
 
-  method: focusWidget: widgetId [
-    pragma: primitive
+  rawMethod: focusWidget: widgetId [
+    pragma: bashOnly
     local sid client json widgetId="$1"
     sid="$(_ivar sessionId)"
     client="$(_ivar grpcClient)"
@@ -239,8 +236,8 @@ Session subclass: Object
     @ "$client" call: 'industries.loosh.yutani.v1.WidgetService/SetFocus' with: "$json"
   ]
 
-  method: setRoot: widgetId [
-    pragma: primitive
+  rawMethod: setRoot: widgetId [
+    pragma: bashOnly
     local sid client json widgetId="$1"
     sid="$(_ivar sessionId)"
     client="$(_ivar grpcClient)"
@@ -248,8 +245,8 @@ Session subclass: Object
     @ "$client" call: 'industries.loosh.yutani.v1.WidgetService/SetRoot' with: "$json"
   ]
 
-  method: listWidgets [
-    pragma: primitive
+  rawMethod: listWidgets [
+    pragma: bashOnly
     local sid client json
     sid="$(_ivar sessionId)"
     client="$(_ivar grpcClient)"
@@ -257,8 +254,8 @@ Session subclass: Object
     @ "$client" call: 'industries.loosh.yutani.v1.WidgetService/ListWidgets' with: "$json"
   ]
 
-  method: deleteWidget: widgetId [
-    pragma: primitive
+  rawMethod: deleteWidget: widgetId [
+    pragma: bashOnly
     local sid client json widgetId="$1"
     sid="$(_ivar sessionId)"
     client="$(_ivar grpcClient)"
@@ -270,8 +267,8 @@ Session subclass: Object
   # List Operations
   # ============================================================================
 
-  method: addItem: mainText to: listId [
-    pragma: primitive
+  rawMethod: addItem: mainText to: listId [
+    pragma: bashOnly
     local sid client json mainText="$1" listId="$2"
     sid="$(_ivar sessionId)"
     client="$(_ivar grpcClient)"
@@ -279,8 +276,8 @@ Session subclass: Object
     @ "$client" call: 'industries.loosh.yutani.v1.ListService/AddItem' with: "$json"
   ]
 
-  method: addItem: mainText secondary: secondaryText to: listId [
-    pragma: primitive
+  rawMethod: addItem: mainText secondary: secondaryText to: listId [
+    pragma: bashOnly
     local sid client json mainText="$1" secondaryText="$2" listId="$3"
     sid="$(_ivar sessionId)"
     client="$(_ivar grpcClient)"
@@ -289,8 +286,8 @@ Session subclass: Object
     @ "$client" call: 'industries.loosh.yutani.v1.ListService/AddItem' with: "$json"
   ]
 
-  method: clearList: listId [
-    pragma: primitive
+  rawMethod: clearList: listId [
+    pragma: bashOnly
     local sid client json listId="$1"
     sid="$(_ivar sessionId)"
     client="$(_ivar grpcClient)"
@@ -302,8 +299,8 @@ Session subclass: Object
   # Layout Operations
   # ============================================================================
 
-  method: addChild: childId to: layoutId [
-    pragma: primitive
+  rawMethod: addChild: childId to: layoutId [
+    pragma: bashOnly
     local sid client json childId="$1" layoutId="$2"
     sid="$(_ivar sessionId)"
     client="$(_ivar grpcClient)"
@@ -311,8 +308,8 @@ Session subclass: Object
     @ "$client" call: 'industries.loosh.yutani.v1.LayoutService/FlexAddItem' with: "$json"
   ]
 
-  method: addChild: childId to: layoutId fixedSize: size [
-    pragma: primitive
+  rawMethod: addChild: childId to: layoutId fixedSize: size [
+    pragma: bashOnly
     local sid client json childId="$1" layoutId="$2" size="$3"
     sid="$(_ivar sessionId)"
     client="$(_ivar grpcClient)"
@@ -320,8 +317,8 @@ Session subclass: Object
     @ "$client" call: 'industries.loosh.yutani.v1.LayoutService/FlexAddItem' with: "$json"
   ]
 
-  method: addChild: childId to: layoutId fixedSize: size focus: shouldFocus [
-    pragma: primitive
+  rawMethod: addChild: childId to: layoutId fixedSize: size focus: shouldFocus [
+    pragma: bashOnly
     local sid client json childId="$1" layoutId="$2" size="$3" shouldFocus="$4"
     sid="$(_ivar sessionId)"
     client="$(_ivar grpcClient)"
@@ -336,8 +333,9 @@ Session subclass: Object
   # Native streaming using GrpcClient.serverStream (requires native daemon)
   # This is the preferred method - uses persistent gRPC connection, no subprocess
   # The block receives JSON event data for each streamed message
-  method: streamEventsWithBlock: block [
-    pragma: primitive
+  # (bash-specific: jo for JSON construction)
+  rawMethod: streamEventsWithBlock: block [
+    pragma: bashOnly
     pragma: direct
     local sid client filter_json
     sid="$(_ivar sessionId)"
@@ -357,8 +355,9 @@ Session subclass: Object
   # High-level streaming with EventDispatcher integration
   # Creates Event objects and dispatches them through the provided dispatcher
   # Usage: @ $session runEventLoopWithDispatcher: $dispatcher
-  method: runEventLoopWithDispatcher: dispatcher [
-    pragma: primitive
+  # (bash-specific: string interpolation for block creation)
+  rawMethod: runEventLoopWithDispatcher: dispatcher [
+    pragma: bashOnly
     pragma: direct
     local dispatcher="$1" handlerBlock
 
@@ -376,8 +375,9 @@ Session subclass: Object
   # Fallback: Coproc-based streaming (for when native daemon unavailable)
   # ============================================================================
 
-  method: startEventStream [
-    pragma: primitive
+  # (bash-specific: jo for JSON, command string building, coproc usage)
+  rawMethod: startEventStream [
+    pragma: bashOnly
     local sid filter_json host evt_coproc cmd
     sid="$(_ivar sessionId)"
     host="$(_ivar host)"
@@ -398,8 +398,9 @@ Session subclass: Object
     _ivar_set eventCoproc "$evt_coproc"
   ]
 
-  method: stopEventStream [
-    pragma: primitive
+  # (bash-specific: conditional branching)
+  rawMethod: stopEventStream [
+    pragma: bashOnly
     local evt_coproc
     evt_coproc="$(_ivar eventCoproc)"
 
@@ -411,8 +412,9 @@ Session subclass: Object
 
   # Process events with a handler (coproc mode). Handler can read $__COPROC_LINE.
   # Usage: @ $session onEventDo: '@ $obj handleEvent'
-  method: onEventDo: handler [
-    pragma: primitive
+  # (bash-specific: conditional branching)
+  rawMethod: onEventDo: handler [
+    pragma: bashOnly
     local evt_coproc handler="$1"
     evt_coproc="$(_ivar eventCoproc)"
 
@@ -426,8 +428,9 @@ Session subclass: Object
     @ "$evt_coproc" readLinesDo: "$handler"
   ]
 
-  method: nextEvent [
-    pragma: primitive
+  # (bash-specific: conditional branching)
+  rawMethod: nextEvent [
+    pragma: bashOnly
     local evt_coproc line
     evt_coproc="$(_ivar eventCoproc)"
 
