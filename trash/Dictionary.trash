@@ -54,18 +54,16 @@ Dictionary subclass: Object
     ^ oldValue
   ]
 
-  # Get all keys, one per line
-  # Usage: keys := @ dict keys  # Returns newline-separated keys
+  # Get all keys as JSON array
+  # Usage: keysArray := @ dict keys  # Returns JSON array like ["key1","key2"]
   method: keys [
-    pragma: primitive
-    echo "$(_ivar items)" | jq -r 'keys[]'
+    ^ items objectKeys
   ]
 
-  # Get all values, one per line
-  # Usage: values := @ dict values  # Returns newline-separated values
+  # Get all values as JSON array
+  # Usage: valuesArray := @ dict values  # Returns JSON array like ["val1","val2"]
   method: values [
-    pragma: primitive
-    echo "$(_ivar items)" | jq -r '.[]'
+    ^ items objectValues
   ]
 
   # Get dictionary size (number of keys)
@@ -100,99 +98,106 @@ Dictionary subclass: Object
   ]
 
   # Iterate over each key-value pair, calling block with key and value
-  # Usage: @ dict do: [:key :value | echo "$key = $value"]
-  method: do: block [
-    pragma: primitive
-    local items keys_json key value block_id="$1"
-    items="$(_ivar items)"
-
-    # Iterate over keys
-    while IFS= read -r key; do
-      value=$(echo "$items" | jq -r --arg k "$key" '.[$k]')
-      @ "$block_id" valueWith: "$key" and: "$value"
-    done < <(echo "$items" | jq -r 'keys[]')
+  # Usage: @ dict do: [:key :value | @ Console print: key , ' = ' , value]
+  method: do: aBlock [
+    pragma: bashOnly
+    | keysArray i len key value |
+    keysArray := items objectKeys.
+    len := keysArray arrayLength.
+    i := 0.
+    [i < len] whileTrue: [
+      key := keysArray arrayAt: i.
+      value := items objectAt: key.
+      @ aBlock valueWith: key and: value.
+      i := i + 1
+    ]
   ]
 
   # Iterate over keys only
-  # Usage: @ dict keysDo: [:key | echo "Key: $key"]
-  method: keysDo: block [
-    pragma: primitive
-    local items key block_id="$1"
-    items="$(_ivar items)"
-
-    while IFS= read -r key; do
-      @ "$block_id" valueWith: "$key"
-    done < <(echo "$items" | jq -r 'keys[]')
+  # Usage: @ dict keysDo: [:key | @ Console print: 'Key: ' , key]
+  method: keysDo: aBlock [
+    pragma: bashOnly
+    | keysArray i len key |
+    keysArray := items objectKeys.
+    len := keysArray arrayLength.
+    i := 0.
+    [i < len] whileTrue: [
+      key := keysArray arrayAt: i.
+      @ aBlock valueWith: key.
+      i := i + 1
+    ]
   ]
 
   # Iterate over values only
-  # Usage: @ dict valuesDo: [:value | echo "Value: $value"]
-  method: valuesDo: block [
-    pragma: primitive
-    local items value block_id="$1"
-    items="$(_ivar items)"
-
-    while IFS= read -r value; do
-      @ "$block_id" valueWith: "$value"
-    done < <(echo "$items" | jq -r '.[]')
+  # Usage: @ dict valuesDo: [:value | @ Console print: 'Value: ' , value]
+  method: valuesDo: aBlock [
+    pragma: bashOnly
+    | valuesArray i len value |
+    valuesArray := items objectValues.
+    len := valuesArray arrayLength.
+    i := 0.
+    [i < len] whileTrue: [
+      value := valuesArray arrayAt: i.
+      @ aBlock valueWith: value.
+      i := i + 1
+    ]
   ]
 
   # Map values through a block, returning new dictionary with same keys
   # Usage: doubled := @ dict collect: [:v | v * 2]
-  method: collect: block [
-    pragma: primitive
-    local items key value result new_items block_id="$1"
-    items="$(_ivar items)"
-    new_items="{}"
-
-    while IFS= read -r key; do
-      value=$(echo "$items" | jq -r --arg k "$key" '.[$k]')
-      result=$(@ "$block_id" valueWith: "$value")
-      new_items=$(echo "$new_items" | jq -c --arg k "$key" --arg v "$result" '.[$k] = $v')
-    done < <(echo "$items" | jq -r 'keys[]')
-
-    # Create new Dictionary with results
-    local new_dict
-    new_dict=$(@ Dictionary new)
-    @ "$new_dict" setItems: "$new_items"
-    echo "$new_dict"
+  method: collect: aBlock [
+    pragma: bashOnly
+    | keysArray i len key value result newDict |
+    keysArray := items objectKeys.
+    len := keysArray arrayLength.
+    newDict := @ Dictionary new.
+    i := 0.
+    [i < len] whileTrue: [
+      key := keysArray arrayAt: i.
+      value := items objectAt: key.
+      result := @ aBlock valueWith: value.
+      @ newDict at: key put: result.
+      i := i + 1
+    ].
+    ^ newDict
   ]
 
   # Select key-value pairs where block returns true
   # Usage: evens := @ dict select: [:k :v | (v % 2) == 0]
-  method: select: block [
-    pragma: primitive
-    local items key value result new_items block_id="$1"
-    items="$(_ivar items)"
-    new_items="{}"
-
-    while IFS= read -r key; do
-      value=$(echo "$items" | jq -r --arg k "$key" '.[$k]')
-      result=$(@ "$block_id" valueWith: "$key" and: "$value")
-      # Non-empty result means true
-      if [[ -n "$result" ]]; then
-        new_items=$(echo "$new_items" | jq -c --arg k "$key" --arg v "$value" '.[$k] = $v')
-      fi
-    done < <(echo "$items" | jq -r 'keys[]')
-
-    # Create new Dictionary with selected pairs
-    local new_dict
-    new_dict=$(@ Dictionary new)
-    @ "$new_dict" setItems: "$new_items"
-    echo "$new_dict"
+  method: select: aBlock [
+    pragma: bashOnly
+    | keysArray i len key value result newDict |
+    keysArray := items objectKeys.
+    len := keysArray arrayLength.
+    newDict := @ Dictionary new.
+    i := 0.
+    [i < len] whileTrue: [
+      key := keysArray arrayAt: i.
+      value := items objectAt: key.
+      result := @ aBlock valueWith: key and: value.
+      result notEmpty ifTrue: [
+        @ newDict at: key put: value
+      ].
+      i := i + 1
+    ].
+    ^ newDict
   ]
 
   # Merge another dictionary into this one (modifies self)
   # Usage: @ dict merge: otherDict
   method: merge: other [
-    pragma: primitive
-    local other="$1"
-    local items other_items merged
-    items=$(_ivar items)
-    other_items=$(@ "$other" asJson)
-    merged=$(echo "$items" "$other_items" | jq -sc '.[0] * .[1]')
-    _ivar_set items "$merged"
-    echo "$_RECEIVER"
+    pragma: bashOnly
+    | otherKeys i len key value |
+    otherKeys := (@ other getItems) objectKeys.
+    len := otherKeys arrayLength.
+    i := 0.
+    [i < len] whileTrue: [
+      key := otherKeys arrayAt: i.
+      value := @ other at: key.
+      @ self at: key put: value.
+      i := i + 1
+    ].
+    ^ self
   ]
 
   # Get value at key, or default if missing
@@ -211,8 +216,7 @@ Dictionary subclass: Object
 
   # Return as JSON string (compact format)
   method: asJson [
-    pragma: primitive
-    echo "$(_ivar items)" | jq -c '.'
+    ^ items
   ]
 
   # Create dictionary from JSON string

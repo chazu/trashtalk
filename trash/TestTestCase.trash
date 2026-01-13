@@ -7,16 +7,14 @@ TestTestCase subclass: TestCase
   # ==========================================
 
   method: testAssertEquals [
-    pragma: primitive
-    @ "$_RECEIVER" assert_equals "hello" "hello"
-    @ "$_RECEIVER" assert_equals 42 42
-    @ "$_RECEIVER" assert_equals "" ""
+    @ self assert_equals: 'hello' to: 'hello'.
+    @ self assert_equals: '42' to: '42'.
+    @ self assert_equals: '' to: ''
   ]
 
   method: testAssertNotEquals [
-    pragma: primitive
-    @ "$_RECEIVER" assert_not_equals "hello" "world"
-    @ "$_RECEIVER" assert_not_equals 1 2
+    @ self assert_not_equals: 'hello' to: 'world'.
+    @ self assert_not_equals: '1' to: '2'
   ]
 
   # ==========================================
@@ -24,16 +22,14 @@ TestTestCase subclass: TestCase
   # ==========================================
 
   method: testAssertTrue [
-    pragma: primitive
-    @ "$_RECEIVER" assert_true "true"
-    @ "$_RECEIVER" assert_true "1"
+    @ self assert_true: 'true'.
+    @ self assert_true: '1'
   ]
 
   method: testAssertFalse [
-    pragma: primitive
-    @ "$_RECEIVER" assert_false "false"
-    @ "$_RECEIVER" assert_false "0"
-    @ "$_RECEIVER" assert_false ""
+    @ self assert_false: 'false'.
+    @ self assert_false: '0'.
+    @ self assert_false: ''
   ]
 
   # ==========================================
@@ -41,15 +37,13 @@ TestTestCase subclass: TestCase
   # ==========================================
 
   method: testAssertNil [
-    pragma: primitive
-    @ "$_RECEIVER" assert_nil ""
-    @ "$_RECEIVER" assert_nil "null"
+    @ self assert_nil: ''.
+    @ self assert_nil: 'null'
   ]
 
   method: testAssertNotNil [
-    pragma: primitive
-    @ "$_RECEIVER" assert_not_nil "something"
-    @ "$_RECEIVER" assert_not_nil "0"
+    @ self assert_not_nil: 'something'.
+    @ self assert_not_nil: '0'
   ]
 
   # ==========================================
@@ -57,15 +51,13 @@ TestTestCase subclass: TestCase
   # ==========================================
 
   method: testAssertContains [
-    pragma: primitive
-    @ "$_RECEIVER" assert_contains "hello world" "world"
-    @ "$_RECEIVER" assert_contains "foobar" "oba"
+    @ self assert: 'hello world' contains: 'world'.
+    @ self assert: 'foobar' contains: 'oba'
   ]
 
   method: testAssertMatches [
-    pragma: primitive
-    @ "$_RECEIVER" assert_matches "hello123" "^hello[0-9]+"
-    @ "$_RECEIVER" assert_matches "test@example.com" "@"
+    @ self assert: 'hello123' matches: '^hello[0-9]+'.
+    @ self assert: 'test@example.com' matches: '@'
   ]
 
   # ==========================================
@@ -73,15 +65,13 @@ TestTestCase subclass: TestCase
   # ==========================================
 
   method: testAssertGreaterThan [
-    pragma: primitive
-    @ "$_RECEIVER" assert_greater_than 10 5
-    @ "$_RECEIVER" assert_greater_than 100 50
+    @ self assert: '10' greaterThan: '5'.
+    @ self assert: '100' greaterThan: '50'
   ]
 
   method: testAssertLessThan [
-    pragma: primitive
-    @ "$_RECEIVER" assert_less_than 5 10
-    @ "$_RECEIVER" assert_less_than 1 100
+    @ self assert: '5' lessThan: '10'.
+    @ self assert: '1' lessThan: '100'
   ]
 
   # ==========================================
@@ -89,11 +79,9 @@ TestTestCase subclass: TestCase
   # ==========================================
 
   method: testSkip [
-    pragma: primitive
-    @ "$_RECEIVER" skip: "Demonstrating skip functionality"
+    @ self skip: 'Demonstrating skip functionality'
   ]
 
   method: testPending [
-    pragma: primitive
-    @ "$_RECEIVER" pending: "Feature not yet implemented"
+    @ self pending: 'Feature not yet implemented'
   ]
