@@ -19,19 +19,19 @@ GrpcClient subclass: Object
   # Class methods - Factory constructors
   # ==========================================================================
 
-  classMethod: connectTo: addr [
-    pragma: primitive
+  rawClassMethod: connectTo: addr [
+    pragma: bashOnly
     local client
     client=$(@ GrpcClient new)
-    @ "$client" _setAddress: "$addr"
+    @ "$client" _setAddress: "$1"
     echo "$client"
   ]
 
-  classMethod: connectTo: addr withProto: proto [
-    pragma: primitive
+  rawClassMethod: connectTo: addr withProto: proto [
+    pragma: bashOnly
     local client
-    client=$(@ GrpcClient connectTo: "$addr")
-    @ "$client" _setProtoFile: "$proto"
+    client=$(@ GrpcClient connectTo: "$1")
+    @ "$client" _setProtoFile: "$2"
     @ "$client" _setUseReflection: 'no'
     echo "$client"
   ]
@@ -204,38 +204,38 @@ GrpcClient subclass: Object
   # Configuration methods
   # ==========================================================================
 
-  method: enablePooling [
-    pragma: primitive
+  rawMethod: enablePooling [
+    pragma: bashOnly
     _ivar_set poolConnections 'yes'
   ]
 
-  method: disablePooling [
-    pragma: primitive
+  rawMethod: disablePooling [
+    pragma: bashOnly
     _ivar_set poolConnections 'no'
   ]
 
-  method: enableTLS [
-    pragma: primitive
+  rawMethod: enableTLS [
+    pragma: bashOnly
     _ivar_set usePlaintext 'no'
   ]
 
-  method: enablePlaintext [
-    pragma: primitive
+  rawMethod: enablePlaintext [
+    pragma: bashOnly
     _ivar_set usePlaintext 'yes'
   ]
 
-  method: address [
-    pragma: primitive
+  rawMethod: address [
+    pragma: bashOnly
     echo "$(_ivar address)"
   ]
 
-  method: isUsingReflection [
-    pragma: primitive
+  rawMethod: isUsingReflection [
+    pragma: bashOnly
     echo "$(_ivar useReflection)"
   ]
 
-  method: isPoolingEnabled [
-    pragma: primitive
+  rawMethod: isPoolingEnabled [
+    pragma: bashOnly
     echo "$(_ivar poolConnections)"
   ]
 
@@ -243,17 +243,17 @@ GrpcClient subclass: Object
   # Private setters
   # ==========================================================================
 
-  method: _setAddress: a [
-    pragma: primitive
+  rawMethod: _setAddress: a [
+    pragma: bashOnly
     _ivar_set address "$1"
   ]
 
-  method: _setProtoFile: p [
-    pragma: primitive
+  rawMethod: _setProtoFile: p [
+    pragma: bashOnly
     _ivar_set protoFile "$1"
   ]
 
-  method: _setUseReflection: r [
-    pragma: primitive
+  rawMethod: _setUseReflection: r [
+    pragma: bashOnly
     _ivar_set useReflection "$1"
   ]
