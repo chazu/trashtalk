@@ -85,17 +85,18 @@ Widget subclass: Object
   # Convenience: Register handler for submission events
   # Handler receives $__EVENT and $__TEXT (submitted text)
   # Note: WIDGET_CHANGED stores text, WIDGET_DONE triggers handler with stored text
-  method: onSubmitDo: handler [
-    pragma: primitive
-    local handler="$1" dispatcher wid wrappedHandler storageVar
-    dispatcher="$(_ivar dispatcher)"
-    wid="$(_ivar widgetId)"
-    if [[ -n "$dispatcher" && -n "$wid" ]]; then
+  # This method uses bash-specific features (printf, temp files) for cross-subshell state
+  rawMethod: onSubmitDo: handler [
+    pragma: bashOnly
+    local handler="$1" _dispatcher _wid wrappedHandler
+    _dispatcher="$(_ivar dispatcher)"
+    _wid="$(_ivar widgetId)"
+    if [[ -n "$_dispatcher" && -n "$_wid" ]]; then
       # Use a temp file to store text (shell vars don't persist across subshell calls)
-      local storageFile="/tmp/yutani_text_${wid}.txt"
+      local storageFile="/tmp/yutani_text_${_wid}.txt"
       # Wrap handler to store text on CHANGED and fire on DONE
       printf -v wrappedHandler '__wt=$(@ "$__EVENT" widgetEventType); if [[ "$__wt" == "WIDGET_CHANGED" ]]; then @ "$__EVENT" widgetDataAt: "text" > %s; elif [[ "$__wt" == "WIDGET_DONE" ]]; then __TEXT=$(cat %s 2>/dev/null); %s; fi' "$storageFile" "$storageFile" "$handler"
-      @ "$dispatcher" onWidget: "$wid" do: "$wrappedHandler"
+      @ "$_dispatcher" onWidget: "$_wid" do: "$wrappedHandler"
     else
       echo "[WIDGET] Missing dispatcher or wid, not registering" >&2
     fi

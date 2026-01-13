@@ -4,15 +4,11 @@ HorizontalLayout subclass: Yutani::FlexLayout
 
   # Create a new HorizontalLayout
   classMethod: inSession: session [
-    pragma: primitive
-    local session="$1"
-    local instance wid
-    instance=$(_generate_instance_id "Yutani__HorizontalLayout")
-    _create_instance "Yutani::HorizontalLayout" "$instance"
-    @ "$instance" setSession: "$session"
-    @ "$instance" setDirection: "FLEX_COLUMN"
-    # Create the widget on the server
-    wid=$(@ "$session" createHorizontalLayout)
-    @ "$instance" setWidgetId: "$wid"
-    echo "$instance"
+    | instance wid |
+    instance := $(@ Yutani::HorizontalLayout new).
+    @ instance setSession: session.
+    @ instance setDirection: 'FLEX_COLUMN'.
+    wid := $(@ session createHorizontalLayout).
+    @ instance setWidgetId: wid.
+    ^ instance
   ]

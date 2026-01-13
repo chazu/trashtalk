@@ -11,12 +11,15 @@ EventDispatcher subclass: Object
   # ============================================================================
 
   # Create a new dispatcher with its own handler registry
-  classMethod: new [
-    pragma: primitive
+  # (bash-specific: instance creation requires runtime functions)
+  rawClassMethod: new [
+    pragma: bashOnly
     local instance
+    # Create instance using runtime functions
     instance=$(_generate_instance_id "Yutani__EventDispatcher")
     _create_instance "Yutani::EventDispatcher" "$instance"
-    @ "$instance" _setRunning: "true"
+    # Initialize running state
+    @ "$instance" _setRunning: 'true'
     echo "$instance"
   ]
 
@@ -26,17 +29,17 @@ EventDispatcher subclass: Object
 
   # Register a handler for a specific widget
   # Handler is a bash command that will be eval'd with $__EVENT set
-  # Uses file-based storage to survive subshell boundaries
-  method: onWidget: widgetId do: handler [
-    pragma: primitive
+  # Uses file-based storage to survive subshell boundaries (bash-specific)
+  rawMethod: onWidget: widgetId do: handler [
+    pragma: bashOnly
     local widgetId="$1" handler="$2"
     local handlerFile="/tmp/yutani_handler_${widgetId}.txt"
     echo "$handler" > "$handlerFile"
   ]
 
-  # Remove handler for a widget
-  method: removeHandlerFor: widgetId [
-    pragma: primitive
+  # Remove handler for a widget (bash-specific file operations)
+  rawMethod: removeHandlerFor: widgetId [
+    pragma: bashOnly
     local widgetId="$1"
     local handlerFile="/tmp/yutani_handler_${widgetId}.txt"
     rm -f "$handlerFile"
@@ -71,8 +74,9 @@ EventDispatcher subclass: Object
   # ============================================================================
 
   # Dispatch an event to the appropriate handler
-  method: dispatch: event [
-    pragma: primitive
+  # Uses case statement, file I/O, and eval (bash-specific)
+  rawMethod: dispatch: event [
+    pragma: bashOnly
     pragma: direct
     local event="$1"
     local eventType widgetId handler
@@ -125,8 +129,9 @@ EventDispatcher subclass: Object
   ]
 
   # Dispatch a raw JSON event (creates Event, then dispatches)
-  method: dispatchJson: json [
-    pragma: primitive
+  # Uses jq for JSON validation (bash-specific)
+  rawMethod: dispatchJson: json [
+    pragma: bashOnly
     pragma: direct
     local json="$1" event
 
@@ -153,9 +158,9 @@ EventDispatcher subclass: Object
     running := 'false'
   ]
 
-  # Clean up all handlers for this dispatcher
-  method: cleanup [
-    pragma: primitive
+  # Clean up all handlers for this dispatcher (bash-specific file operations)
+  rawMethod: cleanup [
+    pragma: bashOnly
     # Remove all handler files (simple cleanup - removes all yutani handlers)
     rm -f /tmp/yutani_handler_*.txt 2>/dev/null
     rm -f /tmp/yutani_text_*.txt 2>/dev/null

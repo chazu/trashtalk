@@ -4,74 +4,75 @@ IDE subclass: Yutani::Application
   instanceVars: outputView:'' inputField:'' layout:'' history:''
 
   # Override setup to build the UI
-  method: setup [
-    pragma: primitive
-    local layout outputView inputField initialText
+  # Uses printf for handler construction (bash-specific)
+  rawMethod: setup [
+    pragma: bashOnly
+    local _layout _outputView _inputField initialText
 
     # Create layout
-    layout=$(@ "$_RECEIVER" createVerticalLayout)
-    _ivar_set layout "$layout"
+    _layout=$(@ "$_RECEIVER" createVerticalLayout)
+    _ivar_set layout "$_layout"
 
     # Create output view
     initialText="Trashtalk IDE - Type code and press Enter
 "
-    outputView=$(@ "$_RECEIVER" createTextView: "Transcript" text: "$initialText")
-    _ivar_set outputView "$outputView"
+    _outputView=$(@ "$_RECEIVER" createTextView: "Transcript" text: "$initialText")
+    _ivar_set outputView "$_outputView"
     _ivar_set history "$initialText"
 
     # Create input field
-    inputField=$(@ "$_RECEIVER" createInputField: ">" placeholder: "Enter code...")
-    _ivar_set inputField "$inputField"
+    _inputField=$(@ "$_RECEIVER" createInputField: ">" placeholder: "Enter code...")
+    _ivar_set inputField "$_inputField"
 
     # Add to layout
-    @ "$layout" addChild: "$outputView"
-    @ "$layout" addChild: "$inputField" fixedSize: 3 focus: true
+    @ "$_layout" addChild: "$_outputView"
+    @ "$_layout" addChild: "$_inputField" fixedSize: 3 focus: true
 
     # Set root
-    @ "$_RECEIVER" setRoot: "$layout"
+    @ "$_RECEIVER" setRoot: "$_layout"
 
     # Register event handlers - embed instance ID at registration time
     local submitHandler keyHandler
     printf -v submitHandler '@ "%s" evaluateInput: "$__TEXT"' "$_RECEIVER"
     printf -v keyHandler '@ "%s" handleKey: "$__EVENT"' "$_RECEIVER"
 
-    @ "$inputField" onSubmitDo: "$submitHandler"
+    @ "$_inputField" onSubmitDo: "$submitHandler"
     @ "$_RECEIVER" onKeyDo: "$keyHandler"
   ]
 
-  # Handle key events
-  method: handleKey: event [
-    pragma: primitive
-    local event="$1" keyName inputField
+  # Handle key events (uses bash case statement)
+  rawMethod: handleKey: event [
+    pragma: bashOnly
+    local event="$1" keyName _inputField
 
     keyName=$(@ "$event" keyName)
-    inputField="$(_ivar inputField)"
+    _inputField="$(_ivar inputField)"
 
     case "$keyName" in
       KEY_CTRL_C|KEY_CTRL_D)
         @ "$_RECEIVER" stop
         ;;
       KEY_TAB)
-        @ "$inputField" focus
+        @ "$_inputField" focus
         ;;
       KEY_ESC)
-        @ "$inputField" clear
-        @ "$inputField" focus
+        @ "$_inputField" clear
+        @ "$_inputField" focus
         ;;
     esac
   ]
 
-  # Evaluate input text
-  method: evaluateInput: text [
-    pragma: primitive
-    local text="$1" result inputField outputView newText
+  # Evaluate input text (uses bash control flow and multi-line string building)
+  rawMethod: evaluateInput: text [
+    pragma: bashOnly
+    local text="$1" result _inputField _outputView newText
 
     if [[ -z "$text" ]]; then
       return
     fi
 
-    inputField="$(_ivar inputField)"
-    outputView="$(_ivar outputView)"
+    _inputField="$(_ivar inputField)"
+    _outputView="$(_ivar outputView)"
 
     # Evaluate the code
     result=$(@ Trash eval: "$text" 2>&1)
@@ -86,19 +87,14 @@ ${result}
     @ "$_RECEIVER" appendOutput: "$newText"
 
     # Clear and refocus input
-    @ "$inputField" clear
-    @ "$inputField" focus
+    @ "$_inputField" clear
+    @ "$_inputField" focus
   ]
 
   # Append text to output
   method: appendOutput: text [
-    pragma: primitive
-    local text="$1" outputView history
-    outputView="$(_ivar outputView)"
-    history="$(_ivar history)"
-
-    history="${history}${text}"
-    _ivar_set history "$history"
-
-    @ "$outputView" setText: "$history"
+    | currentHistory |
+    currentHistory := "${history}${text}".
+    history := currentHistory.
+    @ outputView setText: currentHistory
   ]

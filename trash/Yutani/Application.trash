@@ -5,13 +5,12 @@ Application subclass: Object
 
   # Launch application on default host
   classMethod: launch [
-    pragma: primitive
-    @ "$_CLASS" launchOn: "localhost:7755"
+    @ self launchOn: 'localhost:7755'
   ]
 
-  # Launch application on specified host
-  classMethod: launchOn: host [
-    pragma: primitive
+  # Launch application on specified host (bash-specific: error handling, grep)
+  rawClassMethod: launchOn: host [
+    pragma: bashOnly
     local host="$1"
     local app session dispatcher
 
@@ -49,12 +48,9 @@ Application subclass: Object
   ]
 
   # Main event loop - tries native streaming first, falls back to coproc
-  method: run [
-    pragma: primitive
-    local session dispatcher
-    session="$(_ivar session)"
-    dispatcher="$(_ivar dispatcher)"
-
+  # (bash-specific: error redirection)
+  rawMethod: run [
+    pragma: bashOnly
     # Try native streaming first (requires native GrpcClient.dylib and daemon)
     # Falls back to coproc-based streaming if native fails
     if @ "$_RECEIVER" _tryNativeEventLoop 2>/dev/null; then
@@ -66,30 +62,20 @@ Application subclass: Object
   ]
 
   # Native event loop using GrpcClient.serverStream
-  # Returns true if native streaming was successful
   method: _tryNativeEventLoop [
-    pragma: primitive
-    local session dispatcher
-    session="$(_ivar session)"
-    dispatcher="$(_ivar dispatcher)"
-
-    # Use native streaming - blocks until stream ends
-    @ "$session" runEventLoopWithDispatcher: "$dispatcher"
+    @ session runEventLoopWithDispatcher: dispatcher
   ]
 
   # Fallback: coproc-based event loop (uses grpcurl subprocess)
-  method: _runCoprocEventLoop [
-    pragma: primitive
-    local session dispatcher
-    session="$(_ivar session)"
-    dispatcher="$(_ivar dispatcher)"
-
+  # (bash-specific: globals for handler access)
+  rawMethod: _runCoprocEventLoop [
+    pragma: bashOnly
     # Store dispatcher in global for handler access
-    __APP_DISPATCHER="$dispatcher"
+    __APP_DISPATCHER="$(_ivar dispatcher)"
     __APP_INSTANCE="$_RECEIVER"
 
     # Use session's event handling with a dispatcher handler
-    @ "$session" onEventDo: '
+    @ "$(_ivar session)" onEventDo: '
       @ "$__APP_DISPATCHER" dispatchJson: "$__COPROC_LINE"
       if [[ $(@ "$__APP_DISPATCHER" isRunning) != "true" ]]; then
         @ "$__APP_INSTANCE" stop
@@ -104,96 +90,64 @@ Application subclass: Object
 
   # Cleanup resources
   method: cleanup [
-    pragma: primitive
-    local session dispatcher
-    session="$(_ivar session)"
-    dispatcher="$(_ivar dispatcher)"
-
-    if [[ -n "$dispatcher" ]]; then
-      @ "$dispatcher" cleanup
-    fi
-
-    if [[ -n "$session" ]]; then
-      @ "$session" disconnect
-    fi
+    (dispatcher notEmpty) ifTrue: [
+      @ dispatcher cleanup
+    ].
+    (session notEmpty) ifTrue: [
+      @ session disconnect
+    ]
   ]
 
   # === Widget Creation Helpers ===
   # These create widgets with dispatcher already set
 
   method: createTextView: title [
-    pragma: primitive
-    local title="$1"
-    local session dispatcher widget
-    session="$(_ivar session)"
-    dispatcher="$(_ivar dispatcher)"
-    widget=$(@ Yutani::TextView titled: "$title" inSession: "$session")
-    @ "$widget" setDispatcher: "$dispatcher"
-    echo "$widget"
+    | widget |
+    widget := $(@ Yutani::TextView titled: title inSession: session).
+    @ widget setDispatcher: dispatcher.
+    ^ widget
   ]
 
   method: createTextView: title text: initialText [
-    pragma: primitive
-    local title="$1" initialText="$2"
-    local session dispatcher widget
-    session="$(_ivar session)"
-    dispatcher="$(_ivar dispatcher)"
-    widget=$(@ Yutani::TextView titled: "$title" text: "$initialText" inSession: "$session")
-    @ "$widget" setDispatcher: "$dispatcher"
-    echo "$widget"
+    | widget |
+    widget := $(@ Yutani::TextView titled: title text: initialText inSession: session).
+    @ widget setDispatcher: dispatcher.
+    ^ widget
   ]
 
   method: createInputField: label [
-    pragma: primitive
-    local label="$1"
-    local session dispatcher widget
-    session="$(_ivar session)"
-    dispatcher="$(_ivar dispatcher)"
-    widget=$(@ Yutani::InputField labeled: "$label" inSession: "$session")
-    @ "$widget" setDispatcher: "$dispatcher"
-    echo "$widget"
+    | widget |
+    widget := $(@ Yutani::InputField labeled: label inSession: session).
+    @ widget setDispatcher: dispatcher.
+    ^ widget
   ]
 
   method: createInputField: label placeholder: placeholder [
-    pragma: primitive
-    local label="$1" placeholder="$2"
-    local session dispatcher widget
-    session="$(_ivar session)"
-    dispatcher="$(_ivar dispatcher)"
-    widget=$(@ Yutani::InputField labeled: "$label" placeholder: "$placeholder" inSession: "$session")
-    @ "$widget" setDispatcher: "$dispatcher"
-    echo "$widget"
+    | widget |
+    widget := $(@ Yutani::InputField labeled: label placeholder: placeholder inSession: session).
+    @ widget setDispatcher: dispatcher.
+    ^ widget
   ]
 
   method: createListView: title [
-    pragma: primitive
-    local title="$1"
-    local session dispatcher widget
-    session="$(_ivar session)"
-    dispatcher="$(_ivar dispatcher)"
-    widget=$(@ Yutani::ListView titled: "$title" inSession: "$session")
-    @ "$widget" setDispatcher: "$dispatcher"
-    echo "$widget"
+    | widget |
+    widget := $(@ Yutani::ListView titled: title inSession: session).
+    @ widget setDispatcher: dispatcher.
+    ^ widget
   ]
 
   method: createVerticalLayout [
-    pragma: primitive
-    local session dispatcher widget
-    session="$(_ivar session)"
-    dispatcher="$(_ivar dispatcher)"
-    widget=$(@ Yutani::VerticalLayout inSession: "$session")
-    @ "$widget" setDispatcher: "$dispatcher"
-    echo "$widget"
+    | widget |
+    widget := $(@ Yutani::VerticalLayout inSession: session).
+    @ widget setDispatcher: dispatcher.
+    ^ widget
   ]
 
   method: createHorizontalLayout [
-    pragma: primitive
-    local session dispatcher widget
-    session="$(_ivar session)"
-    dispatcher="$(_ivar dispatcher)"
-    widget=$(@ Yutani::HorizontalLayout inSession: "$session")
-    @ "$widget" setDispatcher: "$dispatcher"
-    echo "$widget"
+    | widget |
+    widget := $(@ Yutani::HorizontalLayout inSession: session).
+    @ widget setDispatcher: dispatcher.
+    ^ widget
   ]
 
   # Set root widget

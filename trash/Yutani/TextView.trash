@@ -5,33 +5,25 @@ TextView subclass: Yutani::Widget
 
   # Create a new TextView with given title
   classMethod: titled: title inSession: session [
-    pragma: primitive
-    local title="$1" session="$2"
-    local instance wid
-    instance=$(_generate_instance_id "Yutani__TextView")
-    _create_instance "Yutani::TextView" "$instance"
-    @ "$instance" setSession: "$session"
-    @ "$instance" setTitle: "$title"
-    # Create the widget on the server
-    wid=$(@ "$session" createTextView: "$title")
-    @ "$instance" setWidgetId: "$wid"
-    echo "$instance"
+    | instance wid |
+    instance := $(@ Yutani::TextView new).
+    @ instance setSession: session.
+    @ instance setTitle: title.
+    wid := $(@ session createTextView: title).
+    @ instance setWidgetId: wid.
+    ^ instance
   ]
 
   # Create a new TextView with title and initial text
   classMethod: titled: title text: initialText inSession: session [
-    pragma: primitive
-    local title="$1" initialText="$2" session="$3"
-    local instance wid
-    instance=$(_generate_instance_id "Yutani__TextView")
-    _create_instance "Yutani::TextView" "$instance"
-    @ "$instance" setSession: "$session"
-    @ "$instance" setTitle: "$title"
-    @ "$instance" _setText: "$initialText"
-    # Create the widget on the server
-    wid=$(@ "$session" createTextViewWithText: "$title" text: "$initialText")
-    @ "$instance" setWidgetId: "$wid"
-    echo "$instance"
+    | instance wid |
+    instance := $(@ Yutani::TextView new).
+    @ instance setSession: session.
+    @ instance setTitle: title.
+    @ instance _setText: initialText.
+    wid := $(@ session createTextViewWithText: title text: initialText).
+    @ instance setWidgetId: wid.
+    ^ instance
   ]
 
   # Get current text
@@ -46,32 +38,20 @@ TextView subclass: Yutani::Widget
 
   # Set text content (updates server)
   method: setText: newText [
-    pragma: primitive
-    local newText="$1" session wid
-    session="$(_ivar session)"
-    wid="$(_ivar widgetId)"
-    _ivar_set text "$newText"
-    @ "$session" setText: "$newText" on: "$wid"
+    text := newText.
+    @ session setText: newText on: widgetId
   ]
 
   # Append text
   method: appendText: moreText [
-    pragma: primitive
-    local moreText="$1" session wid currentText
-    session="$(_ivar session)"
-    wid="$(_ivar widgetId)"
-    currentText="$(_ivar text)"
-    currentText="${currentText}${moreText}"
-    _ivar_set text "$currentText"
-    @ "$session" setText: "$currentText" on: "$wid"
+    | currentText |
+    currentText := "${text}${moreText}".
+    text := currentText.
+    @ session setText: currentText on: widgetId
   ]
 
   # Clear text
   method: clear [
-    pragma: primitive
-    local session wid
-    session="$(_ivar session)"
-    wid="$(_ivar widgetId)"
-    _ivar_set text ""
-    @ "$session" setText: "" on: "$wid"
+    text := ''.
+    @ session setText: '' on: widgetId
   ]
