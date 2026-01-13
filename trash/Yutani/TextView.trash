@@ -4,26 +4,30 @@ TextView subclass: Yutani::Widget
   instanceVars: text:''
 
   # Create a new TextView with given title
-  classMethod: titled: title inSession: session [
-    | instance wid |
-    instance := $(@ Yutani::TextView new).
-    @ instance setSession: session.
-    @ instance setTitle: title.
-    wid := $(@ session createTextView: title).
-    @ instance setWidgetId: wid.
-    ^ instance
+  # (bash-specific: subshell expressions for message sends)
+  rawClassMethod: titled: title inSession: session [
+    pragma: bashOnly
+    local title="$1" session="$2" instance wid
+    instance=$(@ Yutani::TextView new)
+    @ "$instance" setSession: "$session"
+    @ "$instance" setTitle: "$title"
+    wid=$(@ "$session" createTextView: "$title")
+    @ "$instance" setWidgetId: "$wid"
+    echo "$instance"
   ]
 
   # Create a new TextView with title and initial text
-  classMethod: titled: title text: initialText inSession: session [
-    | instance wid |
-    instance := $(@ Yutani::TextView new).
-    @ instance setSession: session.
-    @ instance setTitle: title.
-    @ instance _setText: initialText.
-    wid := $(@ session createTextViewWithText: title text: initialText).
-    @ instance setWidgetId: wid.
-    ^ instance
+  # (bash-specific: subshell expressions for message sends)
+  rawClassMethod: titled: title text: initialText inSession: session [
+    pragma: bashOnly
+    local title="$1" initialText="$2" session="$3" instance wid
+    instance=$(@ Yutani::TextView new)
+    @ "$instance" setSession: "$session"
+    @ "$instance" setTitle: "$title"
+    @ "$instance" _setText: "$initialText"
+    wid=$(@ "$session" createTextViewWithText: "$title" text: "$initialText")
+    @ "$instance" setWidgetId: "$wid"
+    echo "$instance"
   ]
 
   # Get current text
@@ -37,21 +41,28 @@ TextView subclass: Yutani::Widget
   ]
 
   # Set text content (updates server)
-  method: setText: newText [
-    text := newText.
-    @ session setText: newText on: widgetId
+  # (bash-specific: needs explicit ivar access for inherited vars)
+  rawMethod: setText: newText [
+    pragma: bashOnly
+    local newText="$1"
+    _ivar_set text "$newText"
+    @ "$(_ivar session)" setText: "$newText" on: "$(_ivar widgetId)"
   ]
 
   # Append text
-  method: appendText: moreText [
-    | currentText |
-    currentText := "${text}${moreText}".
-    text := currentText.
-    @ session setText: currentText on: widgetId
+  # (bash-specific: needs explicit ivar access for inherited vars)
+  rawMethod: appendText: moreText [
+    pragma: bashOnly
+    local moreText="$1" currentText
+    currentText="$(_ivar text)${moreText}"
+    _ivar_set text "$currentText"
+    @ "$(_ivar session)" setText: "$currentText" on: "$(_ivar widgetId)"
   ]
 
   # Clear text
-  method: clear [
-    text := ''.
-    @ session setText: '' on: widgetId
+  # (bash-specific: needs explicit ivar access for inherited vars)
+  rawMethod: clear [
+    pragma: bashOnly
+    _ivar_set text ''
+    @ "$(_ivar session)" setText: '' on: "$(_ivar widgetId)"
   ]
