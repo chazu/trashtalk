@@ -1097,7 +1097,11 @@ def expr_gen($locals; $ivars; $cvars):
   elif .type == "return" then
     if .value == null then "return"
     elif .value.type == "string" then "echo \"\(.value.value)\"; return"
-    elif .value.type == "symbol" then "echo \"\(.value.value)\"; return"
+    elif .value.type == "symbol" then
+      # Check if symbol is an instance variable
+      if expr_is_ivar(.value.value; $ivars) then "echo \"$(_ivar \(.value.value))\"; return"
+      else "echo \"\(.value.value)\"; return"
+      end
     elif .value.type == "binary" then
       # Handle comparison returns - evaluate and echo true/false
       # Helper to get value - string literals use raw value, others use expr_gen
@@ -1885,7 +1889,7 @@ def expr_gen_stmts($locals; $ivars; $cvars):
 # Returns true if body contains Smalltalk-style expressions AND no bash constructs
 def should_use_expr_parser:
   . as $tokens |
-  if ($tokens | length) < 3 then false
+  if ($tokens | length) < 2 then false
   else
     # First, check for strong Smalltalk signals that should always use expr parser
     # Collection literals, try:, triple-quoted strings, and test predicates are unambiguous Smalltalk syntax
@@ -1952,7 +1956,8 @@ def should_use_expr_parser:
     if $has_bash_constructs or $has_command_pipe then false
     else
       # Check for patterns that indicate new Smalltalk-like syntax:
-      any(range(0; ($tokens | length) - 2) as $i |
+      # Note: Use length-1 to allow 2-token patterns like "^ session"
+      any(range(0; ($tokens | length) - 1) as $i |
         # Pattern 1: identifier := identifier/string (ivar inference)
         ($tokens[$i].type == "IDENTIFIER" and
          $tokens[$i + 1].type == "ASSIGN" and
@@ -1977,10 +1982,10 @@ def should_use_expr_parser:
         ($tokens[$i].type == "IDENTIFIER" and
          $tokens[$i + 1].type == "SEMI")
         or
-        # Pattern 5: Return bare identifier - CARET IDENTIFIER (DOT or NEWLINE or end)
+        # Pattern 5: Return bare identifier - CARET IDENTIFIER (DOT or NEWLINE or RBRACKET or end)
         ($tokens[$i].type == "CARET" and
          $tokens[$i + 1].type == "IDENTIFIER" and
-         (($tokens[$i + 2].type // "END") == "DOT" or ($tokens[$i + 2].type // "END") == "NEWLINE" or ($tokens[$i + 2].type // "END") == "END"))
+         (($tokens[$i + 2].type // "END") == "DOT" or ($tokens[$i + 2].type // "END") == "NEWLINE" or ($tokens[$i + 2].type // "END") == "RBRACKET" or ($tokens[$i + 2].type // "END") == "END"))
         or
         # Pattern 6: Control flow keywords (ifTrue:, ifFalse:, whileTrue:, timesRepeat:, try:, and:, or:, ifNil:, ifNotNil:)
         # Note: "to:" removed - conflicts with keyword messages like "from:to:"
@@ -2126,12 +2131,19 @@ def generateHeader:
 def generateMetadata:
   funcPrefix as $prefix |
   qualifiedName as $qname |
+  # Qualify parent name with package if unqualified and class is in a package
+  # Exception: core classes like "Object" should never be qualified
+  (if .parent == null or .parent == "" then ""
+   elif (.parent | contains("::")) then .parent
+   elif .parent == "Object" then "Object"
+   elif .package != null then "\(.package)::\(.parent)"
+   else .parent end) as $qualifiedParent |
   if .isTrait then
     "\($prefix)__is_trait=\"1\"",
     "\($prefix)__sourceHash=\"\(.sourceHash // "")\"",
     ""
   else
-    "\($prefix)__superclass=\"\(.parent // "")\"",
+    "\($prefix)__superclass=\"\($qualifiedParent)\"",
     "\($prefix)__instanceVars=\"\(.instanceVars | varsToString)\"",
     "\($prefix)__classInstanceVars=\"\(.classInstanceVars | varsToString)\"",
     "\($prefix)__traits=\"\(.traits | join(" "))\"",
