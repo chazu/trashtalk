@@ -3,12 +3,12 @@ package: Yutani
 VerticalLayout subclass: Yutani::FlexLayout
 
   # Create a new VerticalLayout
-  classMethod: inSession: session [
+  classMethod: inSession: sess [
     | instance wid |
-    instance := $(@ Yutani::VerticalLayout new).
-    @ instance setSession: session.
+    instance := @ Yutani::VerticalLayout new.
+    @ instance setSession: sess.
     @ instance setDirection: 'FLEX_ROW'.
-    wid := $(@ session createVerticalLayout).
+    wid := @ sess createVerticalLayout.
     @ instance setWidgetId: wid.
     ^ instance
   ]

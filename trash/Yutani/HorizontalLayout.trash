@@ -3,12 +3,12 @@ package: Yutani
 HorizontalLayout subclass: Yutani::FlexLayout
 
   # Create a new HorizontalLayout
-  classMethod: inSession: session [
+  classMethod: inSession: sess [
     | instance wid |
-    instance := $(@ Yutani::HorizontalLayout new).
-    @ instance setSession: session.
+    instance := @ Yutani::HorizontalLayout new.
+    @ instance setSession: sess.
     @ instance setDirection: 'FLEX_COLUMN'.
-    wid := $(@ session createHorizontalLayout).
+    wid := @ sess createHorizontalLayout.
     @ instance setWidgetId: wid.
     ^ instance
   ]

@@ -2,6 +2,7 @@
 # Instance variables use Smalltalk-style inference: value -> $(_ivar value)
 Counter subclass: Object
   include: Persistable
+  include: Debuggable
   instanceVars: value:0 step:1
 
   classMethod: new [

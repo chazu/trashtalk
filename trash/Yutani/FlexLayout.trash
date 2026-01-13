@@ -13,35 +13,27 @@ FlexLayout subclass: Yutani::Widget
   ]
 
   # Add a child widget (proportional sizing)
-  # (bash-specific: subshell expression for message send)
-  rawMethod: addChild: child [
-    pragma: bashOnly
-    local child="$1" childWid
-    childWid=$(@ "$child" getWidgetId)
-    @ "$(_ivar session)" addChild: "$childWid" to: "$(_ivar widgetId)"
+  method: addChild: child [
+    | childWid |
+    childWid := @ child getWidgetId.
+    @ session addChild: childWid to: widgetId.
   ]
 
   # Add a child widget with fixed size
-  # (bash-specific: subshell expression for message send)
-  rawMethod: addChild: child fixedSize: size [
-    pragma: bashOnly
-    local child="$1" size="$2" childWid
-    childWid=$(@ "$child" getWidgetId)
-    @ "$(_ivar session)" addChild: "$childWid" to: "$(_ivar widgetId)" fixedSize: "$size"
+  method: addChild: child fixedSize: size [
+    | childWid |
+    childWid := @ child getWidgetId.
+    @ session addChild: childWid to: widgetId fixedSize: size.
   ]
 
   # Add a child widget with fixed size and focus
-  # (bash-specific: subshell expression for message send)
-  rawMethod: addChild: child fixedSize: size focus: shouldFocus [
-    pragma: bashOnly
-    local child="$1" size="$2" shouldFocus="$3" childWid
-    childWid=$(@ "$child" getWidgetId)
-    @ "$(_ivar session)" addChild: "$childWid" to: "$(_ivar widgetId)" fixedSize: "$size" focus: "$shouldFocus"
+  method: addChild: child fixedSize: size focus: shouldFocus [
+    | childWid |
+    childWid := @ child getWidgetId.
+    @ session addChild: childWid to: widgetId fixedSize: size focus: shouldFocus.
   ]
 
   # Set this layout as the root widget
-  # (bash-specific: needs explicit ivar access for inherited vars)
-  rawMethod: setAsRoot [
-    pragma: bashOnly
-    @ "$(_ivar session)" setRoot: "$(_ivar widgetId)"
+  method: setAsRoot [
+    @ session setRoot: widgetId.
   ]

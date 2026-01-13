@@ -4,30 +4,26 @@ InputField subclass: Yutani::Widget
   instanceVars: label:'' placeholder:''
 
   # Create a new InputField with given label
-  # (bash-specific: subshell expressions for message sends)
-  rawClassMethod: labeled: label inSession: session [
-    pragma: bashOnly
-    local label="$1" session="$2" instance wid
-    instance=$(@ Yutani::InputField new)
-    @ "$instance" setSession: "$session"
-    @ "$instance" setLabel: "$label"
-    wid=$(@ "$session" createInputField: "$label")
-    @ "$instance" setWidgetId: "$wid"
-    echo "$instance"
+  classMethod: labeled: label inSession: sess [
+    | instance wid |
+    instance := @ Yutani::InputField new.
+    @ instance setSession: sess.
+    @ instance setLabel: label.
+    wid := @ sess createInputField: label.
+    @ instance setWidgetId: wid.
+    ^ instance
   ]
 
   # Create a new InputField with label and placeholder
-  # (bash-specific: subshell expressions for message sends)
-  rawClassMethod: labeled: label placeholder: placeholder inSession: session [
-    pragma: bashOnly
-    local label="$1" placeholder="$2" session="$3" instance wid
-    instance=$(@ Yutani::InputField new)
-    @ "$instance" setSession: "$session"
-    @ "$instance" setLabel: "$label"
-    @ "$instance" setPlaceholder: "$placeholder"
-    wid=$(@ "$session" createInputFieldWithPlaceholder: "$label" placeholder: "$placeholder")
-    @ "$instance" setWidgetId: "$wid"
-    echo "$instance"
+  classMethod: labeled: label placeholder: placeholder inSession: sess [
+    | instance wid |
+    instance := @ Yutani::InputField new.
+    @ instance setSession: sess.
+    @ instance setLabel: label.
+    @ instance setPlaceholder: placeholder.
+    wid := @ sess createInputFieldWithPlaceholder: label placeholder: placeholder.
+    @ instance setWidgetId: wid.
+    ^ instance
   ]
 
   # Label accessor
@@ -49,23 +45,16 @@ InputField subclass: Yutani::Widget
   ]
 
   # Get current text from server
-  # (bash-specific: subshell expression for message send)
-  rawMethod: getText [
-    pragma: bashOnly
-    @ "$(_ivar session)" getInputText: "$(_ivar widgetId)"
+  method: getText [
+    ^ @ session getInputText: widgetId.
   ]
 
   # Set text (updates server)
-  # (bash-specific: needs explicit ivar access for inherited vars)
-  rawMethod: setText: newText [
-    pragma: bashOnly
-    local newText="$1"
-    @ "$(_ivar session)" setInputText: "$newText" on: "$(_ivar widgetId)"
+  method: setText: newText [
+    @ session setInputText: newText on: widgetId.
   ]
 
   # Clear input
-  # (bash-specific: needs explicit ivar access for inherited vars)
-  rawMethod: clear [
-    pragma: bashOnly
-    @ "$(_ivar session)" setInputText: '' on: "$(_ivar widgetId)"
+  method: clear [
+    @ session setInputText: '' on: widgetId.
   ]
