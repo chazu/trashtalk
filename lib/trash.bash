@@ -1500,10 +1500,7 @@ function _send_native {
   # Load instance data if this is an instance method
   if [[ -n "$instance_id" ]]; then
     instance_json=$(_env_get "$instance_id" 2>/dev/null)
-    if [[ -n "$instance_json" ]]; then
-      # Native expects string values for numbers
-      instance_json=$(echo "$instance_json" | jq -c 'walk(if type == "number" then tostring else . end)')
-    fi
+    # Note: Keep numbers as-is - Go structs expect int types, not strings
   fi
 
   # Build JSON request
@@ -1546,10 +1543,8 @@ function _send_native {
   if [[ -n "$instance_id" && -n "$instance_json" ]]; then
     updated_json=$(echo "$response" | jq -r '.instance // empty')
     if [[ -n "$updated_json" && "$updated_json" != "null" ]]; then
-      # Convert string numbers back to actual numbers
-      local new_instance
-      new_instance=$(echo "$updated_json" | jq -c 'walk(if type == "string" and test("^-?[0-9]+$") then tonumber else . end)')
-      _env_set "$instance_id" "$new_instance"
+      # Trust the JSON from the daemon as-is (Go marshals types correctly)
+      _env_set "$instance_id" "$updated_json"
       _env_persist "$instance_id"
     fi
   fi

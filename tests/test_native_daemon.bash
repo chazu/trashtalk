@@ -99,9 +99,9 @@ fi
 # Test 6: dispatch getValue on instance
 echo "Test 6: dispatch getValue on instance"
 if [[ "$HAS_COUNTER_PLUGIN" == "true" ]]; then
-    # Create a test instance in env store
+    # Create a test instance in env store (use integers, not strings, for numeric fields)
     testCounter=$(_generate_instance_id Counter)
-    _env_set "$testCounter" '{"class":"Counter","value":"0","step":"1"}'
+    _env_set "$testCounter" '{"class":"Counter","value":0,"step":1}'
 
     value=$(@ "$daemon1" dispatch: Counter instance: "$testCounter" selector: getValue args: "[]")
     if [[ "$value" == "0" ]]; then
