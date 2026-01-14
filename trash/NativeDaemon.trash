@@ -135,10 +135,7 @@ NativeDaemon subclass: Object
     instanceJson=""
     if [[ -n "$instanceId" ]]; then
       instanceJson=$(_env_get "$instanceId" 2>/dev/null)
-      # Native expects string values, so convert numbers to strings
-      if [[ -n "$instanceJson" ]]; then
-        instanceJson=$(echo "$instanceJson" | jq -c 'walk(if type == "number" then tostring else . end)')
-      fi
+      # Keep numbers as-is - Go structs expect int types
     fi
 
     # Build JSON request for trashtalk-daemon
@@ -193,10 +190,8 @@ NativeDaemon subclass: Object
       local updatedJson
       updatedJson=$(echo "$response" | jq -r '.instance // empty')
       if [[ -n "$updatedJson" ]] && [[ "$updatedJson" != "null" ]]; then
-        # Convert string numbers back to numbers where appropriate
-        local newInstanceJson
-        newInstanceJson=$(echo "$updatedJson" | jq -c 'walk(if type == "string" and test("^-?[0-9]+$") then tonumber else . end)')
-        _env_set "$instanceId" "$newInstanceJson"
+        # Trust the JSON from daemon as-is (Go marshals types correctly)
+        _env_set "$instanceId" "$updatedJson"
         # Persist changes to database (new model: all instances stay persistent)
         _env_persist "$instanceId"
       fi
