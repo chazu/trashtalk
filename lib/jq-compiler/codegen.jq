@@ -132,15 +132,17 @@ def expr_is_control_flow:
 def expr_is_json_array_keyword:
   expr_peek as $tok |
   $tok != null and $tok.type == "KEYWORD" and
-  ($tok.value == "arrayPush:" or $tok.value == "arrayAt:" or
-   $tok.value == "arrayAt:put:" or $tok.value == "arrayRemoveAt:");
+  ($tok.value == "arrayPush:" or $tok.value == "arrayPushJson:" or
+   $tok.value == "arrayAt:" or $tok.value == "arrayAt:put:" or
+   $tok.value == "arrayRemoveAt:");
 
 # Object primitives that take arguments (keyword methods)
 def expr_is_json_object_keyword:
   expr_peek as $tok |
   $tok != null and $tok.type == "KEYWORD" and
   ($tok.value == "objectAt:" or $tok.value == "objectAt:put:" or
-   $tok.value == "objectHasKey:" or $tok.value == "objectRemoveKey:");
+   $tok.value == "objectAt:putJson:" or $tok.value == "objectHasKey:" or
+   $tok.value == "objectRemoveKey:" or $tok.value == "jsonPath:");
 
 # Unary JSON primitives (no arguments)
 def expr_is_json_unary:
@@ -646,12 +648,12 @@ def expr_parse_expr(min_bp):
         .state |= expr_skip_ws |
         # Determine operation name from keyword
         ($keyword | rtrimstr(":")) as $op_base |
-        # Check for compound keywords like arrayAt:put: or objectAt:put:
+        # Check for compound keywords like arrayAt:put: or objectAt:put: or objectAt:putJson:
         if $keyword == "arrayAt:" or $keyword == "objectAt:" then
           # Parse first argument
           (.state | expr_parse_expr(0)) as $first_arg |
           $first_arg.state | expr_skip_ws |
-          # Check for put: continuation
+          # Check for put: or putJson: continuation
           if expr_peek_type == "KEYWORD" and expr_peek.value == "put:" then
             expr_advance | expr_skip_ws |
             (. | expr_parse_expr(0)) as $second_arg |
@@ -660,6 +662,20 @@ def expr_parse_expr(min_bp):
               result: {
                 type: "json_primitive",
                 operation: ($op_base + "Put"),
+                receiver: $receiver,
+                args: [$first_arg.result, $second_arg.result]
+              }
+            }
+            | infix_loop
+          elif expr_peek_type == "KEYWORD" and expr_peek.value == "putJson:" then
+            # putJson: variant - inserts raw JSON without quoting
+            expr_advance | expr_skip_ws |
+            (. | expr_parse_expr(0)) as $second_arg |
+            {
+              state: $second_arg.state,
+              result: {
+                type: "json_primitive",
+                operation: ($op_base + "PutJson"),
                 receiver: $receiver,
                 args: [$first_arg.result, $second_arg.result]
               }
@@ -679,7 +695,7 @@ def expr_parse_expr(min_bp):
             | infix_loop
           end
         else
-          # Single-arg keywords: arrayPush:, arrayRemoveAt:, objectHasKey:, objectRemoveKey:
+          # Single-arg keywords: arrayPush:, arrayPushJson:, arrayRemoveAt:, objectHasKey:, objectRemoveKey:, jsonPath:
           (.state | expr_parse_expr(0)) as $arg |
           {
             state: $arg.state,
@@ -1608,6 +1624,18 @@ def expr_gen($locals; $ivars; $cvars):
       # str stringToJsonArray -> $(echo "$str" | jq -Rc '[., inputs]')
       # Converts newline-separated string to JSON array
       "$(echo \($quoted_recv) | jq -Rc '[., inputs]')"
+    elif .operation == "arrayPushJson" then
+      # arr arrayPushJson: jsonVal -> $(echo "$arr" | jq -c --argjson v "$jsonVal" '. + [$v]')
+      # Pushes raw JSON value without quoting (for nested objects/arrays)
+      "$(echo \($quoted_recv) | jq -c --argjson v \"\($arg_codes[0])\" '. + [$v]')"
+    elif .operation == "objectAtPutJson" then
+      # obj objectAt: key putJson: jsonVal -> $(echo "$obj" | jq -c --arg k "$key" --argjson v "$jsonVal" '.[$k] = $v')
+      # Sets key to raw JSON value without quoting (for nested objects/arrays)
+      "$(echo \($quoted_recv) | jq -c --arg k \"\($arg_codes[0])\" --argjson v \"\($arg_codes[1])\" '.[$k] = $v')"
+    elif .operation == "jsonPath" then
+      # json jsonPath: 'a.b.c' -> $(echo "$json" | jq -r '.a.b.c // empty')
+      # Extracts value at dot-separated path
+      "$(echo \($quoted_recv) | jq -r '.\($arg_codes[0]) // empty')"
     else
       "# ERROR: unknown json_primitive operation \(.operation)"
     end
@@ -1924,8 +1952,8 @@ def should_use_expr_parser:
        "isReadable", "isWritable", "isExecutable", "isEmpty", "notEmpty"] | index($v) != null;
     # JSON primitive keywords
     def is_json_primitive_keyword: . as $v |
-      ["arrayPush:", "arrayAt:", "arrayRemoveAt:",
-       "objectAt:", "objectHasKey:", "objectRemoveKey:"] | index($v) != null;
+      ["arrayPush:", "arrayPushJson:", "arrayAt:", "arrayRemoveAt:",
+       "objectAt:", "objectHasKey:", "objectRemoveKey:", "jsonPath:"] | index($v) != null;
     # JSON primitive unary identifiers
     def is_json_primitive_unary: . as $v |
       ["arrayLength", "arrayFirst", "arrayLast", "arrayIsEmpty",
