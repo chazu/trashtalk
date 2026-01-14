@@ -63,7 +63,7 @@ Application subclass: Object
 
   # Native event loop using GrpcClient.serverStream
   method: _tryNativeEventLoop [
-    @ $session runEventLoopWithDispatcher: $dispatcher
+    @ session runEventLoopWithDispatcher: dispatcher
   ]
 
   # Fallback: coproc-based event loop (uses grpcurl subprocess)
@@ -90,11 +90,11 @@ Application subclass: Object
 
   # Cleanup resources
   method: cleanup [
-    ($dispatcher notEmpty) ifTrue: [
-      @ $dispatcher cleanup
+    (dispatcher notEmpty) ifTrue: [
+      @ dispatcher cleanup
     ].
-    ($session notEmpty) ifTrue: [
-      @ $session disconnect
+    (session notEmpty) ifTrue: [
+      @ session disconnect
     ]
   ]
 
@@ -103,75 +103,75 @@ Application subclass: Object
 
   method: createTextView: title [
     | widget |
-    widget := $(@ Yutani::TextView titled: title inSession: $session).
-    @ $widget setDispatcher: $dispatcher.
-    ^ $widget
+    widget := $(@ Yutani::TextView titled: title inSession: session).
+    @ widget setDispatcher: dispatcher.
+    ^ widget
   ]
 
   method: createTextView: title text: initialText [
     | widget |
-    widget := $(@ Yutani::TextView titled: title text: initialText inSession: $session).
-    @ $widget setDispatcher: $dispatcher.
-    ^ $widget
+    widget := $(@ Yutani::TextView titled: title text: initialText inSession: session).
+    @ widget setDispatcher: dispatcher.
+    ^ widget
   ]
 
   method: createInputField: label [
     | widget |
-    widget := $(@ Yutani::InputField labeled: label inSession: $session).
-    @ $widget setDispatcher: $dispatcher.
-    ^ $widget
+    widget := $(@ Yutani::InputField labeled: label inSession: session).
+    @ widget setDispatcher: dispatcher.
+    ^ widget
   ]
 
   method: createInputField: label placeholder: placeholder [
     | widget |
-    widget := $(@ Yutani::InputField labeled: label placeholder: placeholder inSession: $session).
-    @ $widget setDispatcher: $dispatcher.
-    ^ $widget
+    widget := $(@ Yutani::InputField labeled: label placeholder: placeholder inSession: session).
+    @ widget setDispatcher: dispatcher.
+    ^ widget
   ]
 
   method: createListView: title [
     | widget |
-    widget := $(@ Yutani::ListView titled: title inSession: $session).
-    @ $widget setDispatcher: $dispatcher.
-    ^ $widget
+    widget := $(@ Yutani::ListView titled: title inSession: session).
+    @ widget setDispatcher: dispatcher.
+    ^ widget
   ]
 
   method: createVerticalLayout [
     | widget |
-    widget := $(@ Yutani::VerticalLayout inSession: $session).
-    @ $widget setDispatcher: $dispatcher.
-    ^ $widget
+    widget := $(@ Yutani::VerticalLayout inSession: session).
+    @ widget setDispatcher: dispatcher.
+    ^ widget
   ]
 
   method: createHorizontalLayout [
     | widget |
-    widget := $(@ Yutani::HorizontalLayout inSession: $session).
-    @ $widget setDispatcher: $dispatcher.
-    ^ $widget
+    widget := $(@ Yutani::HorizontalLayout inSession: session).
+    @ widget setDispatcher: dispatcher.
+    ^ widget
   ]
 
   # Set root widget
   method: setRoot: widget [
-    rootWidget := $widget.
-    @ $widget setAsRoot
+    rootWidget := widget
+    @ widget setAsRoot
   ]
 
   # === Event Handler Registration ===
 
   # Register global key handler
   method: onKeyDo: handler [
-    @ $dispatcher onKeyDo: handler
+    @ dispatcher onKeyDo: handler
   ]
 
   # Register global mouse handler
   method: onMouseDo: handler [
-    @ $dispatcher onMouseDo: handler
+    @ dispatcher onMouseDo: handler
   ]
 
   # Accessors
-  method: getSession [ ^ $session ]
-  method: getDispatcher [ ^ $dispatcher ]
-  method: getRootWidget [ ^ $rootWidget ]
+  method: getSession [ ^ session ]
+  method: getDispatcher [ ^ dispatcher ]
+  method: getRootWidget [ ^ rootWidget ]
 
   # Private setters
   method: _setSession: v [ session := v ]
