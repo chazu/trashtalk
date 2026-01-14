@@ -19,21 +19,19 @@ GrpcClient subclass: Object
   # Class methods - Factory constructors
   # ==========================================================================
 
-  rawClassMethod: connectTo: addr [
-    pragma: bashOnly
-    local client
-    client=$(@ GrpcClient new)
-    @ "$client" _setAddress: "$1"
-    echo "$client"
+  classMethod: connectTo: addr [
+    | client |
+    client := $(@ GrpcClient new).
+    @ client _setAddress: addr.
+    ^ client
   ]
 
-  rawClassMethod: connectTo: addr withProto: proto [
-    pragma: bashOnly
-    local client
-    client=$(@ GrpcClient connectTo: "$1")
-    @ "$client" _setProtoFile: "$2"
-    @ "$client" _setUseReflection: 'no'
-    echo "$client"
+  classMethod: connectTo: addr withProto: proto [
+    | client |
+    client := $(@ GrpcClient connectTo: addr).
+    @ client _setProtoFile: proto.
+    @ client _setUseReflection: 'no'.
+    ^ client
   ]
 
   # ==========================================================================
@@ -204,56 +202,46 @@ GrpcClient subclass: Object
   # Configuration methods
   # ==========================================================================
 
-  rawMethod: enablePooling [
-    pragma: bashOnly
-    _ivar_set poolConnections 'yes'
+  method: enablePooling [
+    poolConnections := 'yes'
   ]
 
-  rawMethod: disablePooling [
-    pragma: bashOnly
-    _ivar_set poolConnections 'no'
+  method: disablePooling [
+    poolConnections := 'no'
   ]
 
-  rawMethod: enableTLS [
-    pragma: bashOnly
-    _ivar_set usePlaintext 'no'
+  method: enableTLS [
+    usePlaintext := 'no'
   ]
 
-  rawMethod: enablePlaintext [
-    pragma: bashOnly
-    _ivar_set usePlaintext 'yes'
+  method: enablePlaintext [
+    usePlaintext := 'yes'
   ]
 
-  rawMethod: address [
-    pragma: bashOnly
-    echo "$(_ivar address)"
+  method: address [
+    ^ address
   ]
 
-  rawMethod: isUsingReflection [
-    pragma: bashOnly
-    echo "$(_ivar useReflection)"
+  method: isUsingReflection [
+    ^ useReflection
   ]
 
-  rawMethod: isPoolingEnabled [
-    pragma: bashOnly
-    echo "$(_ivar poolConnections)"
+  method: isPoolingEnabled [
+    ^ poolConnections
   ]
 
   # ==========================================================================
   # Private setters
   # ==========================================================================
 
-  rawMethod: _setAddress: a [
-    pragma: bashOnly
-    _ivar_set address "$1"
+  method: _setAddress: a [
+    address := a
   ]
 
-  rawMethod: _setProtoFile: p [
-    pragma: bashOnly
-    _ivar_set protoFile "$1"
+  method: _setProtoFile: p [
+    protoFile := p
   ]
 
-  rawMethod: _setUseReflection: r [
-    pragma: bashOnly
-    _ivar_set useReflection "$1"
+  method: _setUseReflection: r [
+    useReflection := r
   ]
