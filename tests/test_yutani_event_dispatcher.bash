@@ -55,7 +55,7 @@ echo ""
 echo "--- Instance Creation ---"
 
 dispatcher=$(@ Yutani::EventDispatcher new)
-run_test "EventDispatcher new creates instance" "yutani__eventdispatcher_" "${dispatcher:0:24}"
+run_test "EventDispatcher new creates instance" "yutani_eventdispatcher_" "${dispatcher:0:23}"
 
 # ============================================================================
 # Running State

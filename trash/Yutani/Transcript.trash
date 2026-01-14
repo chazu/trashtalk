@@ -4,93 +4,80 @@ Transcript subclass: Yutani::Application
   instanceVars: outputView:'' inputField:'' layout:'' history:''
 
   # Override setup to build the UI
-  # Uses globals for event handler references (bash-specific pattern)
-  rawMethod: setup [
-    pragma: bashOnly
-    local _layout _outputView _inputField initialText
+  method: setup [
+    | _layout _outputView _inputField initialText submitHandler keyHandler selfId |
 
-    # Store self in global for event handlers
-    __TRANSCRIPT_SELF="$_RECEIVER"
+    # Capture self ID for handler embedding
+    selfId := $(@ self id).
 
     # Create layout
-    _layout=$(@ "$_RECEIVER" createVerticalLayout)
-    _ivar_set layout "$_layout"
+    _layout := $(@ self createVerticalLayout).
+    layout := _layout.
 
     # Create output view with initial text
-    initialText="Trashtalk Transcript
+    initialText := 'Trashtalk Transcript
 Type code and press Enter to evaluate. Ctrl+C to exit.
-"
-    _outputView=$(@ "$_RECEIVER" createTextView: "Output" text: "$initialText")
-    _ivar_set outputView "$_outputView"
-    _ivar_set history "$initialText"
+'.
+    _outputView := $(@ self createTextView: 'Output' text: initialText).
+    outputView := _outputView.
+    history := initialText.
 
     # Create input field
-    _inputField=$(@ "$_RECEIVER" createInputField: ">" placeholder: "Enter Trashtalk code...")
-    _ivar_set inputField "$_inputField"
+    _inputField := $(@ self createInputField: '>' placeholder: 'Enter Trashtalk code...').
+    inputField := _inputField.
 
     # Add widgets to layout
-    @ "$_layout" addChild: "$_outputView"
-    @ "$_layout" addChild: "$_inputField" fixedSize: 3 focus: true
+    @ _layout addChild: _outputView.
+    @ _layout addChild: _inputField fixedSize: 3 focus: true.
 
     # Set root
-    @ "$_RECEIVER" setRoot: "$_layout"
+    @ self setRoot: _layout.
 
-    # Register event handlers using global reference
-    @ "$_inputField" onSubmitDo: '@ "$__TRANSCRIPT_SELF" evaluateInput: "$__TEXT"'
-    @ "$_RECEIVER" onKeyDo: '@ "$__TRANSCRIPT_SELF" handleKey: "$__EVENT"'
+    # Register event handlers - embed instance ID using string concatenation
+    submitHandler := $(@ String concat: '@ "' with: selfId with: '" evaluateInput: "$__TEXT"').
+    keyHandler := $(@ String concat: '@ "' with: selfId with: '" handleKey: "$__EVENT"').
+
+    @ _inputField onSubmitDo: submitHandler.
+    @ self onKeyDo: keyHandler
   ]
 
-  # Handle key events (uses bash case statement)
-  rawMethod: handleKey: event [
-    pragma: bashOnly
-    local event="$1" keyName _inputField
+  # Handle key events
+  method: handleKey: event [
+    | keyName |
+    keyName := $(@ event keyName).
 
-    keyName=$(@ "$event" keyName)
-    _inputField="$(_ivar inputField)"
-
-    case "$keyName" in
-      KEY_CTRL_C|KEY_CTRL_D)
-        @ "$_RECEIVER" stop
-        ;;
-      KEY_CTRL_L)
-        @ "$_RECEIVER" clearOutput
-        ;;
-      KEY_TAB)
-        @ "$_inputField" focus
-        ;;
-      KEY_ESC)
-        @ "$_inputField" clear
-        @ "$_inputField" focus
-        ;;
-    esac
+    (@ String equals: keyName to: 'KEY_CTRL_C') ifTrue: [ @ self stop ].
+    (@ String equals: keyName to: 'KEY_CTRL_D') ifTrue: [ @ self stop ].
+    (@ String equals: keyName to: 'KEY_CTRL_L') ifTrue: [ @ self clearOutput ].
+    (@ String equals: keyName to: 'KEY_TAB') ifTrue: [ @ inputField focus ].
+    (@ String equals: keyName to: 'KEY_ESC') ifTrue: [
+      @ inputField clear.
+      @ inputField focus
+    ]
   ]
 
-  # Evaluate input text (uses bash control flow and multi-line string building)
-  rawMethod: evaluateInput: text [
-    pragma: bashOnly
-    local text="$1" result _inputField newText
+  # Evaluate input text
+  method: evaluateInput: text [
+    | result newText |
 
-    if [[ -z "$text" ]]; then
-      return
-    fi
-
-    _inputField="$(_ivar inputField)"
+    (@ String isEmpty: text) ifTrue: [ ^ nil ].
 
     # Evaluate the code
-    result=$(@ Trash eval: "$text" 2>&1)
+    result := $(@ Trash eval: text).
 
-    # Build output
-    newText="> ${text}
-${result}
+    # Build output: "> input\nresult\n\n"
+    newText := $(@ String concat: '> ' with: text with: '
+').
+    newText := $(@ String concat: newText with: result with: '
 
-"
+').
 
     # Append to output
-    @ "$_RECEIVER" appendOutput: "$newText"
+    @ self appendOutput: newText.
 
     # Clear and refocus input
-    @ "$_inputField" clear
-    @ "$_inputField" focus
+    @ inputField clear.
+    @ inputField focus
   ]
 
   # Append text to output
