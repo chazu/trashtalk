@@ -954,13 +954,38 @@ def dstring_transform_ivars($ivars):
     )
   end;
 
-# Transform instance variable references in subshell message sends
-# For $(@ Receiver selector: arg), transforms bare ivar args to "$(_ivar arg)"
-# Also handles @ self -> @ "$_RECEIVER"
+# Transform instance variable and local variable references in subshell message sends
+# For $(@ receiver selector: arg), transforms:
+# - @ self -> @ "$_RECEIVER"
+# - @ localVar -> @ "$localVar" (receiver position)
+# - selector: localVar -> selector: "$localVar" (argument position)
+# - selector: ivar -> selector: "$(_ivar ivar)" (instance variable argument)
 def subshell_transform_ivars($ivars; $locals):
   . as $str |
   # First, replace @ self with @ "$_RECEIVER"
   ($str | gsub("@ self\\b"; "@ \"$_RECEIVER\"")) |
+  # Transform local variables as receivers: @ localVar -> @ "$localVar"
+  # Pattern: @ followed by local variable name (not already quoted)
+  (if ($locals | length) == 0 then .
+  else
+    reduce ($locals // [])[] as $local (
+      .;
+      # Match @ followed by local var name (must be word boundary after)
+      gsub("@ \($local)(?=[^a-zA-Z0-9_]|$)"; "@ \"$\($local)\"")
+    )
+  end) |
+  # Transform local variables as keyword arguments: selector: localVar -> selector: "$localVar"
+  (if ($locals | length) == 0 then .
+  else
+    reduce ($locals // [])[] as $local (
+      .;
+      # Match bare local var after `: ` - transform to "$localVar"
+      # The local must be followed by word boundary (space, ), ., etc.)
+      gsub("(?<=: )\($local)(?=[^a-zA-Z0-9_]|$)"; "\"$\($local)\"") |
+      # Also match at end of subshell before final )
+      gsub("(?<=: )\($local)\\)$"; "\"$\($local)\")")
+    )
+  end) |
   # Then transform bare ivar identifiers that appear as keyword arguments
   # Pattern: after `: ` (keyword separator), a bare identifier that's an ivar
   if ($ivars | length) == 0 then .

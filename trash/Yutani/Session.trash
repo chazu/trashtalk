@@ -17,15 +17,15 @@ Session subclass: Object
     _ := @ client enablePooling.
     # Create session instance
     session := @ Yutani::Session new.
-    _ := $(@ session setHost: theHost).
-    _ := $(@ session setGrpcClient: client).
+    _ := @ session setHost: theHost.
+    _ := @ session setGrpcClient: client.
     # Create session on server
     builder := @ Json object.
     _ := @ builder at: 'client_name' put: 'trashtalk'.
     json := @ builder build.
     response := @ client call: 'industries.loosh.yutani.v1.SessionService/CreateSession' with: json.
     sid := response jsonPath: 'sessionId.id'.
-    _ := $(@ session setSessionId: sid).
+    _ := @ session setSessionId: sid.
     ^ session
   ]
 
