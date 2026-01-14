@@ -326,10 +326,6 @@ native: fast $(COMPILED_DIR)/.build
 		relpath=$${src#$(TRASH_DIR)/}; \
 		outname=$${relpath%.trash}; \
 		outname=$$(echo "$$outname" | sed 's/\//__/g'); \
-		if grep -q "pragma: primitiveClass" "$$src" 2>/dev/null; then \
-			echo "  - $$outname (skipped)"; \
-			return 0; \
-		fi; \
 		$(LIB_DIR)/jq-compiler/driver.bash parse "$$src" 2>/dev/null | \
 			$(PROCYON) --mode=plugin 2>/dev/null > "$(COMPILED_DIR)/.build/$$outname.go" 2>/dev/null; \
 		if [[ -s "$(COMPILED_DIR)/.build/$$outname.go" ]]; then \
