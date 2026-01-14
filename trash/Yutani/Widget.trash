@@ -5,54 +5,54 @@ Widget subclass: Object
 
   # Session accessor
   method: getSession [
-    ^ session
+    ^ $session
   ]
 
   method: setSession: s [
-    session := s
+    session := $s
   ]
 
   # Widget ID accessor
   method: getWidgetId [
-    ^ widgetId
+    ^ $widgetId
   ]
 
   method: setWidgetId: id [
-    widgetId := id
+    widgetId := $id
   ]
 
   # Title accessor
   method: getTitle [
-    ^ title
+    ^ $title
   ]
 
   method: setTitle: t [
-    title := t
+    title := $t
   ]
 
   # Dispatcher accessor
   method: getDispatcher [
-    ^ dispatcher
+    ^ $dispatcher
   ]
 
   method: setDispatcher: d [
-    dispatcher := d
+    dispatcher := $d
   ]
 
   # Delete this widget from the session
   method: delete [
     | s w d |
-    s := session.
-    w := widgetId.
-    d := dispatcher.
-    (d notEmpty) ifTrue: [
-      (w notEmpty) ifTrue: [
-        @ d removeHandlerFor: w
+    s := $session.
+    w := $widgetId.
+    d := $dispatcher.
+    ($d notEmpty) ifTrue: [
+      ($w notEmpty) ifTrue: [
+        @ $d removeHandlerFor: $w
       ]
     ].
-    (s notEmpty) ifTrue: [
-      (w notEmpty) ifTrue: [
-        @ s deleteWidget: w
+    ($s notEmpty) ifTrue: [
+      ($w notEmpty) ifTrue: [
+        @ $s deleteWidget: $w
       ]
     ]
   ]
@@ -60,11 +60,11 @@ Widget subclass: Object
   # Focus this widget
   method: focus [
     | s w |
-    s := session.
-    w := widgetId.
-    (s notEmpty) ifTrue: [
-      (w notEmpty) ifTrue: [
-        @ s focusWidget: w
+    s := $session.
+    w := $widgetId.
+    ($s notEmpty) ifTrue: [
+      ($w notEmpty) ifTrue: [
+        @ $s focusWidget: $w
       ]
     ]
   ]
@@ -73,11 +73,11 @@ Widget subclass: Object
   # Handler is eval'd with $__EVENT set to the Event instance
   method: onEventDo: handler [
     | d w |
-    d := dispatcher.
-    w := widgetId.
-    (d notEmpty) ifTrue: [
-      (w notEmpty) ifTrue: [
-        @ d onWidget: w do: handler
+    d := $dispatcher.
+    w := $widgetId.
+    ($d notEmpty) ifTrue: [
+      ($w notEmpty) ifTrue: [
+        @ $d onWidget: $w do: $handler
       ]
     ]
   ]
