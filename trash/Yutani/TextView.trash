@@ -6,52 +6,52 @@ TextView subclass: Yutani::Widget
   # Create a new TextView with given title
   classMethod: titled: title inSession: sess [
     | instance wid |
-    instance := @ Yutani::TextView new.
-    @ instance setSession: sess.
-    @ instance setTitle: title.
-    wid := @ sess createTextView: title.
-    @ instance setWidgetId: wid.
-    ^ instance
+    instance := $(@ Yutani::TextView new).
+    @ $instance setSession: $sess.
+    @ $instance setTitle: $title.
+    wid := $(@ $sess createTextView: $title).
+    @ $instance setWidgetId: $wid.
+    ^ $instance
   ]
 
   # Create a new TextView with title and initial text
   classMethod: titled: title text: initialText inSession: sess [
     | instance wid |
-    instance := @ Yutani::TextView new.
-    @ instance setSession: sess.
-    @ instance setTitle: title.
-    @ instance _setText: initialText.
-    wid := @ sess createTextViewWithText: title text: initialText.
-    @ instance setWidgetId: wid.
-    ^ instance
+    instance := $(@ Yutani::TextView new).
+    @ $instance setSession: $sess.
+    @ $instance setTitle: $title.
+    @ $instance _setText: $initialText.
+    wid := $(@ $sess createTextViewWithText: $title text: $initialText).
+    @ $instance setWidgetId: $wid.
+    ^ $instance
   ]
 
   # Get current text
   method: getText [
-    ^ text
+    ^ $text
   ]
 
   # Set text (internal, no server update)
   method: _setText: t [
-    text := t
+    text := $t
   ]
 
   # Set text content (updates server)
   method: setText: newText [
-    text := newText.
-    @ session setText: newText on: widgetId.
+    text := $newText.
+    @ $session setText: $newText on: $widgetId
   ]
 
   # Append text
   method: appendText: moreText [
     | currentText |
-    currentText := text , moreText.
-    text := currentText.
-    @ session setText: currentText on: widgetId.
+    currentText := "${text}${moreText}".
+    text := $currentText.
+    @ $session setText: $currentText on: $widgetId
   ]
 
   # Clear text
   method: clear [
     text := ''.
-    @ session setText: '' on: widgetId.
+    @ $session setText: '' on: $widgetId
   ]
