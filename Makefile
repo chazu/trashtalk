@@ -319,7 +319,8 @@ native: fast $(COMPILED_DIR)/.build
 	@echo "Building native plugins (4 parallel jobs)..."
 	@cd $(COMPILED_DIR)/.build && \
 		go mod init trashtalk-native 2>/dev/null || true && \
-		go get github.com/mattn/go-sqlite3 github.com/google/uuid google.golang.org/grpc google.golang.org/protobuf github.com/jhump/protoreflect 2>/dev/null || true
+		go get github.com/mattn/go-sqlite3 github.com/google/uuid google.golang.org/grpc google.golang.org/protobuf github.com/jhump/protoreflect github.com/bufbuild/protocompile github.com/golang/protobuf 2>/dev/null || true && \
+		go mod tidy 2>/dev/null || true
 	@_build_plugin() { \
 		src="$$1"; \
 		relpath=$${src#$(TRASH_DIR)/}; \
@@ -380,14 +381,15 @@ endif
 	$(LIB_DIR)/jq-compiler/driver.bash compile "$$srcfile" > "$(COMPILED_DIR)/$$outname"; \
 	echo "  → $(COMPILED_DIR)/$$outname"; \
 	echo "Building $$outname.$(DYLIB_EXT)..."; \
-	cd $(COMPILED_DIR)/.build && \
+	(cd $(COMPILED_DIR)/.build && \
 		go mod init $$outname 2>/dev/null || true && \
-		go get github.com/mattn/go-sqlite3 github.com/google/uuid google.golang.org/grpc google.golang.org/protobuf github.com/jhump/protoreflect 2>/dev/null || true; \
+		go get github.com/mattn/go-sqlite3 github.com/google/uuid google.golang.org/grpc google.golang.org/protobuf github.com/jhump/protoreflect github.com/bufbuild/protocompile github.com/golang/protobuf 2>/dev/null || true && \
+		go mod tidy 2>/dev/null || true); \
 	$(LIB_DIR)/jq-compiler/driver.bash parse "$$srcfile" 2>/dev/null | \
 		$(PROCYON) --mode=plugin 2>/dev/null > "$(COMPILED_DIR)/.build/$$outname.go"; \
 	if [[ -s "$(COMPILED_DIR)/.build/$$outname.go" ]]; then \
-		cd $(COMPILED_DIR)/.build && \
-			CGO_ENABLED=1 go build -buildmode=c-shared -o ../$$outname.$(DYLIB_EXT) $$outname.go && \
+		(cd $(COMPILED_DIR)/.build && \
+			CGO_ENABLED=1 go build -buildmode=c-shared -o ../$$outname.$(DYLIB_EXT) $$outname.go) && \
 		echo "  → $(COMPILED_DIR)/$$outname.$(DYLIB_EXT)" || echo "  ✗ Build failed"; \
 	else \
 		echo "  - Skipped (not supported by procyon)"; \
