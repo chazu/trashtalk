@@ -1,0 +1,189 @@
+# Json - Builder for JSON construction and parsing
+# Provides fluent API for building JSON objects and arrays without bash tools like jo
+#
+# Usage:
+#   # Build an object
+#   json := @ Json object
+#     at: 'name' put: 'Alice'
+#     at: 'age' put: '30'
+#     build.
+#   # => {"name":"Alice","age":"30"}
+#
+#   # Build with nested objects
+#   json := @ Json object
+#     at: 'session_id' putJson: (@ Json object at: 'id' put: sid; build)
+#     at: 'type' put: 'WIDGET_LIST'
+#     build.
+#   # => {"session_id":{"id":"abc123"},"type":"WIDGET_LIST"}
+#
+#   # Build an array
+#   json := @ Json array
+#     push: 'first'
+#     push: 'second'
+#     build.
+#   # => ["first","second"]
+#
+#   # Parse JSON and extract values
+#   value := jsonString jsonPath: 'session_id.id'.
+
+Json subclass: Object
+  instanceVars: data:'' type:''
+
+  # ============================================================================
+  # Factory Methods
+  # ============================================================================
+
+  # Create a new JSON object builder
+  classMethod: object [
+    | instance |
+    instance := @ Json new.
+    @ instance _setType: 'object'.
+    @ instance _setData: '{}'.
+    ^ instance
+  ]
+
+  # Create a new JSON array builder
+  classMethod: array [
+    | instance |
+    instance := @ Json new.
+    @ instance _setType: 'array'.
+    @ instance _setData: '[]'.
+    ^ instance
+  ]
+
+  # ============================================================================
+  # Object Building Methods (return self for chaining)
+  # ============================================================================
+
+  # Set a string value at key
+  # Usage: @ builder at: 'name' put: 'Alice'
+  method: at: key put: value [
+    data := data objectAt: key put: value.
+    ^ self
+  ]
+
+  # Set a raw JSON value at key (for nested objects/arrays)
+  # Usage: @ builder at: 'nested' putJson: '{"a":1}'
+  method: at: key putJson: jsonValue [
+    data := data objectAt: key putJson: jsonValue.
+    ^ self
+  ]
+
+  # Set a numeric value at key
+  # Note: Numbers are passed as strings and inserted as raw JSON
+  # Usage: @ builder at: 'count' putNumber: '42'
+  method: at: key putNumber: numValue [
+    data := data objectAt: key putJson: numValue.
+    ^ self
+  ]
+
+  # Set a boolean value at key
+  # Usage: @ builder at: 'enabled' putBool: 'true'
+  method: at: key putBool: boolValue [
+    data := data objectAt: key putJson: boolValue.
+    ^ self
+  ]
+
+  # ============================================================================
+  # Array Building Methods (return self for chaining)
+  # ============================================================================
+
+  # Push a string value onto the array
+  # Usage: @ builder push: 'item'
+  method: push: value [
+    data := data arrayPush: value.
+    ^ self
+  ]
+
+  # Push a raw JSON value onto the array (for nested objects/arrays)
+  # Usage: @ builder pushJson: '{"nested":true}'
+  method: pushJson: jsonValue [
+    data := data arrayPushJson: jsonValue.
+    ^ self
+  ]
+
+  # Push a numeric value onto the array
+  # Usage: @ builder pushNumber: '42'
+  method: pushNumber: numValue [
+    data := data arrayPushJson: numValue.
+    ^ self
+  ]
+
+  # Push a boolean value onto the array
+  # Usage: @ builder pushBool: 'true'
+  method: pushBool: boolValue [
+    data := data arrayPushJson: boolValue.
+    ^ self
+  ]
+
+  # ============================================================================
+  # Finalization
+  # ============================================================================
+
+  # Return the built JSON string
+  method: build [
+    ^ data
+  ]
+
+  # Alias for build (more Smalltalk-like)
+  method: asString [
+    ^ data
+  ]
+
+  # ============================================================================
+  # Convenience Class Methods for Common Patterns
+  # ============================================================================
+
+  # Create a simple {"key": "value"} object
+  classMethod: key: k value: v [
+    | builder _ |
+    builder := @ Json object.
+    _ := @ builder at: k put: v.
+    ^ @ builder build
+  ]
+
+  # Create a session_id wrapper: {"session_id": {"id": "sid"}}
+  classMethod: sessionId: sid [
+    | innerBuilder outerBuilder inner _ |
+    innerBuilder := @ Json object.
+    _ := @ innerBuilder at: 'id' put: sid.
+    inner := @ innerBuilder build.
+    outerBuilder := @ Json object.
+    _ := @ outerBuilder at: 'session_id' putJson: inner.
+    ^ @ outerBuilder build
+  ]
+
+  # Create a widget_id wrapper: {"widget_id": {"id": "wid"}}
+  classMethod: widgetId: wid [
+    | innerBuilder outerBuilder inner _ |
+    innerBuilder := @ Json object.
+    _ := @ innerBuilder at: 'id' put: wid.
+    inner := @ innerBuilder build.
+    outerBuilder := @ Json object.
+    _ := @ outerBuilder at: 'widget_id' putJson: inner.
+    ^ @ outerBuilder build
+  ]
+
+  # Create combined session + widget wrapper
+  classMethod: sessionId: sid widgetId: wid [
+    | sidBuilder widBuilder builder sidJson widJson _ |
+    sidBuilder := @ Json object.
+    _ := @ sidBuilder at: 'id' put: sid.
+    sidJson := @ sidBuilder build.
+    widBuilder := @ Json object.
+    _ := @ widBuilder at: 'id' put: wid.
+    widJson := @ widBuilder build.
+    builder := @ Json object.
+    _ := @ builder at: 'session_id' putJson: sidJson.
+    _ := @ builder at: 'widget_id' putJson: widJson.
+    ^ @ builder build
+  ]
+
+  # ============================================================================
+  # Private Setters
+  # ============================================================================
+
+  method: _setType: t [ type := t ]
+  method: _setData: d [ data := d ]
+  method: _getType [ ^ type ]
+  method: _getData [ ^ data ]
