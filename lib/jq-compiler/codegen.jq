@@ -938,6 +938,31 @@ def dstring_transform_ivars($ivars):
     )
   end;
 
+# Transform instance variable references in subshell message sends
+# For $(@ Receiver selector: arg), transforms bare ivar args to "$(_ivar arg)"
+# Also handles @ self -> @ "$_RECEIVER"
+def subshell_transform_ivars($ivars; $locals):
+  . as $str |
+  # First, replace @ self with @ "$_RECEIVER"
+  ($str | gsub("@ self\\b"; "@ \"$_RECEIVER\"")) |
+  # Then transform bare ivar identifiers that appear as keyword arguments
+  # Pattern: after `: ` (keyword separator), a bare identifier that's an ivar
+  if ($ivars | length) == 0 then .
+  else
+    reduce ($ivars // [])[] as $ivar (
+      .;
+      # Only transform if NOT a local variable (locals take precedence)
+      if ($locals | any(. == $ivar)) then .
+      else
+        # Match bare ivar after `: ` - transform to "$(_ivar ivar)"
+        # The ivar must be followed by word boundary (space, ), ., etc.)
+        gsub("(?<=: )\($ivar)(?=[^a-zA-Z0-9_]|$)"; "\"$(_ivar \($ivar))\"") |
+        # Also match at end of subshell before final )
+        gsub("(?<=: )\($ivar)\\)$"; "\"$(_ivar \($ivar))\")")
+      end
+    )
+  end;
+
 # Generate code for an expression
 def expr_gen($locals; $ivars; $cvars):
   if . == null then ""
@@ -957,8 +982,8 @@ def expr_gen($locals; $ivars; $cvars):
     "\(.package)::\(.name)"
   elif .type == "variable" then .value
   elif .type == "subshell" then
-    # Replace self with "$_RECEIVER" in subshell content
-    .value | gsub("@ self\\b"; "@ \"$_RECEIVER\"")
+    # Transform self and instance variables in subshell message sends
+    .value | subshell_transform_ivars($ivars; $locals)
   elif .type == "arithmetic" then .value
   elif .type == "arith_cmd" then .value
   elif .type == "path" then .value
