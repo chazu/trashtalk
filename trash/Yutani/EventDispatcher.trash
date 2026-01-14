@@ -11,16 +11,12 @@ EventDispatcher subclass: Object
   # ============================================================================
 
   # Create a new dispatcher with its own handler registry
-  # (bash-specific: instance creation requires runtime functions)
-  rawClassMethod: new [
-    pragma: bashOnly
-    local instance
-    # Create instance using runtime functions
-    instance=$(_generate_instance_id "Yutani__EventDispatcher")
-    _create_instance "Yutani::EventDispatcher" "$instance"
-    # Initialize running state
-    @ "$instance" _setRunning: 'true'
-    echo "$instance"
+  classMethod: new [
+    | instance |
+    instance := $(@ Runtime generateId: 'Yutani::EventDispatcher').
+    @ Runtime create: 'Yutani::EventDispatcher' id: instance.
+    @ instance _setRunning: 'true'.
+    ^ instance
   ]
 
   # ============================================================================
@@ -129,19 +125,13 @@ EventDispatcher subclass: Object
   ]
 
   # Dispatch a raw JSON event (creates Event, then dispatches)
-  # Uses jq for JSON validation (bash-specific)
-  rawMethod: dispatchJson: json [
-    pragma: bashOnly
-    pragma: direct
-    local json="$1" event
-
-    # Skip non-JSON lines
-    if ! echo "$json" | jq -e . >/dev/null 2>&1; then
-      return
-    fi
-
-    event=$(@ Yutani::Event fromJson: "$json")
-    @ "$_RECEIVER" dispatch: "$event"
+  # Skip non-JSON lines by checking for opening brace
+  method: dispatchJson: json [
+    | event |
+    (@ String startsWith: json prefix: '{') ifTrue: [
+      event := $(@ Yutani::Event fromJson: json).
+      @ self dispatch: event
+    ]
   ]
 
   # ============================================================================
