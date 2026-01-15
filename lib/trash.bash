@@ -1443,16 +1443,17 @@ function _native_daemon_available {
   # Quick check: socket file must exist
   [[ -S "$_NATIVE_DAEMON_SOCKET" ]] || return 1
 
-  # Verify daemon responds with a ping (empty request returns error but proves connectivity)
+  # Verify daemon responds with a ping - must get non-empty response
   # Using timeout to avoid hanging if daemon is stuck
+  local response
   if command -v timeout >/dev/null 2>&1; then
-    echo '{"class":"","selector":"ping","args":[]}' | timeout 1 nc -U "$_NATIVE_DAEMON_SOCKET" >/dev/null 2>&1
+    response=$(echo '{"class":"","selector":"ping","args":[]}' | timeout 1 nc -U "$_NATIVE_DAEMON_SOCKET" 2>/dev/null)
   else
     # macOS doesn't have timeout by default, use a simple socket test
-    echo '{"class":"","selector":"ping","args":[]}' | nc -U "$_NATIVE_DAEMON_SOCKET" >/dev/null 2>&1
+    response=$(echo '{"class":"","selector":"ping","args":[]}' | nc -U "$_NATIVE_DAEMON_SOCKET" 2>/dev/null)
   fi
-  # Even an error response means daemon is alive
-  return 0
+  # Must get a response to prove daemon is alive (even error response is fine)
+  [[ -n "$response" ]]
 }
 
 # Check if a native plugin exists for a class
