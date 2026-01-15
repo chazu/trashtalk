@@ -2,7 +2,7 @@
 # Provides an interface for reading, writing, and managing files
 File subclass: Object
   pragma: primitiveClass
-  instanceVars: path
+  instanceVars: path:''
 
   # Create a File object for a given path
   # Usage: file=$(@ File at: "/tmp/foo.txt")
