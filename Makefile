@@ -80,8 +80,7 @@ bash: $(COMPILED_DIR) $(COMPILED_DIR)/traits
 # Native Plugin Compilation (Procyon --mode=plugin)
 # =============================================================================
 
-plugins: $(BUILD_DIR) bash
-	@echo ""
+plugins: $(BUILD_DIR)
 	@echo "Building native plugins..."
 	@# Initialize Go module for plugin builds
 	@cd $(BUILD_DIR) && \
