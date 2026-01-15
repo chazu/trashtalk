@@ -1499,6 +1499,8 @@ function _send_native {
 
   # Load instance data if this is an instance method
   if [[ -n "$instance_id" ]]; then
+    # Ensure instance is loaded from database if not in memory cache
+    _ensure_loaded "$instance_id"
     instance_json=$(_env_get "$instance_id" 2>/dev/null)
     # Note: Keep numbers as-is - Go structs expect int types, not strings
   fi
