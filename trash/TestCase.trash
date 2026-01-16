@@ -4,8 +4,7 @@
 TestCase subclass: Object
   instanceVars: passed:0 failed:0 skipped:0 currentTest:'unknown'
 
-  classMethod: new [
-    pragma: primitive
+  rawClassMethod: new [
     local id class
     class=$(@ Runtime class)
     id=$(@ Runtime generateId: "$class")
@@ -228,8 +227,7 @@ TestCase subclass: Object
   # Test Runner
   # ==========================================
 
-  method: runTest: methodName [
-    pragma: primitive
+  rawMethod: runTest: methodName [
     @ "$_RECEIVER" setCurrentTest: "$methodName"
     @ "$_RECEIVER" setUp
     @ "$_RECEIVER" "$methodName"
@@ -238,8 +236,7 @@ TestCase subclass: Object
     return $result
   ]
 
-  classMethod: runAll [
-    pragma: primitive
+  rawClassMethod: runAll [
     local instance passed failed skipped total class methods
     class=$(@ Runtime class)
     instance=$(@ "$class" new)
