@@ -15,18 +15,18 @@ Tool subclass: Object
   pragma: primitiveClass
 
   # Override in subclasses to return the command name
-  rawClassMethod: name [
+  classMethod: name [
     echo ""
   ]
 
   # Override in subclasses to return the install command
   # e.g., "brew install jq" or "apt-get install -y jq"
-  rawClassMethod: installCommand [
+  classMethod: installCommand [
     echo ""
   ]
 
   # Check if the tool is installed and on PATH
-  rawClassMethod: isInstalled [
+  classMethod: isInstalled [
     local toolName checkCmd
     toolName=$(@ "$_RECEIVER" name)
     checkCmd="command -v ${toolName}"
@@ -34,7 +34,7 @@ Tool subclass: Object
   ]
 
   # Get the path to the tool executable
-  rawClassMethod: path [
+  classMethod: path [
     local toolName checkCmd
     toolName=$(@ "$_RECEIVER" name)
     checkCmd="command -v ${toolName}"
@@ -42,7 +42,7 @@ Tool subclass: Object
   ]
 
   # Get the version of the tool (override for tool-specific parsing)
-  rawClassMethod: version [
+  classMethod: version [
     local toolName toolPath versionCmd result
     toolName=$(@ "$_RECEIVER" name)
     toolPath=$(@ "$_RECEIVER" path)
@@ -71,7 +71,7 @@ Tool subclass: Object
   ]
 
   # Install the tool - override in subclasses for custom behavior
-  rawClassMethod: install [
+  classMethod: install [
     local installCmd toolName
     installCmd=$(@ "$_RECEIVER" installCommand)
     toolName=$(@ "$_RECEIVER" name)
@@ -98,7 +98,7 @@ Tool subclass: Object
   # - Installs if not
   # - Verifies it's on PATH after install
   # Returns: "true" on success, throws error on failure
-  rawClassMethod: ensure [
+  classMethod: ensure [
     local toolName isInstalledVal
     toolName=$(@ "$_RECEIVER" name)
 
@@ -133,7 +133,7 @@ Tool subclass: Object
   ]
 
   # Run the tool with arguments (synchronous)
-  rawClassMethod: run: args [
+  classMethod: run: args [
     local args="$1" toolName toolPath runCmd
     toolName=$(@ "$_RECEIVER" name)
     toolPath=$(@ "$_RECEIVER" path)
@@ -149,7 +149,7 @@ Tool subclass: Object
   ]
 
   # Run the tool with arguments, capturing stdout and stderr
-  rawClassMethod: runCapture: args [
+  classMethod: runCapture: args [
     local args="$1" toolName toolPath runCmd
     toolName=$(@ "$_RECEIVER" name)
     toolPath=$(@ "$_RECEIVER" path)
@@ -165,7 +165,7 @@ Tool subclass: Object
   ]
 
   # Run the tool asynchronously, returning a Future
-  rawClassMethod: runAsync: args [
+  classMethod: runAsync: args [
     local args="$1" toolName toolPath futureCmd
     toolName=$(@ "$_RECEIVER" name)
     toolPath=$(@ "$_RECEIVER" path)
@@ -181,7 +181,7 @@ Tool subclass: Object
   ]
 
   # Check if a command exists on the system (utility method)
-  rawClassMethod: commandExists: commandName [
+  classMethod: commandExists: commandName [
     local commandName="$1" checkCmd
     checkCmd="command -v ${commandName}"
     @ Shell succeeds: "$checkCmd"
