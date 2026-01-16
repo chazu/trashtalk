@@ -15,37 +15,37 @@ Http subclass: Object
 
   # Simple GET request
   # Usage: response := @ Http get: 'https://api.example.com/data'
-  classMethod: get: url [
+  rawClassMethod: get: url [
     curl -s "$1"
   ]
 
   # Simple POST request with JSON body
   # Usage: response := @ Http post: '{"name":"test"}' to: 'https://api.example.com'
-  classMethod: post: data to: url [
+  rawClassMethod: post: data to: url [
     curl -s -X POST -H "Content-Type: application/json" -d "$1" "$2"
   ]
 
   # Simple PUT request with JSON body
   # Usage: response := @ Http put: '{"name":"updated"}' to: 'https://api.example.com/1'
-  classMethod: put: data to: url [
+  rawClassMethod: put: data to: url [
     curl -s -X PUT -H "Content-Type: application/json" -d "$1" "$2"
   ]
 
   # Simple PATCH request with JSON body
   # Usage: response := @ Http patch: '{"name":"patched"}' to: 'https://api.example.com/1'
-  classMethod: patch: data to: url [
+  rawClassMethod: patch: data to: url [
     curl -s -X PATCH -H "Content-Type: application/json" -d "$1" "$2"
   ]
 
   # Simple DELETE request
   # Usage: response := @ Http delete: 'https://api.example.com/1'
-  classMethod: delete: url [
+  rawClassMethod: delete: url [
     curl -s -X DELETE "$1"
   ]
 
   # HEAD request (headers only)
   # Usage: headers := @ Http head: 'https://example.com'
-  classMethod: head: url [
+  rawClassMethod: head: url [
     curl -sI "$1"
   ]
 
@@ -55,13 +55,13 @@ Http subclass: Object
 
   # Get HTTP status code only
   # Usage: status := @ Http status: 'https://example.com'
-  classMethod: status: url [
+  rawClassMethod: status: url [
     curl -s -o /dev/null -w "%{http_code}" "$1"
   ]
 
   # Check if URL is reachable (returns true/false)
   # Usage: ok := @ Http ping: 'https://example.com'
-  classMethod: ping: url [
+  rawClassMethod: ping: url [
     local status
     status=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 "$1")
     if [[ "$status" -ge 200 && "$status" -lt 400 ]]; then
@@ -73,7 +73,7 @@ Http subclass: Object
 
   # Get response with headers
   # Usage: response := @ Http getWithHeaders: 'https://api.example.com'
-  classMethod: getWithHeaders: url [
+  rawClassMethod: getWithHeaders: url [
     curl -si "$1"
   ]
 
@@ -83,13 +83,13 @@ Http subclass: Object
 
   # GET with custom header
   # Usage: response := @ Http get: url header: 'X-Custom: value'
-  classMethod: get: url header: header [
+  rawClassMethod: get: url header: header [
     curl -s -H "$2" "$1"
   ]
 
   # GET with multiple headers (as JSON object)
   # Usage: response := @ Http get: url headers: '{"X-Api-Key":"abc","Accept":"application/json"}'
-  classMethod: get: url headers: headersJson [
+  rawClassMethod: get: url headers: headersJson [
     local args="-s"
     while IFS= read -r header; do
       args="$args -H \"$header\""
@@ -99,7 +99,7 @@ Http subclass: Object
 
   # POST with custom headers
   # Usage: response := @ Http post: data to: url headers: '{"Authorization":"Bearer token"}'
-  classMethod: post: data to: url headers: headersJson [
+  rawClassMethod: post: data to: url headers: headersJson [
     local args="-s -X POST -H \"Content-Type: application/json\""
     while IFS= read -r header; do
       args="$args -H \"$header\""
@@ -113,19 +113,19 @@ Http subclass: Object
 
   # GET with Bearer token
   # Usage: response := @ Http get: url token: 'abc123'
-  classMethod: get: url token: token [
+  rawClassMethod: get: url token: token [
     curl -s -H "Authorization: Bearer $2" "$1"
   ]
 
   # POST with Bearer token
   # Usage: response := @ Http post: data to: url token: 'abc123'
-  classMethod: post: data to: url token: token [
+  rawClassMethod: post: data to: url token: token [
     curl -s -X POST -H "Content-Type: application/json" -H "Authorization: Bearer $3" -d "$1" "$2"
   ]
 
   # GET with Basic auth
   # Usage: response := @ Http get: url user: 'admin' password: 'secret'
-  classMethod: get: url user: username password: password [
+  rawClassMethod: get: url user: username password: password [
     curl -s -u "$2:$3" "$1"
   ]
 
@@ -135,7 +135,7 @@ Http subclass: Object
 
   # Download file to path
   # Usage: filepath := @ Http download: url to: '/tmp/file.zip'
-  classMethod: download: url to: filepath [
+  rawClassMethod: download: url to: filepath [
     if curl -s -o "$2" "$1"; then
       echo "$2"
     else
@@ -145,13 +145,13 @@ Http subclass: Object
 
   # Upload file
   # Usage: response := @ Http upload: '/tmp/file.txt' to: url
-  classMethod: upload: filepath to: url [
+  rawClassMethod: upload: filepath to: url [
     curl -s -X POST -F "file=@$1" "$2"
   ]
 
   # Upload file with field name
   # Usage: response := @ Http upload: '/tmp/file.txt' as: 'document' to: url
-  classMethod: upload: filepath as: fieldName to: url [
+  rawClassMethod: upload: filepath as: fieldName to: url [
     curl -s -X POST -F "$2=@$1" "$3"
   ]
 
@@ -161,13 +161,13 @@ Http subclass: Object
 
   # POST form data (application/x-www-form-urlencoded)
   # Usage: response := @ Http postForm: 'name=test&value=123' to: url
-  classMethod: postForm: data to: url [
+  rawClassMethod: postForm: data to: url [
     curl -s -X POST -d "$1" "$2"
   ]
 
   # POST multipart form data
   # Usage: response := @ Http postMultipart: '{"field1":"value1","field2":"value2"}' to: url
-  classMethod: postMultipart: fieldsJson to: url [
+  rawClassMethod: postMultipart: fieldsJson to: url [
     local args="-s -X POST"
     while IFS= read -r field; do
       args="$args -F \"$field\""
@@ -181,19 +181,19 @@ Http subclass: Object
 
   # GET with timeout
   # Usage: response := @ Http get: url timeout: 10
-  classMethod: get: url timeout: seconds [
+  rawClassMethod: get: url timeout: seconds [
     curl -s --connect-timeout "$2" --max-time "$2" "$1"
   ]
 
   # GET following redirects
   # Usage: response := @ Http getFollowRedirects: url
-  classMethod: getFollowRedirects: url [
+  rawClassMethod: getFollowRedirects: url [
     curl -sL "$1"
   ]
 
   # GET with retry
   # Usage: response := @ Http get: url retries: 3
-  classMethod: get: url retries: count [
+  rawClassMethod: get: url retries: count [
     curl -s --retry "$2" "$1"
   ]
 
@@ -203,7 +203,7 @@ Http subclass: Object
 
   # GET with full response info as JSON
   # Usage: info := @ Http getFull: url
-  classMethod: getFull: url [
+  rawClassMethod: getFull: url [
     local body status time_total
     local tmp="/tmp/http_$$_body"
 
@@ -216,7 +216,7 @@ Http subclass: Object
 
   # GET with timing info as JSON
   # Usage: timing := @ Http getTiming: url
-  classMethod: getTiming: url [
+  rawClassMethod: getTiming: url [
     curl -s -o /dev/null -w '{
       "status": %{http_code},
       "time_namelookup": %{time_namelookup},
