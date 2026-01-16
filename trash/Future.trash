@@ -165,6 +165,6 @@ Future subclass: Object
     echo "  "
     echo "  # Get result (blocks if not ready)"
     echo "  result=\$(@ \$f await)"
-    echo "  echo \"Result: \$result\""
+    echo '  echo "Result: $result"'
     echo "  @ \$f cleanup"
   ]
