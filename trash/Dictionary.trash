@@ -83,7 +83,8 @@ Dictionary subclass: Object
 
   # Create dictionary from pairs
   # Usage: @ dict withPairs: 'name:Alice age:30'
-  rawMethod: withPairs: pairs [
+  method: withPairs: pairs [
+    pragma: primitive
     local pairs="$1"
     local items pair key value
     items="{}"

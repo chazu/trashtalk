@@ -4,7 +4,7 @@ Object subclass: nil
 
   # Create a new instance of this class
   # Subclasses inherit this - no need to define your own unless custom init needed
-  rawClassMethod: new [
+  classMethod: new [
     local id
     # Use $_CLASS directly - it's already set by dispatcher to the calling class
     # Don't use @ Runtime class - that makes a nested send which changes $_CLASS
@@ -15,22 +15,22 @@ Object subclass: nil
 
   # Return a canonical string representation of this object
   # Format: <ClassName instanceId>
-  rawMethod: printString [
+  method: printString [
     echo "<${_CLASS} ${_INSTANCE}>"
   ]
 
   # Return the class name of this object
-  rawMethod: class [
+  method: class [
     echo "$_CLASS"
   ]
 
   # Return the instance ID of this object
-  rawMethod: id [
+  method: id [
     echo "$_INSTANCE"
   ]
 
   # Check if this object is an instance of a given class
-  rawMethod: isKindOf: className [
+  method: isKindOf: className [
     local current="$1"
     local my_class="$_CLASS"
     current="$my_class"
@@ -45,13 +45,13 @@ Object subclass: nil
   ]
 
   # Check if this object conforms to a protocol
-  rawMethod: conformsTo: protocolName [
+  method: conformsTo: protocolName [
     local class="$_CLASS"
     _conforms_to "$class" "$1"
   ]
 
   # Delete this object from memory
-  rawMethod: delete [
+  method: delete [
     local instance
     instance=$(@ Runtime instance)
     @ Runtime delete: "$instance"
@@ -59,7 +59,7 @@ Object subclass: nil
 
   # Return a detailed inspection of this object
   # Shows class name, instance ID, and all instance variables with values
-  rawMethod: inspect [
+  method: inspect [
     local data class instance
     class="$_CLASS"
     instance="$_INSTANCE"
@@ -70,11 +70,13 @@ Object subclass: nil
 
     if [[ -n "$data" && "$data" != "{}" ]]; then
       echo "$data" | jq -r 'to_entries | .[] | "  \(.key): \(.value)"'
+    else
+      @ Trash methodsFor: "$_RECEIVER"
     fi
   ]
 
   # Write inspection output to a file
-  rawMethod: inspectTo: filepath [
+  method: inspectTo: filepath [
     local output filepath="$1"
     output=$(@ "$_RECEIVER" inspect)
     @ File write: "$output" to: "$filepath"
@@ -82,12 +84,12 @@ Object subclass: nil
   ]
 
   # Return this object's data as JSON
-  rawMethod: asJson [
+  method: asJson [
     @ Runtime dataFor: "$_RECEIVER"
   ]
 
   # Edit this class's source file and recompile if changed
-  rawClassMethod: edit [
+  classMethod: edit [
     local class source_file trait_source file_to_edit editor
     class="$_CLASS"
     source_file="$TRASHDIR/${class}.trash"
