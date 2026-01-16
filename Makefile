@@ -87,7 +87,6 @@ plugins: $(BUILD_DIR)
 		(go mod init trashtalk-plugins 2>/dev/null || true) && \
 		go get github.com/mattn/go-sqlite3 github.com/google/uuid \
 		       google.golang.org/grpc google.golang.org/protobuf \
-		       github.com/golang/protobuf \
 		       github.com/jhump/protoreflect github.com/bufbuild/protocompile
 	@# Build plugins in parallel
 	@printf '%s\n' $(PLUGIN_SOURCES) | xargs -P$(NPROCS) -I{} \
@@ -181,7 +180,7 @@ endif
 	echo "=== Plugin ==="; \
 	mkdir -p $(BUILD_DIR); \
 	cd $(BUILD_DIR) && go mod init single-build 2>/dev/null || true; \
-	cd $(BUILD_DIR) && go get github.com/mattn/go-sqlite3 github.com/google/uuid github.com/golang/protobuf 2>/dev/null || true; \
+	cd $(BUILD_DIR) && go get github.com/mattn/go-sqlite3 github.com/google/uuid 2>/dev/null || true; \
 	gofile="$(BUILD_DIR)/$$outname.go"; \
 	if $(JQ_COMPILER) parse "$$srcfile" | $(PROCYON) --mode=plugin > "$$gofile" 2>&1; then \
 		if [[ -s "$$gofile" ]]; then \
