@@ -63,6 +63,8 @@ def isSyncPoint:
   current.value == "rawMethod:" or
   current.value == "classMethod:" or
   current.value == "rawClassMethod:" or
+  current.value == "primitiveMethod:" or
+  current.value == "primitiveClassMethod:" or
   current.value == "instanceVars:" or
   current.value == "classInstanceVars:" or
   current.value == "include:" or
@@ -203,6 +205,7 @@ def parseInstanceVars:
       (current.type != "KEYWORD" and current.type != "IDENTIFIER") or
       current.value == "method:" or current.value == "classMethod:" or
       current.value == "rawMethod:" or current.value == "rawClassMethod:" or
+      current.value == "primitiveMethod:" or current.value == "primitiveClassMethod:" or
       current.value == "include:" or current.value == "requires:" or
       current.value == "instanceVars:";
 
@@ -241,6 +244,8 @@ def parseInstanceVarsSimple:
       (.state | current.value) == "classMethod:" or
       (.state | current.value) == "rawMethod:" or
       (.state | current.value) == "rawClassMethod:" or
+      (.state | current.value) == "primitiveMethod:" or
+      (.state | current.value) == "primitiveClassMethod:" or
       (.state | current.value) == "include:" or
       (.state | isSyncPoint);
 
@@ -314,6 +319,8 @@ def parseClassInstanceVarsSimple:
       (.state | current.value) == "classMethod:" or
       (.state | current.value) == "rawMethod:" or
       (.state | current.value) == "rawClassMethod:" or
+      (.state | current.value) == "primitiveMethod:" or
+      (.state | current.value) == "primitiveClassMethod:" or
       (.state | current.value) == "include:" or
       (.state | isSyncPoint);
 
@@ -612,10 +619,13 @@ def parseMethod:
   # Capture location from the method keyword token
   {line: current.line, col: current.col} as $location |
   # Check for method keyword
-  (if current.value == "method:" then {kind: "instance", raw: false}
-   elif current.value == "rawMethod:" then {kind: "instance", raw: true}
-   elif current.value == "classMethod:" then {kind: "class", raw: false}
-   elif current.value == "rawClassMethod:" then {kind: "class", raw: true}
+  # primitive methods have raw: true (bash fallback) plus primitive: true flag
+  (if current.value == "method:" then {kind: "instance", raw: false, primitive: false}
+   elif current.value == "rawMethod:" then {kind: "instance", raw: true, primitive: false}
+   elif current.value == "classMethod:" then {kind: "class", raw: false, primitive: false}
+   elif current.value == "rawClassMethod:" then {kind: "class", raw: true, primitive: false}
+   elif current.value == "primitiveMethod:" then {kind: "instance", raw: true, primitive: true}
+   elif current.value == "primitiveClassMethod:" then {kind: "class", raw: true, primitive: true}
    else null end) as $kind |
   if $kind != null then
     advance | skipNewlines |
@@ -631,6 +641,7 @@ def parseMethod:
           type: "method",
           kind: $kind.kind,
           raw: $kind.raw,
+          primitive: $kind.primitive,
           selector: $sig.selector,
           keywords: $sig.keywords,
           args: $sig.args,
@@ -785,7 +796,9 @@ def parseClassBody:
     elif (.state | current.value) == "method:" or
          (.state | current.value) == "rawMethod:" or
          (.state | current.value) == "classMethod:" or
-         (.state | current.value) == "rawClassMethod:" then
+         (.state | current.value) == "rawClassMethod:" or
+         (.state | current.value) == "primitiveMethod:" or
+         (.state | current.value) == "primitiveClassMethod:" then
       .currentCategory as $cat |
       (.state | parseMethod) as $r |
       if $r.result != null then
