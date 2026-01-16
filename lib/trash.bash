@@ -1456,49 +1456,6 @@ function _native_daemon_available {
   [[ -n "$response" ]]
 }
 
-# Send a request to the native daemon socket with timeout
-# Args: request (JSON string)
-# Returns: response on stdout, exit code 0 on success, 1 on failure/timeout
-# Uses 5 second timeout to prevent hanging on unresponsive daemon
-function _socket_send {
-  local request="$1"
-  local response
-
-  if command -v timeout >/dev/null 2>&1; then
-    # Linux/GNU timeout available
-    response=$(echo "$request" | timeout 5 nc -U "$_NATIVE_DAEMON_SOCKET" 2>/dev/null)
-  else
-    # macOS or systems without timeout - use background job with manual timeout
-    # This is a bit more complex but prevents indefinite hangs
-    local tmp_response
-    tmp_response=$(mktemp)
-    ( echo "$request" | nc -U "$_NATIVE_DAEMON_SOCKET" > "$tmp_response" 2>/dev/null ) &
-    local nc_pid=$!
-
-    # Wait up to 5 seconds for nc to complete
-    local waited=0
-    while kill -0 "$nc_pid" 2>/dev/null && [[ $waited -lt 50 ]]; do
-      sleep 0.1
-      ((waited++))
-    done
-
-    # Kill nc if still running (timeout)
-    if kill -0 "$nc_pid" 2>/dev/null; then
-      kill "$nc_pid" 2>/dev/null
-      wait "$nc_pid" 2>/dev/null
-      rm -f "$tmp_response"
-      return 1
-    fi
-
-    wait "$nc_pid" 2>/dev/null
-    response=$(cat "$tmp_response")
-    rm -f "$tmp_response"
-  fi
-
-  echo "$response"
-  [[ -n "$response" ]]
-}
-
 # Check if a native plugin exists for a class
 # Returns: 0 if plugin exists, 1 otherwise
 # Sets: _NATIVE_PLUGIN_PATH to the plugin path
@@ -1560,11 +1517,11 @@ function _send_native {
 
   msg_debug "[_send_native] Request: $request"
 
-  # Send to daemon via Unix socket (with timeout)
-  response=$(_socket_send "$request")
+  # Send to daemon via Unix socket
+  response=$(echo "$request" | nc -U "$_NATIVE_DAEMON_SOCKET" 2>/dev/null)
 
   if [[ -z "$response" ]]; then
-    msg_debug "[_send_native] No response from daemon (timeout or error)"
+    msg_debug "[_send_native] No response from daemon"
     return 1
   fi
 
@@ -1634,10 +1591,10 @@ function _register_bytecode_block {
     --arg caps "$captures_json" \
     '{block_op: $op, block_data: $data, block_captures: $caps}')
 
-  response=$(_socket_send "$request")
+  response=$(echo "$request" | nc -U "$_NATIVE_DAEMON_SOCKET" 2>/dev/null)
 
   if [[ -z "$response" ]]; then
-    echo "Error: no response from daemon (timeout or error)" >&2
+    echo "Error: no response from daemon" >&2
     return 1
   fi
 
@@ -1682,10 +1639,10 @@ function _invoke_bytecode_block {
 
   msg_debug "[_invoke_bytecode_block] Request: $request"
 
-  response=$(_socket_send "$request")
+  response=$(echo "$request" | nc -U "$_NATIVE_DAEMON_SOCKET" 2>/dev/null)
 
   if [[ -z "$response" ]]; then
-    echo "Error: no response from daemon (timeout or error)" >&2
+    echo "Error: no response from daemon" >&2
     return 1
   fi
 
@@ -1728,10 +1685,10 @@ function _serialize_bytecode_block {
     --arg id "$block_id" \
     '{block_op: $op, block_id: $id}')
 
-  response=$(_socket_send "$request")
+  response=$(echo "$request" | nc -U "$_NATIVE_DAEMON_SOCKET" 2>/dev/null)
 
   if [[ -z "$response" ]]; then
-    echo "Error: no response from daemon (timeout or error)" >&2
+    echo "Error: no response from daemon" >&2
     return 1
   fi
 
@@ -2371,9 +2328,23 @@ function @ {
       ___method_type="class__"
     fi
 
-    # Check for pragma: procyonOnly marker FIRST
+    local ___direct_marker="${___func_prefix}__${___method_type}${___normalized}__direct"
+    if [[ -n "${!___direct_marker:-}" ]]; then
+      send "$@"
+      return $?
+    fi
+    # Also check for instance method marker when calling on class name
+    # (some methods may be defined without class__ prefix but called on class)
+    if [[ -n "$___method_type" ]]; then
+      local ___instance_direct_marker="${___func_prefix}__${___normalized}__direct"
+      if [[ -n "${!___instance_direct_marker:-}" ]]; then
+        send "$@"
+        return $?
+      fi
+    fi
+
+    # Check for pragma: procyonOnly marker
     # If set, ensure native plugin exists before attempting dispatch
-    # This must happen before direct pragma check to prevent execution without plugin
     local ___procyonOnly_marker="${___func_prefix}__${___method_type}${___normalized}__procyonOnly"
     local ___has_procyonOnly=""
     if [[ -n "${!___procyonOnly_marker:-}" ]]; then
@@ -2388,25 +2359,8 @@ function @ {
     fi
     if [[ -n "$___has_procyonOnly" ]]; then
       if ! _has_native_plugin "$___class"; then
-        echo "Error: Method '$___selector' requires the native Procyon plugin for $___class." >&2
-        echo "  The plugin should be at: ~/.trashtalk/trash/.compiled/${___class}.dylib" >&2
-        echo "  To compile: cd ~/.trashtalk && make plugins" >&2
+        echo "Error: Method $___selector requires native Procyon plugin for $___class" >&2
         return 1
-      fi
-    fi
-
-    local ___direct_marker="${___func_prefix}__${___method_type}${___normalized}__direct"
-    if [[ -n "${!___direct_marker:-}" ]]; then
-      send "$@"
-      return $?
-    fi
-    # Also check for instance method marker when calling on class name
-    # (some methods may be defined without class__ prefix but called on class)
-    if [[ -n "$___method_type" ]]; then
-      local ___instance_direct_marker="${___func_prefix}__${___normalized}__direct"
-      if [[ -n "${!___instance_direct_marker:-}" ]]; then
-        send "$@"
-        return $?
       fi
     fi
   fi
