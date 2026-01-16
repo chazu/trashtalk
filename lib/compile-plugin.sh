@@ -40,8 +40,9 @@ if ! head -1 "$gofile" | grep -q '^package'; then
     exit 0
 fi
 
-# Compile to shared library
-if (cd "$BUILD_DIR" && CGO_ENABLED=1 go build -buildmode=c-shared -o "$dylibfile" "$outname.go") 2>&1; then
+# Compile to shared library with rpath so it can find libtrashtalk.dylib
+# Use @loader_path to resolve relative to the plugin's location (../../lib/ from .compiled/)
+if (cd "$BUILD_DIR" && CGO_ENABLED=1 go build -buildmode=c-shared -ldflags "-extldflags '-Wl,-rpath,@loader_path/../../lib'" -o "$dylibfile" "$outname.go") 2>&1; then
     echo "  ✓ $outname.$DYLIB_EXT"
 else
     echo "  ✗ $outname (build failed)"
