@@ -68,6 +68,84 @@ rawMethod: complexOperation [
 ]
 ```
 
+### Primitive Methods
+
+Primitive methods are thin wrappers around bash builtins or simple operations. Like raw methods, they receive no transformation, but they're semantically marked as fundamental operations that other methods build upon.
+
+```smalltalk
+primitiveMethod: exists [
+  [[ -e "$(_ivar path)" ]]
+]
+
+primitiveClassMethod: now [
+  date +%s
+]
+```
+
+**`primitiveMethod:`** - Instance-level primitive. The method body has access to `$_RECEIVER` and can use `_ivar` to access instance variables.
+
+**`primitiveClassMethod:`** - Class-level primitive. Called on the class itself, typically for factory methods or utility operations.
+
+**Comparison with rawMethod:**
+
+| Aspect | `rawMethod:` | `primitiveMethod:` |
+|--------|--------------|-------------------|
+| Transformation | None | None |
+| Intent | Complex bash logic | Simple builtin wrapper |
+| Typical length | Multi-line | Single expression |
+| Examples | Loops, heredocs | File tests, env access |
+
+**Use cases for primitives:**
+- File system predicates (`exists`, `isFile`, `isDirectory`)
+- Environment variable access (`get:`, `has:`)
+- Time operations (`now`, `sleep:`)
+- Console I/O (`print:`, `error:`)
+
+**Example - File class primitives:**
+
+```smalltalk
+File subclass: Object
+  instanceVars: path
+
+  primitiveMethod: exists [
+    [[ -e "$(_ivar path)" ]]
+  ]
+
+  primitiveMethod: isFile [
+    [[ -f "$(_ivar path)" ]]
+  ]
+
+  primitiveMethod: isDirectory [
+    [[ -d "$(_ivar path)" ]]
+  ]
+
+  primitiveMethod: read [
+    cat "$(_ivar path)"
+  ]
+
+  primitiveClassMethod: exists: path [
+    [[ -e "$1" ]]
+  ]
+```
+
+**Example - Env class primitives:**
+
+```smalltalk
+Env subclass: Object
+
+  primitiveClassMethod: get: name [
+    echo "${!1}"
+  ]
+
+  primitiveClassMethod: has: name [
+    [[ -v "$1" ]]
+  ]
+
+  primitiveClassMethod: home [
+    echo "$HOME"
+  ]
+```
+
 ### Pragmas
 
 Pragmas are method-level directives that modify how a method is compiled or executed. Place them at the start of the method body.
@@ -242,85 +320,50 @@ Class-level pragmas are placed after the class declaration to modify how the ent
 
 #### `pragma: primitiveClass`
 
-Marks a class as a **primitive class** - a system boundary class that provides fundamental operations implemented in raw Bash with equivalent native Go implementations in Procyon.
+Marks a class as a primitive class, indicating that it should have semantically identical implementations in both Procyon (native Go) and Bash. When using Procyon-compiled dylibs, no fallback to Bash should be required for any message sends to this class.
 
 ```smalltalk
 # Console - Standard I/O primitive class
 Console subclass: Object
   pragma: primitiveClass
 
-  rawClassMethod: print: message [
+  primitiveClassMethod: print: message [
     echo "$1"
   ]
 
-  rawClassMethod: error: message [
+  primitiveClassMethod: error: message [
     echo "$1" >&2
   ]
 ```
 
 **How it works:**
 1. The compiler emits a marker: `__ClassName__primitiveClass="1"`
-2. Both compilers validate that all methods are raw methods
-3. Procyon validates selector parity between Bash and native implementations
-4. The runtime can optimize dispatch knowing the class is primitive
+2. Procyon sees this marker and ensures all methods have native implementations
+3. The runtime can optimize dispatch knowing no fallback is needed
 
 **Use cases:**
-- System primitives: Console, Env, Time, File, Shell, String
-- Classes that wrap bash builtins or system calls
-- Performance-critical classes with native implementations
+- System primitives: Console, Env, Time, File, Shell
+- Classes with complete native implementations
+- Performance-critical classes that should never fall back to Bash
 
-**Restrictions (enforced by compiler):**
-- All methods must use `rawMethod:` or `rawClassMethod:` (no regular `method:` or `classMethod:`)
+**Restrictions:**
+- All methods must use `primitiveMethod:`, `primitiveClassMethod:`, `rawMethod:`, or `rawClassMethod:`
 - Cannot include traits (`include:` is not allowed)
 
-**Validation:**
-The compiler will emit an error if a primitiveClass:
-- Contains regular `method:` or `classMethod:` definitions
-- Attempts to include any traits
-- (Procyon) Has native implementations for selectors that don't exist in the Bash source
+The compiler will emit an error if a primitiveClass contains regular `method:` or `classMethod:` definitions, or if it attempts to include any traits.
 
-**Example - File class:**
+#### `pragma: primitive`
+
+Marks a method body as requiring no code transformation (like `rawMethod:`), but applied via pragma syntax. This is useful when you want to apply the "primitive" semantic to a method defined with regular `method:` syntax.
 
 ```smalltalk
-File subclass: Object
-  pragma: primitiveClass
-  instanceVars: path
-
-  rawMethod: exists [
-    [[ -e "$(_ivar path)" ]]
-  ]
-
-  rawMethod: isFile [
-    [[ -f "$(_ivar path)" ]]
-  ]
-
-  rawMethod: read [
-    cat "$(_ivar path)"
-  ]
-
-  rawClassMethod: exists: path [
-    [[ -e "$1" ]]
-  ]
+method: directAccess [
+  pragma: primitive
+  echo "$(_ivar value)"
+]
 ```
 
-**Example - Env class:**
-
-```smalltalk
-Env subclass: Object
-  pragma: primitiveClass
-
-  rawClassMethod: get: name [
-    echo "${!1}"
-  ]
-
-  rawClassMethod: has: name [
-    [[ -v "$1" ]]
-  ]
-
-  rawClassMethod: home [
-    echo "$HOME"
-  ]
-```
+The compiler sets `raw=true` on the method, skipping all DSL transformations.
 
 ### Pragma Cross-Compiler Reference
 
@@ -351,11 +394,12 @@ declare -g __MyApp__Counter__increment__direct=1
 
 | Pragma | jq-compiler | Procyon (Bash backend) | Procyon (Dylib backend) | Runtime Dispatch |
 |--------|-------------|------------------------|-------------------------|------------------|
+| `primitive` | Sets `raw=true` on method (no DSL transformation) | N/A (method already raw) | N/A (method already raw) | Normal dispatch |
 | `direct` | Emits `__direct=1` marker | N/A (Bash-only concept) | N/A (Bash-only concept) | Bypasses subshell capture |
 | `bashOnly` | Emits `__bashOnly=1` marker | **Skips** native code generation | **Skips** native code generation | Forces Bash execution path |
 | `procyonOnly` | Emits `__procyonOnly=1` marker + error stub | Generates native implementation | Generates native implementation | Errors if no native plugin |
 | `procyonNative` | Emits `__procyonNative=1` marker | Generates native impl (Bash fallback exists) | Generates native impl | Uses native if available, else Bash |
-| `primitiveClass` | Emits `__primitiveClass=1` marker; validates all methods are raw | Validates parity; generates native code | Validates parity; generates native code | Normal dispatch |
+| `primitiveClass` | Emits `__primitiveClass=1` marker; validates restrictions | **Skips entire class** | **Skips entire class** | Normal dispatch |
 
 #### Runtime Marker Checking
 
@@ -390,14 +434,14 @@ fi
 
 #### Pragma Decision Guide
 
-| Scenario | Recommended Pragma/Keyword |
-|----------|---------------------------|
+| Scenario | Recommended Pragma |
+|----------|-------------------|
 | Method modifies parent shell variables | `pragma: direct` |
 | Method uses Bash-specific features (process substitution, heredocs) | `pragma: bashOnly` |
 | Method has Bash fallback but prefers native (gRPC, DB) | `pragma: procyonNative` |
 | Method cannot be implemented in Bash (streaming) | `pragma: procyonOnly` |
-| Entire class is a system primitive with identical Bash/native behavior | `pragma: primitiveClass` (use only `rawMethod:`/`rawClassMethod:`) |
-| Method body needs no DSL transformation | Use `rawMethod:` or `rawClassMethod:` |
+| Entire class is primitive with identical Bash/native behavior | `pragma: primitiveClass` |
+| Method body needs no DSL transformation | `pragma: primitive` or use `rawMethod:` |
 
 ### Class Methods
 
