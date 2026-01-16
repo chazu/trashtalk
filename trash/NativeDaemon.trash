@@ -16,7 +16,8 @@ NativeDaemon subclass: Object
 
   # Singleton instance stored in global
   # Usage: daemon := @ NativeDaemon instance
-  rawClassMethod: instance [
+  classMethod: instance [
+    pragma: primitive
     if [[ -z "${_NATIVE_DAEMON:-}" ]]; then
       _NATIVE_DAEMON=$(_generate_instance_id NativeDaemon)
       _create_instance NativeDaemon "$_NATIVE_DAEMON"
@@ -31,7 +32,8 @@ NativeDaemon subclass: Object
   ]
 
   # Check if daemon is available (singleton exists)
-  rawClassMethod: isAvailable [
+  classMethod: isAvailable [
+    pragma: primitive
     if [[ -n "${_NATIVE_DAEMON:-}" ]]; then
       echo "true"
       return 0
@@ -41,7 +43,8 @@ NativeDaemon subclass: Object
   ]
 
   # Reset the singleton (stops the daemon)
-  rawClassMethod: reset [
+  classMethod: reset [
+    pragma: primitive
     if [[ -n "${_NATIVE_DAEMON:-}" ]]; then
       @ "$_NATIVE_DAEMON" stop 2>/dev/null || true
     fi
@@ -50,7 +53,8 @@ NativeDaemon subclass: Object
 
   # Ensure the daemon process is running
   # Starts it in background if not already running
-  rawMethod: _ensureDaemon [
+  method: _ensureDaemon [
+    pragma: primitive
     local socketPath pidFile pid pluginDir daemonCmd socketOpt pluginOpt debugOpt
 
     socketPath="$(_ivar socketPath)"
@@ -83,33 +87,25 @@ NativeDaemon subclass: Object
       disown
     fi
 
-    # Wait for socket to appear with exponential backoff
-    # Schedule: 0.1s, 0.2s, 0.4s, 0.8s, 1.0s, 1.0s, 1.0s (~4.5s total)
-    # This handles slow systems better than fixed 0.2s intervals
-    local delay=0.1
-    local max_delay=1.0
-    local total_wait=0
-    local max_total=5.0
-
-    while (( $(echo "$total_wait < $max_total" | bc -l) )); do
+    # Wait for socket to appear (max 2 seconds)
+    local i
+    for i in 1 2 3 4 5 6 7 8 9 10; do
       if [[ -S "$socketPath" ]]; then
         _ivar_set status "running"
         return 0
       fi
-      sleep "$delay"
-      total_wait=$(echo "$total_wait + $delay" | bc -l)
-      # Exponential backoff with cap
-      delay=$(echo "if ($delay * 2 > $max_delay) $max_delay else $delay * 2" | bc -l)
+      sleep 0.2
     done
 
-    echo "[NativeDaemon] Error: daemon failed to start (waited ${total_wait}s)" >&2
+    echo "[NativeDaemon] Error: daemon failed to start" >&2
     return 1
   ]
 
   # Dispatch a method call to a native class via Unix socket
   # Returns: result string, or empty if fallback needed
   # Exit code: 0 = success, 1 = error, 200 = no native plugin (fallback to Bash)
-  rawMethod: dispatch: className instance: instanceId selector: selector args: argsJson [
+  method: dispatch: className instance: instanceId selector: selector args: argsJson [
+    pragma: primitive
     local className="$1" instanceId="$2" selector="$3" argsJson="$4"
     local socketPath request response exitCode result instanceJson nativeSelector
     local _daemon_profile_start _daemon_profile_end _daemon_elapsed _daemon_route="plugin"
@@ -217,7 +213,8 @@ NativeDaemon subclass: Object
 
   # Convenience: dispatch class method (no instance)
   # When 'new' is called, creates a matching entry in Bash's env store
-  rawMethod: dispatchClass: className selector: selector args: argsJson [
+  method: dispatchClass: className selector: selector args: argsJson [
+    pragma: primitive
     local className="$1" selector="$2" argsJson="$3"
     local result
 
@@ -233,13 +230,15 @@ NativeDaemon subclass: Object
   ]
 
   # Convenience: dispatch instance method with no args
-  rawMethod: dispatch: className instance: instanceId selector: selector [
+  method: dispatch: className instance: instanceId selector: selector [
+    pragma: primitive
     local className="$1" instanceId="$2" selector="$3"
     @ "$_RECEIVER" dispatch: "$className" instance: "$instanceId" selector: "$selector" args: "[]"
   ]
 
   # Check if a native plugin is available for a class
-  rawMethod: hasNative: className [
+  method: hasNative: className [
+    pragma: primitive
     local className="$1" pluginDir ext nativePlugin
     pluginDir="$(_ivar pluginDir)"
 
@@ -259,7 +258,8 @@ NativeDaemon subclass: Object
   ]
 
   # List available native plugins
-  rawMethod: listNatives [
+  method: listNatives [
+    pragma: primitive
     local pluginDir file ext pattern
     pluginDir="$(_ivar pluginDir)"
 
@@ -281,7 +281,8 @@ NativeDaemon subclass: Object
   ]
 
   # Get daemon PID
-  rawMethod: pid [
+  method: pid [
+    pragma: primitive
     local socketPath pidFile
     socketPath="$(_ivar socketPath)"
     pidFile="${socketPath}.pid"
@@ -292,7 +293,8 @@ NativeDaemon subclass: Object
   ]
 
   # Check if daemon is running
-  rawMethod: isRunning [
+  method: isRunning [
+    pragma: primitive
     local socketPath pidFile pid
     socketPath="$(_ivar socketPath)"
     pidFile="${socketPath}.pid"
@@ -309,7 +311,8 @@ NativeDaemon subclass: Object
   ]
 
   # Stop the daemon
-  rawMethod: stop [
+  method: stop [
+    pragma: primitive
     local socketPath pidFile pid
     socketPath="$(_ivar socketPath)"
     pidFile="${socketPath}.pid"
@@ -326,7 +329,8 @@ NativeDaemon subclass: Object
   ]
 
   # Alias for backwards compatibility
-  rawMethod: stopAll [
+  method: stopAll [
+    pragma: primitive
     @ "$_RECEIVER" stop
   ]
 
