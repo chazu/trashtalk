@@ -15,12 +15,12 @@ Array subclass: Object
   # Create array from newline-separated text
   # Usage: arr := @ Array fromLines: "a\nb\nc"
   # Returns array containing ["a", "b", "c"]
-  rawClassMethod: fromLines: text [
-    local arr jsonArray
-    arr="$(@ Array new)"
-    jsonArray="$(echo "$1" | jq -Rc '[., inputs]')"
-    @ "$arr" setItems: "$jsonArray"
-    echo "$arr"
+  classMethod: fromLines: text [
+    | arr jsonArray |
+    arr := @ Array new.
+    jsonArray := text stringToJsonArray.
+    @ arr setItems: jsonArray.
+    ^ arr
   ]
 
   # Accessor for items ivar
@@ -89,7 +89,8 @@ Array subclass: Object
   ]
 
   # Initialize with values
-  rawMethod: withValues: values [
+  method: withValues: values [
+    pragma: primitive
     local items value
     items="[]"
     for value in $1; do
