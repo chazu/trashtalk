@@ -16,7 +16,7 @@ Console subclass: Object
   # Print message to stdout with newline
   # Usage: @ Console print: 'Hello'
   # pragma: bashOnly (output must go to stdout, not native daemon)
-  classMethod: print: message [
+  rawClassMethod: print: message [
     pragma: bashOnly
     echo "$1"
   ]
@@ -24,7 +24,7 @@ Console subclass: Object
   # Print message to stdout without newline
   # Usage: @ Console write: 'Enter name: '
   # pragma: bashOnly (output must go to stdout, not native daemon)
-  classMethod: write: message [
+  rawClassMethod: write: message [
     pragma: bashOnly
     printf "%s" "$1"
   ]
@@ -32,26 +32,26 @@ Console subclass: Object
   # Print message to stderr with newline
   # Usage: @ Console error: 'Error: file not found'
   # pragma: bashOnly (output must go to stderr, not native daemon)
-  classMethod: error: message [
+  rawClassMethod: error: message [
     pragma: bashOnly
     echo "$1" >&2
   ]
 
   # Print formatted message to stdout
   # Usage: @ Console printf: '%s: %d' with: name and: count
-  classMethod: printf: format with: arg1 [
+  rawClassMethod: printf: format with: arg1 [
     pragma: bashOnly
     printf "$1" "$2"
   ]
 
   # Print formatted message with two args
-  classMethod: printf: format with: arg1 and: arg2 [
+  rawClassMethod: printf: format with: arg1 and: arg2 [
     pragma: bashOnly
     printf "$1" "$2" "$3"
   ]
 
   # Print formatted message with three args
-  classMethod: printf: format with: arg1 and: arg2 and: arg3 [
+  rawClassMethod: printf: format with: arg1 and: arg2 and: arg3 [
     pragma: bashOnly
     printf "$1" "$2" "$3" "$4"
   ]
@@ -62,7 +62,7 @@ Console subclass: Object
 
   # Read a line from stdin
   # Usage: line := @ Console readLine
-  classMethod: readLine [
+  rawClassMethod: readLine [
     local line
     read -r line
     echo "$line"
@@ -70,7 +70,7 @@ Console subclass: Object
 
   # Read a line with prompt
   # Usage: name := @ Console prompt: 'Enter name: '
-  classMethod: prompt: promptText [
+  rawClassMethod: prompt: promptText [
     local line
     printf "%s" "$1" >&2
     read -r line
@@ -79,7 +79,7 @@ Console subclass: Object
 
   # Read a line with timeout (returns empty if timeout)
   # Usage: line := @ Console readLineTimeout: 5
-  classMethod: readLineTimeout: seconds [
+  rawClassMethod: readLineTimeout: seconds [
     local line
     if read -r -t "$1" line; then
       echo "$line"
@@ -91,28 +91,28 @@ Console subclass: Object
   # ==========================================
 
   # Print a blank line
-  classMethod: newline [
+  rawClassMethod: newline [
     echo ""
   ]
 
   # Print a horizontal rule
-  classMethod: hr [
+  rawClassMethod: hr [
     echo "----------------------------------------"
   ]
 
   # Print a horizontal rule with custom width
-  classMethod: hr: width [
+  rawClassMethod: hr: width [
     printf '%*s\n' "$1" '' | tr ' ' '-'
   ]
 
   # Clear the terminal screen
-  classMethod: clear [
+  rawClassMethod: clear [
     clear
   ]
 
   # Print with color (basic ANSI colors)
   # Colors: black, red, green, yellow, blue, magenta, cyan, white
-  classMethod: print: message color: color [
+  rawClassMethod: print: message color: color [
     local code
     case "$2" in
       black)   code="30" ;;
@@ -129,17 +129,17 @@ Console subclass: Object
   ]
 
   # Print success message (green)
-  classMethod: success: message [
+  rawClassMethod: success: message [
     @ "$_CLASS" print: "$1" color: "green"
   ]
 
   # Print warning message (yellow)
-  classMethod: warn: message [
+  rawClassMethod: warn: message [
     @ "$_CLASS" print: "$1" color: "yellow"
   ]
 
   # Print error message in red to stderr
-  classMethod: fail: message [
+  rawClassMethod: fail: message [
     printf "\033[31m%s\033[0m\n" "$1" >&2
   ]
 
