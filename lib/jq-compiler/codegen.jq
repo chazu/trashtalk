@@ -2171,19 +2171,25 @@ def transformPrimitiveClass:
   else .
   end;
 
-# Validates primitiveClass constraints:
-# 1. No traits allowed
-# 2. All methods must be raw (rawMethod: or rawClassMethod:)
+# Transforms methods with pragma: primitive to skip code transformation.
+# This allows non-primitiveClass classes to have individual methods that use
+# raw bash code without needing primitiveMethod: keyword.
+# Returns: the class with primitive-pragma methods marked as raw
+def transformPrimitiveMethods:
+  .methods = [.methods[] |
+    if ((.pragmas // []) | index("primitive")) then
+      . + {raw: true}
+    else .
+    end
+  ];
+
+# Validates primitiveClass constraint: no traits allowed
 # Input: CompilationUnit { "class": {...}, "traits": {...} }
-def validatePrimitiveClass:
+def validatePrimitiveClassWithTraits:
   if (.class.classPragmas // []) | index("primitiveClass") then
     # Primitive classes cannot include traits
     if ((.class.traits // []) | length) > 0 then
       "Error: Class '\(.class.name)' has pragma: primitiveClass but includes traits: \(.class.traits | join(", "))\nPrimitive classes cannot include traits." | halt_error
-    # Primitive classes must have only raw methods
-    elif ([.class.methods[] | select(.raw != true)] | length) > 0 then
-      ([.class.methods[] | select(.raw != true) | .selector] | join(", ")) as $nonRaw |
-      "Error: Class '\(.class.name)' has pragma: primitiveClass but contains non-raw methods: \($nonRaw)\nPrimitive classes must use only rawMethod: and rawClassMethod:." | halt_error
     else .
     end
   else .
@@ -2811,6 +2817,8 @@ def generateAdvice($funcPrefix; $qualifiedName; $ivars; $cvars):
 def generate:
   # Transform primitiveClass: all methods become raw (skip code transformation)
   transformPrimitiveClass |
+  # Transform methods with pragma: primitive to skip code transformation
+  transformPrimitiveMethods |
   . as $class |
   # Compute the function prefix and qualified name for namespaced classes
   funcPrefix as $funcPrefix |
@@ -2838,7 +2846,7 @@ def generate:
 # Handle both plain Class input and CompilationUnit { "class": {...}, "traits": {...} }
 if .class != null then
   # Validate primitiveClass constraint including trait methods
-  validatePrimitiveClass |
+  validatePrimitiveClassWithTraits |
   # When using CompilationUnit, merge top-level metadata into the class before generating
   (.inheritedInstanceVars // []) as $inherited |
   (.sourceHash // "") as $hash |
