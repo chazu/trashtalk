@@ -16,8 +16,7 @@ NativeDaemon subclass: Object
 
   # Singleton instance stored in global
   # Usage: daemon := @ NativeDaemon instance
-  classMethod: instance [
-    pragma: primitive
+  rawClassMethod: instance [
     if [[ -z "${_NATIVE_DAEMON:-}" ]]; then
       _NATIVE_DAEMON=$(_generate_instance_id NativeDaemon)
       _create_instance NativeDaemon "$_NATIVE_DAEMON"
@@ -32,8 +31,7 @@ NativeDaemon subclass: Object
   ]
 
   # Check if daemon is available (singleton exists)
-  classMethod: isAvailable [
-    pragma: primitive
+  rawClassMethod: isAvailable [
     if [[ -n "${_NATIVE_DAEMON:-}" ]]; then
       echo "true"
       return 0
@@ -43,8 +41,7 @@ NativeDaemon subclass: Object
   ]
 
   # Reset the singleton (stops the daemon)
-  classMethod: reset [
-    pragma: primitive
+  rawClassMethod: reset [
     if [[ -n "${_NATIVE_DAEMON:-}" ]]; then
       @ "$_NATIVE_DAEMON" stop 2>/dev/null || true
     fi
@@ -53,8 +50,7 @@ NativeDaemon subclass: Object
 
   # Ensure the daemon process is running
   # Starts it in background if not already running
-  method: _ensureDaemon [
-    pragma: primitive
+  rawMethod: _ensureDaemon [
     local socketPath pidFile pid pluginDir daemonCmd socketOpt pluginOpt debugOpt
 
     socketPath="$(_ivar socketPath)"
@@ -104,8 +100,7 @@ NativeDaemon subclass: Object
   # Dispatch a method call to a native class via Unix socket
   # Returns: result string, or empty if fallback needed
   # Exit code: 0 = success, 1 = error, 200 = no native plugin (fallback to Bash)
-  method: dispatch: className instance: instanceId selector: selector args: argsJson [
-    pragma: primitive
+  rawMethod: dispatch: className instance: instanceId selector: selector args: argsJson [
     local className="$1" instanceId="$2" selector="$3" argsJson="$4"
     local socketPath request response exitCode result instanceJson nativeSelector
     local _daemon_profile_start _daemon_profile_end _daemon_elapsed _daemon_route="plugin"
@@ -213,8 +208,7 @@ NativeDaemon subclass: Object
 
   # Convenience: dispatch class method (no instance)
   # When 'new' is called, creates a matching entry in Bash's env store
-  method: dispatchClass: className selector: selector args: argsJson [
-    pragma: primitive
+  rawMethod: dispatchClass: className selector: selector args: argsJson [
     local className="$1" selector="$2" argsJson="$3"
     local result
 
@@ -230,15 +224,13 @@ NativeDaemon subclass: Object
   ]
 
   # Convenience: dispatch instance method with no args
-  method: dispatch: className instance: instanceId selector: selector [
-    pragma: primitive
+  rawMethod: dispatch: className instance: instanceId selector: selector [
     local className="$1" instanceId="$2" selector="$3"
     @ "$_RECEIVER" dispatch: "$className" instance: "$instanceId" selector: "$selector" args: "[]"
   ]
 
   # Check if a native plugin is available for a class
-  method: hasNative: className [
-    pragma: primitive
+  rawMethod: hasNative: className [
     local className="$1" pluginDir ext nativePlugin
     pluginDir="$(_ivar pluginDir)"
 
@@ -258,8 +250,7 @@ NativeDaemon subclass: Object
   ]
 
   # List available native plugins
-  method: listNatives [
-    pragma: primitive
+  rawMethod: listNatives [
     local pluginDir file ext pattern
     pluginDir="$(_ivar pluginDir)"
 
@@ -281,8 +272,7 @@ NativeDaemon subclass: Object
   ]
 
   # Get daemon PID
-  method: pid [
-    pragma: primitive
+  rawMethod: pid [
     local socketPath pidFile
     socketPath="$(_ivar socketPath)"
     pidFile="${socketPath}.pid"
@@ -293,8 +283,7 @@ NativeDaemon subclass: Object
   ]
 
   # Check if daemon is running
-  method: isRunning [
-    pragma: primitive
+  rawMethod: isRunning [
     local socketPath pidFile pid
     socketPath="$(_ivar socketPath)"
     pidFile="${socketPath}.pid"
@@ -311,8 +300,7 @@ NativeDaemon subclass: Object
   ]
 
   # Stop the daemon
-  method: stop [
-    pragma: primitive
+  rawMethod: stop [
     local socketPath pidFile pid
     socketPath="$(_ivar socketPath)"
     pidFile="${socketPath}.pid"
@@ -329,8 +317,7 @@ NativeDaemon subclass: Object
   ]
 
   # Alias for backwards compatibility
-  method: stopAll [
-    pragma: primitive
+  rawMethod: stopAll [
     @ "$_RECEIVER" stop
   ]
 
