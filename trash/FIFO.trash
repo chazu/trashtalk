@@ -5,7 +5,7 @@ FIFO subclass: Object
   instanceVars: path:'' keeperPid:'' writerPid:'' readerPid:''
 
   # Create a FIFO instance for a given path (does not create the pipe yet)
-  classMethod: at: aPath [
+  rawClassMethod: at: aPath [
     local id
     id=$(_generate_instance_id FIFO)
     _create_instance FIFO "$id"
@@ -14,7 +14,7 @@ FIFO subclass: Object
   ]
 
   # Create the named pipe on disk
-  method: create [
+  rawMethod: create [
     local p
     p="$(_ivar path)"
     rm -f "$p" 2>/dev/null
@@ -22,7 +22,7 @@ FIFO subclass: Object
   ]
 
   # Check if the pipe exists on disk
-  method: exists [
+  rawMethod: exists [
     local p
     p="$(_ivar path)"
     if [[ -p "$p" ]]; then
@@ -33,7 +33,7 @@ FIFO subclass: Object
   ]
 
   # Remove the pipe from disk
-  method: remove [
+  rawMethod: remove [
     local p
     p="$(_ivar path)"
     rm -f "$p" 2>/dev/null
@@ -41,7 +41,7 @@ FIFO subclass: Object
 
   # Open the FIFO read-write to prevent blocking
   # Spawns a background process that holds the FIFO open
-  method: open [
+  rawMethod: open [
     local p keeper_pid pidfile
     p="$(_ivar path)"
     pidfile="/tmp/fifo_keeper_${_INSTANCE}.pid"
@@ -59,7 +59,7 @@ FIFO subclass: Object
   ]
 
   # Close the FIFO (kills the keeper process)
-  method: close [
+  rawMethod: close [
     local keeper_pid
     keeper_pid="$(_ivar keeperPid)"
     if [[ -n "$keeper_pid" ]]; then
@@ -69,14 +69,14 @@ FIFO subclass: Object
   ]
 
   # Write a line to the FIFO
-  method: writeLine: text [
+  rawMethod: writeLine: text [
     local p text="$1"
     p="$(_ivar path)"
     echo "$text" > "$p"
   ]
 
   # Read a line from the FIFO
-  method: readLine [
+  rawMethod: readLine [
     local p line
     p="$(_ivar path)"
     if read -r line < "$p"; then
@@ -85,7 +85,7 @@ FIFO subclass: Object
   ]
 
   # Read a line with timeout (seconds)
-  method: readLineTimeout: seconds [
+  rawMethod: readLineTimeout: seconds [
     local p line seconds="$1"
     p="$(_ivar path)"
     if read -t "$seconds" -r line < "$p" 2>/dev/null; then
@@ -96,7 +96,7 @@ FIFO subclass: Object
   # Read lines continuously, calling handler for each
   # The current line is available in $__FIFO_LINE
   # Exits when the writer closes the FIFO
-  method: readLinesDo: handler [
+  rawMethod: readLinesDo: handler [
     local p
     p="$(_ivar path)"
 
@@ -111,7 +111,7 @@ FIFO subclass: Object
 
   # Start a command that writes to this FIFO in the background
   # The command's stdout is redirected to the FIFO
-  method: startWriter: cmd [
+  rawMethod: startWriter: cmd [
     local p cmd="$1" pidfile writer_pid
     p="$(_ivar path)"
     pidfile="/tmp/fifo_writer_${_INSTANCE}.pid"
@@ -129,7 +129,7 @@ FIFO subclass: Object
   ]
 
   # Stop the writer process
-  method: stopWriter [
+  rawMethod: stopWriter [
     local writer_pid
     writer_pid="$(_ivar writerPid)"
     if [[ -n "$writer_pid" ]]; then
@@ -145,7 +145,7 @@ FIFO subclass: Object
 
   # Start a background reader that calls handler for each line
   # The current line is available in $__FIFO_LINE
-  method: startReader: handler [
+  rawMethod: startReader: handler [
     local p handler="$1" pidfile reader_pid
     p="$(_ivar path)"
     pidfile="/tmp/fifo_reader_${_INSTANCE}.pid"
@@ -163,7 +163,7 @@ FIFO subclass: Object
   ]
 
   # Stop the reader process
-  method: stopReader [
+  rawMethod: stopReader [
     local reader_pid
     reader_pid="$(_ivar readerPid)"
     if [[ -n "$reader_pid" ]]; then
@@ -174,6 +174,6 @@ FIFO subclass: Object
   ]
 
   # Private setter
-  method: _setPath: aPath [
+  rawMethod: _setPath: aPath [
     _ivar_set path "$1"
   ]
