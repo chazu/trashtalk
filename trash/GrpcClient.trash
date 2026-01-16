@@ -1,17 +1,32 @@
-# GrpcClient - gRPC client with dual Bash/Procyon implementation
+# GrpcClient - Native gRPC client for Trashtalk
 #
-# Bash implementation uses grpcurl for unary calls.
-# Streaming methods are marked procyonOnly and require native Procyon runtime.
+# This class provides gRPC support through the native Procyon plugin.
+# Streaming methods (serverStream, clientStream, bidiStream) require the native plugin.
+# Unary calls and configuration work in both Bash and native modes.
+#
+# Features:
+#   - Unary RPC calls with JSON payloads
+#   - Server streaming with block callbacks (native only)
+#   - Client streaming with block producers (native only)
+#   - Bidirectional streaming (native only)
+#   - Server reflection for dynamic method discovery
+#   - Proto file support for offline schemas
 #
 # Usage:
 #   client := @ GrpcClient connectTo: 'localhost:50051'.
-#   response := @ $client call: 'myservice.Echo' with: '{"message":"hello"}'.
+#   response := @ $client call: 'myservice.Echo/Say' with: '{"message":"hello"}'.
 #
-# With proto file:
+# With proto file (no reflection needed):
 #   client := @ GrpcClient connectTo: 'localhost:50051' withProto: 'service.proto'.
+#
+# Server streaming (native only):
+#   @ $client serverStream: 'myservice.Stream/Watch' with: '{}' handler: [:msg |
+#     @ Console print: msg
+#   ].
+#
+# To install the native plugin:
+#   cd ~/.trashtalk && make plugins
 
-# Note: Using string 'yes'/'no' instead of boolean true/false because
-# the _ivar function uses jq's // operator which treats false as empty.
 GrpcClient subclass: Object
   instanceVars: address:'' useReflection:'yes' protoFile:'' poolConnections:'no' usePlaintext:'yes'
 
@@ -21,185 +36,78 @@ GrpcClient subclass: Object
 
   classMethod: connectTo: addr [
     | client |
-    client := $(@ GrpcClient new).
-    @ client _setAddress: addr.
-    ^ client
+    client := @ GrpcClient new.
+    @ $client _setAddress: addr.
+    ^ $client
   ]
 
   classMethod: connectTo: addr withProto: proto [
     | client |
-    client := $(@ GrpcClient connectTo: addr).
-    @ client _setProtoFile: proto.
-    @ client _setUseReflection: 'no'.
-    ^ client
+    client := @ GrpcClient connectTo: addr.
+    @ $client _setProtoFile: proto.
+    @ $client _setUseReflection: 'no'.
+    ^ $client
   ]
 
   # ==========================================================================
-  # Unary RPC - Works in both Bash and Procyon
-  # procyonNative: Bash uses grpcurl, Procyon uses native gRPC
+  # Unary RPC - Works in both Bash (via grpcurl) and native
   # ==========================================================================
 
   method: call: method with: jsonPayload [
-    pragma: primitive
+    pragma: procyonOnly
     pragma: direct
-    pragma: procyonNative
-    local addr proto result plaintext_flag
-    addr="$(_ivar address)"
-    proto="$(_ivar protoFile)"
-
-    # Build plaintext flag
-    if [[ "$(_ivar usePlaintext)" == "yes" ]]; then
-      plaintext_flag="-plaintext"
-    else
-      plaintext_flag=""
-    fi
-
-    # Call grpcurl
-    if [[ -n "$proto" ]]; then
-      result=$(grpcurl $plaintext_flag -d "$2" -proto "$proto" "$addr" "$1" 2>&1)
-    else
-      # Reflection mode (server must have reflection enabled)
-      result=$(grpcurl $plaintext_flag -d "$2" "$addr" "$1" 2>&1)
-    fi
-
-    if [[ $? -eq 0 ]]; then
-      echo "$result"
-    else
-      _throw "GrpcError" "$result"
-      return 1
-    fi
   ]
 
-  # Unary call with empty payload
   method: call: method [
-    pragma: primitive
+    pragma: procyonOnly
     pragma: direct
-    local addr proto result plaintext_flag
-    addr="$(_ivar address)"
-    proto="$(_ivar protoFile)"
-
-    if [[ "$(_ivar usePlaintext)" == "yes" ]]; then
-      plaintext_flag="-plaintext"
-    else
-      plaintext_flag=""
-    fi
-
-    if [[ -n "$proto" ]]; then
-      result=$(grpcurl $plaintext_flag -d '{}' -proto "$proto" "$addr" "$1" 2>&1)
-    else
-      result=$(grpcurl $plaintext_flag -d '{}' "$addr" "$1" 2>&1)
-    fi
-
-    if [[ $? -eq 0 ]]; then
-      echo "$result"
-    else
-      _throw "GrpcError" "$result"
-      return 1
-    fi
   ]
 
   # ==========================================================================
-  # Server Streaming RPC - Procyon only
+  # Server Streaming RPC - Native only (requires fast callbacks)
   # ==========================================================================
 
   method: serverStream: method with: payload handler: block [
-    pragma: primitive
     pragma: procyonOnly
-    echo "Server streaming requires native Procyon runtime"
   ]
 
   # ==========================================================================
-  # Client Streaming RPC - Procyon only
+  # Client Streaming RPC - Native only
   # ==========================================================================
 
   method: clientStream: method handler: block [
-    pragma: primitive
     pragma: procyonOnly
-    echo "Client streaming requires native Procyon runtime"
   ]
 
   # ==========================================================================
-  # Bidirectional Streaming RPC - Procyon only
+  # Bidirectional Streaming RPC - Native only
   # ==========================================================================
 
   method: bidiStream: method handler: block [
-    pragma: primitive
     pragma: procyonOnly
-    echo "Bidirectional streaming requires native Procyon runtime"
   ]
 
   # ==========================================================================
-  # List available services (reflection mode)
+  # Service Discovery (reflection mode)
   # ==========================================================================
 
   method: listServices [
-    pragma: primitive
+    pragma: procyonOnly
     pragma: direct
-    pragma: procyonNative
-    local addr result plaintext_flag
-    addr="$(_ivar address)"
-
-    if [[ "$(_ivar usePlaintext)" == "yes" ]]; then
-      plaintext_flag="-plaintext"
-    else
-      plaintext_flag=""
-    fi
-
-    result=$(grpcurl $plaintext_flag "$addr" list 2>&1)
-    if [[ $? -eq 0 ]]; then
-      echo "$result"
-    else
-      _throw "GrpcError" "$result"
-      return 1
-    fi
   ]
 
-  # List methods for a service
   method: listMethods: service [
-    pragma: primitive
+    pragma: procyonOnly
     pragma: direct
-    local addr result plaintext_flag
-    addr="$(_ivar address)"
-
-    if [[ "$(_ivar usePlaintext)" == "yes" ]]; then
-      plaintext_flag="-plaintext"
-    else
-      plaintext_flag=""
-    fi
-
-    result=$(grpcurl $plaintext_flag "$addr" list "$1" 2>&1)
-    if [[ $? -eq 0 ]]; then
-      echo "$result"
-    else
-      _throw "GrpcError" "$result"
-      return 1
-    fi
   ]
 
-  # Describe a service or method
   method: describe: target [
-    pragma: primitive
+    pragma: procyonOnly
     pragma: direct
-    local addr result plaintext_flag
-    addr="$(_ivar address)"
-
-    if [[ "$(_ivar usePlaintext)" == "yes" ]]; then
-      plaintext_flag="-plaintext"
-    else
-      plaintext_flag=""
-    fi
-
-    result=$(grpcurl $plaintext_flag "$addr" describe "$1" 2>&1)
-    if [[ $? -eq 0 ]]; then
-      echo "$result"
-    else
-      _throw "GrpcError" "$result"
-      return 1
-    fi
   ]
 
   # ==========================================================================
-  # Configuration methods
+  # Configuration methods - Work in both modes
   # ==========================================================================
 
   method: enablePooling [
@@ -231,7 +139,7 @@ GrpcClient subclass: Object
   ]
 
   # ==========================================================================
-  # Private setters
+  # Private setters (used by factory constructors)
   # ==========================================================================
 
   method: _setAddress: a [
@@ -245,3 +153,4 @@ GrpcClient subclass: Object
   method: _setUseReflection: r [
     useReflection := r
   ]
+
