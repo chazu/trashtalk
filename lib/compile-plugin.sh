@@ -20,7 +20,7 @@ gofile="$BUILD_DIR/$outname.go"
 dylibfile="$COMPILED_DIR/$outname.$DYLIB_EXT"
 
 # Generate Go code with Procyon (discard stderr to avoid corrupting the .go file)
-if ! "$JQ_COMPILER" parse "$src" 2>/dev/null | "$PROCYON" --mode=plugin > "$gofile" 2>/dev/null; then
+if ! "$JQ_COMPILER" parse "$src" 2>/dev/null | "$PROCYON" --mode=shared > "$gofile" 2>/dev/null; then
     echo "  ✗ $outname (codegen failed)"
     rm -f "$gofile"
     exit 0
