@@ -74,15 +74,17 @@ run_test "includesKey: missing key" "false" "$(@ $dict includesKey: 'missing')"
 run_test "at:ifAbsent: existing key" "Alice" "$(@ $dict at: 'name' ifAbsent: 'default')"
 run_test "at:ifAbsent: missing key" "default" "$(@ $dict at: 'missing' ifAbsent: 'default')"
 
-# Test: keys
+# Test: keys (returns JSON array, parse and sort)
 echo ""
 echo "--- Keys and Values ---"
-keys=$(@ $dict keys | sort | tr '\n' ',')
-run_test "keys returns all keys" "age,city,name," "$keys"
+keys_json=$(@ $dict keys)
+keys=$(echo "$keys_json" | jq -r '.[]' | sort | tr '\n' ',' | sed 's/,$//')
+run_test "keys returns all keys" "age,city,name" "$keys"
 
-# Test: values
-values=$(@ $dict values | sort | tr '\n' ',')
-run_test "values returns all values" "30,Alice,NYC," "$values"
+# Test: values (returns JSON array, parse and sort)
+values_json=$(@ $dict values)
+values=$(echo "$values_json" | jq -r '.[]' | sort | tr '\n' ',' | sed 's/,$//')
+run_test "values returns all values" "30,Alice,NYC" "$values"
 
 # Test: removeAt:
 echo ""
@@ -125,8 +127,9 @@ echo "--- JSON Serialization ---"
 dictJ=$(@ Dictionary new)
 @ $dictJ at: 'foo' put: 'bar'
 json=$(@ $dictJ asJson)
-# asJson produces compact JSON
-run_test "asJson produces valid JSON" '{"foo":"bar"}' "$(echo "$json" | tr -d '\n')"
+# asJson may produce pretty-printed JSON, compact for comparison
+json_compact=$(echo "$json" | jq -c '.')
+run_test "asJson produces valid JSON" '{"foo":"bar"}' "$json_compact"
 
 dictFromJson=$(@ Dictionary fromJson: '{"hello":"world"}')
 run_test "fromJson: creates dict" "world" "$(@ $dictFromJson at: 'hello')"
