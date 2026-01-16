@@ -5,7 +5,7 @@ Future subclass: Object
 
   # Create a future for a command (does not start it yet)
   # Usage: future=$(@ Future for: '@ Counter expensiveCalculation')
-  classMethod: for: command [
+  rawClassMethod: for: command [
     local future_id
     future_id=$(_generate_instance_id Future)
 
@@ -27,7 +27,7 @@ Future subclass: Object
 
   # Start the computation in background
   # Returns the PID of the background process
-  method: start [
+  rawMethod: start [
     local cmd result_file exit_file
     cmd=$(_ivar command)
     result_file=$(_ivar result_file)
@@ -44,7 +44,7 @@ Future subclass: Object
   ]
 
   # Block until the computation completes, return result
-  method: await [
+  rawMethod: await [
     local pid result_file exit_file
     pid=$(_ivar pid)
     result_file=$(_ivar result_file)
@@ -69,7 +69,7 @@ Future subclass: Object
   ]
 
   # Check if computation is done without blocking
-  method: poll [
+  rawMethod: poll [
     local pid
     pid=$(_ivar pid)
 
@@ -83,14 +83,14 @@ Future subclass: Object
   ]
 
   # Check if done (returns 0 if done, 1 if pending)
-  method: isDone [
+  rawMethod: isDone [
     local pid
     pid=$(_ivar pid)
     ! kill -0 "$pid" 2>/dev/null
   ]
 
   # Cancel the computation
-  method: cancel [
+  rawMethod: cancel [
     local pid
     pid=$(_ivar pid)
 
@@ -106,7 +106,7 @@ Future subclass: Object
   ]
 
   # Get current status
-  method: status [
+  rawMethod: status [
     local pid status
     status=$(_ivar status)
     pid=$(_ivar pid)
@@ -121,12 +121,12 @@ Future subclass: Object
   ]
 
   # Get exit code (empty if still pending)
-  method: exitCode [
+  rawMethod: exitCode [
     _ivar exit_code
   ]
 
   # Clean up resources
-  method: cleanup [
+  rawMethod: cleanup [
     local result_file
     result_file=$(_ivar result_file)
     rm -f "$result_file" "${result_file}.exit" 2>/dev/null
@@ -134,7 +134,7 @@ Future subclass: Object
   ]
 
   # Show help
-  classMethod: help [
+  rawClassMethod: help [
     echo "=== Future - Async Computation ==="
     echo ""
     echo "Usage (two-call pattern - recommended):"
