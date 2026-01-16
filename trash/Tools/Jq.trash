@@ -9,6 +9,7 @@
 package: Tools
 
 Jq subclass: Tool
+  pragma: primitiveClass
 
   classMethod: name [
     echo "jq"

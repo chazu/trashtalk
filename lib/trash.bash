@@ -2328,9 +2328,23 @@ function @ {
       ___method_type="class__"
     fi
 
-    # Check for pragma: procyonOnly marker FIRST
+    local ___direct_marker="${___func_prefix}__${___method_type}${___normalized}__direct"
+    if [[ -n "${!___direct_marker:-}" ]]; then
+      send "$@"
+      return $?
+    fi
+    # Also check for instance method marker when calling on class name
+    # (some methods may be defined without class__ prefix but called on class)
+    if [[ -n "$___method_type" ]]; then
+      local ___instance_direct_marker="${___func_prefix}__${___normalized}__direct"
+      if [[ -n "${!___instance_direct_marker:-}" ]]; then
+        send "$@"
+        return $?
+      fi
+    fi
+
+    # Check for pragma: procyonOnly marker
     # If set, ensure native plugin exists before attempting dispatch
-    # This must happen before direct pragma check to prevent execution without plugin
     local ___procyonOnly_marker="${___func_prefix}__${___method_type}${___normalized}__procyonOnly"
     local ___has_procyonOnly=""
     if [[ -n "${!___procyonOnly_marker:-}" ]]; then
@@ -2345,25 +2359,8 @@ function @ {
     fi
     if [[ -n "$___has_procyonOnly" ]]; then
       if ! _has_native_plugin "$___class"; then
-        echo "Error: Method '$___selector' requires the native Procyon plugin for $___class." >&2
-        echo "  The plugin should be at: ~/.trashtalk/trash/.compiled/${___class}.dylib" >&2
-        echo "  To compile: cd ~/.trashtalk && make plugins" >&2
+        echo "Error: Method $___selector requires native Procyon plugin for $___class" >&2
         return 1
-      fi
-    fi
-
-    local ___direct_marker="${___func_prefix}__${___method_type}${___normalized}__direct"
-    if [[ -n "${!___direct_marker:-}" ]]; then
-      send "$@"
-      return $?
-    fi
-    # Also check for instance method marker when calling on class name
-    # (some methods may be defined without class__ prefix but called on class)
-    if [[ -n "$___method_type" ]]; then
-      local ___instance_direct_marker="${___func_prefix}__${___normalized}__direct"
-      if [[ -n "${!___instance_direct_marker:-}" ]]; then
-        send "$@"
-        return $?
       fi
     fi
   fi
