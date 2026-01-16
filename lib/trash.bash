@@ -33,7 +33,6 @@ _RECEIVER=Object
 # System constants
 TRASH_VERSION="0.1.0"
 TRASH_AUTHOR="Chazu"
-TRASH_DESCRIPTION="Smalltalk-inspired DSL for Bash"
 
 # ============================================
 # Profiling Support
@@ -1445,50 +1444,15 @@ function _native_daemon_available {
   [[ -S "$_NATIVE_DAEMON_SOCKET" ]] || return 1
 
   # Verify daemon responds with a ping - must get non-empty response
-  # Use 1-second timeout for quick availability check
-  _socket_send '{"class":"","selector":"ping","args":[]}' 1 >/dev/null
-}
-
-# Send a request to the native daemon socket with timeout
-# Args: request (JSON string), timeout_secs (optional, default 5)
-# Returns: response on stdout, exit code 0 on success, 1 on failure/timeout
-function _socket_send {
-  local request="$1"
-  local timeout_secs="${2:-5}"
+  # Using timeout to avoid hanging if daemon is stuck
   local response
-
   if command -v timeout >/dev/null 2>&1; then
-    # Linux/GNU timeout available
-    response=$(echo "$request" | timeout "$timeout_secs" nc -U "$_NATIVE_DAEMON_SOCKET" 2>/dev/null)
+    response=$(echo '{"class":"","selector":"ping","args":[]}' | timeout 1 nc -U "$_NATIVE_DAEMON_SOCKET" 2>/dev/null)
   else
-    # macOS or systems without timeout - use background job with manual timeout
-    local tmp_response
-    tmp_response=$(mktemp)
-    ( echo "$request" | nc -U "$_NATIVE_DAEMON_SOCKET" > "$tmp_response" 2>/dev/null ) &
-    local nc_pid=$!
-
-    # Wait for nc to complete (timeout_secs * 10 iterations of 0.1s)
-    local waited=0
-    local max_wait=$((timeout_secs * 10))
-    while kill -0 "$nc_pid" 2>/dev/null && [[ $waited -lt $max_wait ]]; do
-      sleep 0.1
-      ((waited++))
-    done
-
-    # Kill nc if still running (timeout)
-    if kill -0 "$nc_pid" 2>/dev/null; then
-      kill "$nc_pid" 2>/dev/null
-      wait "$nc_pid" 2>/dev/null
-      rm -f "$tmp_response"
-      return 1
-    fi
-
-    wait "$nc_pid" 2>/dev/null
-    response=$(cat "$tmp_response")
-    rm -f "$tmp_response"
+    # macOS doesn't have timeout by default, use a simple socket test
+    response=$(echo '{"class":"","selector":"ping","args":[]}' | nc -U "$_NATIVE_DAEMON_SOCKET" 2>/dev/null)
   fi
-
-  echo "$response"
+  # Must get a response to prove daemon is alive (even error response is fine)
   [[ -n "$response" ]]
 }
 
@@ -1553,11 +1517,11 @@ function _send_native {
 
   msg_debug "[_send_native] Request: $request"
 
-  # Send to daemon via Unix socket (with timeout)
-  response=$(_socket_send "$request")
+  # Send to daemon via Unix socket
+  response=$(echo "$request" | nc -U "$_NATIVE_DAEMON_SOCKET" 2>/dev/null)
 
   if [[ -z "$response" ]]; then
-    msg_debug "[_send_native] No response from daemon (timeout or error)"
+    msg_debug "[_send_native] No response from daemon"
     return 1
   fi
 
@@ -1627,10 +1591,10 @@ function _register_bytecode_block {
     --arg caps "$captures_json" \
     '{block_op: $op, block_data: $data, block_captures: $caps}')
 
-  response=$(_socket_send "$request")
+  response=$(echo "$request" | nc -U "$_NATIVE_DAEMON_SOCKET" 2>/dev/null)
 
   if [[ -z "$response" ]]; then
-    echo "Error: no response from daemon (timeout or error)" >&2
+    echo "Error: no response from daemon" >&2
     return 1
   fi
 
@@ -1675,10 +1639,10 @@ function _invoke_bytecode_block {
 
   msg_debug "[_invoke_bytecode_block] Request: $request"
 
-  response=$(_socket_send "$request")
+  response=$(echo "$request" | nc -U "$_NATIVE_DAEMON_SOCKET" 2>/dev/null)
 
   if [[ -z "$response" ]]; then
-    echo "Error: no response from daemon (timeout or error)" >&2
+    echo "Error: no response from daemon" >&2
     return 1
   fi
 
@@ -1721,10 +1685,10 @@ function _serialize_bytecode_block {
     --arg id "$block_id" \
     '{block_op: $op, block_id: $id}')
 
-  response=$(_socket_send "$request")
+  response=$(echo "$request" | nc -U "$_NATIVE_DAEMON_SOCKET" 2>/dev/null)
 
   if [[ -z "$response" ]]; then
-    echo "Error: no response from daemon (timeout or error)" >&2
+    echo "Error: no response from daemon" >&2
     return 1
   fi
 
@@ -2364,9 +2328,23 @@ function @ {
       ___method_type="class__"
     fi
 
-    # Check for pragma: procyonOnly marker FIRST
+    local ___direct_marker="${___func_prefix}__${___method_type}${___normalized}__direct"
+    if [[ -n "${!___direct_marker:-}" ]]; then
+      send "$@"
+      return $?
+    fi
+    # Also check for instance method marker when calling on class name
+    # (some methods may be defined without class__ prefix but called on class)
+    if [[ -n "$___method_type" ]]; then
+      local ___instance_direct_marker="${___func_prefix}__${___normalized}__direct"
+      if [[ -n "${!___instance_direct_marker:-}" ]]; then
+        send "$@"
+        return $?
+      fi
+    fi
+
+    # Check for pragma: procyonOnly marker
     # If set, ensure native plugin exists before attempting dispatch
-    # This must happen before direct pragma check to prevent execution without plugin
     local ___procyonOnly_marker="${___func_prefix}__${___method_type}${___normalized}__procyonOnly"
     local ___has_procyonOnly=""
     if [[ -n "${!___procyonOnly_marker:-}" ]]; then
@@ -2381,25 +2359,8 @@ function @ {
     fi
     if [[ -n "$___has_procyonOnly" ]]; then
       if ! _has_native_plugin "$___class"; then
-        echo "Error: Method '$___selector' requires the native Procyon plugin for $___class." >&2
-        echo "  The plugin should be at: ~/.trashtalk/trash/.compiled/${___class}.dylib" >&2
-        echo "  To compile: cd ~/.trashtalk && make plugins" >&2
+        echo "Error: Method $___selector requires native Procyon plugin for $___class" >&2
         return 1
-      fi
-    fi
-
-    local ___direct_marker="${___func_prefix}__${___method_type}${___normalized}__direct"
-    if [[ -n "${!___direct_marker:-}" ]]; then
-      send "$@"
-      return $?
-    fi
-    # Also check for instance method marker when calling on class name
-    # (some methods may be defined without class__ prefix but called on class)
-    if [[ -n "$___method_type" ]]; then
-      local ___instance_direct_marker="${___func_prefix}__${___normalized}__direct"
-      if [[ -n "${!___instance_direct_marker:-}" ]]; then
-        send "$@"
-        return $?
       fi
     fi
   fi

@@ -19,10 +19,9 @@ Debuggable trait
     @ self debug: msg
   ]
 
-  # Introspect object details - shows class and available methods
-  # Note: Use 'inspect' for instance variable values (from Object)
-  # Usage: @ self introspect
-  method: introspect [
+  # Inspect object details - shows class and available methods
+  # Usage: @ self inspect
+  method: inspect [
     | className methods line |
     className := @ Runtime classFor: self.
     methods := @ Runtime methodsFor: className.
