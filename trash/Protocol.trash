@@ -5,13 +5,13 @@ Protocol subclass: Object
 
   # Returns the list of required method selectors as space-separated string
   # Populated from __ProtocolName__requires metadata by compiler
-  classMethod: requiredMethods [
+  rawClassMethod: requiredMethods [
     local req_var="__${_CLASS}__requires"
     echo "${!req_var:-}"
   ]
 
   # Check if a class satisfies this protocol's requirements
-  classMethod: isSatisfiedBy: className [
+  rawClassMethod: isSatisfiedBy: className [
     local class_to_check="$1"
     local required selector
     required=$(@ "$_CLASS" requiredMethods)

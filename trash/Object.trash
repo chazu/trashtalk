@@ -4,7 +4,7 @@ Object subclass: nil
 
   # Create a new instance of this class
   # Subclasses inherit this - no need to define your own unless custom init needed
-  classMethod: new [
+  rawClassMethod: new [
     local id
     # Use $_CLASS directly - it's already set by dispatcher to the calling class
     # Don't use @ Runtime class - that makes a nested send which changes $_CLASS
@@ -15,22 +15,22 @@ Object subclass: nil
 
   # Return a canonical string representation of this object
   # Format: <ClassName instanceId>
-  method: printString [
+  rawMethod: printString [
     echo "<${_CLASS} ${_INSTANCE}>"
   ]
 
   # Return the class name of this object
-  method: class [
+  rawMethod: class [
     echo "$_CLASS"
   ]
 
   # Return the instance ID of this object
-  method: id [
+  rawMethod: id [
     echo "$_INSTANCE"
   ]
 
   # Check if this object is an instance of a given class
-  method: isKindOf: className [
+  rawMethod: isKindOf: className [
     local current="$1"
     local my_class="$_CLASS"
     current="$my_class"
@@ -45,13 +45,13 @@ Object subclass: nil
   ]
 
   # Check if this object conforms to a protocol
-  method: conformsTo: protocolName [
+  rawMethod: conformsTo: protocolName [
     local class="$_CLASS"
     _conforms_to "$class" "$1"
   ]
 
   # Delete this object from memory
-  method: delete [
+  rawMethod: delete [
     local instance
     instance=$(@ Runtime instance)
     @ Runtime delete: "$instance"
@@ -59,7 +59,7 @@ Object subclass: nil
 
   # Return a detailed inspection of this object
   # Shows class name, instance ID, and all instance variables with values
-  method: inspect [
+  rawMethod: inspect [
     local data class instance
     class="$_CLASS"
     instance="$_INSTANCE"
@@ -76,7 +76,7 @@ Object subclass: nil
   ]
 
   # Write inspection output to a file
-  method: inspectTo: filepath [
+  rawMethod: inspectTo: filepath [
     local output filepath="$1"
     output=$(@ "$_RECEIVER" inspect)
     @ File write: "$output" to: "$filepath"
@@ -84,12 +84,12 @@ Object subclass: nil
   ]
 
   # Return this object's data as JSON
-  method: asJson [
+  rawMethod: asJson [
     @ Runtime dataFor: "$_RECEIVER"
   ]
 
   # Edit this class's source file and recompile if changed
-  classMethod: edit [
+  rawClassMethod: edit [
     local class source_file trait_source file_to_edit editor
     class="$_CLASS"
     source_file="$TRASHDIR/${class}.trash"

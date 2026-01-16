@@ -6,7 +6,7 @@ File subclass: Object
 
   # Create a File object for a given path
   # Usage: file=$(@ File at: "/tmp/foo.txt")
-  classMethod: at: filepath [
+  rawClassMethod: at: filepath [
     local id=$(_generate_instance_id File)
     _create_instance File "$id"
     @ "$id" setPath "$filepath"
@@ -16,7 +16,7 @@ File subclass: Object
   # Create a temporary file with optional prefix
   # Usage: file=$(@ File temp)
   # Usage: file=$(@ File tempWithPrefix: "st-inspect-")
-  classMethod: temp [
+  rawClassMethod: temp [
     local tmpfile
     tmpfile=$(mktemp)
     local id=$(_generate_instance_id File)
@@ -25,7 +25,7 @@ File subclass: Object
     echo "$id"
   ]
 
-  classMethod: tempWithPrefix: prefix [
+  rawClassMethod: tempWithPrefix: prefix [
     local tmpfile
     tmpfile=$(mktemp -t "${prefix}XXXXXX")
     local id=$(_generate_instance_id File)
@@ -36,7 +36,7 @@ File subclass: Object
 
   # Create a named pipe (FIFO)
   # Usage: fifo=$(@ File mkfifo: "/tmp/myfifo")
-  classMethod: mkfifo: filepath [
+  rawClassMethod: mkfifo: filepath [
     mkfifo "$filepath" 2>/dev/null
     local id=$(_generate_instance_id File)
     _create_instance File "$id"
@@ -45,73 +45,73 @@ File subclass: Object
   ]
 
   # Get the file path
-  method: path [
+  rawMethod: path [
     _ivar path
   ]
 
   # Check if file exists
-  method: exists [
+  rawMethod: exists [
     [[ -e "$(_ivar path)" ]] && echo "true" || echo "false"
   ]
 
   # Check if it's a regular file
-  method: isFile [
+  rawMethod: isFile [
     [[ -f "$(_ivar path)" ]] && echo "true" || echo "false"
   ]
 
   # Check if it's a directory
-  method: isDirectory [
+  rawMethod: isDirectory [
     [[ -d "$(_ivar path)" ]] && echo "true" || echo "false"
   ]
 
   # Check if it's a FIFO
-  method: isFifo [
+  rawMethod: isFifo [
     [[ -p "$(_ivar path)" ]] && echo "true" || echo "false"
   ]
 
   # Read entire file contents
-  method: read [
+  rawMethod: read [
     cat "$(_ivar path)" 2>/dev/null
   ]
 
   # Read file as lines (one per line)
-  method: readLines [
+  rawMethod: readLines [
     local p=$(_ivar path)
     [[ -f "$p" ]] && cat "$p" || echo ""
   ]
 
   # Write contents to file (overwrites)
-  method: write: contents [
+  rawMethod: write: contents [
     local p=$(_ivar path)
     printf '%s' "$contents" > "$p"
   ]
 
   # Write contents with newline
-  method: writeLine: contents [
+  rawMethod: writeLine: contents [
     local p=$(_ivar path)
     printf '%s\n' "$contents" > "$p"
   ]
 
   # Append contents to file
-  method: append: contents [
+  rawMethod: append: contents [
     local p=$(_ivar path)
     printf '%s' "$contents" >> "$p"
   ]
 
   # Append contents with newline
-  method: appendLine: contents [
+  rawMethod: appendLine: contents [
     local p=$(_ivar path)
     printf '%s\n' "$contents" >> "$p"
   ]
 
   # Delete the file
-  method: delete [
+  rawMethod: delete [
     local p=$(_ivar path)
     rm -f "$p"
   ]
 
   # Get file size in bytes
-  method: size [
+  rawMethod: size [
     local p=$(_ivar path)
     if [[ -f "$p" ]]; then
       stat -f%z "$p" 2>/dev/null || stat -c%s "$p" 2>/dev/null || echo "0"
@@ -121,19 +121,19 @@ File subclass: Object
   ]
 
   # Get parent directory
-  method: directory [
+  rawMethod: directory [
     local p=$(_ivar path)
     dirname "$p"
   ]
 
   # Get basename (filename without directory)
-  method: basename [
+  rawMethod: basename [
     local p=$(_ivar path)
     basename "$p"
   ]
 
   # Get file extension
-  method: extension [
+  rawMethod: extension [
     local p=$(_ivar path)
     local base
     base=$(basename "$p")
@@ -145,7 +145,7 @@ File subclass: Object
   ]
 
   # Get filename without extension
-  method: stem [
+  rawMethod: stem [
     local p=$(_ivar path)
     local base
     base=$(basename "$p")
@@ -153,26 +153,26 @@ File subclass: Object
   ]
 
   # Copy file to destination
-  method: copyTo: destPath [
+  rawMethod: copyTo: destPath [
     local p=$(_ivar path)
     cp "$p" "$destPath"
   ]
 
   # Move/rename file
-  method: moveTo: destPath [
+  rawMethod: moveTo: destPath [
     local p=$(_ivar path)
     mv "$p" "$destPath"
     _ivar_set path "$destPath"
   ]
 
   # Touch file (create empty or update timestamp)
-  method: touch [
+  rawMethod: touch [
     local p=$(_ivar path)
     touch "$p"
   ]
 
   # Get modification time as unix timestamp
-  method: modificationTime [
+  rawMethod: modificationTime [
     local p=$(_ivar path)
     if [[ -e "$p" ]]; then
       stat -f%m "$p" 2>/dev/null || stat -c%Y "$p" 2>/dev/null || echo "0"
@@ -182,7 +182,7 @@ File subclass: Object
   ]
 
   # Print file info
-  method: info [
+  rawMethod: info [
     local p=$(_ivar path)
     echo "Path: $p"
     echo "Exists: $(@ "$_RECEIVER" exists)"
@@ -193,7 +193,7 @@ File subclass: Object
   ]
 
   # String representation
-  method: printString [
+  rawMethod: printString [
     local p=$(_ivar path)
     echo "<File $p>"
   ]
@@ -205,82 +205,82 @@ File subclass: Object
   # Usage: (@ File exists: myPath) ifTrue: [ ... ]
 
   # Test if path exists (file, directory, symlink, etc.)
-  classMethod: exists: path [
+  rawClassMethod: exists: path [
     [[ -e "$path" ]] && echo "true" || echo "false"
   ]
 
   # Test if path is a regular file
-  classMethod: isFile: path [
+  rawClassMethod: isFile: path [
     [[ -f "$path" ]] && echo "true" || echo "false"
   ]
 
   # Test if path is a directory
-  classMethod: isDirectory: path [
+  rawClassMethod: isDirectory: path [
     [[ -d "$path" ]] && echo "true" || echo "false"
   ]
 
   # Test if path is a symbolic link
-  classMethod: isSymlink: path [
+  rawClassMethod: isSymlink: path [
     [[ -L "$path" ]] && echo "true" || echo "false"
   ]
 
   # Test if path is a named pipe (FIFO)
-  classMethod: isFifo: path [
+  rawClassMethod: isFifo: path [
     [[ -p "$path" ]] && echo "true" || echo "false"
   ]
 
   # Test if path is a socket
-  classMethod: isSocket: path [
+  rawClassMethod: isSocket: path [
     [[ -S "$path" ]] && echo "true" || echo "false"
   ]
 
   # Test if path is a block device
-  classMethod: isBlockDevice: path [
+  rawClassMethod: isBlockDevice: path [
     [[ -b "$path" ]] && echo "true" || echo "false"
   ]
 
   # Test if path is a character device
-  classMethod: isCharDevice: path [
+  rawClassMethod: isCharDevice: path [
     [[ -c "$path" ]] && echo "true" || echo "false"
   ]
 
   # Test if file is readable
-  classMethod: isReadable: path [
+  rawClassMethod: isReadable: path [
     [[ -r "$path" ]] && echo "true" || echo "false"
   ]
 
   # Test if file is writable
-  classMethod: isWritable: path [
+  rawClassMethod: isWritable: path [
     [[ -w "$path" ]] && echo "true" || echo "false"
   ]
 
   # Test if file is executable
-  classMethod: isExecutable: path [
+  rawClassMethod: isExecutable: path [
     [[ -x "$path" ]] && echo "true" || echo "false"
   ]
 
   # Test if file is empty (zero size)
-  classMethod: isEmpty: path [
+  rawClassMethod: isEmpty: path [
     [[ ! -s "$path" ]] && echo "true" || echo "false"
   ]
 
   # Test if file is not empty (has content)
-  classMethod: notEmpty: path [
+  rawClassMethod: notEmpty: path [
     [[ -s "$path" ]] && echo "true" || echo "false"
   ]
 
   # Test if file1 is newer than file2
-  classMethod: isNewer: path1 than: path2 [
+  rawClassMethod: isNewer: path1 than: path2 [
     [[ "$path1" -nt "$path2" ]] && echo "true" || echo "false"
   ]
 
   # Test if file1 is older than file2
-  classMethod: isOlder: path1 than: path2 [
+  rawClassMethod: isOlder: path1 than: path2 [
     [[ "$path1" -ot "$path2" ]] && echo "true" || echo "false"
   ]
 
   # Test if two paths refer to the same file (same inode)
-  classMethod: isSame: path1 as: path2 [
+  rawClassMethod: isSame: path1 as: path2 [
     [[ "$path1" -ef "$path2" ]] && echo "true" || echo "false"
   ]
 
@@ -289,22 +289,22 @@ File subclass: Object
   # ========================================
 
   # Quick read
-  classMethod: read: filepath [
+  rawClassMethod: read: filepath [
     cat "$filepath" 2>/dev/null
   ]
 
   # Quick write
-  classMethod: write: contents to: filepath [
+  rawClassMethod: write: contents to: filepath [
     printf '%s' "$contents" > "$filepath"
   ]
 
   # Quick delete
-  classMethod: delete: filepath [
+  rawClassMethod: delete: filepath [
     rm -f "$filepath"
   ]
 
   # Show help
-  method: help [
+  rawMethod: help [
     echo "=== File Operations ==="
     echo ""
     echo "Creating File objects:"
