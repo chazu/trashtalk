@@ -15,12 +15,14 @@ Array subclass: Object
   # Create array from newline-separated text
   # Usage: arr := @ Array fromLines: "a\nb\nc"
   # Returns array containing ["a", "b", "c"]
-  rawClassMethod: fromLines: text [
-    local arr jsonArray
-    arr="$(@ Array new)"
-    jsonArray="$(echo "$1" | jq -Rc '[., inputs]')"
-    @ "$arr" setItems: "$jsonArray"
-    echo "$arr"
+  classMethod: fromLines: text [
+    | arr jsonArray |
+    arr := @ Array new.
+    # Split on newline and convert to JSON array
+    jsonArray := @ String splitToArray: text on: '
+'.
+    @ arr setItems: jsonArray.
+    ^ arr
   ]
 
   # Accessor for items ivar
@@ -88,21 +90,16 @@ Array subclass: Object
     (items arrayIsEmpty) ifTrue: [^ '(empty array)'] ifFalse: [^ items]
   ]
 
-  # Initialize with values
-  rawMethod: withValues: values [
-    local items value
-    items="[]"
-    for value in $1; do
-      items=$(echo "$items" | jq -c --arg v "$value" '. + [$v]')
-    done
-    _ivar_set items "$items"
-    echo "$_RECEIVER"
+  # Initialize with values (space-separated)
+  method: withValues: values [
+    # Split on space and set as items
+    items := @ String splitToArray: values on: ' '.
+    ^ self
   ]
 
   # Iterate over each element, calling block with each value
   # Usage: @ myArray do: [:each | @ Console print: each]
   method: do: aBlock [
-    pragma: bashOnly
     | i len |
     len := items arrayLength.
     i := 0.
@@ -115,7 +112,6 @@ Array subclass: Object
   # Map each element through a block, returning new array
   # Usage: doubled := @ myArray collect: [:x | x * 2]
   method: collect: aBlock [
-    pragma: bashOnly
     | i len newItems result newArray |
     len := items arrayLength.
     newItems := '[]'.
@@ -133,7 +129,6 @@ Array subclass: Object
   # Select elements where block returns true (non-empty string)
   # Usage: evens := @ myArray select: [:x | x % 2 == 0]
   method: select: aBlock [
-    pragma: bashOnly
     | i len newItems element result newArray |
     len := items arrayLength.
     newItems := '[]'.
@@ -155,14 +150,13 @@ Array subclass: Object
   # Usage: found := @ myArray detect: [:x | x > 5]
   # Returns empty string if no match found
   method: detect: aBlock [
-    pragma: bashOnly
     | i len element result |
     len := items arrayLength.
     i := 0.
     [i < len] whileTrue: [
       element := items arrayAt: i.
       result := @ aBlock valueWith: element.
-      result notEmpty ifTrue: [^ element].
+      (result notEmpty) ifTrue: [^ element].
       i := i + 1
     ].
     ^ ''
@@ -171,14 +165,13 @@ Array subclass: Object
   # Find first element where block returns true, with default
   # Usage: found := @ myArray detect: [:x | x > 5] ifNone: ['not found']
   method: detect: aBlock ifNone: defaultBlock [
-    pragma: bashOnly
     | i len element result |
     len := items arrayLength.
     i := 0.
     [i < len] whileTrue: [
       element := items arrayAt: i.
       result := @ aBlock valueWith: element.
-      result notEmpty ifTrue: [^ element].
+      (result notEmpty) ifTrue: [^ element].
       i := i + 1
     ].
     ^ @ defaultBlock value
@@ -187,13 +180,13 @@ Array subclass: Object
   # Reduce array to single value using block
   # Usage: sum := @ myArray inject: 0 into: [:acc :each | acc + each]
   method: inject: initial into: aBlock [
-    pragma: bashOnly
-    | i len acc |
+    | i len acc element |
     len := items arrayLength.
     acc := initial.
     i := 0.
     [i < len] whileTrue: [
-      acc := @ aBlock valueWith: acc and: (items arrayAt: i).
+      element := items arrayAt: i.
+      acc := @ aBlock valueWith: acc and: element.
       i := i + 1
     ].
     ^ acc
