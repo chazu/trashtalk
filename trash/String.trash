@@ -110,6 +110,14 @@ String subclass: Object
     printf '%s\n' "${parts[@]}"
   ]
 
+  # Split string on delimiter, return as JSON array
+  rawClassMethod: splitToArray: str on: delim [
+    local IFS="$delim"
+    local parts
+    read -ra parts <<< "$str"
+    jo -a "${parts[@]}"
+  ]
+
   # Get part before delimiter (replaces ${str%%delim*})
   rawClassMethod: before: delim in: str [
     echo "${str%%$delim*}"
