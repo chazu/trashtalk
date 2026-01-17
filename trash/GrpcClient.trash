@@ -28,129 +28,166 @@
 #   cd ~/.trashtalk && make plugins
 
 GrpcClient subclass: Object
+  pragma: primitiveClass
   instanceVars: address:'' useReflection:'yes' protoFile:'' poolConnections:'no' usePlaintext:'yes'
 
   # ==========================================================================
   # Class methods - Factory constructors
   # ==========================================================================
 
-  classMethod: connectTo: addr [
-    | client |
-    client := @ GrpcClient new.
-    @ $client _setAddress: addr.
-    ^ $client
+  rawClassMethod: connectTo: addr [
+    local client
+    client=$(@ GrpcClient new)
+    @ "$client" _setAddress: "$1"
+    echo "$client"
   ]
 
-  classMethod: connectTo: addr withProto: proto [
-    | client |
-    client := @ GrpcClient connectTo: addr.
-    @ $client _setProtoFile: proto.
-    @ $client _setUseReflection: 'no'.
-    ^ $client
+  rawClassMethod: connectTo: addr withProto: proto [
+    local client
+    client=$(@ GrpcClient connectTo: "$1")
+    @ "$client" _setProtoFile: "$2"
+    @ "$client" _setUseReflection: 'no'
+    echo "$client"
   ]
 
   # ==========================================================================
   # Unary RPC - Works in both Bash (via grpcurl) and native
   # ==========================================================================
 
-  method: call: method with: jsonPayload [
-    pragma: procyonOnly
-    pragma: direct
+  # Make unary gRPC call with JSON payload
+  # Bash: uses grpcurl subprocess
+  # Native: uses direct gRPC client
+  rawMethod: call: method with: jsonPayload [
+    local addr method_name json result plaintext_flag
+    method_name="$1"
+    json="$2"
+    addr="$(_ivar address)"
+    # Build plaintext flag
+    if [[ "$(_ivar usePlaintext)" == "yes" ]]; then
+      plaintext_flag="-plaintext"
+    else
+      plaintext_flag=""
+    fi
+    # Use grpcurl for bash fallback
+    result=$(grpcurl $plaintext_flag -d "$json" "$addr" "$method_name" 2>&1)
+    echo "$result"
   ]
 
-  method: call: method [
-    pragma: procyonOnly
-    pragma: direct
+  # Make unary gRPC call without payload (empty JSON)
+  rawMethod: call: method [
+    @ "$_RECEIVER" call: "$1" with: '{}'
   ]
 
   # ==========================================================================
   # Server Streaming RPC - Native only (requires fast callbacks)
+  # Bash fallback: no-op (streaming requires native support)
   # ==========================================================================
 
-  method: serverStream: method with: payload handler: block [
-    pragma: procyonOnly
+  rawMethod: serverStream: method with: payload handler: block [
+    # Streaming not supported in bash mode - requires native plugin
+    @ Console error: 'GrpcClient: serverStream requires native plugin'
   ]
 
   # ==========================================================================
   # Client Streaming RPC - Native only
   # ==========================================================================
 
-  method: clientStream: method handler: block [
-    pragma: procyonOnly
+  rawMethod: clientStream: method handler: block [
+    # Streaming not supported in bash mode - requires native plugin
+    @ Console error: 'GrpcClient: clientStream requires native plugin'
   ]
 
   # ==========================================================================
   # Bidirectional Streaming RPC - Native only
   # ==========================================================================
 
-  method: bidiStream: method handler: block [
-    pragma: procyonOnly
+  rawMethod: bidiStream: method handler: block [
+    # Streaming not supported in bash mode - requires native plugin
+    @ Console error: 'GrpcClient: bidiStream requires native plugin'
   ]
 
   # ==========================================================================
   # Service Discovery (reflection mode)
   # ==========================================================================
 
-  method: listServices [
-    pragma: procyonOnly
-    pragma: direct
+  rawMethod: listServices [
+    local addr plaintext_flag
+    addr="$(_ivar address)"
+    if [[ "$(_ivar usePlaintext)" == "yes" ]]; then
+      plaintext_flag="-plaintext"
+    else
+      plaintext_flag=""
+    fi
+    grpcurl $plaintext_flag "$addr" list 2>&1
   ]
 
-  method: listMethods: service [
-    pragma: procyonOnly
-    pragma: direct
+  rawMethod: listMethods: service [
+    local addr plaintext_flag
+    addr="$(_ivar address)"
+    if [[ "$(_ivar usePlaintext)" == "yes" ]]; then
+      plaintext_flag="-plaintext"
+    else
+      plaintext_flag=""
+    fi
+    grpcurl $plaintext_flag "$addr" list "$1" 2>&1
   ]
 
-  method: describe: target [
-    pragma: procyonOnly
-    pragma: direct
+  rawMethod: describe: target [
+    local addr plaintext_flag
+    addr="$(_ivar address)"
+    if [[ "$(_ivar usePlaintext)" == "yes" ]]; then
+      plaintext_flag="-plaintext"
+    else
+      plaintext_flag=""
+    fi
+    grpcurl $plaintext_flag "$addr" describe "$1" 2>&1
   ]
 
   # ==========================================================================
-  # Configuration methods - Work in both modes
+  # Configuration methods
   # ==========================================================================
 
-  method: enablePooling [
-    poolConnections := 'yes'
+  rawMethod: enablePooling [
+    _ivar_set poolConnections 'yes'
   ]
 
-  method: disablePooling [
-    poolConnections := 'no'
+  rawMethod: disablePooling [
+    _ivar_set poolConnections 'no'
   ]
 
-  method: enableTLS [
-    usePlaintext := 'no'
+  rawMethod: enableTLS [
+    _ivar_set usePlaintext 'no'
   ]
 
-  method: enablePlaintext [
-    usePlaintext := 'yes'
+  rawMethod: enablePlaintext [
+    _ivar_set usePlaintext 'yes'
   ]
 
-  method: address [
-    ^ address
+  rawMethod: address [
+    echo "$(_ivar address)"
   ]
 
-  method: isUsingReflection [
-    ^ useReflection
+  rawMethod: isUsingReflection [
+    echo "$(_ivar useReflection)"
   ]
 
-  method: isPoolingEnabled [
-    ^ poolConnections
+  rawMethod: isPoolingEnabled [
+    echo "$(_ivar poolConnections)"
   ]
 
   # ==========================================================================
   # Private setters (used by factory constructors)
   # ==========================================================================
 
-  method: _setAddress: a [
-    address := a
+  rawMethod: _setAddress: a [
+    _ivar_set address "$1"
   ]
 
-  method: _setProtoFile: p [
-    protoFile := p
+  rawMethod: _setProtoFile: p [
+    _ivar_set protoFile "$1"
   ]
 
-  method: _setUseReflection: r [
-    useReflection := r
+  rawMethod: _setUseReflection: r [
+    _ivar_set useReflection "$1"
   ]
 

@@ -21,10 +21,6 @@ Application subclass: Object
       @ Console error: 'Error: Could not connect to Yutani server'.
       ^ nil
     ].
-    (@ String contains: session substring: 'error') ifTrue: [
-      @ Console error: 'Error: Could not connect to Yutani server'.
-      ^ nil
-    ].
 
     # Create dispatcher
     dispatcher := @ Yutani::EventDispatcher new.

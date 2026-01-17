@@ -159,6 +159,16 @@ String subclass: Object
   ]
 
   # ========================================
+  # JSON Operations
+  # ========================================
+
+  # Extract value at JSON path from a JSON string
+  # Usage: value := @ String jsonPath: 'session_id.id' from: jsonString
+  rawClassMethod: jsonPath: path from: jsonString [
+    echo "$2" | jq -r ".$1 // empty"
+  ]
+
+  # ========================================
   # Whitespace Handling
   # ========================================
 
