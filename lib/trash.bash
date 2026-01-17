@@ -503,7 +503,8 @@ function _ensure_class_sourced {
   local class_name="$1"
 
   # Check if already tracked as sourced
-  if [[ -n "${_SOURCED_COMPILED_CLASSES[$class_name]:-}" ]]; then
+  # Note: Quote keys to handle namespaced classes like Yutani::IDE
+  if [[ -n "${_SOURCED_COMPILED_CLASSES["$class_name"]:-}" ]]; then
     return 0
   fi
 
@@ -511,7 +512,7 @@ function _ensure_class_sourced {
   local func_prefix=$(_to_func_prefix "$class_name")
   local super_var="${func_prefix}__superclass"
   if [[ -n "${!super_var+x}" ]]; then
-    _SOURCED_COMPILED_CLASSES[$class_name]=1
+    _SOURCED_COMPILED_CLASSES["$class_name"]=1
     return 0
   fi
 
@@ -519,18 +520,18 @@ function _ensure_class_sourced {
   local compiled_file=$(_compiled_path "$class_name")
   if [[ -f "$compiled_file" ]]; then
     source "$compiled_file"
-    _SOURCED_COMPILED_CLASSES[$class_name]=1
+    _SOURCED_COMPILED_CLASSES["$class_name"]=1
 
     # Also source included traits (for bashOnly markers)
     local traits_var="${func_prefix}__traits"
     if [[ -n "${!traits_var:-}" ]]; then
       local trait_name trait_file
       for trait_name in ${!traits_var}; do
-        if [[ -z "${_SOURCED_COMPILED_CLASSES[$trait_name]:-}" ]]; then
+        if [[ -z "${_SOURCED_COMPILED_CLASSES["$trait_name"]:-}" ]]; then
           trait_file="$TRASHDIR/.compiled/traits/$trait_name"
           if [[ -f "$trait_file" ]]; then
             source "$trait_file"
-            _SOURCED_COMPILED_CLASSES[$trait_name]=1
+            _SOURCED_COMPILED_CLASSES["$trait_name"]=1
           fi
         fi
       done
@@ -546,7 +547,7 @@ export -f _ensure_class_sourced
 # Usage: _clear_class_cache ClassName
 function _clear_class_cache {
   local class_name="$1"
-  unset "_SOURCED_COMPILED_CLASSES[$class_name]"
+  unset "_SOURCED_COMPILED_CLASSES[\"$class_name\"]"
 }
 export -f _clear_class_cache
 
@@ -568,7 +569,7 @@ export -f _class_cache_count
 # Usage: _mark_class_sourced ClassName
 function _mark_class_sourced {
   local class_name="$1"
-  _SOURCED_COMPILED_CLASSES[$class_name]=1
+  _SOURCED_COMPILED_CLASSES["$class_name"]=1
 }
 export -f _mark_class_sourced
 
@@ -1300,9 +1301,9 @@ function _class_has_method {
 
     # Ensure class is sourced
     local compiled_file=$(_compiled_path "$current_class")
-    if [[ -f "$compiled_file" && -z "${_SOURCED_COMPILED_CLASSES[$current_class]:-}" ]]; then
+    if [[ -f "$compiled_file" && -z "${_SOURCED_COMPILED_CLASSES["$current_class"]:-}" ]]; then
       source "$compiled_file"
-      _SOURCED_COMPILED_CLASSES[$current_class]=1
+      _SOURCED_COMPILED_CLASSES["$current_class"]=1
     fi
 
     # Check for instance method
@@ -1334,9 +1335,9 @@ function _conforms_to {
 
   # Ensure protocol is sourced
   local proto_file="$TRASHDIR/.compiled/$protocol_name"
-  if [[ -f "$proto_file" && -z "${_SOURCED_COMPILED_CLASSES[$protocol_name]:-}" ]]; then
+  if [[ -f "$proto_file" && -z "${_SOURCED_COMPILED_CLASSES["$protocol_name"]:-}" ]]; then
     source "$proto_file"
-    _SOURCED_COMPILED_CLASSES[$protocol_name]=1
+    _SOURCED_COMPILED_CLASSES["$protocol_name"]=1
   fi
 
   # Get required methods from protocol metadata
@@ -1390,9 +1391,9 @@ method_missing() {
     local compiled_file=$(_compiled_path "$current_class")
     if [[ -f "$compiled_file" ]]; then
       # Source compiled file only once
-      if [[ -z "${_SOURCED_COMPILED_CLASSES[$current_class]:-}" ]]; then
+      if [[ -z "${_SOURCED_COMPILED_CLASSES["$current_class"]:-}" ]]; then
         source "$compiled_file"
-        _SOURCED_COMPILED_CLASSES[$current_class]=1
+        _SOURCED_COMPILED_CLASSES["$current_class"]=1
         msg_debug "Sourced compiled class $current_class in method_missing"
         # Note: We don't call instance_vars here - it's not needed for method lookup
         # and can cause recursive hangs
@@ -1689,13 +1690,13 @@ function _send_native {
     # Note: Keep numbers as-is - Go structs expect int types, not strings
   fi
 
-  # Build JSON request
+  # Build JSON request (include session_id so BashBridge fallback uses same _ENV_DIR)
   if [[ -n "$instance_json" ]]; then
-    request=$(jq -cn --arg c "$class_name" --arg i "$instance_json" --arg s "$native_selector" --argjson a "$args_json" \
-      '{class: $c, instance: $i, selector: $s, args: $a}')
+    request=$(jq -cn --arg c "$class_name" --arg i "$instance_json" --arg s "$native_selector" --argjson a "$args_json" --arg sid "$_TRASH_SESSION_ID" \
+      '{class: $c, instance: $i, selector: $s, args: $a, session_id: $sid}')
   else
-    request=$(jq -cn --arg c "$class_name" --arg i "" --arg s "$native_selector" --argjson a "$args_json" \
-      '{class: $c, instance: $i, selector: $s, args: $a}')
+    request=$(jq -cn --arg c "$class_name" --arg i "" --arg s "$native_selector" --argjson a "$args_json" --arg sid "$_TRASH_SESSION_ID" \
+      '{class: $c, instance: $i, selector: $s, args: $a, session_id: $sid}')
   fi
 
   msg_debug "[_send_native] Request: $request"
@@ -2150,9 +2151,9 @@ function send {
     [[ -n "${TRASH_PROFILE:-}" ]] && _profile_log "→" "$_CLASS" "$_SELECTOR" "$_profile_route"
 
     # Source compiled file only once
-    if [[ -z "${_SOURCED_COMPILED_CLASSES[$class_name]:-}" ]]; then
+    if [[ -z "${_SOURCED_COMPILED_CLASSES["$class_name"]:-}" ]]; then
       source "$compiled_file"
-      _SOURCED_COMPILED_CLASSES[$class_name]=1
+      _SOURCED_COMPILED_CLASSES["$class_name"]=1
       msg_debug "Sourced compiled class $class_name"
 
       # Set up _SUPERCLASS from compiled metadata for inheritance support
@@ -2223,11 +2224,11 @@ function send {
       local trait_name
       for trait_name in ${!traits_var}; do
         # Source trait if not already sourced
-        if [[ -z "${_SOURCED_COMPILED_CLASSES[$trait_name]:-}" ]]; then
+        if [[ -z "${_SOURCED_COMPILED_CLASSES["$trait_name"]:-}" ]]; then
           local trait_file="$TRASHDIR/.compiled/traits/$trait_name"
           if [[ -f "$trait_file" ]]; then
             source "$trait_file"
-            _SOURCED_COMPILED_CLASSES[$trait_name]=1
+            _SOURCED_COMPILED_CLASSES["$trait_name"]=1
             msg_debug "Sourced trait $trait_name"
           fi
         fi
