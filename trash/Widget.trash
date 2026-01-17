@@ -1,0 +1,8 @@
+Widget subclass: Object
+  include: Debuggable
+  include: Persistable
+  instanceVars: friend
+
+  method: example [
+    ^ "Hello World from Widget"
+  ]
