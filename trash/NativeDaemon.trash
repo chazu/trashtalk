@@ -1,0 +1,346 @@
+# NativeDaemon - Single daemon for native class dispatch via c-shared plugins
+#
+# The daemon loads .dylib/.so plugins on demand, routing all native class
+# calls through a single trashtalk-daemon process using Unix sockets.
+#
+# Usage:
+#   daemon := @ NativeDaemon instance.
+#   result := @ daemon dispatch: 'Counter' instance: '' selector: 'new' args: '[]'.
+#
+# The daemon is a singleton - only one instance per Trashtalk session.
+# Plugins are loaded lazily on first use of each class.
+# Daemon auto-exits after 5 minutes of inactivity.
+
+NativeDaemon subclass: Object
+  instanceVars: pluginDir:'' status:'' debug:'' socketPath:'/tmp/trashtalk-daemon.sock'
+
+  # Singleton instance stored in global
+  # Usage: daemon := @ NativeDaemon instance
+  rawClassMethod: instance [
+    if [[ -z "${_NATIVE_DAEMON:-}" ]]; then
+      _NATIVE_DAEMON=$(_generate_instance_id NativeDaemon)
+      _create_instance NativeDaemon "$_NATIVE_DAEMON"
+      # Use direct ivar manipulation to avoid private method checks
+      # when called from _native_daemon_dispatch
+      local json
+      json=$(_env_get "$_NATIVE_DAEMON")
+      json=$(echo "$json" | jq -c '.status = "ready" | .pluginDir = "'"$TRASHDIR/.compiled"'"')
+      _env_set "$_NATIVE_DAEMON" "$json"
+    fi
+    echo "$_NATIVE_DAEMON"
+  ]
+
+  # Check if daemon is available (singleton exists)
+  rawClassMethod: isAvailable [
+    if [[ -n "${_NATIVE_DAEMON:-}" ]]; then
+      echo "true"
+      return 0
+    fi
+    echo "false"
+    return 1
+  ]
+
+  # Reset the singleton (stops the daemon)
+  rawClassMethod: reset [
+    if [[ -n "${_NATIVE_DAEMON:-}" ]]; then
+      @ "$_NATIVE_DAEMON" stop 2>/dev/null || true
+    fi
+    _NATIVE_DAEMON=""
+  ]
+
+  # Ensure the daemon process is running
+  # Starts it in background if not already running
+  rawMethod: _ensureDaemon [
+    local socketPath pidFile pid pluginDir daemonCmd socketOpt pluginOpt debugOpt
+
+    socketPath="$(_ivar socketPath)"
+    pidFile="${socketPath}.pid"
+    pluginDir="$(_ivar pluginDir)"
+    # Use variables to avoid compiler breaking hyphenated option names
+    daemonCmd="trashtalk-daemon"
+    socketOpt="--socket"
+    pluginOpt="--plugin-dir"
+    debugOpt="--debug"
+
+    # Check if daemon is already running
+    if [[ -S "$socketPath" ]] && [[ -f "$pidFile" ]]; then
+      pid=$(cat "$pidFile" 2>/dev/null)
+      if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+        # Daemon is running
+        return 0
+      fi
+    fi
+
+    # Clean up stale files
+    rm -f "$socketPath" "$pidFile" 2>/dev/null
+
+    # Start daemon in background (disown to prevent subshell from waiting)
+    if [[ "$(_ivar debug)" == "true" ]]; then
+      "$daemonCmd" "$socketOpt" "$socketPath" "$pluginOpt" "$pluginDir" "$debugOpt" </dev/null >/dev/null 2>&1 &
+      disown
+    else
+      "$daemonCmd" "$socketOpt" "$socketPath" "$pluginOpt" "$pluginDir" </dev/null >/dev/null 2>&1 &
+      disown
+    fi
+
+    # Wait for socket to appear with exponential backoff
+    # Schedule: 0.1s, 0.2s, 0.4s, 0.8s, 1.0s, 1.0s, 1.0s (~4.5s total)
+    # This handles slow systems better than fixed 0.2s intervals
+    local delay=0.1
+    local max_delay=1.0
+    local total_wait=0
+    local max_total=5.0
+
+    while (( $(echo "$total_wait < $max_total" | bc -l) )); do
+      if [[ -S "$socketPath" ]]; then
+        _ivar_set status "running"
+        return 0
+      fi
+      sleep "$delay"
+      total_wait=$(echo "$total_wait + $delay" | bc -l)
+      # Exponential backoff with cap
+      delay=$(echo "if ($delay * 2 > $max_delay) $max_delay else $delay * 2" | bc -l)
+    done
+
+    echo "[NativeDaemon] Error: daemon failed to start (waited ${total_wait}s)" >&2
+    return 1
+  ]
+
+  # Dispatch a method call to a native class via Unix socket
+  # Returns: result string, or empty if fallback needed
+  # Exit code: 0 = success, 1 = error, 200 = no native plugin (fallback to Bash)
+  rawMethod: dispatch: className instance: instanceId selector: selector args: argsJson [
+    local className="$1" instanceId="$2" selector="$3" argsJson="$4"
+    local socketPath request response exitCode result instanceJson nativeSelector
+    local _daemon_profile_start _daemon_profile_end _daemon_elapsed _daemon_route="plugin"
+
+    # Profile: record start time
+    if [[ -n "${TRASH_PROFILE:-}" ]]; then
+      _daemon_profile_start=$(_profile_time_ms)
+    fi
+
+    # Ensure daemon is running (call function directly to avoid send() overhead)
+    __NativeDaemon___ensureDaemon
+    if [[ $? -ne 0 ]]; then
+      return 200
+    fi
+
+    socketPath="$(_ivar socketPath)"
+
+    # Default args to empty array
+    if [[ -z "$argsJson" ]]; then
+      argsJson="[]"
+    fi
+
+    # Normalize selector: convert colons to underscores for native format
+    nativeSelector="${selector//:/_}"
+
+    # For instance methods, load instance data
+    instanceJson=""
+    if [[ -n "$instanceId" ]]; then
+      instanceJson=$(_env_get "$instanceId" 2>/dev/null)
+      # Keep numbers as-is - Go structs expect int types
+    fi
+
+    # Build JSON request for trashtalk-daemon
+    # Format: {"class":"Counter","instance":"...","selector":"getValue","args":[]}
+    if [[ -n "$instanceJson" ]]; then
+      request=$(jq -cn --arg c "$className" --arg i "$instanceJson" --arg s "$nativeSelector" --argjson a "$argsJson" \
+        '{class: $c, instance: $i, selector: $s, args: $a}')
+    else
+      request=$(jq -cn --arg c "$className" --arg i "" --arg s "$nativeSelector" --argjson a "$argsJson" \
+        '{class: $c, instance: $i, selector: $s, args: $a}')
+    fi
+
+    if [[ "$(_ivar debug)" == "true" ]]; then
+      echo "[NativeDaemon] Request: $request" >&2
+    fi
+
+    # Send request to daemon via Unix socket
+    # nc -U connects to Unix socket, -w 30 sets 30 second timeout
+    response=$(echo "$request" | nc -U "$socketPath" 2>/dev/null)
+
+    if [[ -z "$response" ]]; then
+      echo "[NativeDaemon] Error: no response from daemon" >&2
+      return 1
+    fi
+
+    if [[ "$(_ivar debug)" == "true" ]]; then
+      echo "[NativeDaemon] Response: $response" >&2
+    fi
+
+    # Parse response - daemon returns {"instance":"...","result":"...","exit_code":0}
+    exitCode=$(echo "$response" | jq -r '.exit_code // 1')
+
+    if [[ "$exitCode" == "200" ]]; then
+      # No native plugin for this class, fallback to Bash
+      if [[ -n "${TRASH_PROFILE:-}" ]]; then
+        _daemon_profile_end=$(_profile_time_ms)
+        _daemon_elapsed=$(( _daemon_profile_end - _daemon_profile_start ))
+        echo "[daemon] $className.$selector ${_daemon_elapsed}ms route=fallback reason=no_plugin" >&2
+      fi
+      return 200
+    fi
+
+    if [[ "$exitCode" != "0" ]]; then
+      local error
+      error=$(echo "$response" | jq -r '.error // "unknown error"')
+      echo "[NativeDaemon] Error: $error" >&2
+      return 1
+    fi
+
+    # For instance methods, update instance with new state from native
+    if [[ -n "$instanceId" ]] && [[ -n "$instanceJson" ]]; then
+      local updatedJson
+      updatedJson=$(echo "$response" | jq -r '.instance // empty')
+      if [[ -n "$updatedJson" ]] && [[ "$updatedJson" != "null" ]]; then
+        # Trust the JSON from daemon as-is (Go marshals types correctly)
+        _env_set "$instanceId" "$updatedJson"
+        # Persist changes to database (new model: all instances stay persistent)
+        _env_persist "$instanceId"
+      fi
+    fi
+
+    # Extract result
+    result=$(echo "$response" | jq -r '.result // ""')
+
+    # Profile: log daemon dispatch timing
+    if [[ -n "${TRASH_PROFILE:-}" ]]; then
+      _daemon_profile_end=$(_profile_time_ms)
+      _daemon_elapsed=$(( _daemon_profile_end - _daemon_profile_start ))
+      echo "[daemon] $className.$selector ${_daemon_elapsed}ms route=$_daemon_route" >&2
+    fi
+
+    echo "$result"
+    return 0
+  ]
+
+  # Convenience: dispatch class method (no instance)
+  # When 'new' is called, creates a matching entry in Bash's env store
+  rawMethod: dispatchClass: className selector: selector args: argsJson [
+    local className="$1" selector="$2" argsJson="$3"
+    local result
+
+    result=$(@ "$_RECEIVER" dispatch: "$className" instance: "" selector: "$selector" args: "$argsJson")
+
+    # For 'new' selector, create matching Bash instance
+    if [[ "$selector" == "new" ]] && echo "$result" | grep -q "_"; then
+      # Use Trashtalk's standard instance creation to set up env store entry
+      _create_instance "$className" "$result"
+    fi
+
+    echo "$result"
+  ]
+
+  # Convenience: dispatch instance method with no args
+  rawMethod: dispatch: className instance: instanceId selector: selector [
+    local className="$1" instanceId="$2" selector="$3"
+    @ "$_RECEIVER" dispatch: "$className" instance: "$instanceId" selector: "$selector" args: "[]"
+  ]
+
+  # Check if a native plugin is available for a class
+  rawMethod: hasNative: className [
+    local className="$1" pluginDir ext nativePlugin
+    pluginDir="$(_ivar pluginDir)"
+
+    # Check for .dylib (macOS) or .so (Linux)
+    case "$(uname)" in
+      Darwin) ext=".dylib" ;;
+      *)      ext=".so" ;;
+    esac
+
+    nativePlugin="$pluginDir/${className}${ext}"
+
+    if [[ -f "$nativePlugin" ]]; then
+      echo "true"
+    else
+      echo "false"
+    fi
+  ]
+
+  # List available native plugins
+  rawMethod: listNatives [
+    local pluginDir file ext pattern
+    pluginDir="$(_ivar pluginDir)"
+
+    # Check for .dylib (macOS) or .so (Linux)
+    case "$(uname)" in
+      Darwin) ext=".dylib" ;;
+      *)      ext=".so" ;;
+    esac
+
+    pattern="${pluginDir}/*${ext}"
+
+    if [[ -d "$pluginDir" ]]; then
+      for file in $pattern; do
+        if [[ -f "$file" ]]; then
+          basename "$file" "$ext"
+        fi
+      done | sort
+    fi
+  ]
+
+  # Get daemon PID
+  rawMethod: pid [
+    local socketPath pidFile
+    socketPath="$(_ivar socketPath)"
+    pidFile="${socketPath}.pid"
+
+    if [[ -f "$pidFile" ]]; then
+      cat "$pidFile"
+    fi
+  ]
+
+  # Check if daemon is running
+  rawMethod: isRunning [
+    local socketPath pidFile pid
+    socketPath="$(_ivar socketPath)"
+    pidFile="${socketPath}.pid"
+
+    if [[ -S "$socketPath" ]] && [[ -f "$pidFile" ]]; then
+      pid=$(cat "$pidFile" 2>/dev/null)
+      if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+        echo "true"
+        return 0
+      fi
+    fi
+    echo "false"
+    return 1
+  ]
+
+  # Stop the daemon
+  rawMethod: stop [
+    local socketPath pidFile pid
+    socketPath="$(_ivar socketPath)"
+    pidFile="${socketPath}.pid"
+
+    if [[ -f "$pidFile" ]]; then
+      pid=$(cat "$pidFile" 2>/dev/null)
+      if [[ -n "$pid" ]]; then
+        kill "$pid" 2>/dev/null || true
+      fi
+    fi
+
+    rm -f "$socketPath" "$pidFile" 2>/dev/null
+    _ivar_set status "stopped"
+  ]
+
+  # Alias for backwards compatibility
+  rawMethod: stopAll [
+    @ "$_RECEIVER" stop
+  ]
+
+  # Get daemon status
+  method: status [
+    ^ status
+  ]
+
+  # Enable/disable debug mode
+  method: setDebug: flag [
+    debug := flag
+  ]
+
+  # Private setters
+  method: _setStatus: s [ status := s ]
+  method: _setPluginDir: d [ pluginDir := d ]
+
