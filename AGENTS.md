@@ -2,6 +2,8 @@
 
 This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started.
 
+**Read CLAUDE.md first** - it contains critical architecture information, invariants, and patterns you must understand before making changes.
+
 ## Quick Reference
 
 ```bash
@@ -11,6 +13,12 @@ bd update <id> --status in_progress  # Claim work
 bd close <id>         # Complete work
 bd sync               # Sync with git
 ```
+
+## Key Invariants (from CLAUDE.md)
+
+1. **Primitive classes** (`pragma: primitiveClass`): ALL methods must be `rawMethod`/`rawClassMethod`, must have semantic parity between bash and native Procyon
+2. **Non-primitive classes**: ZERO raw methods allowed, pure DSL only
+3. **Current goal**: Convert all non-primitive classes to pure Trashtalk that executes fully in native mode
 
 ## Landing the Plane (Session Completion)
 
@@ -37,4 +45,3 @@ bd sync               # Sync with git
 - NEVER stop before pushing - that leaves work stranded locally
 - NEVER say "ready to push when you are" - YOU must push
 - If push fails, resolve and retry until it succeeds
-

@@ -1,0 +1,298 @@
+#!/usr/bin/env bash
+# bin/trash-profile-analyze - Analyze Trashtalk profile logs
+#
+# Usage: TRASH_PROFILE=1 @ MyApp launch 2>profile.log
+#        bin/trash-profile-analyze profile.log
+
+set -eo pipefail
+
+# ============================================
+# Configuration
+# ============================================
+declare -A METHOD_CALLS       # method -> call count
+declare -A METHOD_TIMES       # method -> total time (ms)
+declare -A ROUTE_CALLS        # route -> call count
+declare -A ROUTE_TIMES        # route -> total time (ms)
+declare -A CLASS_CALLS        # class -> call count
+declare -A CLASS_NATIVE       # class -> native call count
+declare -a SLOW_METHODS       # list of "time|class.selector|route"
+declare -a SUBPROCESS_SPAWNS  # detected subprocess spawns
+
+TOTAL_CALLS=0
+TOTAL_TIME_MS=0
+FIRST_TIMESTAMP=""
+LAST_TIMESTAMP=""
+
+# ============================================
+# Parsing Functions
+# ============================================
+
+parse_profile_log() {
+  local logfile="$1"
+  local timestamp class selector route elapsed_ms method
+
+  # Parse exit lines using grep and awk for better Unicode handling
+  # Exit lines: [timestamp] ← Class.selector [route] elapsed_ms
+  while IFS='|' read -r timestamp class selector route elapsed_ms; do
+    [[ -z "$timestamp" ]] && continue
+
+    # Track timestamps for duration
+    [[ -z "$FIRST_TIMESTAMP" ]] && FIRST_TIMESTAMP="$timestamp"
+    LAST_TIMESTAMP="$timestamp"
+
+    method="${class}.${selector}"
+
+    # Aggregate method stats (use || true to prevent set -e exit)
+    METHOD_CALLS[$method]=$(( ${METHOD_CALLS[$method]:-0} + 1 ))
+    METHOD_TIMES[$method]=$(( ${METHOD_TIMES[$method]:-0} + elapsed_ms ))
+
+    # Aggregate route stats
+    ROUTE_CALLS[$route]=$(( ${ROUTE_CALLS[$route]:-0} + 1 ))
+    ROUTE_TIMES[$route]=$(( ${ROUTE_TIMES[$route]:-0} + elapsed_ms ))
+
+    # Aggregate class stats
+    CLASS_CALLS[$class]=$(( ${CLASS_CALLS[$class]:-0} + 1 ))
+    # Count as native if the call used native dispatch without fallback
+    if [[ "$route" == "native" || "$route" == "native:socket" || "$route" == "native:direct" || "$route" == "native:daemon" ]]; then
+      CLASS_NATIVE[$class]=$(( ${CLASS_NATIVE[$class]:-0} + 1 ))
+    fi
+
+    # Track for slow methods
+    SLOW_METHODS+=("${elapsed_ms}|${method}|${route}")
+
+    TOTAL_CALLS=$(( TOTAL_CALLS + 1 ))
+    TOTAL_TIME_MS=$(( TOTAL_TIME_MS + elapsed_ms ))
+  done < <(grep '←' "$logfile" | sed -E 's/\[([0-9.]+)\].*← ([A-Za-z0-9_:]+)\.([A-Za-z0-9_]+) \[([^]]+)\] ([0-9]+)ms.*/\1|\2|\3|\4|\5/')
+
+  # Parse daemon-specific logs: [daemon] Class.selector elapsed_msms route=xxx
+  while IFS='|' read -r class selector elapsed_ms route; do
+    [[ -z "$class" ]] && continue
+    method="${class}.${selector}"
+
+    # Track daemon-specific stats
+    local daemon_route="daemon:${route}"
+    ROUTE_CALLS[$daemon_route]=$(( ${ROUTE_CALLS[$daemon_route]:-0} + 1 ))
+    ROUTE_TIMES[$daemon_route]=$(( ${ROUTE_TIMES[$daemon_route]:-0} + elapsed_ms ))
+  done < <(grep '\[daemon\]' "$logfile" 2>/dev/null | sed -E 's/\[daemon\] ([A-Za-z0-9_:]+)\.([A-Za-z0-9_]+) ([0-9]+)ms route=([a-z_]+).*/\1|\2|\3|\4/' || true)
+}
+
+detect_subprocess_spawns() {
+  local logfile="$1"
+  local cmd count
+
+  # Known subprocess commands to look for
+  local -a subprocess_cmds=("grpcurl" "jq" "jo" "sqlite3" "curl" "nc" "socat")
+
+  for cmd in "${subprocess_cmds[@]}"; do
+    count=$(grep -c "\[$cmd\]" "$logfile" 2>/dev/null | head -1 || echo "0")
+    count="${count:-0}"
+    if [[ "$count" =~ ^[0-9]+$ ]] && [[ "$count" -gt 0 ]]; then
+      SUBPROCESS_SPAWNS+=("$cmd: $count spawns")
+    fi
+  done
+}
+
+# ============================================
+# Report Generation
+# ============================================
+
+generate_report() {
+  local duration_sec
+
+  if [[ -n "$FIRST_TIMESTAMP" && -n "$LAST_TIMESTAMP" ]]; then
+    duration_sec=$(echo "$LAST_TIMESTAMP - $FIRST_TIMESTAMP" | bc 2>/dev/null || echo "?")
+  else
+    duration_sec="?"
+  fi
+
+  cat <<EOF
+================================================================================
+                        TRASHTALK PROFILE REPORT
+================================================================================
+
+Run duration: ${duration_sec} seconds
+Total method calls: ${TOTAL_CALLS}
+Total method time: ${TOTAL_TIME_MS}ms
+
+DISPATCH ROUTING
+----------------
+EOF
+
+  if [[ ${#ROUTE_CALLS[@]} -eq 0 ]]; then
+    echo "  (no routing data)"
+  else
+    local route calls time avg pct
+    for route in "${!ROUTE_CALLS[@]}"; do
+      calls=${ROUTE_CALLS[$route]}
+      time=${ROUTE_TIMES[$route]:-0}
+      if [[ $calls -gt 0 && $TOTAL_CALLS -gt 0 ]]; then
+        avg=$(( time / calls ))
+        pct=$(( calls * 100 / TOTAL_CALLS ))
+      else
+        avg=0
+        pct=0
+      fi
+      printf "  %-20s %6d calls (%3d%%)   avg %5dms   total %6dms\n" "[$route]" "$calls" "$pct" "$avg" "$time"
+    done | sort -t'(' -k2 -rn
+  fi
+
+  # Check for non-native percentage
+  local native_calls=0 bash_calls=0 native_direct=0
+  for route in "${!ROUTE_CALLS[@]}"; do
+    if [[ "$route" == "native" || "$route" == "native:socket" || "$route" == "native:direct" || "$route" == "native:daemon" ]]; then
+      ((native_calls+=${ROUTE_CALLS[$route]}))
+    elif [[ "$route" == "bash" || "$route" =~ →bash || "$route" == "bash:direct" || "$route" == "bash:legacy" ]]; then
+      ((bash_calls+=${ROUTE_CALLS[$route]}))
+    fi
+  done
+
+  if [[ $TOTAL_CALLS -gt 0 ]]; then
+    local bash_pct=$(( bash_calls * 100 / TOTAL_CALLS ))
+    if [[ $bash_pct -gt 20 ]]; then
+      echo ""
+      echo "  Warning: ${bash_pct}% of calls are NOT using native code"
+    fi
+  fi
+
+  cat <<EOF
+
+SLOWEST METHODS (top 10)
+------------------------
+EOF
+
+  # Sort slow methods by time (descending)
+  printf '%s\n' "${SLOW_METHODS[@]}" | sort -t'|' -k1 -rn | head -10 | while IFS='|' read -r time method route; do
+    printf "  %6dms  %-40s [%s]\n" "$time" "$method" "$route"
+  done
+
+  cat <<EOF
+
+MOST CALLED METHODS (top 10)
+----------------------------
+EOF
+
+  for method in "${!METHOD_CALLS[@]}"; do
+    echo "${METHOD_CALLS[$method]}|$method|${METHOD_TIMES[$method]:-0}"
+  done | sort -t'|' -k1 -rn | head -10 | while IFS='|' read -r calls method time; do
+    local avg=0
+    [[ $calls -gt 0 ]] && avg=$(( time / calls ))
+    printf "  %6d calls  %-35s  total %6dms  avg %4dms\n" "$calls" "$method" "$time" "$avg"
+  done
+
+  cat <<EOF
+
+CLASSES BY CALL COUNT
+---------------------
+EOF
+
+  for class in "${!CLASS_CALLS[@]}"; do
+    local calls=${CLASS_CALLS[$class]}
+    local native=${CLASS_NATIVE[$class]:-0}
+    local native_pct=0
+    [[ $calls -gt 0 ]] && native_pct=$(( native * 100 / calls ))
+    echo "${calls}|${class}|${native_pct}"
+  done | sort -t'|' -k1 -rn | head -10 | while IFS='|' read -r calls class native_pct; do
+    if [[ $native_pct -eq 0 ]]; then
+      printf "  %6d calls  %-30s  %3d%% native  (no native)\n" "$calls" "$class" "$native_pct"
+    else
+      printf "  %6d calls  %-30s  %3d%% native\n" "$calls" "$class" "$native_pct"
+    fi
+  done
+
+  # Classes without native support
+  echo ""
+  echo "CLASSES WITHOUT NATIVE SUPPORT"
+  echo "------------------------------"
+  local has_recommendations=0
+  for class in "${!CLASS_CALLS[@]}"; do
+    local calls=${CLASS_CALLS[$class]}
+    local native=${CLASS_NATIVE[$class]:-0}
+    if [[ $native -eq 0 && $calls -ge 5 ]]; then
+      printf "  Warning: %-30s - %d calls, would benefit from native\n" "$class" "$calls"
+      has_recommendations=1
+    fi
+  done
+  [[ $has_recommendations -eq 0 ]] && echo "  (none detected)"
+
+  # Subprocess spawns
+  if [[ ${#SUBPROCESS_SPAWNS[@]} -gt 0 ]]; then
+    echo ""
+    echo "SUBPROCESS SPAWNS DETECTED"
+    echo "--------------------------"
+    for spawn in "${SUBPROCESS_SPAWNS[@]}"; do
+      echo "  $spawn"
+    done
+  fi
+
+  # Recommendations
+  echo ""
+  echo "RECOMMENDATIONS"
+  echo "---------------"
+  local rec_count=0
+
+  # Check for high fallback rate (any route containing →bash indicates fallback)
+  local fallback_calls=0
+  for route in "${!ROUTE_CALLS[@]}"; do
+    if [[ "$route" =~ →bash ]]; then
+      ((fallback_calls+=${ROUTE_CALLS[$route]}))
+    fi
+  done
+  if [[ $fallback_calls -gt 10 ]]; then
+    ((rec_count++))
+    echo "  ${rec_count}. ${fallback_calls} native→bash fallbacks - check if plugins implement all methods"
+  fi
+
+  # Check for classes with many calls but no native
+  for class in "${!CLASS_CALLS[@]}"; do
+    local calls=${CLASS_CALLS[$class]}
+    local native=${CLASS_NATIVE[$class]:-0}
+    if [[ $native -eq 0 && $calls -ge 20 ]]; then
+      ((rec_count++))
+      echo "  ${rec_count}. $class has $calls calls but no native support - prioritize for dylib"
+    fi
+  done
+
+  # Check for subprocess spawns
+  if [[ ${#SUBPROCESS_SPAWNS[@]} -gt 0 ]]; then
+    ((rec_count++))
+    echo "  ${rec_count}. Subprocess spawns detected - consider native alternatives for hot paths"
+  fi
+
+  [[ $rec_count -eq 0 ]] && echo "  No recommendations - profile looks healthy!"
+
+  echo ""
+  echo "================================================================================"
+}
+
+# ============================================
+# Main
+# ============================================
+
+main() {
+  local logfile="${1:-}"
+
+  if [[ -z "$logfile" ]]; then
+    echo "Usage: $0 <profile.log>"
+    echo ""
+    echo "Generate profile log with: TRASH_PROFILE=1 @ MyApp run 2>profile.log"
+    exit 1
+  fi
+
+  if [[ ! -f "$logfile" ]]; then
+    echo "Error: File not found: $logfile" >&2
+    exit 1
+  fi
+
+  # Check if log has any profile data
+  if ! grep -q "^\[" "$logfile" 2>/dev/null; then
+    echo "Error: No profile data found in $logfile" >&2
+    echo "Make sure to run with TRASH_PROFILE=1 and redirect stderr to the log file" >&2
+    exit 1
+  fi
+
+  parse_profile_log "$logfile"
+  detect_subprocess_spawns "$logfile"
+  generate_report
+}
+
+main "$@"
