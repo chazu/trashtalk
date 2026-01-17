@@ -4,90 +4,102 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What is Trashtalk?
 
-Trashtalk is a Smalltalk-inspired DSL compiler and runtime for Bash. It transforms `.trash` source files into executable code, providing OOP semantics (classes, inheritance, traits, instance persistence).
+Trashtalk is a Smalltalk-inspired DSL compiler and runtime for Bash. It transforms `.trash` source files into namespaced Bash functions, providing OOP semantics (classes, inheritance, traits, instance persistence) without polluting the global namespace.
 
-## Critical Invariants
+## Issue Tracking
 
-### Primitive vs Non-Primitive Classes
+We use bd (beads) for issue tracking instead of Markdown TODOs or external tools.
 
-**This is the most important architectural constraint.**
+### Quick Reference
 
-| Class Type | Pragma | Methods | Traits | Execution |
-|------------|--------|---------|--------|-----------|
-| **Primitive** | `pragma: primitiveClass` | ALL must be `rawMethod`/`rawClassMethod` | NOT allowed | Bash (rawMethods) or Native (Procyon) |
-| **Non-Primitive** | (none) | ZERO raw methods | Allowed | Pure DSL, compiles to native |
+```bash
+# Find ready work (no blockers)
+bd ready --json
 
-**Primitive classes** wrap system/external functionality and must have **semantically parallel implementations** in both:
-- Bash: via `rawMethod`/`rawClassMethod` (using shell commands, grpcurl, etc.)
-- Native: via Procyon codegen (Go implementations in `pkg/codegen/primitives.go`)
+# Find ready work including future deferred issues
+bd ready --include-deferred --json
 
-**Current primitive classes**: Object, File, String, Shell, Console, GrpcClient, Http, Time, Env, Block, Coproc, FIFO, Store, Runtime, Protocol, Tool, Future
+# Create new issue
+bd create "Issue title" -t bug|feature|task -p 0-4 -d "Description" --json
 
-**Non-primitive classes** are pure Trashtalk DSL. They use primitive classes for any system interaction.
+# Create issue with due date and defer (GH#820)
+bd create "Task" --due=+6h              # Due in 6 hours
+bd create "Task" --defer=tomorrow       # Hidden from bd ready until tomorrow
+bd create "Task" --due="next monday" --defer=+1h  # Both
 
-**Current goal**: Convert all non-primitive classes to pure Trashtalk that executes fully in native mode.
+# Update issue status
+bd update <id> --status in_progress --json
 
-## Architecture
+# Update issue with due/defer dates
+bd update <id> --due=+2d                # Set due date
+bd update <id> --defer=""               # Clear defer (show immediately)
 
-### Compilation Pipeline
+# Link discovered work
+bd dep add <discovered-id> <parent-id> --type discovered-from
 
+# Complete work
+bd close <id> --reason "Done" --json
+
+# Show dependency tree
+bd dep tree <id>
+
+# Get issue details
+bd show <id> --json
+
+# Query issues by time-based scheduling (GH#820)
+bd list --deferred              # Show issues with defer_until set
+bd list --defer-before=tomorrow # Deferred before tomorrow
+bd list --defer-after=+1w       # Deferred after one week from now
+bd list --due-before=+2d        # Due within 2 days
+bd list --due-after="next monday" # Due after next Monday
+bd list --overdue               # Due date in past (not closed)
 ```
-.trash source → jq-compiler (parse) → AST JSON → Procyon → Output
-                                                    │
-                                    ┌───────────────┴───────────────┐
-                                    │                               │
-                              --mode=bash                    --mode=plugin
-                                    │                               │
-                                    ▼                               ▼
-                           Compiled Bash              Go source → .dylib plugin
-                         (trash/.compiled/)         (trash/.compiled/.build/)
-```
 
-### Key Components
+### Workflow
 
-| Component | Location | Purpose |
-|-----------|----------|---------|
-| jq-compiler | `lib/jq-compiler/` | Tokenizes and parses `.trash` → AST JSON |
-| Procyon | `lib/procyon/procyon` | Code generator (bash and native backends) |
-| Procyon source | `~/dev/go/procyon` | Go project with parser, IR, codegen |
-| trashtalk-daemon | `lib/trashtalk-daemon` | Loads native plugins, handles dispatch |
-| Runtime | `lib/trash.bash` | Bash dispatcher, routes `@` message sends |
-| Compiled bash | `trash/.compiled/*` | Generated bash functions |
-| Native plugins | `trash/.compiled/*.dylib` | Compiled Go shared libraries |
+1. **Check for ready work**: Run `bd ready` to see what's unblocked
+2. **Claim your task**: `bd update <id> --status in_progress`
+3. **Work on it**: Implement, test, document
+4. **Discover new work**: If you find bugs or TODOs, create issues:
+   - `bd create "Found bug in auth" -t bug -p 1 --json`
+   - Link it: `bd dep add <new-id> <current-id> --type discovered-from`
+5. **Complete**: `bd close <id> --reason "Implemented"`
+6. **Export**: Run `bd export -o .beads/issues.jsonl` before committing
 
-### Procyon
+### Issue Types
 
-Procyon is the code generator that produces both bash and native Go code from Trashtalk AST.
+- `bug` - Something broken that needs fixing
+- `feature` - New functionality
+- `task` - Work item (tests, docs, refactoring)
+- `epic` - Large feature composed of multiple issues
+- `chore` - Maintenance work (dependencies, tooling)
 
-**Repository**: `~/dev/go/procyon`
+### Priorities
 
-**Modes**:
-- `--mode=bash`: Generates bash functions (default compilation target)
-- `--mode=plugin`: Generates Go code that compiles to `.dylib` plugins
+- `0` - Critical (security, data loss, broken builds)
+- `1` - High (major features, important bugs)
+- `2` - Medium (nice-to-have features, minor bugs)
+- `3` - Low (polish, optimization)
+- `4` - Backlog (future ideas)
 
-**Key files in Procyon**:
-- `pkg/codegen/codegen.go` - Main code generation
-- `pkg/codegen/primitives.go` - Native implementations for primitive classes
-- `pkg/codegen/codegen_grpc.go` - GrpcClient native implementations
+### Dependency Types
 
-### Runtime Execution Model
+- `blocks` - Hard dependency (issue X blocks issue Y)
+- `related` - Soft relationship (issues are connected)
+- `parent-child` - Epic/subtask relationship
+- `discovered-from` - Track issues discovered during work
 
-1. **Bash mode**: `source lib/trash.bash` loads runtime, dispatcher routes `@` sends to compiled bash functions
-2. **Native mode**: `trashtalk-daemon` loads `.dylib` plugins, handles dispatch with fallback to bash for uncompiled methods
-3. **Hybrid**: Native daemon can call bash methods and vice versa; instances stored in shared SQLite
+Only `blocks` dependencies affect the ready work queue.
 
 ## Build Commands
 
 ```bash
-make                      # Full build (bash + plugins + daemon)
-make bash                 # Compile to bash only
-make plugins              # Build native .dylib plugins
-make daemon               # Build trashtalk-daemon
-make legacy               # Use legacy jq-compiler only (no Procyon)
-make single CLASS=Counter # Compile single class
-make single CLASS=Yutani/Widget  # Namespaced class
-make test                 # Run all tests
-make clean                # Remove build artifacts
+make                      # Compile all .trash files
+make compile              # Same as above
+make single CLASS=Counter # Compile a single class
+make compile-traits       # Compile only traits
+make clean                # Delete .compiled directory
+make watch                # Auto-recompile on file changes
 ```
 
 ## Testing
@@ -106,72 +118,23 @@ source lib/trash.bash              # Load the runtime
 @ Trash info                       # System info
 counter=$(@ Counter new)           # Create instance
 @ $counter increment 5             # Call instance method
+@ Trash methodsFor Counter         # List methods for a class
 ```
 
-## DSL Syntax Quick Reference
+## Architecture
 
-```smalltalk
-# Non-primitive class (pure DSL, no rawMethods)
-Counter subclass: Object
-  instanceVars: value:0 step:1
+### Compilation Pipeline
 
-  method: increment [
-    | newValue |
-    newValue := value + step.
-    value := newValue.
-    ^ newValue
-  ]
-
-  classMethod: create [
-    @ Counter new
-  ]
-
-# Primitive class (all rawMethods, no traits)
-MyPrimitive subclass: Object
-  pragma: primitiveClass
-  instanceVars: data:''
-
-  rawMethod: doSomething [
-    # Raw bash code here
-    echo "result"
-  ]
-
-  rawClassMethod: create [
-    local instance
-    instance=$(@ MyPrimitive new)
-    echo "$instance"
-  ]
+```
+.trash source → Tokenizer → Parser → Code Generator → Compiled Bash
 ```
 
-### Key Patterns
+- **Compiler**: `lib/jq-compiler/` - jq-based two-pass compiler (tokenizer → parser → codegen)
+- **Runtime/Dispatcher**: `lib/trash.bash` - routes `@` message sends to functions
+- **Source files**: `trash/*.trash` and `trash/traits/*.trash`
+- **Compiled output**: `trash/.compiled/` (also copied to `trash/` for runtime)
 
-**JSON extraction** (use String primitive):
-```smalltalk
-value := @ String jsonPath: 'session.id' from: jsonResponse.
-```
-
-**Handler/closure pattern** (for callbacks in non-primitive classes):
-```smalltalk
-# Store handler in ivar, implement valueWith: to receive callbacks
-method: onEventDo: handler [
-  eventHandler := handler.
-  @ someService streamWithCallback: self
-]
-
-method: valueWith: data [
-  (eventHandler notEmpty) ifTrue: [
-    @ eventHandler value: data
-  ]
-]
-```
-
-**Predicates that work**:
-```smalltalk
-(value isEmpty) ifTrue: [...]      # Works
-(value notEmpty) ifTrue: [...]     # Works
-```
-
-## Key Transformations
+### Key Transformations
 
 | DSL | Compiles To |
 |-----|-------------|
@@ -182,58 +145,133 @@ method: valueWith: data [
 | `var := value` | `var="value"` |
 | `@ self method` | `@ "$_RECEIVER" method` |
 
-## Runtime Context Variables
+### Runtime Context Variables
 
-Set by dispatcher during message sends:
+Set by dispatcher during message sends (local to each `send()` frame):
 - `$_RECEIVER` - Object/class receiving the message
 - `$_SELECTOR` - Method name being called
 - `$_CLASS` - Class context
 - `$_INSTANCE` - Instance ID (for instance methods)
 
-## Instance Persistence
+These are `local` variables using Bash's dynamic scoping, so nested message sends get their own copies that are automatically restored on return.
+
+### Error Handling & Advice APIs
+
+```bash
+# Error handling
+_throw "ErrorType" "message"      # Signal an error
+_on_error "ErrorType" "handler"   # Register handler (use "*" for catch-all)
+_pop_handler                      # Remove handler when leaving protected region
+_ensure "cleanup_command"         # Register cleanup that runs on frame exit
+
+# Debugging
+_print_stack_trace                # Print call stack to stderr
+_CALL_STACK                       # Array of "Class.selector" entries
+_CALL_DEPTH                       # Current call depth
+
+# Method advice (AOP)
+_add_before_advice "Class" "selector" "handler"  # Run before method
+_add_after_advice "Class" "selector" "handler"   # Run after method
+_remove_advice "Class" "selector"                # Remove advice
+```
+
+### Instance Persistence
 
 Instances stored in SQLite (`instances.db`) as JSON. Instance IDs are lowercase class name + UUID:
 - Non-namespaced: `counter_abc123`
 - Namespaced: `myapp_counter_abc123` (for `MyApp::Counter`)
 
+## Key Files
+
+- `lib/trash.bash` - Main dispatcher (`send()` function handles method lookup)
+- `lib/jq-compiler/` - jq-based compiler (tokenizer.bash, parser.jq, codegen.jq, driver.bash)
+- `lib/vendor/sqlite-json.bash` - Database layer
+- `lib/vendor/tuplespace/` - Process coordination
+
 ## Namespaces
+
+Trashtalk supports flat namespaces to prevent class name collisions between packages.
+
+### Syntax
 
 ```smalltalk
 package: MyApp
+  import: Logging
 
 Counter subclass: Object
-  method: increment [ ... ]
+  instanceVars: value:0
+
+  method: increment [
+    value := value + 1
+  ]
 ```
 
-- Qualified references: `@ OtherPkg::Counter new`
-- Compiled function: `__MyApp__Counter__increment`
-- Instance ID: `myapp_counter_uuid`
+### Key Concepts
 
-## Issue Tracking
+| Concept | Example | Description |
+|---------|---------|-------------|
+| Package declaration | `package: MyApp` | Declares the namespace for a class |
+| Import | `import: Logging` | Import another package's classes |
+| Qualified reference | `@ OtherPkg::Counter new` | Explicit package reference |
 
-We use **bd** (beads) for issue tracking.
+### Naming Conventions
+
+| Source | Compiled Function | Instance ID |
+|--------|-------------------|-------------|
+| `MyApp::Counter.increment` | `__MyApp__Counter__increment` | `myapp_counter_uuid` |
+| `Counter.increment` (no package) | `__Counter__increment` | `counter_uuid` |
+
+### Runtime Usage
 
 ```bash
-bd ready                  # Find available work
-bd show <id>              # View issue details
-bd update <id> --status in_progress  # Claim work
-bd close <id>             # Complete work
-bd sync                   # Sync with git (run at session end)
+# Create namespaced instance
+counter=$(@ MyApp::Counter new)
+
+# Use instance (works the same)
+@ $counter increment
+@ $counter getValue
+
+# Class is stored with qualified name
+db_get $counter | jq '.class'  # "MyApp::Counter"
 ```
 
-### Priorities
-- `0` - Critical (P0)
-- `1` - High
-- `2` - Medium
-- `3` - Low
-- `4` - Backlog
+### Design Notes
+
+- **Qualified references required**: Cross-package references must use `Package::Class` syntax
+- **`import:` is informational**: Parsed but not enforced - serves as documentation
+- **Single-file compilation preserved**: No multi-pass compilation needed
+- **Traits remain global**: No namespace prefix for traits
+
+See `docs/namespaces-design.md` for full design details.
+
+## DSL Syntax Quick Reference
+
+```smalltalk
+# Class definition
+Counter subclass: Object
+  include: Debuggable
+  instanceVars: value:0 step:1
+
+  method: increment [
+    | newValue |
+    newValue := $(( $(_ivar value) + 1 ))
+    _ivar_set value "$newValue"
+  ]
+
+  classMethod: create [
+    @ Counter new
+  ]
+
+  rawMethod: withHeredoc [
+    # No transformation - use for heredocs, traps
+  ]
+```
 
 ## External Dependencies
 
-Required: `jo`, `jq`, `sqlite3`, `uuidgen`, `grpcurl` (for GrpcClient bash fallback)
+Requires: `jo`, `jq`, `sqlite3`, `uuidgen`
 
 ## Known Issues
 
-- **Method name collision**: Keyword methods (e.g., `skip:`) and unary methods with same base name compile to same bash function
-- **Negative numbers in arguments**: Compiler may mangle `0 -1` into `0-1`
-- **ifTrue: with non-predicate expressions**: `(@ String contains:...) ifTrue:` doesn't work correctly (returns "true"/"false" strings but ifTrue: uses `-n` test)
+- **Method name collision**: Keyword methods (e.g., `skip:`) and unary methods with the same base name (e.g., `skip`) compile to the same bash function, causing the second definition to overwrite the first. Workaround: inline implementations in both methods rather than delegating.
+- **Negative numbers in arguments**: The compiler may mangle arguments like `0 -1` into `0-1`. Avoid negative number literals in method calls.
