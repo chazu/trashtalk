@@ -92,6 +92,7 @@ Object subclass: nil
 
   # Send a message to self by selector name
   # Usage: @ self perform: 'increment'
+  # Native: uses reflection to call method by name
   rawMethod: perform: selector [
     @ "$_RECEIVER" "$1"
   ]
