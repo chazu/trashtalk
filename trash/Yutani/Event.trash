@@ -11,55 +11,51 @@ Event subclass: Object
   # ============================================================================
 
   # Parse a JSON event string into an Event object
-  # Determines event type by checking for key presence, extracts relevant fields
-  classMethod: fromJson: json [
-    | instance eventType keyObj widgetObj mouseObj wid |
-    instance := @ Yutani::Event new.
+  # Uses single jq invocation to extract all fields at once (bash-specific)
+  rawClassMethod: fromJson: json [
+    pragma: bashOnly
+    local json="$1"
+    local instance parsed type_field
+    local wid kname kmods mx my mbutton wdata
 
-    # Store raw JSON for lazy field access
-    @ instance _setRawJson: json.
+    instance=$(_generate_instance_id "Yutani__Event")
+    _create_instance "Yutani::Event" "$instance"
 
-    # Determine event type by checking which top-level key exists
-    (json objectHasKey: 'key') ifTrue: [
-      @ instance _setEventType: 'key'.
-      keyObj := json objectAt: 'key'.
-      @ instance _setKeyName: (keyObj objectAt: 'key').
-      @ instance _setKeyMods: (keyObj objectAt: 'modifiers').
-      # Key events may also have widget info
-      widgetObj := json objectAt: 'widget'.
-      (widgetObj notEmpty) ifTrue: [
-        wid := (widgetObj objectAt: 'widgetId') objectAt: 'id'.
-        @ instance _setWidgetId: wid
-      ]
-    ] ifFalse: [
-      (json objectHasKey: 'widget') ifTrue: [
-        @ instance _setEventType: 'widget'.
-        widgetObj := json objectAt: 'widget'.
-        wid := (widgetObj objectAt: 'widgetId') objectAt: 'id'.
-        @ instance _setWidgetId: wid.
-        @ instance _setData: (widgetObj objectAt: 'type')
-      ] ifFalse: [
-        (json objectHasKey: 'mouse') ifTrue: [
-          @ instance _setEventType: 'mouse'.
-          mouseObj := json objectAt: 'mouse'.
-          @ instance _setMouseX: (mouseObj objectAt: 'x').
-          @ instance _setMouseY: (mouseObj objectAt: 'y').
-          @ instance _setMouseButton: (mouseObj objectAt: 'button')
-        ] ifFalse: [
-          (json objectHasKey: 'resize') ifTrue: [
-            @ instance _setEventType: 'resize'
-          ] ifFalse: [
-            (json objectHasKey: 'focus') ifTrue: [
-              @ instance _setEventType: 'focus'
-            ] ifFalse: [
-              @ instance _setEventType: 'unknown'
-            ]
-          ]
-        ]
-      ]
-    ].
+    # Store raw JSON
+    @ "$instance" _setRawJson: "$json"
 
-    ^ instance
+    # Single jq call to extract all fields and determine event type
+    # Output format: type|widgetId|keyName|keyMods|mouseX|mouseY|mouseButton|data
+    parsed=$(echo "$json" | jq -r '
+      if .key then
+        "key|\(.widget.widgetId.id // "")|\(.key.key // "")|\(.key.modifiers // "")|0|0||"
+      elif .widget then
+        "widget|\(.widget.widgetId.id // "")|||0|0||\(.widget.type // "")"
+      elif .mouse then
+        "mouse||||\(.mouse.x // 0)|\(.mouse.y // 0)|\(.mouse.button // "")|"
+      elif .resize then
+        "resize|||0|0||"
+      elif .focus then
+        "focus|||0|0||"
+      else
+        "unknown|||0|0||"
+      end
+    ')
+
+    # Parse the pipe-delimited result
+    IFS='|' read -r type_field wid kname kmods mx my mbutton wdata <<< "$parsed"
+
+    # Set all fields
+    @ "$instance" _setEventType: "$type_field"
+    [[ -n "$wid" ]] && @ "$instance" _setWidgetId: "$wid"
+    [[ -n "$kname" ]] && @ "$instance" _setKeyName: "$kname"
+    [[ -n "$kmods" ]] && @ "$instance" _setKeyMods: "$kmods"
+    [[ -n "$mx" && "$mx" != "0" ]] && @ "$instance" _setMouseX: "$mx"
+    [[ -n "$my" && "$my" != "0" ]] && @ "$instance" _setMouseY: "$my"
+    [[ -n "$mbutton" ]] && @ "$instance" _setMouseButton: "$mbutton"
+    [[ -n "$wdata" ]] && @ "$instance" _setData: "$wdata"
+
+    echo "$instance"
   ]
 
   # ============================================================================
