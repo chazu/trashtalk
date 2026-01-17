@@ -56,13 +56,13 @@ Session subclass: Object
     @ grpcClient call: 'industries.loosh.yutani.v1.SessionService/DestroySession' with: json
   ]
 
-  method: ping [
-    | ts builder json _ |
-    ts := @ Time now.
-    builder := @ Json object.
-    _ := @ builder at: 'timestamp' putNumber: ts.
-    json := @ builder build.
-    @ grpcClient call: 'industries.loosh.yutani.v1.SessionService/Ping' with: json
+  rawMethod: ping [
+    pragma: bashOnly
+    local ts client json
+    ts=$(date +%s)
+    client="$(_ivar grpcClient)"
+    json=$(jo timestamp="$ts")
+    @ "$client" call: 'industries.loosh.yutani.v1.SessionService/Ping' with: "$json"
   ]
 
   method: serverInfo [
@@ -474,85 +474,94 @@ Session subclass: Object
   # High-level streaming with EventDispatcher integration
   # Creates Event objects and dispatches them through the provided dispatcher
   # Usage: @ $session runEventLoopWithDispatcher: $dispatcher
-  method: runEventLoopWithDispatcher: aDispatcher [
-    | handlerBlock codePart1 codePart2 code |
-    # Build Block code with dispatcher ID interpolated
-    # Result: local json="$1"; @ "dispatcherId" dispatchJson: "$json"
-    codePart1 := 'local json="$1"; @ "'.
-    codePart2 := @ String concat: aDispatcher with: '" dispatchJson: "$json"'.
-    code := @ String concat: codePart1 with: codePart2.
-    handlerBlock := @ Block new: code.
+  # (bash-specific: string interpolation for block creation)
+  rawMethod: runEventLoopWithDispatcher: dispatcher [
+    pragma: bashOnly
+    pragma: direct
+    local dispatcher="$1" handlerBlock
+
+    # Create a block that converts JSON to Event and dispatches it
+    handlerBlock=$(@ Block new: "
+      local json=\"\$1\"
+      @ \"$dispatcher\" dispatchJson: \"\$json\"
+    ")
+
     # Start streaming - this blocks until stream ends/errors
-    @ self streamEventsWithBlock: handlerBlock
+    @ "$_RECEIVER" streamEventsWithBlock: "$handlerBlock"
   ]
 
   # ============================================================================
   # Fallback: Coproc-based streaming (for when native daemon unavailable)
   # ============================================================================
 
-  # Fallback coproc-based event streaming (for when native daemon unavailable)
-  # Writes JSON to temp file to avoid shell quoting issues
-  method: startEventStream [
-    | sidBuilder filterBuilder builder sidJson filterJson json tmpFile cmd cmdPart1 cmdPart2 ec f _ |
-    # Build filter JSON using Json builder
-    sidBuilder := @ Json object.
-    _ := @ sidBuilder at: 'id' put: sessionId.
-    sidJson := @ sidBuilder build.
-    filterBuilder := @ Json object.
-    _ := @ filterBuilder at: 'receive_key_events' putBool: 'true'.
-    _ := @ filterBuilder at: 'receive_mouse_events' putBool: 'true'.
-    _ := @ filterBuilder at: 'receive_resize_events' putBool: 'true'.
-    _ := @ filterBuilder at: 'receive_focus_events' putBool: 'true'.
-    _ := @ filterBuilder at: 'receive_widget_events' putBool: 'true'.
-    filterJson := @ filterBuilder build.
-    builder := @ Json object.
-    _ := @ builder at: 'session_id' putJson: sidJson.
-    _ := @ builder at: 'filter' putJson: filterJson.
-    json := @ builder build.
-    # Write JSON to temp file to avoid quoting issues in command string
-    tmpFile := '/tmp/yutani_subscribe_filter.json'.
-    f := @ File for: tmpFile.
-    _ := @ f write: json.
-    # Build grpcurl command: grpcurl -plaintext -d @FILE HOST SERVICE | jq -c .
-    cmdPart1 := @ String concat: 'grpcurl -plaintext -d @' with: tmpFile with: ' '.
-    cmdPart2 := @ String concat: host with: ' industries.loosh.yutani.v1.EventService/Subscribe | jq --unbuffered -c .'.
-    cmd := @ String concat: cmdPart1 with: cmdPart2.
+  # (bash-specific: jo for JSON, command string building, coproc usage)
+  rawMethod: startEventStream [
+    pragma: bashOnly
+    local sid filter_json host evt_coproc cmd
+    sid="$(_ivar sessionId)"
+    host="$(_ivar host)"
+
+    # Build filter JSON
+    filter_json=$(jo session_id="$(jo id="$sid")" \
+      filter="$(jo receive_key_events=true receive_mouse_events=true \
+        receive_resize_events=true receive_focus_events=true receive_widget_events=true)")
+
+    # Build the grpcurl command - pipe through jq -c to get compact single-line JSON
+    # Use --unbuffered to prevent jq from buffering output
+    cmd="grpcurl -plaintext -d '$filter_json' $host industries.loosh.yutani.v1.EventService/Subscribe | jq --unbuffered -c ."
+
     # Create and start coproc
-    ec := @ Coproc for: cmd.
-    _ := @ ec startReadOnly.
-    eventCoproc := ec
+    evt_coproc=$(@ Coproc for: "$cmd")
+    @ "$evt_coproc" startReadOnly
+
+    _ivar_set eventCoproc "$evt_coproc"
   ]
 
-  method: stopEventStream [
-    | ec |
-    ec := eventCoproc.
-    (ec notEmpty) ifTrue: [
-      @ ec terminate.
-      eventCoproc := ''
-    ]
+  # (bash-specific: conditional branching)
+  rawMethod: stopEventStream [
+    pragma: bashOnly
+    local evt_coproc
+    evt_coproc="$(_ivar eventCoproc)"
+
+    if [[ -n "$evt_coproc" ]]; then
+      @ "$evt_coproc" terminate
+      _ivar_set eventCoproc ""
+    fi
   ]
 
   # Process events with a handler (coproc mode). Handler can read $__COPROC_LINE.
   # Usage: @ $session onEventDo: '@ $obj handleEvent'
-  method: onEventDo: handler [
-    | ec |
-    ec := eventCoproc.
-    (ec isEmpty) ifTrue: [
-      @ self startEventStream.
-      ec := eventCoproc
-    ].
-    @ ec readLinesDo: handler
+  # (bash-specific: conditional branching)
+  rawMethod: onEventDo: handler [
+    pragma: bashOnly
+    local evt_coproc handler="$1"
+    evt_coproc="$(_ivar eventCoproc)"
+
+    # Start stream if not already running
+    if [[ -z "$evt_coproc" ]]; then
+      @ "$_RECEIVER" startEventStream
+      evt_coproc="$(_ivar eventCoproc)"
+    fi
+
+    # Read lines continuously, calling handler for each
+    @ "$evt_coproc" readLinesDo: "$handler"
   ]
 
-  method: nextEvent [
-    | ec line |
-    ec := eventCoproc.
-    (ec isEmpty) ifTrue: [
-      @ self startEventStream.
-      ec := eventCoproc
-    ].
-    line := @ ec readLine.
-    ^ line
+  # (bash-specific: conditional branching)
+  rawMethod: nextEvent [
+    pragma: bashOnly
+    local evt_coproc line
+    evt_coproc="$(_ivar eventCoproc)"
+
+    # Start stream if not already running
+    if [[ -z "$evt_coproc" ]]; then
+      @ "$_RECEIVER" startEventStream
+      evt_coproc="$(_ivar eventCoproc)"
+    fi
+
+    # Read next line (blocks until event arrives)
+    line=$(@ "$evt_coproc" readLine)
+    echo "$line"
   ]
 
 
