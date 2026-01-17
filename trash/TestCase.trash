@@ -159,43 +159,39 @@ TestCase subclass: Object
   # ==========================================
 
   method: skip: reason [
-    pragma: bashOnly
     | test count |
     test := @ self currentTest.
     count := @ self skipped.
     @ self skipped: (count + 1).
     @ Console print: ('  SKIP: ' , test , ' - ' , reason).
-    return 77  # Special return code to signal skip
+    ^ 77
   ]
 
   method: skip [
-    pragma: bashOnly
     | test count |
     test := @ self currentTest.
     count := @ self skipped.
     @ self skipped: (count + 1).
     @ Console print: ('  SKIP: ' , test , ' - No reason given').
-    return 77
+    ^ 77
   ]
 
   method: pending: description [
-    pragma: bashOnly
     | test count |
     test := @ self currentTest.
     count := @ self skipped.
     @ self skipped: (count + 1).
     @ Console print: ('  PENDING: ' , test , ' - ' , description).
-    return 77
+    ^ 77
   ]
 
   method: pending [
-    pragma: bashOnly
     | test count |
     test := @ self currentTest.
     count := @ self skipped.
     @ self skipped: (count + 1).
     @ Console print: ('  PENDING: ' , test , ' - Not yet implemented').
-    return 77
+    ^ 77
   ]
 
   method: fail: message [
