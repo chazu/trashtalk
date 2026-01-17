@@ -86,33 +86,6 @@ Object subclass: nil
     @ Runtime dataFor: "$_RECEIVER"
   ]
 
-  # ==========================================
-  # Dynamic Method Dispatch (perform:)
-  # ==========================================
-
-  # Send a message to self by selector name
-  # Usage: @ self perform: 'increment'
-  rawMethod: perform: selector [
-    @ "$_RECEIVER" "$1"
-  ]
-
-  # Send a message with one argument
-  # Usage: @ self perform: 'add:' with: 5
-  rawMethod: perform: selector with: arg1 [
-    @ "$_RECEIVER" "$1" "$2"
-  ]
-
-  # Send a message with two arguments
-  # Usage: @ self perform: 'at:put:' with: 'key' with: 'value'
-  rawMethod: perform: selector with: arg1 with: arg2 [
-    @ "$_RECEIVER" "$1" "$2" "$3"
-  ]
-
-  # Send a message with three arguments
-  rawMethod: perform: selector with: arg1 with: arg2 with: arg3 [
-    @ "$_RECEIVER" "$1" "$2" "$3" "$4"
-  ]
-
   # Edit this class's source file and recompile if changed
   rawClassMethod: edit [
     local class source_file trait_source file_to_edit editor
