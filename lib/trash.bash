@@ -1462,7 +1462,10 @@ declare -gA _SOURCED_COMPILED_CLASSES
 
 # Default socket path for trashtalk-daemon
 _NATIVE_DAEMON_SOCKET="${TRASHTALK_DAEMON_SOCKET:-/tmp/trashtalk-daemon.sock}"
-export _NATIVE_DAEMON_SOCKET
+_NATIVE_DAEMON_PLUGIN_DIR="${TRASHDIR:-.}/.compiled"
+_NATIVE_DAEMON_DEBUG="${TRASHTALK_DAEMON_DEBUG:-}"
+_NATIVE_DAEMON_STATUS=""
+export _NATIVE_DAEMON_SOCKET _NATIVE_DAEMON_PLUGIN_DIR _NATIVE_DAEMON_DEBUG _NATIVE_DAEMON_STATUS
 
 # Check if the native daemon is available (socket exists and responds)
 # Usage: if _native_daemon_available; then ... fi
@@ -1474,6 +1477,128 @@ function _native_daemon_available {
   # Verify daemon responds with a ping - must get non-empty response
   # Use 1-second timeout for quick availability check
   _socket_send '{"class":"","selector":"ping","args":[]}' 1 >/dev/null
+}
+
+# Ensure the daemon process is running, starting it if needed
+# Usage: _native_daemon_ensure
+# Returns: 0 if daemon is running, 1 if failed to start
+function _native_daemon_ensure {
+  local pid_file="${_NATIVE_DAEMON_SOCKET}.pid"
+  local pid
+
+  # Check if daemon is already running
+  if [[ -S "$_NATIVE_DAEMON_SOCKET" ]] && [[ -f "$pid_file" ]]; then
+    pid=$(cat "$pid_file" 2>/dev/null)
+    if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+      # Daemon is running
+      return 0
+    fi
+  fi
+
+  # Clean up stale files
+  rm -f "$_NATIVE_DAEMON_SOCKET" "$pid_file" 2>/dev/null
+
+  # Start daemon in background
+  if [[ -n "$_NATIVE_DAEMON_DEBUG" ]]; then
+    trashtalk-daemon --socket "$_NATIVE_DAEMON_SOCKET" --plugin-dir "$_NATIVE_DAEMON_PLUGIN_DIR" --debug </dev/null >/dev/null 2>&1 &
+    disown
+  else
+    trashtalk-daemon --socket "$_NATIVE_DAEMON_SOCKET" --plugin-dir "$_NATIVE_DAEMON_PLUGIN_DIR" </dev/null >/dev/null 2>&1 &
+    disown
+  fi
+
+  # Wait for socket to appear with exponential backoff
+  local delay=0.1
+  local max_delay=1.0
+  local total_wait=0
+  local max_total=5.0
+
+  while (( $(echo "$total_wait < $max_total" | bc -l) )); do
+    if [[ -S "$_NATIVE_DAEMON_SOCKET" ]]; then
+      _NATIVE_DAEMON_STATUS="running"
+      return 0
+    fi
+    sleep "$delay"
+    total_wait=$(echo "$total_wait + $delay" | bc -l)
+    # Exponential backoff with cap
+    delay=$(echo "if ($delay * 2 > $max_delay) $max_delay else $delay * 2" | bc -l)
+  done
+
+  echo "[native_daemon] Error: daemon failed to start (waited ${total_wait}s)" >&2
+  return 1
+}
+
+# Stop the native daemon
+# Usage: _native_daemon_stop
+function _native_daemon_stop {
+  local pid_file="${_NATIVE_DAEMON_SOCKET}.pid"
+  local pid
+
+  if [[ -f "$pid_file" ]]; then
+    pid=$(cat "$pid_file" 2>/dev/null)
+    if [[ -n "$pid" ]]; then
+      kill "$pid" 2>/dev/null || true
+    fi
+  fi
+
+  rm -f "$_NATIVE_DAEMON_SOCKET" "$pid_file" 2>/dev/null
+  _NATIVE_DAEMON_STATUS="stopped"
+}
+
+# Reset native daemon state (stop and clean up)
+# Usage: _native_daemon_reset
+function _native_daemon_reset {
+  _native_daemon_stop
+}
+
+# Check if native daemon is running
+# Usage: if _native_daemon_is_running; then ... fi
+function _native_daemon_is_running {
+  local pid_file="${_NATIVE_DAEMON_SOCKET}.pid"
+  local pid
+
+  if [[ -S "$_NATIVE_DAEMON_SOCKET" ]] && [[ -f "$pid_file" ]]; then
+    pid=$(cat "$pid_file" 2>/dev/null)
+    if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+      echo "true"
+      return 0
+    fi
+  fi
+  echo "false"
+  return 1
+}
+
+# Get native daemon PID
+# Usage: pid=$(_native_daemon_pid)
+function _native_daemon_pid {
+  local pid_file="${_NATIVE_DAEMON_SOCKET}.pid"
+  if [[ -f "$pid_file" ]]; then
+    cat "$pid_file"
+  fi
+}
+
+# List available native plugins
+# Usage: _native_daemon_list_natives
+function _native_daemon_list_natives {
+  local ext
+  case "$(uname)" in
+    Darwin) ext=".dylib" ;;
+    *)      ext=".so" ;;
+  esac
+
+  if [[ -d "$_NATIVE_DAEMON_PLUGIN_DIR" ]]; then
+    for file in "$_NATIVE_DAEMON_PLUGIN_DIR"/*"$ext"; do
+      if [[ -f "$file" ]]; then
+        basename "$file" "$ext"
+      fi
+    done | sort
+  fi
+}
+
+# Enable/disable debug mode
+# Usage: _native_daemon_set_debug true
+function _native_daemon_set_debug {
+  _NATIVE_DAEMON_DEBUG="$1"
 }
 
 # Send a request to the native daemon socket with timeout
@@ -1541,6 +1666,9 @@ function _send_native {
 
   local args_json request response exit_code result
   local instance_json="" updated_json native_selector
+
+  # DEBUG: Log incoming args count
+  msg_debug "[_send_native] class=$class_name selector=$selector argc=$# args=$*"
 
   # Build args as JSON array
   if [[ $# -eq 0 ]]; then
@@ -1613,7 +1741,9 @@ function _send_native {
   return 0
 }
 
-export -f _native_daemon_available _send_native
+export -f _native_daemon_available _native_daemon_ensure _native_daemon_stop _native_daemon_reset
+export -f _native_daemon_is_running _native_daemon_pid _native_daemon_list_natives _native_daemon_set_debug
+export -f _send_native
 
 # ============================================
 # Bytecode Block Support via Daemon
@@ -1761,61 +1891,23 @@ function _serialize_bytecode_block {
 
 export -f _is_bytecode_block _register_bytecode_block _invoke_bytecode_block _serialize_bytecode_block
 
-# Dispatch a method call through NativeDaemon
-# This calls NativeDaemon functions directly to avoid send() recursion
+# Dispatch a method call through native daemon
+# This uses internal functions - no NativeDaemon class needed
 # Returns: result on stdout, exit code from dispatch
 function _native_daemon_dispatch {
   local class_name="$1"
   local instance_id="$2"
   local selector="$3"
   shift 3
-  local args_json daemon_id result exit_code
-  local saved_class="$_CLASS" saved_receiver="$_RECEIVER"
 
-  # Build args as JSON array from remaining positional parameters
-  if [[ $# -eq 0 ]]; then
-    args_json="[]"
-  else
-    # Encode each argument as a JSON string and wrap in array
-    args_json=$(printf '%s\n' "$@" | jq -R . | jq -s -c .)
-  fi
-
-  # Ensure NativeDaemon is sourced (it's a Bash-compiled class)
-  if [[ -z "${_SOURCED_COMPILED_CLASSES[NativeDaemon]:-}" ]]; then
-    local nd_compiled="$TRASHDIR/.compiled/NativeDaemon"
-    if [[ -f "$nd_compiled" ]]; then
-      source "$nd_compiled"
-      _SOURCED_COMPILED_CLASSES[NativeDaemon]=1
-    else
-      msg_debug "NativeDaemon not compiled, falling back to direct binary"
-      return 200
-    fi
-  fi
-
-  # Set up class context for NativeDaemon calls (enables private method access)
-  _CLASS=NativeDaemon
-
-  # Get or create NativeDaemon singleton (call class method directly)
-  daemon_id=$(__NativeDaemon__class__instance)
-  if [[ -z "$daemon_id" ]]; then
-    msg_debug "Failed to get NativeDaemon instance"
-    _CLASS="$saved_class"
+  # Ensure daemon is running (start if needed)
+  if ! _native_daemon_ensure; then
+    msg_debug "Failed to start native daemon"
     return 200
   fi
 
-  # Dispatch through daemon (call method directly, setting _RECEIVER for ivar access)
-  _RECEIVER="$daemon_id"
-  result=$(__NativeDaemon__dispatch_instance_selector_args_ "$class_name" "$instance_id" "$selector" "$args_json")
-  exit_code=$?
-
-  # Restore context
-  _CLASS="$saved_class"
-  _RECEIVER="$saved_receiver"
-
-  if [[ $exit_code -eq 0 ]]; then
-    echo "$result"
-  fi
-  return $exit_code
+  # Dispatch through _send_native (which handles all the socket communication)
+  _send_native "$class_name" "$instance_id" "$selector" "$@"
 }
 
 function send {
@@ -1844,6 +1936,9 @@ function send {
 
   local _RECEIVER="${1:-}"; shift || true
   local _SELECTOR="${1:-}"; shift || true
+
+  # DEBUG: trace args after selector shift
+  msg_debug "[send] After shift: sel=$_SELECTOR argc=$# args=($*)"
 
   # Validate we have both receiver and selector
   if [[ -z "$_RECEIVER" || -z "$_SELECTOR" ]]; then
@@ -2005,7 +2100,7 @@ function send {
   if [[ $skip_native -eq 0 ]]; then
     # Fast path: check if daemon is available and try direct socket dispatch
     if _native_daemon_available; then
-      msg_debug "Native daemon available, trying direct dispatch"
+      msg_debug "Native daemon available, trying direct dispatch for $_SELECTOR with args: $*"
       _profile_route="native:socket"
       [[ -n "${TRASH_PROFILE:-}" ]] && _profile_log "→" "$_CLASS" "$_SELECTOR" "native:socket"
       _send_native "$class_name" "${_INSTANCE:-}" "$_SELECTOR" "$@"
