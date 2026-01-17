@@ -183,7 +183,7 @@ endif
 	cd $(BUILD_DIR) && go mod init single-build 2>/dev/null || true; \
 	cd $(BUILD_DIR) && go get github.com/mattn/go-sqlite3 github.com/google/uuid github.com/golang/protobuf 2>/dev/null || true; \
 	gofile="$(BUILD_DIR)/$$outname.go"; \
-	if $(JQ_COMPILER) parse "$$srcfile" | $(PROCYON) --mode=plugin > "$$gofile" 2>&1; then \
+	if $(JQ_COMPILER) parse "$$srcfile" | $(PROCYON) --mode=shared > "$$gofile" 2>&1; then \
 		if [[ -s "$$gofile" ]]; then \
 			if (cd $(BUILD_DIR) && CGO_ENABLED=1 go build -buildmode=c-shared -o "$(COMPILED_DIR)/$$outname.$(DYLIB_EXT)" "$$outname.go"); then \
 				echo "  ✓ $(COMPILED_DIR)/$$outname.$(DYLIB_EXT)"; \

@@ -1,5 +1,0 @@
-Person subclass: Object
-  include: Debuggable
-  include: Persistable
-
-  instanceVars: name age:0 occupation favoriteFood
