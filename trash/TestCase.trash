@@ -4,11 +4,12 @@
 TestCase subclass: Object
   instanceVars: passed:0 failed:0 skipped:0 currentTest:'unknown'
 
-  classMethod: new [
-    | id |
-    id := @ Runtime generateId: self.
-    @ Runtime create: self id: id.
-    ^ id
+  rawClassMethod: new [
+    local id class
+    class=$(@ Runtime class)
+    id=$(@ Runtime generateId: "$class")
+    @ Runtime create: "$class" id: "$id"
+    echo "$id"
   ]
 
   # Override in subclass for test setup
@@ -161,9 +162,9 @@ TestCase subclass: Object
   method: skip: reason [
     pragma: bashOnly
     | test count |
-    test := @ self currentTest.
-    count := @ self skipped.
-    @ self skipped: (count + 1).
+    test := @ self getCurrentTest.
+    count := @ self getSkipped.
+    @ self setSkipped: (count + 1).
     @ Console print: ('  SKIP: ' , test , ' - ' , reason).
     return 77  # Special return code to signal skip
   ]
@@ -171,9 +172,9 @@ TestCase subclass: Object
   method: skip [
     pragma: bashOnly
     | test count |
-    test := @ self currentTest.
-    count := @ self skipped.
-    @ self skipped: (count + 1).
+    test := @ self getCurrentTest.
+    count := @ self getSkipped.
+    @ self setSkipped: (count + 1).
     @ Console print: ('  SKIP: ' , test , ' - No reason given').
     return 77
   ]
@@ -181,9 +182,9 @@ TestCase subclass: Object
   method: pending: description [
     pragma: bashOnly
     | test count |
-    test := @ self currentTest.
-    count := @ self skipped.
-    @ self skipped: (count + 1).
+    test := @ self getCurrentTest.
+    count := @ self getSkipped.
+    @ self setSkipped: (count + 1).
     @ Console print: ('  PENDING: ' , test , ' - ' , description).
     return 77
   ]
@@ -191,9 +192,9 @@ TestCase subclass: Object
   method: pending [
     pragma: bashOnly
     | test count |
-    test := @ self currentTest.
-    count := @ self skipped.
-    @ self skipped: (count + 1).
+    test := @ self getCurrentTest.
+    count := @ self getSkipped.
+    @ self setSkipped: (count + 1).
     @ Console print: ('  PENDING: ' , test , ' - Not yet implemented').
     return 77
   ]
@@ -216,9 +217,9 @@ TestCase subclass: Object
 
   method: _fail: message [
     | count test |
-    count := @ self failed.
-    test := @ self currentTest.
-    @ self failed: (count + 1).
+    count := @ self getFailed.
+    test := @ self getCurrentTest.
+    @ self setFailed: (count + 1).
     @ Console error: ('  FAIL: ' , test , ' - ' , message)
   ]
 
@@ -226,51 +227,47 @@ TestCase subclass: Object
   # Test Runner
   # ==========================================
 
-  # Run a single test method with setUp/tearDown
-  method: runTest: methodName [
-    @ self currentTest: methodName.
-    @ self setUp.
-    @ self perform: methodName.
-    @ self tearDown
+  rawMethod: runTest: methodName [
+    @ "$_RECEIVER" setCurrentTest: "$methodName"
+    @ "$_RECEIVER" setUp
+    @ "$_RECEIVER" "$methodName"
+    local result=$?
+    @ "$_RECEIVER" tearDown
+    return $result
   ]
 
-  # Run all test methods in the class
-  classMethod: runAll [
-    | instance passed failed skipped total class methods i len method |
-    class := self.  # In a classMethod, self is the class
-    instance := @ self new.
+  rawClassMethod: runAll [
+    local instance passed failed skipped total class methods
+    class=$(@ Runtime class)
+    instance=$(@ "$class" new)
 
-    @ Console print: ('Running ' , class , ' tests...').
-    @ Console newline.
+    @ Console print: "Running $class tests..."
+    @ Console newline
 
     # Find and run all test methods using Runtime introspection
-    methods := @ Runtime methodsFor: class matching: 'test*'.
-    len := methods arrayLength.
-    i := 0.
-    [i < len] whileTrue: [
-      method := methods arrayAt: i.
-      @ Console print: ('  Running: ' , method).
-      @ instance runTest: method.
-      i := i + 1
-    ].
+    methods=$(@ Runtime methodsFor: "$class" matching: "test*")
+    for method in $(echo "$methods" | jq -r '.[]'); do
+      @ Console print: "  Running: $method"
+      @ "$instance" runTest: "$method"
+    done
 
-    passed := @ instance passed.
-    failed := @ instance failed.
-    skipped := @ instance skipped.
-    total := passed + failed.
+    passed=$(@ "$instance" getPassed)
+    failed=$(@ "$instance" getFailed)
+    skipped=$(@ "$instance" getSkipped)
+    total=$((passed + failed))
 
-    @ Console newline.
-    @ Console hr.
-    (failed = 0) ifTrue: [
-      @ Console success: ('OK: ' , passed , ' assertions passed')
-    ] ifFalse: [
-      @ Console fail: ('FAILED: ' , passed , ' passed, ' , failed , ' failed')
-    ].
-    (skipped > 0) ifTrue: [
-      @ Console print: ('Skipped: ' , skipped)
-    ].
-    @ Console hr.
+    @ Console newline
+    @ Console hr
+    if [[ "$failed" -eq 0 ]]; then
+      @ Console success: "OK: $passed assertions passed"
+    else
+      @ Console fail: "FAILED: $passed passed, $failed failed"
+    fi
+    if [[ "$skipped" -gt 0 ]]; then
+      @ Console print: "Skipped: $skipped"
+    fi
+    @ Console hr
 
-    @ instance delete.
-    ^ failed
+    @ "$instance" delete
+    return "$failed"
   ]
