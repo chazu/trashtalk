@@ -85,19 +85,17 @@ Widget subclass: Object
   # Convenience: Register handler for submission events
   # Handler receives $__EVENT and $__TEXT (submitted text)
   # Note: WIDGET_CHANGED stores text, WIDGET_DONE triggers handler with stored text
-  # This method uses bash-specific features (printf, temp files) for cross-subshell state
-  rawMethod: onSubmitDo: handler [
-    pragma: bashOnly
-    local handler="$1" _dispatcher _wid wrappedHandler
-    _dispatcher="$(_ivar dispatcher)"
-    _wid="$(_ivar widgetId)"
-    if [[ -n "$_dispatcher" && -n "$_wid" ]]; then
-      # Use a temp file to store text (shell vars don't persist across subshell calls)
-      local storageFile="/tmp/yutani_text_${_wid}.txt"
-      # Wrap handler to store text on CHANGED and fire on DONE
-      printf -v wrappedHandler '__wt=$(@ "$__EVENT" widgetEventType); if [[ "$__wt" == "WIDGET_CHANGED" ]]; then @ "$__EVENT" widgetDataAt: "text" > %s; elif [[ "$__wt" == "WIDGET_DONE" ]]; then __TEXT=$(cat %s 2>/dev/null); %s; fi' "$storageFile" "$storageFile" "$handler"
-      @ "$_dispatcher" onWidget: "$_wid" do: "$wrappedHandler"
-    else
-      echo "[WIDGET] Missing dispatcher or wid, not registering" >&2
-    fi
+  method: onSubmitDo: handler [
+    | d w storageFile wrappedHandler |
+    d := dispatcher.
+    w := widgetId.
+    (d notEmpty) ifTrue: [
+      (w notEmpty) ifTrue: [
+        # Build temp file path for cross-subshell state
+        storageFile := '/tmp/yutani_text_' , w , '.txt'.
+        # Build wrapped handler that stores text on CHANGED and fires on DONE
+        wrappedHandler := '__wt=$(@ "$__EVENT" widgetEventType); if [[ "$__wt" == "WIDGET_CHANGED" ]]; then @ "$__EVENT" widgetDataAt: "text" > ' , storageFile , '; elif [[ "$__wt" == "WIDGET_DONE" ]]; then __TEXT=$(cat ' , storageFile , ' 2>/dev/null); ' , handler , '; fi'.
+        @ d onWidget: w do: wrappedHandler
+      ]
+    ]
   ]
