@@ -83,23 +83,24 @@ Dictionary subclass: Object
 
   # Create dictionary from pairs
   # Usage: @ dict withPairs: 'name:Alice age:30'
-  rawMethod: withPairs: pairs [
-    local pairs="$1"
-    local items pair key value
-    items="{}"
-    for pair in $pairs; do
-      key="${pair%%:*}"
-      value="${pair#*:}"
-      items=$(echo "$items" | jq -c --arg k "$key" --arg v "$value" '.[$k] = $v')
-    done
-    _ivar_set items "$items"
-    echo "$_RECEIVER"
+  method: withPairs: pairs [
+    | pairsArray i len pair key value unused |
+    pairsArray := @ String splitToArray: pairs on: ' '.
+    len := pairsArray arrayLength.
+    i := 0.
+    [i < len] whileTrue: [
+      pair := pairsArray arrayAt: i.
+      key := @ String before: ':' in: pair.
+      value := @ String after: ':' in: pair.
+      unused := @ self at: key put: value.
+      i := i + 1
+    ].
+    ^ self
   ]
 
   # Iterate over each key-value pair, calling block with key and value
   # Usage: @ dict do: [:key :value | @ Console print: key , ' = ' , value]
   method: do: aBlock [
-    pragma: bashOnly
     | keysArray i len key value |
     keysArray := items objectKeys.
     len := keysArray arrayLength.
@@ -115,7 +116,6 @@ Dictionary subclass: Object
   # Iterate over keys only
   # Usage: @ dict keysDo: [:key | @ Console print: 'Key: ' , key]
   method: keysDo: aBlock [
-    pragma: bashOnly
     | keysArray i len key |
     keysArray := items objectKeys.
     len := keysArray arrayLength.
@@ -130,7 +130,6 @@ Dictionary subclass: Object
   # Iterate over values only
   # Usage: @ dict valuesDo: [:value | @ Console print: 'Value: ' , value]
   method: valuesDo: aBlock [
-    pragma: bashOnly
     | valuesArray i len value |
     valuesArray := items objectValues.
     len := valuesArray arrayLength.
@@ -145,7 +144,6 @@ Dictionary subclass: Object
   # Map values through a block, returning new dictionary with same keys
   # Usage: doubled := @ dict collect: [:v | v * 2]
   method: collect: aBlock [
-    pragma: bashOnly
     | keysArray i len key value result newDict |
     keysArray := items objectKeys.
     len := keysArray arrayLength.
@@ -164,7 +162,6 @@ Dictionary subclass: Object
   # Select key-value pairs where block returns true
   # Usage: evens := @ dict select: [:k :v | (v % 2) == 0]
   method: select: aBlock [
-    pragma: bashOnly
     | keysArray i len key value result newDict |
     keysArray := items objectKeys.
     len := keysArray arrayLength.
@@ -185,7 +182,6 @@ Dictionary subclass: Object
   # Merge another dictionary into this one (modifies self)
   # Usage: @ dict merge: otherDict
   method: merge: other [
-    pragma: bashOnly
     | otherKeys i len key value |
     otherKeys := (@ other getItems) objectKeys.
     len := otherKeys arrayLength.
@@ -201,9 +197,7 @@ Dictionary subclass: Object
 
   # Get value at key, or default if missing
   # Usage: @ dict at: 'missing' ifAbsent: 'default'
-  # pragma: bashOnly (Go codegen bug with boolean conditionals)
   method: at: key ifAbsent: default [
-    pragma: bashOnly
     (items objectHasKey: key) ifTrue: [^ items objectAt: key] ifFalse: [^ default]
   ]
 
@@ -219,11 +213,9 @@ Dictionary subclass: Object
   ]
 
   # Create dictionary from JSON string
-  # pragma: bashOnly (Go codegen issue with class methods returning objects)
   classMethod: fromJson: json [
-    pragma: bashOnly
     | dict |
-    dict := (@ Dictionary new)
-    @ dict setItems: json
+    dict := @ Dictionary new.
+    @ dict setItems: json.
     ^ dict
   ]
