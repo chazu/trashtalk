@@ -1,7 +1,7 @@
 package: Yutani
 
 Widget subclass: Object
-  instanceVars: session:'' widgetId:'' title:'' dispatcher:''
+  instanceVars: session:'' widgetId:'' title:'' dispatcher:'' submitHandler:'' pendingText:'' eventHandler:''
 
   # Session accessor
   method: getSession [
@@ -82,22 +82,46 @@ Widget subclass: Object
     ]
   ]
 
-  # Convenience: Register handler for submission events
-  # Handler receives $__EVENT and $__TEXT (submitted text)
-  # Note: WIDGET_CHANGED stores text, WIDGET_DONE triggers handler with stored text
-  # This method uses bash-specific features (printf, temp files) for cross-subshell state
-  rawMethod: onSubmitDo: handler [
-    pragma: bashOnly
-    local handler="$1" _dispatcher _wid wrappedHandler
-    _dispatcher="$(_ivar dispatcher)"
-    _wid="$(_ivar widgetId)"
-    if [[ -n "$_dispatcher" && -n "$_wid" ]]; then
-      # Use a temp file to store text (shell vars don't persist across subshell calls)
-      local storageFile="/tmp/yutani_text_${_wid}.txt"
-      # Wrap handler to store text on CHANGED and fire on DONE
-      printf -v wrappedHandler '__wt=$(@ "$__EVENT" widgetEventType); if [[ "$__wt" == "WIDGET_CHANGED" ]]; then @ "$__EVENT" widgetDataAt: "text" > %s; elif [[ "$__wt" == "WIDGET_DONE" ]]; then __TEXT=$(cat %s 2>/dev/null); %s; fi' "$storageFile" "$storageFile" "$handler"
-      @ "$_dispatcher" onWidget: "$_wid" do: "$wrappedHandler"
-    else
-      echo "[WIDGET] Missing dispatcher or wid, not registering" >&2
-    fi
+  # ============================================================================
+  # Block-based Event Handling
+  # ============================================================================
+  # Widget can act as its own handler by implementing valueWith:
+  # This allows onSubmitDo: to wrap user blocks with CHANGED/DONE logic
+
+  # Called by EventDispatcher when Widget is registered as handler
+  # Handles the CHANGED/DONE pattern: stores text on CHANGED, calls user block on DONE
+  method: valueWith: event [
+    | wt text |
+    # If we have a submit handler, do CHANGED/DONE logic
+    (submitHandler notEmpty) ifTrue: [
+      wt := @ event widgetEventType.
+      (wt = 'WIDGET_CHANGED') ifTrue: [
+        pendingText := @ event widgetDataAt: 'text'
+      ].
+      (wt = 'WIDGET_DONE') ifTrue: [
+        text := pendingText.
+        @ submitHandler valueWith: text
+      ].
+      ^ nil
+    ].
+    # If we have an event handler, call it with the event
+    (eventHandler notEmpty) ifTrue: [
+      @ eventHandler valueWith: event
+    ]
+  ]
+
+  # Register a Block handler for submission events
+  # Block will be called with the submitted text when user presses Enter
+  # Usage: @ widget onSubmitDo: [:text | @ Console print: text]
+  method: onSubmitDo: handler [
+    | d w |
+    submitHandler := handler.
+    d := dispatcher.
+    w := widgetId.
+    (d notEmpty) ifTrue: [
+      (w notEmpty) ifTrue: [
+        # Register self as handler - valueWith: handles the CHANGED/DONE logic
+        @ d onWidget: w do: self
+      ]
+    ]
   ]

@@ -1,10 +1,11 @@
 package: Yutani
 
-# EventDispatcher - routes UI events to widget handlers
-# Refactored to use Bash associative array for O(1) handler lookup
+# EventDispatcher - routes UI events to Block handlers
+# Uses Dictionary for O(1) widget handler lookup
+# All handlers are Blocks invoked with: @ block valueWith: event
 
 EventDispatcher subclass: Object
-  instanceVars: keyHandler:'' mouseHandler:'' resizeHandler:'' focusHandler:'' running:''
+  instanceVars: widgetHandlers:'{}' keyHandler:'' mouseHandler:'' resizeHandler:'' focusHandler:'' running:''
 
   # ============================================================================
   # Initialization
@@ -23,22 +24,15 @@ EventDispatcher subclass: Object
   # Widget Handler Registration
   # ============================================================================
 
-  # Register a handler for a specific widget
-  # Handler is a bash command that will be eval'd with $__EVENT set
-  # Uses file-based storage to survive subshell boundaries (bash-specific)
-  rawMethod: onWidget: widgetId do: handler [
-    pragma: bashOnly
-    local widgetId="$1" handler="$2"
-    local handlerFile="/tmp/yutani_handler_${widgetId}.txt"
-    echo "$handler" > "$handlerFile"
+  # Register a Block handler for a specific widget
+  # Block will be invoked with event as argument: @ aBlock valueWith: event
+  method: onWidget: widgetId do: aBlock [
+    widgetHandlers := widgetHandlers objectAt: widgetId put: aBlock
   ]
 
-  # Remove handler for a widget (bash-specific file operations)
-  rawMethod: removeHandlerFor: widgetId [
-    pragma: bashOnly
-    local widgetId="$1"
-    local handlerFile="/tmp/yutani_handler_${widgetId}.txt"
-    rm -f "$handlerFile"
+  # Remove handler for a widget
+  method: removeHandlerFor: widgetId [
+    widgetHandlers := widgetHandlers objectRemoveKey: widgetId
   ]
 
   # ============================================================================
@@ -69,59 +63,49 @@ EventDispatcher subclass: Object
   # Event Dispatch
   # ============================================================================
 
-  # Dispatch an event to the appropriate handler
-  # Uses case statement, file I/O, and eval (bash-specific)
-  rawMethod: dispatch: event [
-    pragma: bashOnly
-    pragma: direct
-    local event="$1"
-    local eventType widgetId handler
+  # Dispatch an event to the appropriate handler Block
+  # Invokes blocks with event as argument
+  method: dispatch: event [
+    | eventType widgetId handler |
+    eventType := @ event eventType.
 
-    eventType=$(@ "$event" eventType)
+    (eventType = 'key') ifTrue: [
+      (keyHandler notEmpty) ifTrue: [
+        @ keyHandler valueWith: event
+      ].
+      ^ nil
+    ].
 
-    case "$eventType" in
-      key)
-        handler="$(_ivar keyHandler)"
-        if [[ -n "$handler" ]]; then
-          __EVENT="$event"
-          eval "$handler"
-        fi
-        ;;
-      widget)
-        widgetId=$(@ "$event" widgetId)
-        if [[ -n "$widgetId" ]]; then
-          local handlerFile="/tmp/yutani_handler_${widgetId}.txt"
-          if [[ -f "$handlerFile" ]]; then
-            handler=$(cat "$handlerFile")
-            if [[ -n "$handler" ]]; then
-              __EVENT="$event"
-              eval "$handler"
-            fi
-          fi
-        fi
-        ;;
-      mouse)
-        handler="$(_ivar mouseHandler)"
-        if [[ -n "$handler" ]]; then
-          __EVENT="$event"
-          eval "$handler"
-        fi
-        ;;
-      resize)
-        handler="$(_ivar resizeHandler)"
-        if [[ -n "$handler" ]]; then
-          __EVENT="$event"
-          eval "$handler"
-        fi
-        ;;
-      focus)
-        handler="$(_ivar focusHandler)"
-        if [[ -n "$handler" ]]; then
-          __EVENT="$event"
-          eval "$handler"
-        fi
-        ;;
-    esac
+    (eventType = 'widget') ifTrue: [
+      widgetId := @ event widgetId.
+      (widgetId notEmpty) ifTrue: [
+        handler := widgetHandlers objectAt: widgetId.
+        (handler notEmpty) ifTrue: [
+          @ handler valueWith: event
+        ]
+      ].
+      ^ nil
+    ].
+
+    (eventType = 'mouse') ifTrue: [
+      (mouseHandler notEmpty) ifTrue: [
+        @ mouseHandler valueWith: event
+      ].
+      ^ nil
+    ].
+
+    (eventType = 'resize') ifTrue: [
+      (resizeHandler notEmpty) ifTrue: [
+        @ resizeHandler valueWith: event
+      ].
+      ^ nil
+    ].
+
+    (eventType = 'focus') ifTrue: [
+      (focusHandler notEmpty) ifTrue: [
+        @ focusHandler valueWith: event
+      ]
+    ]
   ]
 
   # Dispatch a raw JSON event (creates Event, then dispatches)
@@ -148,12 +132,15 @@ EventDispatcher subclass: Object
     running := 'false'
   ]
 
-  # Clean up all handlers for this dispatcher (bash-specific file operations)
-  rawMethod: cleanup [
-    pragma: bashOnly
-    # Remove all handler files (simple cleanup - removes all yutani handlers)
-    rm -f /tmp/yutani_handler_*.txt 2>/dev/null
-    rm -f /tmp/yutani_text_*.txt 2>/dev/null
+  # Clean up all handlers for this dispatcher
+  method: cleanup [
+    # Clear widget handlers dictionary
+    widgetHandlers := '{}'.
+    # Clear global handlers
+    keyHandler := ''.
+    mouseHandler := ''.
+    resizeHandler := ''.
+    focusHandler := ''
   ]
 
   # ============================================================================
