@@ -1,7 +1,6 @@
 package main
 
 import (
-	"C"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -9,21 +8,41 @@ import (
 	uuid "github.com/google/uuid"
 	_ "github.com/mattn/go-sqlite3"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
+	"unsafe"
 )
+
+/*
+
+#cgo CFLAGS: -I${SRCDIR}/../../include
+#cgo LDFLAGS: -L${SRCDIR}/../../lib -ltrashtalk
+#include <libtrashtalk.h>
+#include <stdlib.h>
+*/
+import "C"
 
 var ErrUnknownSelector = errors.New("unknown selector")
 
-type File struct {
-	Class     string   `json:"class"`
-	CreatedAt string   `json:"created_at"`
-	Vars      []string `json:"_vars"`
-	Path      string   `json:"path"`
+// init registers this class with the shared runtime
+func init() {
+	className := C.CString("File")
+	defer C.free(unsafe.Pointer(className))
+	superclass := func() *C.char {
+		if "Object" == "" {
+			return nil
+		}
+		return C.CString("Object")
+	}()
+	instanceVars := func() **C.char {
+		vars := make([]*C.char, 1)
+		vars[0] = C.CString("path")
+		return &vars[0]
+	}()
+	C.TT_RegisterClass(className, superclass, instanceVars, C.int(1), nil)
 }
 
 //export GetClassName
@@ -31,14 +50,11 @@ func GetClassName() *C.char {
 	return C.CString("File")
 }
 
-//export Dispatch
-func Dispatch(instanceJSON *C.char, selector *C.char, argsJSON *C.char) *C.char {
-	instanceStr := C.GoString(instanceJSON)
-	selectorStr := C.GoString(selector)
-	argsStr := C.GoString(argsJSON)
-
-	result := dispatchInternal(instanceStr, selectorStr, argsStr)
-	return C.CString(result)
+type File struct {
+	Class     string   `json:"class"`
+	CreatedAt string   `json:"created_at"`
+	Vars      []string `json:"_vars"`
+	Path      string   `json:"path"`
 }
 
 func openDB() (*sql.DB, error) {
@@ -72,49 +88,113 @@ func saveInstance(db *sql.DB, id string, instance *File) error {
 	return err
 }
 
-func dispatchInternal(instanceJSON string, selector string, argsJSON string) string {
-	var args []string
-	json.Unmarshal([]byte(argsJSON), &args)
-
-	if instanceJSON == "" || instanceJSON == "File" {
-		result, err := dispatchClass(selector, args)
-		if err != nil {
-			if errors.Is(err, ErrUnknownSelector) {
-				return "{\"exit_code\":200}"
-			}
-			return fmt.Sprintf("{\"exit_code\":1,\"error\":%q}", err.Error())
-		}
-		return fmt.Sprintf("{\"result\":%q,\"exit_code\":0}", result)
-	}
-
-	var instance File
-	if err := json.Unmarshal([]byte(instanceJSON), &instance); err != nil {
-		return fmt.Sprintf("{\"exit_code\":1,\"error\":%q}", err.Error())
-	}
-
-	result, err := dispatch(&instance, selector, args)
-	if err != nil {
-		if errors.Is(err, ErrUnknownSelector) {
-			return "{\"exit_code\":200}"
-		}
-		return fmt.Sprintf("{\"exit_code\":1,\"error\":%q}", err.Error())
-	}
-
-	updatedJSON, _ := json.Marshal(&instance)
-	return fmt.Sprintf("{\"instance\":%s,\"result\":%q,\"exit_code\":0}", string(updatedJSON), result)
-}
-
 func sendMessage(receiver interface{}, selector string, args ...interface{}) string {
 	receiverStr := fmt.Sprintf("%v", receiver)
-	cmdArgs := []string{receiverStr, selector}
-	for _, arg := range args {
-		cmdArgs = append(cmdArgs, fmt.Sprintf("%v", arg))
+	cReceiver := C.CString(receiverStr)
+	defer C.free(unsafe.Pointer(cReceiver))
+	cSelector := C.CString(selector)
+	defer C.free(unsafe.Pointer(cSelector))
+	cArgs := make([]C.TTValue, len(args))
+	for i, arg := range args {
+		argStr := fmt.Sprintf("%v", arg)
+		cStr := C.CString(argStr)
+		cArgs[i] = C.TT_MakeString(cStr)
 	}
-	home, _ := os.UserHomeDir()
-	dispatchScript := filepath.Join(home, ".trashtalk", "bin", "trash-send")
-	cmd := exec.Command(dispatchScript, cmdArgs...)
-	output, _ := cmd.Output()
-	return strings.TrimSpace(string(output))
+	var argsPtr *C.TTValue
+	if len(cArgs) > 0 {
+		argsPtr = &cArgs[0]
+	}
+	result := C.TT_Send(cReceiver, cSelector, argsPtr, C.int(len(args)))
+	cResult := C.TT_ValueAsString(result)
+	if cResult == nil {
+		return ""
+	}
+	defer C.free(unsafe.Pointer(cResult))
+	return C.GoString(cResult)
+}
+
+// sendMessageDirect sends a message using direct instance pointer (faster than sendMessage)
+func sendMessageDirect(inst *C.TTInstance, selector string, args ...interface{}) string {
+	cSelector := C.CString(selector)
+	defer C.free(unsafe.Pointer(cSelector))
+	cArgs := make([]C.TTValue, len(args))
+	for i, arg := range args {
+		argStr := fmt.Sprintf("%v", arg)
+		cStr := C.CString(argStr)
+		cArgs[i] = C.TT_MakeString(cStr)
+	}
+	var argsPtr *C.TTValue
+	if len(cArgs) > 0 {
+		argsPtr = &cArgs[0]
+	}
+	result := C.TT_SendDirect(inst, cSelector, argsPtr, C.int(len(args)))
+	cResult := C.TT_ValueAsString(result)
+	if cResult == nil {
+		return ""
+	}
+	defer C.free(unsafe.Pointer(cResult))
+	return C.GoString(cResult)
+}
+
+// lookupInstance retrieves an instance pointer from the shared runtime
+func lookupInstance(instanceID string) *C.TTInstance {
+	cID := C.CString(instanceID)
+	defer C.free(unsafe.Pointer(cID))
+	return C.TT_Lookup(cID)
+}
+
+// lookupBlock retrieves a block pointer from the shared runtime
+func lookupBlock(blockID string) *C.TTBlock {
+	cID := C.CString(blockID)
+	defer C.free(unsafe.Pointer(cID))
+	return C.TT_LookupBlock(cID)
+}
+
+// invokeBlockDirect invokes a block using direct pointer (faster than invokeBlock)
+func invokeBlockDirect(block *C.TTBlock, args ...interface{}) string {
+	if block == nil {
+		return ""
+	}
+	cArgs := make([]C.TTValue, len(args))
+	for i, arg := range args {
+		argStr := fmt.Sprintf("%v", arg)
+		cStr := C.CString(argStr)
+		cArgs[i] = C.TT_MakeString(cStr)
+	}
+	var argsPtr *C.TTValue
+	if len(cArgs) > 0 {
+		argsPtr = &cArgs[0]
+	}
+	result := C.TT_InvokeBlockDirect(block, argsPtr, C.int(len(args)))
+	cResult := C.TT_ValueAsString(result)
+	if cResult == nil {
+		return ""
+	}
+	defer C.free(unsafe.Pointer(cResult))
+	return C.GoString(cResult)
+}
+
+// invokeBlock calls a Trashtalk block through the shared runtime
+func invokeBlock(blockID string, args ...interface{}) string {
+	cBlockID := C.CString(blockID)
+	defer C.free(unsafe.Pointer(cBlockID))
+	cArgs := make([]C.TTValue, len(args))
+	for i, arg := range args {
+		argStr := fmt.Sprintf("%v", arg)
+		cStr := C.CString(argStr)
+		cArgs[i] = C.TT_MakeString(cStr)
+	}
+	var argsPtr *C.TTValue
+	if len(cArgs) > 0 {
+		argsPtr = &cArgs[0]
+	}
+	result := C.TT_InvokeBlock(cBlockID, argsPtr, C.int(len(args)))
+	cResult := C.TT_ValueAsString(result)
+	if cResult == nil {
+		return ""
+	}
+	defer C.free(unsafe.Pointer(cResult))
+	return C.GoString(cResult)
 }
 
 // toInt converts interface{} to int for arithmetic in iteration blocks
@@ -146,27 +226,6 @@ func toBool(v interface{}) bool {
 	default:
 		return v != nil
 	}
-}
-
-// invokeBlock calls a Trashtalk block through the Bash runtime
-// blockID is the instance ID of the Block object
-// args are the values to pass to the block
-func invokeBlock(blockID string, args ...interface{}) string {
-	var cmdStr string
-	switch len(args) {
-	case 0:
-		cmdStr = fmt.Sprintf("source ~/.trashtalk/lib/trash.bash && @ %q value", blockID)
-	case 1:
-		cmdStr = fmt.Sprintf("source ~/.trashtalk/lib/trash.bash && @ %q valueWith: %q", blockID, fmt.Sprint(args[0]))
-	case 2:
-		cmdStr = fmt.Sprintf("source ~/.trashtalk/lib/trash.bash && @ %q valueWith: %q and: %q", blockID, fmt.Sprint(args[0]), fmt.Sprint(args[1]))
-	default:
-		return ""
-	}
-
-	cmd := exec.Command("bash", "-c", cmdStr)
-	output, _ := cmd.Output()
-	return strings.TrimSpace(string(output))
 }
 
 // Common conversion helpers
@@ -626,6 +685,48 @@ func dispatchClass(selector string, args []string) (string, error) {
 	default:
 		return "", fmt.Errorf("%w: %s", ErrUnknownSelector, selector)
 	}
+}
+
+//export File_Dispatch
+func File_Dispatch(instanceJSON *C.char, selector *C.char, argsJSON *C.char) *C.char {
+	instanceStr := C.GoString(instanceJSON)
+	selectorStr := C.GoString(selector)
+	argsStr := C.GoString(argsJSON)
+
+	result := dispatchInternal(instanceStr, selectorStr, argsStr)
+	return C.CString(result)
+}
+
+func dispatchInternal(instanceJSON string, selector string, argsJSON string) string {
+	var args []string
+	json.Unmarshal([]byte(argsJSON), &args)
+
+	if instanceJSON == "" || instanceJSON == "File" || instanceJSON == "File" {
+		result, err := dispatchClass(selector, args)
+		if err != nil {
+			if errors.Is(err, ErrUnknownSelector) {
+				return "{\"exit_code\":200}"
+			}
+			return fmt.Sprintf("{\"exit_code\":1,\"error\":%q}", err.Error())
+		}
+		return fmt.Sprintf("{\"result\":%q,\"exit_code\":0}", result)
+	}
+
+	var instance File
+	if err := json.Unmarshal([]byte(instanceJSON), &instance); err != nil {
+		return fmt.Sprintf("{\"exit_code\":1,\"error\":%q}", err.Error())
+	}
+
+	result, err := dispatch(&instance, selector, args)
+	if err != nil {
+		if errors.Is(err, ErrUnknownSelector) {
+			return "{\"exit_code\":200}"
+		}
+		return fmt.Sprintf("{\"exit_code\":1,\"error\":%q}", err.Error())
+	}
+
+	updatedJSON, _ := json.Marshal(&instance)
+	return fmt.Sprintf("{\"instance\":%s,\"result\":%q,\"exit_code\":0}", string(updatedJSON), result)
 }
 
 func At_(filepath string) (string, error) {
