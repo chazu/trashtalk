@@ -10,7 +10,7 @@ Migrate from hub-and-spoke plugin architecture to IDST-style shared runtime wher
 Bash Runtime (lib/trash.bash)
       │
       ▼ (Unix socket / JSON)
-Daemon (trashtalk-daemon)
+Daemon (tt)
       │
       ▼ (FFI / JSON)
 Plugins (*.dylib)
@@ -405,7 +405,7 @@ lib/runtime/           # Shared runtime implementation
 
 ### Modified Files
 ```
-cmd/trashtalk-daemon/main.go  # Thin wrapper around runtime
+cmd/tt/main.go                # Thin wrapper around runtime
 pkg/codegen/codegen.go        # Generate runtime-linked plugins
 pkg/codegen/plugin.go         # New plugin generation logic
 Makefile                      # Build libtrashtalk.dylib

@@ -503,7 +503,8 @@ function _ensure_class_sourced {
   local class_name="$1"
 
   # Check if already tracked as sourced
-  if [[ -n "${_SOURCED_COMPILED_CLASSES[$class_name]:-}" ]]; then
+  # Note: Quote keys to handle namespaced classes like Yutani::IDE
+  if [[ -n "${_SOURCED_COMPILED_CLASSES["$class_name"]:-}" ]]; then
     return 0
   fi
 
@@ -511,7 +512,7 @@ function _ensure_class_sourced {
   local func_prefix=$(_to_func_prefix "$class_name")
   local super_var="${func_prefix}__superclass"
   if [[ -n "${!super_var+x}" ]]; then
-    _SOURCED_COMPILED_CLASSES[$class_name]=1
+    _SOURCED_COMPILED_CLASSES["$class_name"]=1
     return 0
   fi
 
@@ -519,18 +520,18 @@ function _ensure_class_sourced {
   local compiled_file=$(_compiled_path "$class_name")
   if [[ -f "$compiled_file" ]]; then
     source "$compiled_file"
-    _SOURCED_COMPILED_CLASSES[$class_name]=1
+    _SOURCED_COMPILED_CLASSES["$class_name"]=1
 
     # Also source included traits (for bashOnly markers)
     local traits_var="${func_prefix}__traits"
     if [[ -n "${!traits_var:-}" ]]; then
       local trait_name trait_file
       for trait_name in ${!traits_var}; do
-        if [[ -z "${_SOURCED_COMPILED_CLASSES[$trait_name]:-}" ]]; then
+        if [[ -z "${_SOURCED_COMPILED_CLASSES["$trait_name"]:-}" ]]; then
           trait_file="$TRASHDIR/.compiled/traits/$trait_name"
           if [[ -f "$trait_file" ]]; then
             source "$trait_file"
-            _SOURCED_COMPILED_CLASSES[$trait_name]=1
+            _SOURCED_COMPILED_CLASSES["$trait_name"]=1
           fi
         fi
       done
@@ -546,7 +547,7 @@ export -f _ensure_class_sourced
 # Usage: _clear_class_cache ClassName
 function _clear_class_cache {
   local class_name="$1"
-  unset "_SOURCED_COMPILED_CLASSES[$class_name]"
+  unset "_SOURCED_COMPILED_CLASSES[\"$class_name\"]"
 }
 export -f _clear_class_cache
 
@@ -568,7 +569,7 @@ export -f _class_cache_count
 # Usage: _mark_class_sourced ClassName
 function _mark_class_sourced {
   local class_name="$1"
-  _SOURCED_COMPILED_CLASSES[$class_name]=1
+  _SOURCED_COMPILED_CLASSES["$class_name"]=1
 }
 export -f _mark_class_sourced
 
@@ -1300,9 +1301,9 @@ function _class_has_method {
 
     # Ensure class is sourced
     local compiled_file=$(_compiled_path "$current_class")
-    if [[ -f "$compiled_file" && -z "${_SOURCED_COMPILED_CLASSES[$current_class]:-}" ]]; then
+    if [[ -f "$compiled_file" && -z "${_SOURCED_COMPILED_CLASSES["$current_class"]:-}" ]]; then
       source "$compiled_file"
-      _SOURCED_COMPILED_CLASSES[$current_class]=1
+      _SOURCED_COMPILED_CLASSES["$current_class"]=1
     fi
 
     # Check for instance method
@@ -1334,9 +1335,9 @@ function _conforms_to {
 
   # Ensure protocol is sourced
   local proto_file="$TRASHDIR/.compiled/$protocol_name"
-  if [[ -f "$proto_file" && -z "${_SOURCED_COMPILED_CLASSES[$protocol_name]:-}" ]]; then
+  if [[ -f "$proto_file" && -z "${_SOURCED_COMPILED_CLASSES["$protocol_name"]:-}" ]]; then
     source "$proto_file"
-    _SOURCED_COMPILED_CLASSES[$protocol_name]=1
+    _SOURCED_COMPILED_CLASSES["$protocol_name"]=1
   fi
 
   # Get required methods from protocol metadata
@@ -1390,9 +1391,9 @@ method_missing() {
     local compiled_file=$(_compiled_path "$current_class")
     if [[ -f "$compiled_file" ]]; then
       # Source compiled file only once
-      if [[ -z "${_SOURCED_COMPILED_CLASSES[$current_class]:-}" ]]; then
+      if [[ -z "${_SOURCED_COMPILED_CLASSES["$current_class"]:-}" ]]; then
         source "$compiled_file"
-        _SOURCED_COMPILED_CLASSES[$current_class]=1
+        _SOURCED_COMPILED_CLASSES["$current_class"]=1
         msg_debug "Sourced compiled class $current_class in method_missing"
         # Note: We don't call instance_vars here - it's not needed for method lookup
         # and can cause recursive hangs
@@ -1452,7 +1453,7 @@ declare -gA _SOURCED_COMPILED_CLASSES
 # ============================================
 # Native Daemon Dispatch
 # ============================================
-# Routes native method calls through trashtalk-daemon instead of spawning
+# Routes native method calls through tt daemon instead of spawning
 # individual .native binaries. The daemon loads .dylib/.so plugins on demand.
 #
 # Socket-based communication provides fast Go/Bash interop:
@@ -1460,12 +1461,15 @@ declare -gA _SOURCED_COMPILED_CLASSES
 # - _send_native: direct socket dispatch (bypasses NativeDaemon class)
 # - send() tries native first, falls back on exit code 200
 
-# Default socket path for trashtalk-daemon
-_NATIVE_DAEMON_SOCKET="${TRASHTALK_DAEMON_SOCKET:-/tmp/trashtalk-daemon.sock}"
+# Default socket path for tt daemon
+_NATIVE_DAEMON_SOCKET="${TT_SOCKET:-/tmp/tt.sock}"
 _NATIVE_DAEMON_PLUGIN_DIR="${TRASHDIR:-.}/.compiled"
-_NATIVE_DAEMON_DEBUG="${TRASHTALK_DAEMON_DEBUG:-}"
+_NATIVE_DAEMON_DEBUG="${TT_DEBUG:-}"
+_NATIVE_DAEMON_BIN="${TT_BIN:-$(dirname "$TRASHDIR")/lib/tt}"
 _NATIVE_DAEMON_STATUS=""
-export _NATIVE_DAEMON_SOCKET _NATIVE_DAEMON_PLUGIN_DIR _NATIVE_DAEMON_DEBUG _NATIVE_DAEMON_STATUS
+_LAST_EXECUTION_MODE=""  # Set by _send_native: "native" or "fallback"
+_EXECUTION_MODE_FILE="/tmp/tt_execution_mode.$$"  # Per-session file for subshell communication
+export _NATIVE_DAEMON_SOCKET _NATIVE_DAEMON_PLUGIN_DIR _NATIVE_DAEMON_DEBUG _NATIVE_DAEMON_STATUS _NATIVE_DAEMON_BIN _LAST_EXECUTION_MODE _EXECUTION_MODE_FILE
 
 # Check if the native daemon is available (socket exists and responds)
 # Usage: if _native_daemon_available; then ... fi
@@ -1498,12 +1502,14 @@ function _native_daemon_ensure {
   # Clean up stale files
   rm -f "$_NATIVE_DAEMON_SOCKET" "$pid_file" 2>/dev/null
 
-  # Start daemon in background
+  # Start daemon in background (DYLD_LIBRARY_PATH needed for libtrashtalk.dylib)
+  local lib_dir
+  lib_dir="$(dirname "$_NATIVE_DAEMON_BIN")"
   if [[ -n "$_NATIVE_DAEMON_DEBUG" ]]; then
-    trashtalk-daemon --socket "$_NATIVE_DAEMON_SOCKET" --plugin-dir "$_NATIVE_DAEMON_PLUGIN_DIR" --debug </dev/null >/dev/null 2>&1 &
+    DYLD_LIBRARY_PATH="$lib_dir" "$_NATIVE_DAEMON_BIN" --socket "$_NATIVE_DAEMON_SOCKET" --plugin-dir "$_NATIVE_DAEMON_PLUGIN_DIR" --debug </dev/null >/dev/null 2>&1 &
     disown
   else
-    trashtalk-daemon --socket "$_NATIVE_DAEMON_SOCKET" --plugin-dir "$_NATIVE_DAEMON_PLUGIN_DIR" </dev/null >/dev/null 2>&1 &
+    DYLD_LIBRARY_PATH="$lib_dir" "$_NATIVE_DAEMON_BIN" --socket "$_NATIVE_DAEMON_SOCKET" --plugin-dir "$_NATIVE_DAEMON_PLUGIN_DIR" </dev/null >/dev/null 2>&1 &
     disown
   fi
 
@@ -1653,7 +1659,7 @@ function _has_native_plugin {
   [[ -f "$_NATIVE_PLUGIN_PATH" ]]
 }
 
-# Send a message directly to trashtalk-daemon via Unix socket
+# Send a message directly to tt daemon via Unix socket
 # This bypasses the NativeDaemon Bash class for lower overhead
 # Usage: _send_native <class_name> <instance_id> <selector> [args...]
 # Returns: result on stdout
@@ -1689,13 +1695,13 @@ function _send_native {
     # Note: Keep numbers as-is - Go structs expect int types, not strings
   fi
 
-  # Build JSON request
+  # Build JSON request (include session_id so BashBridge fallback uses same _ENV_DIR)
   if [[ -n "$instance_json" ]]; then
-    request=$(jq -cn --arg c "$class_name" --arg i "$instance_json" --arg s "$native_selector" --argjson a "$args_json" \
-      '{class: $c, instance: $i, selector: $s, args: $a}')
+    request=$(jq -cn --arg c "$class_name" --arg i "$instance_json" --arg s "$native_selector" --argjson a "$args_json" --arg sid "$_TRASH_SESSION_ID" \
+      '{class: $c, instance: $i, selector: $s, args: $a, session_id: $sid}')
   else
-    request=$(jq -cn --arg c "$class_name" --arg i "" --arg s "$native_selector" --argjson a "$args_json" \
-      '{class: $c, instance: $i, selector: $s, args: $a}')
+    request=$(jq -cn --arg c "$class_name" --arg i "" --arg s "$native_selector" --argjson a "$args_json" --arg sid "$_TRASH_SESSION_ID" \
+      '{class: $c, instance: $i, selector: $s, args: $a, session_id: $sid}')
   fi
 
   msg_debug "[_send_native] Request: $request"
@@ -1710,8 +1716,11 @@ function _send_native {
 
   msg_debug "[_send_native] Response: $response"
 
-  # Parse response
+  # Parse response and extract execution mode for introspection
   exit_code=$(echo "$response" | jq -r '.exit_code // 1')
+  _LAST_EXECUTION_MODE=$(echo "$response" | jq -r '.execution_mode // ""')
+  # Write to file for cross-subshell access (@ runs in subshell)
+  echo "$_LAST_EXECUTION_MODE" > "$_EXECUTION_MODE_FILE" 2>/dev/null || true
 
   # Exit code 200 = no native plugin, fallback to Bash
   if [[ "$exit_code" == "200" ]]; then
@@ -1741,15 +1750,26 @@ function _send_native {
   return 0
 }
 
+# Get the execution mode of the last native dispatch
+# Usage: mode=$(_get_last_execution_mode)
+# Returns: "native", "fallback", or empty string
+function _get_last_execution_mode {
+  if [[ -f "$_EXECUTION_MODE_FILE" ]]; then
+    cat "$_EXECUTION_MODE_FILE"
+  else
+    echo ""
+  fi
+}
+
 export -f _native_daemon_available _native_daemon_ensure _native_daemon_stop _native_daemon_reset
 export -f _native_daemon_is_running _native_daemon_pid _native_daemon_list_natives _native_daemon_set_debug
-export -f _send_native
+export -f _send_native _get_last_execution_mode
 
 # ============================================
 # Bytecode Block Support via Daemon
 # ============================================
 # These functions enable invoking bytecode-compiled blocks through
-# the trashtalk-daemon instead of executing Bash code.
+# the tt daemon instead of executing Bash code.
 
 # Check if a block ID is a bytecode block (registered with daemon)
 # Usage: if _is_bytecode_block "$block_id"; then ... fi
@@ -2150,9 +2170,9 @@ function send {
     [[ -n "${TRASH_PROFILE:-}" ]] && _profile_log "→" "$_CLASS" "$_SELECTOR" "$_profile_route"
 
     # Source compiled file only once
-    if [[ -z "${_SOURCED_COMPILED_CLASSES[$class_name]:-}" ]]; then
+    if [[ -z "${_SOURCED_COMPILED_CLASSES["$class_name"]:-}" ]]; then
       source "$compiled_file"
-      _SOURCED_COMPILED_CLASSES[$class_name]=1
+      _SOURCED_COMPILED_CLASSES["$class_name"]=1
       msg_debug "Sourced compiled class $class_name"
 
       # Set up _SUPERCLASS from compiled metadata for inheritance support
@@ -2223,11 +2243,11 @@ function send {
       local trait_name
       for trait_name in ${!traits_var}; do
         # Source trait if not already sourced
-        if [[ -z "${_SOURCED_COMPILED_CLASSES[$trait_name]:-}" ]]; then
+        if [[ -z "${_SOURCED_COMPILED_CLASSES["$trait_name"]:-}" ]]; then
           local trait_file="$TRASHDIR/.compiled/traits/$trait_name"
           if [[ -f "$trait_file" ]]; then
             source "$trait_file"
-            _SOURCED_COMPILED_CLASSES[$trait_name]=1
+            _SOURCED_COMPILED_CLASSES["$trait_name"]=1
             msg_debug "Sourced trait $trait_name"
           fi
         fi

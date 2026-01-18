@@ -50,7 +50,7 @@ Trashtalk is a Smalltalk-inspired DSL compiler and runtime for Bash. It transfor
 | jq-compiler | `lib/jq-compiler/` | Tokenizes and parses `.trash` → AST JSON |
 | Procyon | `lib/procyon/procyon` | Code generator (bash and native backends) |
 | Procyon source | `~/dev/go/procyon` | Go project with parser, IR, codegen |
-| trashtalk-daemon | `lib/trashtalk-daemon` | Loads native plugins, handles dispatch |
+| tt | `lib/tt` | Loads native plugins, handles dispatch |
 | Runtime | `lib/trash.bash` | Bash dispatcher, routes `@` message sends |
 | Compiled bash | `trash/.compiled/*` | Generated bash functions |
 | Native plugins | `trash/.compiled/*.dylib` | Compiled Go shared libraries |
@@ -73,7 +73,7 @@ Procyon is the code generator that produces both bash and native Go code from Tr
 ### Runtime Execution Model
 
 1. **Bash mode**: `source lib/trash.bash` loads runtime, dispatcher routes `@` sends to compiled bash functions
-2. **Native mode**: `trashtalk-daemon` loads `.dylib` plugins, handles dispatch with fallback to bash for uncompiled methods
+2. **Native mode**: `tt` daemon loads `.dylib` plugins, handles dispatch with fallback to bash for uncompiled methods
 3. **Hybrid**: Native daemon can call bash methods and vice versa; instances stored in shared SQLite
 
 ## Build Commands
@@ -82,7 +82,7 @@ Procyon is the code generator that produces both bash and native Go code from Tr
 make                      # Full build (bash + plugins + daemon)
 make bash                 # Compile to bash only
 make plugins              # Build native .dylib plugins
-make daemon               # Build trashtalk-daemon
+make daemon               # Build tt daemon
 make legacy               # Use legacy jq-compiler only (no Procyon)
 make single CLASS=Counter # Compile single class
 make single CLASS=Yutani/Widget  # Namespaced class
