@@ -22,33 +22,58 @@ import (
 #cgo LDFLAGS: -L${SRCDIR}/../../lib -ltrashtalk
 #include <libtrashtalk.h>
 #include <stdlib.h>
+
+// Extern declarations for method wrappers (defined via //export)
+extern TTValue __File_method_Path(TTInstance* self, TTValue* args, int numArgs);
+extern TTValue __File_method_Exists(TTInstance* self, TTValue* args, int numArgs);
+extern TTValue __File_method_IsFile(TTInstance* self, TTValue* args, int numArgs);
+extern TTValue __File_method_IsDirectory(TTInstance* self, TTValue* args, int numArgs);
+extern TTValue __File_method_IsFifo(TTInstance* self, TTValue* args, int numArgs);
+extern TTValue __File_method_Read(TTInstance* self, TTValue* args, int numArgs);
+extern TTValue __File_method_ReadLines(TTInstance* self, TTValue* args, int numArgs);
+extern TTValue __File_method_Write_(TTInstance* self, TTValue* args, int numArgs);
+extern TTValue __File_method_WriteLine_(TTInstance* self, TTValue* args, int numArgs);
+extern TTValue __File_method_Append_(TTInstance* self, TTValue* args, int numArgs);
+extern TTValue __File_method_AppendLine_(TTInstance* self, TTValue* args, int numArgs);
+extern TTValue __File_method_Delete(TTInstance* self, TTValue* args, int numArgs);
+extern TTValue __File_method_Size(TTInstance* self, TTValue* args, int numArgs);
+extern TTValue __File_method_Directory(TTInstance* self, TTValue* args, int numArgs);
+extern TTValue __File_method_Basename(TTInstance* self, TTValue* args, int numArgs);
+extern TTValue __File_method_Extension(TTInstance* self, TTValue* args, int numArgs);
+extern TTValue __File_method_Stem(TTInstance* self, TTValue* args, int numArgs);
+extern TTValue __File_method_CopyTo_(TTInstance* self, TTValue* args, int numArgs);
+extern TTValue __File_method_MoveTo_(TTInstance* self, TTValue* args, int numArgs);
+extern TTValue __File_method_Touch(TTInstance* self, TTValue* args, int numArgs);
+extern TTValue __File_method_ModificationTime(TTInstance* self, TTValue* args, int numArgs);
+extern TTValue __File_method_Info(TTInstance* self, TTValue* args, int numArgs);
+extern TTValue __File_method_PrintString(TTInstance* self, TTValue* args, int numArgs);
+extern TTValue __File_classmethod_At_(TTInstance* self, TTValue* args, int numArgs);
+extern TTValue __File_classmethod_Temp(TTInstance* self, TTValue* args, int numArgs);
+extern TTValue __File_classmethod_TempWithPrefix_(TTInstance* self, TTValue* args, int numArgs);
+extern TTValue __File_classmethod_Mkfifo_(TTInstance* self, TTValue* args, int numArgs);
+extern TTValue __File_classmethod_Exists_(TTInstance* self, TTValue* args, int numArgs);
+extern TTValue __File_classmethod_IsFile_(TTInstance* self, TTValue* args, int numArgs);
+extern TTValue __File_classmethod_IsDirectory_(TTInstance* self, TTValue* args, int numArgs);
+extern TTValue __File_classmethod_IsSymlink_(TTInstance* self, TTValue* args, int numArgs);
+extern TTValue __File_classmethod_IsFifo_(TTInstance* self, TTValue* args, int numArgs);
+extern TTValue __File_classmethod_IsSocket_(TTInstance* self, TTValue* args, int numArgs);
+extern TTValue __File_classmethod_IsBlockDevice_(TTInstance* self, TTValue* args, int numArgs);
+extern TTValue __File_classmethod_IsCharDevice_(TTInstance* self, TTValue* args, int numArgs);
+extern TTValue __File_classmethod_IsReadable_(TTInstance* self, TTValue* args, int numArgs);
+extern TTValue __File_classmethod_IsWritable_(TTInstance* self, TTValue* args, int numArgs);
+extern TTValue __File_classmethod_IsExecutable_(TTInstance* self, TTValue* args, int numArgs);
+extern TTValue __File_classmethod_IsEmpty_(TTInstance* self, TTValue* args, int numArgs);
+extern TTValue __File_classmethod_NotEmpty_(TTInstance* self, TTValue* args, int numArgs);
+extern TTValue __File_classmethod_IsNewer_than_(TTInstance* self, TTValue* args, int numArgs);
+extern TTValue __File_classmethod_IsOlder_than_(TTInstance* self, TTValue* args, int numArgs);
+extern TTValue __File_classmethod_IsSame_as_(TTInstance* self, TTValue* args, int numArgs);
+extern TTValue __File_classmethod_Read_(TTInstance* self, TTValue* args, int numArgs);
+extern TTValue __File_classmethod_Write_to_(TTInstance* self, TTValue* args, int numArgs);
+extern TTValue __File_classmethod_Delete_(TTInstance* self, TTValue* args, int numArgs);
 */
 import "C"
 
 var ErrUnknownSelector = errors.New("unknown selector")
-
-// init registers this class with the shared runtime
-func init() {
-	className := C.CString("File")
-	defer C.free(unsafe.Pointer(className))
-	superclass := func() *C.char {
-		if "Object" == "" {
-			return nil
-		}
-		return C.CString("Object")
-	}()
-	instanceVars := func() **C.char {
-		vars := make([]*C.char, 1)
-		vars[0] = C.CString("path")
-		return &vars[0]
-	}()
-	C.TT_RegisterClass(className, superclass, instanceVars, C.int(1), nil)
-}
-
-//export GetClassName
-func GetClassName() *C.char {
-	return C.CString("File")
-}
 
 type File struct {
 	Class     string   `json:"class"`
@@ -726,7 +751,1951 @@ func dispatchInternal(instanceJSON string, selector string, argsJSON string) str
 	}
 
 	updatedJSON, _ := json.Marshal(&instance)
-	return fmt.Sprintf("{\"instance\":%s,\"result\":%q,\"exit_code\":0}", string(updatedJSON), result)
+	return fmt.Sprintf("{\"instance\":%q,\"result\":%q,\"exit_code\":0}", string(updatedJSON), result)
+}
+
+// Runtime method wrappers - C-compatible functions for method registration
+
+//export __File_method_Path
+func __File_method_Path(self *C.TTInstance, args *C.TTValue, numArgs C.int) C.TTValue {
+	cJSON := C.TT_Serialize(self)
+	instanceJSON := C.GoString(cJSON)
+	C.free(unsafe.Pointer(cJSON))
+
+	goArgs := make([]string, int(numArgs))
+	if args != nil && numArgs > 0 {
+		cArgs := unsafe.Slice(args, int(numArgs))
+		for i, cArg := range cArgs {
+			cStr := C.TT_ValueAsString(cArg)
+			if cStr != nil {
+				goArgs[i] = C.GoString(cStr)
+				C.free(unsafe.Pointer(cStr))
+			}
+		}
+	}
+
+	argsJSON, _ := json.Marshal(goArgs)
+	resultJSON := dispatchInternal(instanceJSON, "path", string(argsJSON))
+
+	var result struct {
+		Instance string `json:"instance"`
+		Result   string `json:"result"`
+		ExitCode int    `json:"exit_code"`
+	}
+	json.Unmarshal([]byte(resultJSON), &result)
+
+	if result.Instance != "" && self != nil {
+		cNewJSON := C.CString(result.Instance)
+		C.TT_Deserialize(cNewJSON)
+		C.free(unsafe.Pointer(cNewJSON))
+	}
+
+	if result.ExitCode != 0 {
+		return C.TT_MakeNil()
+	}
+	cResult := C.CString(result.Result)
+	return C.TT_MakeString(cResult)
+}
+
+//export __File_method_Exists
+func __File_method_Exists(self *C.TTInstance, args *C.TTValue, numArgs C.int) C.TTValue {
+	cJSON := C.TT_Serialize(self)
+	instanceJSON := C.GoString(cJSON)
+	C.free(unsafe.Pointer(cJSON))
+
+	goArgs := make([]string, int(numArgs))
+	if args != nil && numArgs > 0 {
+		cArgs := unsafe.Slice(args, int(numArgs))
+		for i, cArg := range cArgs {
+			cStr := C.TT_ValueAsString(cArg)
+			if cStr != nil {
+				goArgs[i] = C.GoString(cStr)
+				C.free(unsafe.Pointer(cStr))
+			}
+		}
+	}
+
+	argsJSON, _ := json.Marshal(goArgs)
+	resultJSON := dispatchInternal(instanceJSON, "exists", string(argsJSON))
+
+	var result struct {
+		Instance string `json:"instance"`
+		Result   string `json:"result"`
+		ExitCode int    `json:"exit_code"`
+	}
+	json.Unmarshal([]byte(resultJSON), &result)
+
+	if result.Instance != "" && self != nil {
+		cNewJSON := C.CString(result.Instance)
+		C.TT_Deserialize(cNewJSON)
+		C.free(unsafe.Pointer(cNewJSON))
+	}
+
+	if result.ExitCode != 0 {
+		return C.TT_MakeNil()
+	}
+	cResult := C.CString(result.Result)
+	return C.TT_MakeString(cResult)
+}
+
+//export __File_method_IsFile
+func __File_method_IsFile(self *C.TTInstance, args *C.TTValue, numArgs C.int) C.TTValue {
+	cJSON := C.TT_Serialize(self)
+	instanceJSON := C.GoString(cJSON)
+	C.free(unsafe.Pointer(cJSON))
+
+	goArgs := make([]string, int(numArgs))
+	if args != nil && numArgs > 0 {
+		cArgs := unsafe.Slice(args, int(numArgs))
+		for i, cArg := range cArgs {
+			cStr := C.TT_ValueAsString(cArg)
+			if cStr != nil {
+				goArgs[i] = C.GoString(cStr)
+				C.free(unsafe.Pointer(cStr))
+			}
+		}
+	}
+
+	argsJSON, _ := json.Marshal(goArgs)
+	resultJSON := dispatchInternal(instanceJSON, "isFile", string(argsJSON))
+
+	var result struct {
+		Instance string `json:"instance"`
+		Result   string `json:"result"`
+		ExitCode int    `json:"exit_code"`
+	}
+	json.Unmarshal([]byte(resultJSON), &result)
+
+	if result.Instance != "" && self != nil {
+		cNewJSON := C.CString(result.Instance)
+		C.TT_Deserialize(cNewJSON)
+		C.free(unsafe.Pointer(cNewJSON))
+	}
+
+	if result.ExitCode != 0 {
+		return C.TT_MakeNil()
+	}
+	cResult := C.CString(result.Result)
+	return C.TT_MakeString(cResult)
+}
+
+//export __File_method_IsDirectory
+func __File_method_IsDirectory(self *C.TTInstance, args *C.TTValue, numArgs C.int) C.TTValue {
+	cJSON := C.TT_Serialize(self)
+	instanceJSON := C.GoString(cJSON)
+	C.free(unsafe.Pointer(cJSON))
+
+	goArgs := make([]string, int(numArgs))
+	if args != nil && numArgs > 0 {
+		cArgs := unsafe.Slice(args, int(numArgs))
+		for i, cArg := range cArgs {
+			cStr := C.TT_ValueAsString(cArg)
+			if cStr != nil {
+				goArgs[i] = C.GoString(cStr)
+				C.free(unsafe.Pointer(cStr))
+			}
+		}
+	}
+
+	argsJSON, _ := json.Marshal(goArgs)
+	resultJSON := dispatchInternal(instanceJSON, "isDirectory", string(argsJSON))
+
+	var result struct {
+		Instance string `json:"instance"`
+		Result   string `json:"result"`
+		ExitCode int    `json:"exit_code"`
+	}
+	json.Unmarshal([]byte(resultJSON), &result)
+
+	if result.Instance != "" && self != nil {
+		cNewJSON := C.CString(result.Instance)
+		C.TT_Deserialize(cNewJSON)
+		C.free(unsafe.Pointer(cNewJSON))
+	}
+
+	if result.ExitCode != 0 {
+		return C.TT_MakeNil()
+	}
+	cResult := C.CString(result.Result)
+	return C.TT_MakeString(cResult)
+}
+
+//export __File_method_IsFifo
+func __File_method_IsFifo(self *C.TTInstance, args *C.TTValue, numArgs C.int) C.TTValue {
+	cJSON := C.TT_Serialize(self)
+	instanceJSON := C.GoString(cJSON)
+	C.free(unsafe.Pointer(cJSON))
+
+	goArgs := make([]string, int(numArgs))
+	if args != nil && numArgs > 0 {
+		cArgs := unsafe.Slice(args, int(numArgs))
+		for i, cArg := range cArgs {
+			cStr := C.TT_ValueAsString(cArg)
+			if cStr != nil {
+				goArgs[i] = C.GoString(cStr)
+				C.free(unsafe.Pointer(cStr))
+			}
+		}
+	}
+
+	argsJSON, _ := json.Marshal(goArgs)
+	resultJSON := dispatchInternal(instanceJSON, "isFifo", string(argsJSON))
+
+	var result struct {
+		Instance string `json:"instance"`
+		Result   string `json:"result"`
+		ExitCode int    `json:"exit_code"`
+	}
+	json.Unmarshal([]byte(resultJSON), &result)
+
+	if result.Instance != "" && self != nil {
+		cNewJSON := C.CString(result.Instance)
+		C.TT_Deserialize(cNewJSON)
+		C.free(unsafe.Pointer(cNewJSON))
+	}
+
+	if result.ExitCode != 0 {
+		return C.TT_MakeNil()
+	}
+	cResult := C.CString(result.Result)
+	return C.TT_MakeString(cResult)
+}
+
+//export __File_method_Read
+func __File_method_Read(self *C.TTInstance, args *C.TTValue, numArgs C.int) C.TTValue {
+	cJSON := C.TT_Serialize(self)
+	instanceJSON := C.GoString(cJSON)
+	C.free(unsafe.Pointer(cJSON))
+
+	goArgs := make([]string, int(numArgs))
+	if args != nil && numArgs > 0 {
+		cArgs := unsafe.Slice(args, int(numArgs))
+		for i, cArg := range cArgs {
+			cStr := C.TT_ValueAsString(cArg)
+			if cStr != nil {
+				goArgs[i] = C.GoString(cStr)
+				C.free(unsafe.Pointer(cStr))
+			}
+		}
+	}
+
+	argsJSON, _ := json.Marshal(goArgs)
+	resultJSON := dispatchInternal(instanceJSON, "read", string(argsJSON))
+
+	var result struct {
+		Instance string `json:"instance"`
+		Result   string `json:"result"`
+		ExitCode int    `json:"exit_code"`
+	}
+	json.Unmarshal([]byte(resultJSON), &result)
+
+	if result.Instance != "" && self != nil {
+		cNewJSON := C.CString(result.Instance)
+		C.TT_Deserialize(cNewJSON)
+		C.free(unsafe.Pointer(cNewJSON))
+	}
+
+	if result.ExitCode != 0 {
+		return C.TT_MakeNil()
+	}
+	cResult := C.CString(result.Result)
+	return C.TT_MakeString(cResult)
+}
+
+//export __File_method_ReadLines
+func __File_method_ReadLines(self *C.TTInstance, args *C.TTValue, numArgs C.int) C.TTValue {
+	cJSON := C.TT_Serialize(self)
+	instanceJSON := C.GoString(cJSON)
+	C.free(unsafe.Pointer(cJSON))
+
+	goArgs := make([]string, int(numArgs))
+	if args != nil && numArgs > 0 {
+		cArgs := unsafe.Slice(args, int(numArgs))
+		for i, cArg := range cArgs {
+			cStr := C.TT_ValueAsString(cArg)
+			if cStr != nil {
+				goArgs[i] = C.GoString(cStr)
+				C.free(unsafe.Pointer(cStr))
+			}
+		}
+	}
+
+	argsJSON, _ := json.Marshal(goArgs)
+	resultJSON := dispatchInternal(instanceJSON, "readLines", string(argsJSON))
+
+	var result struct {
+		Instance string `json:"instance"`
+		Result   string `json:"result"`
+		ExitCode int    `json:"exit_code"`
+	}
+	json.Unmarshal([]byte(resultJSON), &result)
+
+	if result.Instance != "" && self != nil {
+		cNewJSON := C.CString(result.Instance)
+		C.TT_Deserialize(cNewJSON)
+		C.free(unsafe.Pointer(cNewJSON))
+	}
+
+	if result.ExitCode != 0 {
+		return C.TT_MakeNil()
+	}
+	cResult := C.CString(result.Result)
+	return C.TT_MakeString(cResult)
+}
+
+//export __File_method_Write_
+func __File_method_Write_(self *C.TTInstance, args *C.TTValue, numArgs C.int) C.TTValue {
+	cJSON := C.TT_Serialize(self)
+	instanceJSON := C.GoString(cJSON)
+	C.free(unsafe.Pointer(cJSON))
+
+	goArgs := make([]string, int(numArgs))
+	if args != nil && numArgs > 0 {
+		cArgs := unsafe.Slice(args, int(numArgs))
+		for i, cArg := range cArgs {
+			cStr := C.TT_ValueAsString(cArg)
+			if cStr != nil {
+				goArgs[i] = C.GoString(cStr)
+				C.free(unsafe.Pointer(cStr))
+			}
+		}
+	}
+
+	argsJSON, _ := json.Marshal(goArgs)
+	resultJSON := dispatchInternal(instanceJSON, "write_", string(argsJSON))
+
+	var result struct {
+		Instance string `json:"instance"`
+		Result   string `json:"result"`
+		ExitCode int    `json:"exit_code"`
+	}
+	json.Unmarshal([]byte(resultJSON), &result)
+
+	if result.Instance != "" && self != nil {
+		cNewJSON := C.CString(result.Instance)
+		C.TT_Deserialize(cNewJSON)
+		C.free(unsafe.Pointer(cNewJSON))
+	}
+
+	if result.ExitCode != 0 {
+		return C.TT_MakeNil()
+	}
+	cResult := C.CString(result.Result)
+	return C.TT_MakeString(cResult)
+}
+
+//export __File_method_WriteLine_
+func __File_method_WriteLine_(self *C.TTInstance, args *C.TTValue, numArgs C.int) C.TTValue {
+	cJSON := C.TT_Serialize(self)
+	instanceJSON := C.GoString(cJSON)
+	C.free(unsafe.Pointer(cJSON))
+
+	goArgs := make([]string, int(numArgs))
+	if args != nil && numArgs > 0 {
+		cArgs := unsafe.Slice(args, int(numArgs))
+		for i, cArg := range cArgs {
+			cStr := C.TT_ValueAsString(cArg)
+			if cStr != nil {
+				goArgs[i] = C.GoString(cStr)
+				C.free(unsafe.Pointer(cStr))
+			}
+		}
+	}
+
+	argsJSON, _ := json.Marshal(goArgs)
+	resultJSON := dispatchInternal(instanceJSON, "writeLine_", string(argsJSON))
+
+	var result struct {
+		Instance string `json:"instance"`
+		Result   string `json:"result"`
+		ExitCode int    `json:"exit_code"`
+	}
+	json.Unmarshal([]byte(resultJSON), &result)
+
+	if result.Instance != "" && self != nil {
+		cNewJSON := C.CString(result.Instance)
+		C.TT_Deserialize(cNewJSON)
+		C.free(unsafe.Pointer(cNewJSON))
+	}
+
+	if result.ExitCode != 0 {
+		return C.TT_MakeNil()
+	}
+	cResult := C.CString(result.Result)
+	return C.TT_MakeString(cResult)
+}
+
+//export __File_method_Append_
+func __File_method_Append_(self *C.TTInstance, args *C.TTValue, numArgs C.int) C.TTValue {
+	cJSON := C.TT_Serialize(self)
+	instanceJSON := C.GoString(cJSON)
+	C.free(unsafe.Pointer(cJSON))
+
+	goArgs := make([]string, int(numArgs))
+	if args != nil && numArgs > 0 {
+		cArgs := unsafe.Slice(args, int(numArgs))
+		for i, cArg := range cArgs {
+			cStr := C.TT_ValueAsString(cArg)
+			if cStr != nil {
+				goArgs[i] = C.GoString(cStr)
+				C.free(unsafe.Pointer(cStr))
+			}
+		}
+	}
+
+	argsJSON, _ := json.Marshal(goArgs)
+	resultJSON := dispatchInternal(instanceJSON, "append_", string(argsJSON))
+
+	var result struct {
+		Instance string `json:"instance"`
+		Result   string `json:"result"`
+		ExitCode int    `json:"exit_code"`
+	}
+	json.Unmarshal([]byte(resultJSON), &result)
+
+	if result.Instance != "" && self != nil {
+		cNewJSON := C.CString(result.Instance)
+		C.TT_Deserialize(cNewJSON)
+		C.free(unsafe.Pointer(cNewJSON))
+	}
+
+	if result.ExitCode != 0 {
+		return C.TT_MakeNil()
+	}
+	cResult := C.CString(result.Result)
+	return C.TT_MakeString(cResult)
+}
+
+//export __File_method_AppendLine_
+func __File_method_AppendLine_(self *C.TTInstance, args *C.TTValue, numArgs C.int) C.TTValue {
+	cJSON := C.TT_Serialize(self)
+	instanceJSON := C.GoString(cJSON)
+	C.free(unsafe.Pointer(cJSON))
+
+	goArgs := make([]string, int(numArgs))
+	if args != nil && numArgs > 0 {
+		cArgs := unsafe.Slice(args, int(numArgs))
+		for i, cArg := range cArgs {
+			cStr := C.TT_ValueAsString(cArg)
+			if cStr != nil {
+				goArgs[i] = C.GoString(cStr)
+				C.free(unsafe.Pointer(cStr))
+			}
+		}
+	}
+
+	argsJSON, _ := json.Marshal(goArgs)
+	resultJSON := dispatchInternal(instanceJSON, "appendLine_", string(argsJSON))
+
+	var result struct {
+		Instance string `json:"instance"`
+		Result   string `json:"result"`
+		ExitCode int    `json:"exit_code"`
+	}
+	json.Unmarshal([]byte(resultJSON), &result)
+
+	if result.Instance != "" && self != nil {
+		cNewJSON := C.CString(result.Instance)
+		C.TT_Deserialize(cNewJSON)
+		C.free(unsafe.Pointer(cNewJSON))
+	}
+
+	if result.ExitCode != 0 {
+		return C.TT_MakeNil()
+	}
+	cResult := C.CString(result.Result)
+	return C.TT_MakeString(cResult)
+}
+
+//export __File_method_Delete
+func __File_method_Delete(self *C.TTInstance, args *C.TTValue, numArgs C.int) C.TTValue {
+	cJSON := C.TT_Serialize(self)
+	instanceJSON := C.GoString(cJSON)
+	C.free(unsafe.Pointer(cJSON))
+
+	goArgs := make([]string, int(numArgs))
+	if args != nil && numArgs > 0 {
+		cArgs := unsafe.Slice(args, int(numArgs))
+		for i, cArg := range cArgs {
+			cStr := C.TT_ValueAsString(cArg)
+			if cStr != nil {
+				goArgs[i] = C.GoString(cStr)
+				C.free(unsafe.Pointer(cStr))
+			}
+		}
+	}
+
+	argsJSON, _ := json.Marshal(goArgs)
+	resultJSON := dispatchInternal(instanceJSON, "delete", string(argsJSON))
+
+	var result struct {
+		Instance string `json:"instance"`
+		Result   string `json:"result"`
+		ExitCode int    `json:"exit_code"`
+	}
+	json.Unmarshal([]byte(resultJSON), &result)
+
+	if result.Instance != "" && self != nil {
+		cNewJSON := C.CString(result.Instance)
+		C.TT_Deserialize(cNewJSON)
+		C.free(unsafe.Pointer(cNewJSON))
+	}
+
+	if result.ExitCode != 0 {
+		return C.TT_MakeNil()
+	}
+	cResult := C.CString(result.Result)
+	return C.TT_MakeString(cResult)
+}
+
+//export __File_method_Size
+func __File_method_Size(self *C.TTInstance, args *C.TTValue, numArgs C.int) C.TTValue {
+	cJSON := C.TT_Serialize(self)
+	instanceJSON := C.GoString(cJSON)
+	C.free(unsafe.Pointer(cJSON))
+
+	goArgs := make([]string, int(numArgs))
+	if args != nil && numArgs > 0 {
+		cArgs := unsafe.Slice(args, int(numArgs))
+		for i, cArg := range cArgs {
+			cStr := C.TT_ValueAsString(cArg)
+			if cStr != nil {
+				goArgs[i] = C.GoString(cStr)
+				C.free(unsafe.Pointer(cStr))
+			}
+		}
+	}
+
+	argsJSON, _ := json.Marshal(goArgs)
+	resultJSON := dispatchInternal(instanceJSON, "size", string(argsJSON))
+
+	var result struct {
+		Instance string `json:"instance"`
+		Result   string `json:"result"`
+		ExitCode int    `json:"exit_code"`
+	}
+	json.Unmarshal([]byte(resultJSON), &result)
+
+	if result.Instance != "" && self != nil {
+		cNewJSON := C.CString(result.Instance)
+		C.TT_Deserialize(cNewJSON)
+		C.free(unsafe.Pointer(cNewJSON))
+	}
+
+	if result.ExitCode != 0 {
+		return C.TT_MakeNil()
+	}
+	cResult := C.CString(result.Result)
+	return C.TT_MakeString(cResult)
+}
+
+//export __File_method_Directory
+func __File_method_Directory(self *C.TTInstance, args *C.TTValue, numArgs C.int) C.TTValue {
+	cJSON := C.TT_Serialize(self)
+	instanceJSON := C.GoString(cJSON)
+	C.free(unsafe.Pointer(cJSON))
+
+	goArgs := make([]string, int(numArgs))
+	if args != nil && numArgs > 0 {
+		cArgs := unsafe.Slice(args, int(numArgs))
+		for i, cArg := range cArgs {
+			cStr := C.TT_ValueAsString(cArg)
+			if cStr != nil {
+				goArgs[i] = C.GoString(cStr)
+				C.free(unsafe.Pointer(cStr))
+			}
+		}
+	}
+
+	argsJSON, _ := json.Marshal(goArgs)
+	resultJSON := dispatchInternal(instanceJSON, "directory", string(argsJSON))
+
+	var result struct {
+		Instance string `json:"instance"`
+		Result   string `json:"result"`
+		ExitCode int    `json:"exit_code"`
+	}
+	json.Unmarshal([]byte(resultJSON), &result)
+
+	if result.Instance != "" && self != nil {
+		cNewJSON := C.CString(result.Instance)
+		C.TT_Deserialize(cNewJSON)
+		C.free(unsafe.Pointer(cNewJSON))
+	}
+
+	if result.ExitCode != 0 {
+		return C.TT_MakeNil()
+	}
+	cResult := C.CString(result.Result)
+	return C.TT_MakeString(cResult)
+}
+
+//export __File_method_Basename
+func __File_method_Basename(self *C.TTInstance, args *C.TTValue, numArgs C.int) C.TTValue {
+	cJSON := C.TT_Serialize(self)
+	instanceJSON := C.GoString(cJSON)
+	C.free(unsafe.Pointer(cJSON))
+
+	goArgs := make([]string, int(numArgs))
+	if args != nil && numArgs > 0 {
+		cArgs := unsafe.Slice(args, int(numArgs))
+		for i, cArg := range cArgs {
+			cStr := C.TT_ValueAsString(cArg)
+			if cStr != nil {
+				goArgs[i] = C.GoString(cStr)
+				C.free(unsafe.Pointer(cStr))
+			}
+		}
+	}
+
+	argsJSON, _ := json.Marshal(goArgs)
+	resultJSON := dispatchInternal(instanceJSON, "basename", string(argsJSON))
+
+	var result struct {
+		Instance string `json:"instance"`
+		Result   string `json:"result"`
+		ExitCode int    `json:"exit_code"`
+	}
+	json.Unmarshal([]byte(resultJSON), &result)
+
+	if result.Instance != "" && self != nil {
+		cNewJSON := C.CString(result.Instance)
+		C.TT_Deserialize(cNewJSON)
+		C.free(unsafe.Pointer(cNewJSON))
+	}
+
+	if result.ExitCode != 0 {
+		return C.TT_MakeNil()
+	}
+	cResult := C.CString(result.Result)
+	return C.TT_MakeString(cResult)
+}
+
+//export __File_method_Extension
+func __File_method_Extension(self *C.TTInstance, args *C.TTValue, numArgs C.int) C.TTValue {
+	cJSON := C.TT_Serialize(self)
+	instanceJSON := C.GoString(cJSON)
+	C.free(unsafe.Pointer(cJSON))
+
+	goArgs := make([]string, int(numArgs))
+	if args != nil && numArgs > 0 {
+		cArgs := unsafe.Slice(args, int(numArgs))
+		for i, cArg := range cArgs {
+			cStr := C.TT_ValueAsString(cArg)
+			if cStr != nil {
+				goArgs[i] = C.GoString(cStr)
+				C.free(unsafe.Pointer(cStr))
+			}
+		}
+	}
+
+	argsJSON, _ := json.Marshal(goArgs)
+	resultJSON := dispatchInternal(instanceJSON, "extension", string(argsJSON))
+
+	var result struct {
+		Instance string `json:"instance"`
+		Result   string `json:"result"`
+		ExitCode int    `json:"exit_code"`
+	}
+	json.Unmarshal([]byte(resultJSON), &result)
+
+	if result.Instance != "" && self != nil {
+		cNewJSON := C.CString(result.Instance)
+		C.TT_Deserialize(cNewJSON)
+		C.free(unsafe.Pointer(cNewJSON))
+	}
+
+	if result.ExitCode != 0 {
+		return C.TT_MakeNil()
+	}
+	cResult := C.CString(result.Result)
+	return C.TT_MakeString(cResult)
+}
+
+//export __File_method_Stem
+func __File_method_Stem(self *C.TTInstance, args *C.TTValue, numArgs C.int) C.TTValue {
+	cJSON := C.TT_Serialize(self)
+	instanceJSON := C.GoString(cJSON)
+	C.free(unsafe.Pointer(cJSON))
+
+	goArgs := make([]string, int(numArgs))
+	if args != nil && numArgs > 0 {
+		cArgs := unsafe.Slice(args, int(numArgs))
+		for i, cArg := range cArgs {
+			cStr := C.TT_ValueAsString(cArg)
+			if cStr != nil {
+				goArgs[i] = C.GoString(cStr)
+				C.free(unsafe.Pointer(cStr))
+			}
+		}
+	}
+
+	argsJSON, _ := json.Marshal(goArgs)
+	resultJSON := dispatchInternal(instanceJSON, "stem", string(argsJSON))
+
+	var result struct {
+		Instance string `json:"instance"`
+		Result   string `json:"result"`
+		ExitCode int    `json:"exit_code"`
+	}
+	json.Unmarshal([]byte(resultJSON), &result)
+
+	if result.Instance != "" && self != nil {
+		cNewJSON := C.CString(result.Instance)
+		C.TT_Deserialize(cNewJSON)
+		C.free(unsafe.Pointer(cNewJSON))
+	}
+
+	if result.ExitCode != 0 {
+		return C.TT_MakeNil()
+	}
+	cResult := C.CString(result.Result)
+	return C.TT_MakeString(cResult)
+}
+
+//export __File_method_CopyTo_
+func __File_method_CopyTo_(self *C.TTInstance, args *C.TTValue, numArgs C.int) C.TTValue {
+	cJSON := C.TT_Serialize(self)
+	instanceJSON := C.GoString(cJSON)
+	C.free(unsafe.Pointer(cJSON))
+
+	goArgs := make([]string, int(numArgs))
+	if args != nil && numArgs > 0 {
+		cArgs := unsafe.Slice(args, int(numArgs))
+		for i, cArg := range cArgs {
+			cStr := C.TT_ValueAsString(cArg)
+			if cStr != nil {
+				goArgs[i] = C.GoString(cStr)
+				C.free(unsafe.Pointer(cStr))
+			}
+		}
+	}
+
+	argsJSON, _ := json.Marshal(goArgs)
+	resultJSON := dispatchInternal(instanceJSON, "copyTo_", string(argsJSON))
+
+	var result struct {
+		Instance string `json:"instance"`
+		Result   string `json:"result"`
+		ExitCode int    `json:"exit_code"`
+	}
+	json.Unmarshal([]byte(resultJSON), &result)
+
+	if result.Instance != "" && self != nil {
+		cNewJSON := C.CString(result.Instance)
+		C.TT_Deserialize(cNewJSON)
+		C.free(unsafe.Pointer(cNewJSON))
+	}
+
+	if result.ExitCode != 0 {
+		return C.TT_MakeNil()
+	}
+	cResult := C.CString(result.Result)
+	return C.TT_MakeString(cResult)
+}
+
+//export __File_method_MoveTo_
+func __File_method_MoveTo_(self *C.TTInstance, args *C.TTValue, numArgs C.int) C.TTValue {
+	cJSON := C.TT_Serialize(self)
+	instanceJSON := C.GoString(cJSON)
+	C.free(unsafe.Pointer(cJSON))
+
+	goArgs := make([]string, int(numArgs))
+	if args != nil && numArgs > 0 {
+		cArgs := unsafe.Slice(args, int(numArgs))
+		for i, cArg := range cArgs {
+			cStr := C.TT_ValueAsString(cArg)
+			if cStr != nil {
+				goArgs[i] = C.GoString(cStr)
+				C.free(unsafe.Pointer(cStr))
+			}
+		}
+	}
+
+	argsJSON, _ := json.Marshal(goArgs)
+	resultJSON := dispatchInternal(instanceJSON, "moveTo_", string(argsJSON))
+
+	var result struct {
+		Instance string `json:"instance"`
+		Result   string `json:"result"`
+		ExitCode int    `json:"exit_code"`
+	}
+	json.Unmarshal([]byte(resultJSON), &result)
+
+	if result.Instance != "" && self != nil {
+		cNewJSON := C.CString(result.Instance)
+		C.TT_Deserialize(cNewJSON)
+		C.free(unsafe.Pointer(cNewJSON))
+	}
+
+	if result.ExitCode != 0 {
+		return C.TT_MakeNil()
+	}
+	cResult := C.CString(result.Result)
+	return C.TT_MakeString(cResult)
+}
+
+//export __File_method_Touch
+func __File_method_Touch(self *C.TTInstance, args *C.TTValue, numArgs C.int) C.TTValue {
+	cJSON := C.TT_Serialize(self)
+	instanceJSON := C.GoString(cJSON)
+	C.free(unsafe.Pointer(cJSON))
+
+	goArgs := make([]string, int(numArgs))
+	if args != nil && numArgs > 0 {
+		cArgs := unsafe.Slice(args, int(numArgs))
+		for i, cArg := range cArgs {
+			cStr := C.TT_ValueAsString(cArg)
+			if cStr != nil {
+				goArgs[i] = C.GoString(cStr)
+				C.free(unsafe.Pointer(cStr))
+			}
+		}
+	}
+
+	argsJSON, _ := json.Marshal(goArgs)
+	resultJSON := dispatchInternal(instanceJSON, "touch", string(argsJSON))
+
+	var result struct {
+		Instance string `json:"instance"`
+		Result   string `json:"result"`
+		ExitCode int    `json:"exit_code"`
+	}
+	json.Unmarshal([]byte(resultJSON), &result)
+
+	if result.Instance != "" && self != nil {
+		cNewJSON := C.CString(result.Instance)
+		C.TT_Deserialize(cNewJSON)
+		C.free(unsafe.Pointer(cNewJSON))
+	}
+
+	if result.ExitCode != 0 {
+		return C.TT_MakeNil()
+	}
+	cResult := C.CString(result.Result)
+	return C.TT_MakeString(cResult)
+}
+
+//export __File_method_ModificationTime
+func __File_method_ModificationTime(self *C.TTInstance, args *C.TTValue, numArgs C.int) C.TTValue {
+	cJSON := C.TT_Serialize(self)
+	instanceJSON := C.GoString(cJSON)
+	C.free(unsafe.Pointer(cJSON))
+
+	goArgs := make([]string, int(numArgs))
+	if args != nil && numArgs > 0 {
+		cArgs := unsafe.Slice(args, int(numArgs))
+		for i, cArg := range cArgs {
+			cStr := C.TT_ValueAsString(cArg)
+			if cStr != nil {
+				goArgs[i] = C.GoString(cStr)
+				C.free(unsafe.Pointer(cStr))
+			}
+		}
+	}
+
+	argsJSON, _ := json.Marshal(goArgs)
+	resultJSON := dispatchInternal(instanceJSON, "modificationTime", string(argsJSON))
+
+	var result struct {
+		Instance string `json:"instance"`
+		Result   string `json:"result"`
+		ExitCode int    `json:"exit_code"`
+	}
+	json.Unmarshal([]byte(resultJSON), &result)
+
+	if result.Instance != "" && self != nil {
+		cNewJSON := C.CString(result.Instance)
+		C.TT_Deserialize(cNewJSON)
+		C.free(unsafe.Pointer(cNewJSON))
+	}
+
+	if result.ExitCode != 0 {
+		return C.TT_MakeNil()
+	}
+	cResult := C.CString(result.Result)
+	return C.TT_MakeString(cResult)
+}
+
+//export __File_method_Info
+func __File_method_Info(self *C.TTInstance, args *C.TTValue, numArgs C.int) C.TTValue {
+	cJSON := C.TT_Serialize(self)
+	instanceJSON := C.GoString(cJSON)
+	C.free(unsafe.Pointer(cJSON))
+
+	goArgs := make([]string, int(numArgs))
+	if args != nil && numArgs > 0 {
+		cArgs := unsafe.Slice(args, int(numArgs))
+		for i, cArg := range cArgs {
+			cStr := C.TT_ValueAsString(cArg)
+			if cStr != nil {
+				goArgs[i] = C.GoString(cStr)
+				C.free(unsafe.Pointer(cStr))
+			}
+		}
+	}
+
+	argsJSON, _ := json.Marshal(goArgs)
+	resultJSON := dispatchInternal(instanceJSON, "info", string(argsJSON))
+
+	var result struct {
+		Instance string `json:"instance"`
+		Result   string `json:"result"`
+		ExitCode int    `json:"exit_code"`
+	}
+	json.Unmarshal([]byte(resultJSON), &result)
+
+	if result.Instance != "" && self != nil {
+		cNewJSON := C.CString(result.Instance)
+		C.TT_Deserialize(cNewJSON)
+		C.free(unsafe.Pointer(cNewJSON))
+	}
+
+	if result.ExitCode != 0 {
+		return C.TT_MakeNil()
+	}
+	cResult := C.CString(result.Result)
+	return C.TT_MakeString(cResult)
+}
+
+//export __File_method_PrintString
+func __File_method_PrintString(self *C.TTInstance, args *C.TTValue, numArgs C.int) C.TTValue {
+	cJSON := C.TT_Serialize(self)
+	instanceJSON := C.GoString(cJSON)
+	C.free(unsafe.Pointer(cJSON))
+
+	goArgs := make([]string, int(numArgs))
+	if args != nil && numArgs > 0 {
+		cArgs := unsafe.Slice(args, int(numArgs))
+		for i, cArg := range cArgs {
+			cStr := C.TT_ValueAsString(cArg)
+			if cStr != nil {
+				goArgs[i] = C.GoString(cStr)
+				C.free(unsafe.Pointer(cStr))
+			}
+		}
+	}
+
+	argsJSON, _ := json.Marshal(goArgs)
+	resultJSON := dispatchInternal(instanceJSON, "printString", string(argsJSON))
+
+	var result struct {
+		Instance string `json:"instance"`
+		Result   string `json:"result"`
+		ExitCode int    `json:"exit_code"`
+	}
+	json.Unmarshal([]byte(resultJSON), &result)
+
+	if result.Instance != "" && self != nil {
+		cNewJSON := C.CString(result.Instance)
+		C.TT_Deserialize(cNewJSON)
+		C.free(unsafe.Pointer(cNewJSON))
+	}
+
+	if result.ExitCode != 0 {
+		return C.TT_MakeNil()
+	}
+	cResult := C.CString(result.Result)
+	return C.TT_MakeString(cResult)
+}
+
+//export __File_classmethod_At_
+func __File_classmethod_At_(self *C.TTInstance, args *C.TTValue, numArgs C.int) C.TTValue {
+	goArgs := make([]string, int(numArgs))
+	if args != nil && numArgs > 0 {
+		cArgs := unsafe.Slice(args, int(numArgs))
+		for i, cArg := range cArgs {
+			cStr := C.TT_ValueAsString(cArg)
+			if cStr != nil {
+				goArgs[i] = C.GoString(cStr)
+				C.free(unsafe.Pointer(cStr))
+			}
+		}
+	}
+
+	argsJSON, _ := json.Marshal(goArgs)
+	resultJSON := dispatchInternal("", "at_", string(argsJSON))
+
+	var result struct {
+		Result   string `json:"result"`
+		ExitCode int    `json:"exit_code"`
+	}
+	json.Unmarshal([]byte(resultJSON), &result)
+
+	if result.ExitCode != 0 {
+		return C.TT_MakeNil()
+	}
+	cResult := C.CString(result.Result)
+	return C.TT_MakeString(cResult)
+}
+
+//export __File_classmethod_Temp
+func __File_classmethod_Temp(self *C.TTInstance, args *C.TTValue, numArgs C.int) C.TTValue {
+	goArgs := make([]string, int(numArgs))
+	if args != nil && numArgs > 0 {
+		cArgs := unsafe.Slice(args, int(numArgs))
+		for i, cArg := range cArgs {
+			cStr := C.TT_ValueAsString(cArg)
+			if cStr != nil {
+				goArgs[i] = C.GoString(cStr)
+				C.free(unsafe.Pointer(cStr))
+			}
+		}
+	}
+
+	argsJSON, _ := json.Marshal(goArgs)
+	resultJSON := dispatchInternal("", "temp", string(argsJSON))
+
+	var result struct {
+		Result   string `json:"result"`
+		ExitCode int    `json:"exit_code"`
+	}
+	json.Unmarshal([]byte(resultJSON), &result)
+
+	if result.ExitCode != 0 {
+		return C.TT_MakeNil()
+	}
+	cResult := C.CString(result.Result)
+	return C.TT_MakeString(cResult)
+}
+
+//export __File_classmethod_TempWithPrefix_
+func __File_classmethod_TempWithPrefix_(self *C.TTInstance, args *C.TTValue, numArgs C.int) C.TTValue {
+	goArgs := make([]string, int(numArgs))
+	if args != nil && numArgs > 0 {
+		cArgs := unsafe.Slice(args, int(numArgs))
+		for i, cArg := range cArgs {
+			cStr := C.TT_ValueAsString(cArg)
+			if cStr != nil {
+				goArgs[i] = C.GoString(cStr)
+				C.free(unsafe.Pointer(cStr))
+			}
+		}
+	}
+
+	argsJSON, _ := json.Marshal(goArgs)
+	resultJSON := dispatchInternal("", "tempWithPrefix_", string(argsJSON))
+
+	var result struct {
+		Result   string `json:"result"`
+		ExitCode int    `json:"exit_code"`
+	}
+	json.Unmarshal([]byte(resultJSON), &result)
+
+	if result.ExitCode != 0 {
+		return C.TT_MakeNil()
+	}
+	cResult := C.CString(result.Result)
+	return C.TT_MakeString(cResult)
+}
+
+//export __File_classmethod_Mkfifo_
+func __File_classmethod_Mkfifo_(self *C.TTInstance, args *C.TTValue, numArgs C.int) C.TTValue {
+	goArgs := make([]string, int(numArgs))
+	if args != nil && numArgs > 0 {
+		cArgs := unsafe.Slice(args, int(numArgs))
+		for i, cArg := range cArgs {
+			cStr := C.TT_ValueAsString(cArg)
+			if cStr != nil {
+				goArgs[i] = C.GoString(cStr)
+				C.free(unsafe.Pointer(cStr))
+			}
+		}
+	}
+
+	argsJSON, _ := json.Marshal(goArgs)
+	resultJSON := dispatchInternal("", "mkfifo_", string(argsJSON))
+
+	var result struct {
+		Result   string `json:"result"`
+		ExitCode int    `json:"exit_code"`
+	}
+	json.Unmarshal([]byte(resultJSON), &result)
+
+	if result.ExitCode != 0 {
+		return C.TT_MakeNil()
+	}
+	cResult := C.CString(result.Result)
+	return C.TT_MakeString(cResult)
+}
+
+//export __File_classmethod_Exists_
+func __File_classmethod_Exists_(self *C.TTInstance, args *C.TTValue, numArgs C.int) C.TTValue {
+	goArgs := make([]string, int(numArgs))
+	if args != nil && numArgs > 0 {
+		cArgs := unsafe.Slice(args, int(numArgs))
+		for i, cArg := range cArgs {
+			cStr := C.TT_ValueAsString(cArg)
+			if cStr != nil {
+				goArgs[i] = C.GoString(cStr)
+				C.free(unsafe.Pointer(cStr))
+			}
+		}
+	}
+
+	argsJSON, _ := json.Marshal(goArgs)
+	resultJSON := dispatchInternal("", "exists_", string(argsJSON))
+
+	var result struct {
+		Result   string `json:"result"`
+		ExitCode int    `json:"exit_code"`
+	}
+	json.Unmarshal([]byte(resultJSON), &result)
+
+	if result.ExitCode != 0 {
+		return C.TT_MakeNil()
+	}
+	cResult := C.CString(result.Result)
+	return C.TT_MakeString(cResult)
+}
+
+//export __File_classmethod_IsFile_
+func __File_classmethod_IsFile_(self *C.TTInstance, args *C.TTValue, numArgs C.int) C.TTValue {
+	goArgs := make([]string, int(numArgs))
+	if args != nil && numArgs > 0 {
+		cArgs := unsafe.Slice(args, int(numArgs))
+		for i, cArg := range cArgs {
+			cStr := C.TT_ValueAsString(cArg)
+			if cStr != nil {
+				goArgs[i] = C.GoString(cStr)
+				C.free(unsafe.Pointer(cStr))
+			}
+		}
+	}
+
+	argsJSON, _ := json.Marshal(goArgs)
+	resultJSON := dispatchInternal("", "isFile_", string(argsJSON))
+
+	var result struct {
+		Result   string `json:"result"`
+		ExitCode int    `json:"exit_code"`
+	}
+	json.Unmarshal([]byte(resultJSON), &result)
+
+	if result.ExitCode != 0 {
+		return C.TT_MakeNil()
+	}
+	cResult := C.CString(result.Result)
+	return C.TT_MakeString(cResult)
+}
+
+//export __File_classmethod_IsDirectory_
+func __File_classmethod_IsDirectory_(self *C.TTInstance, args *C.TTValue, numArgs C.int) C.TTValue {
+	goArgs := make([]string, int(numArgs))
+	if args != nil && numArgs > 0 {
+		cArgs := unsafe.Slice(args, int(numArgs))
+		for i, cArg := range cArgs {
+			cStr := C.TT_ValueAsString(cArg)
+			if cStr != nil {
+				goArgs[i] = C.GoString(cStr)
+				C.free(unsafe.Pointer(cStr))
+			}
+		}
+	}
+
+	argsJSON, _ := json.Marshal(goArgs)
+	resultJSON := dispatchInternal("", "isDirectory_", string(argsJSON))
+
+	var result struct {
+		Result   string `json:"result"`
+		ExitCode int    `json:"exit_code"`
+	}
+	json.Unmarshal([]byte(resultJSON), &result)
+
+	if result.ExitCode != 0 {
+		return C.TT_MakeNil()
+	}
+	cResult := C.CString(result.Result)
+	return C.TT_MakeString(cResult)
+}
+
+//export __File_classmethod_IsSymlink_
+func __File_classmethod_IsSymlink_(self *C.TTInstance, args *C.TTValue, numArgs C.int) C.TTValue {
+	goArgs := make([]string, int(numArgs))
+	if args != nil && numArgs > 0 {
+		cArgs := unsafe.Slice(args, int(numArgs))
+		for i, cArg := range cArgs {
+			cStr := C.TT_ValueAsString(cArg)
+			if cStr != nil {
+				goArgs[i] = C.GoString(cStr)
+				C.free(unsafe.Pointer(cStr))
+			}
+		}
+	}
+
+	argsJSON, _ := json.Marshal(goArgs)
+	resultJSON := dispatchInternal("", "isSymlink_", string(argsJSON))
+
+	var result struct {
+		Result   string `json:"result"`
+		ExitCode int    `json:"exit_code"`
+	}
+	json.Unmarshal([]byte(resultJSON), &result)
+
+	if result.ExitCode != 0 {
+		return C.TT_MakeNil()
+	}
+	cResult := C.CString(result.Result)
+	return C.TT_MakeString(cResult)
+}
+
+//export __File_classmethod_IsFifo_
+func __File_classmethod_IsFifo_(self *C.TTInstance, args *C.TTValue, numArgs C.int) C.TTValue {
+	goArgs := make([]string, int(numArgs))
+	if args != nil && numArgs > 0 {
+		cArgs := unsafe.Slice(args, int(numArgs))
+		for i, cArg := range cArgs {
+			cStr := C.TT_ValueAsString(cArg)
+			if cStr != nil {
+				goArgs[i] = C.GoString(cStr)
+				C.free(unsafe.Pointer(cStr))
+			}
+		}
+	}
+
+	argsJSON, _ := json.Marshal(goArgs)
+	resultJSON := dispatchInternal("", "isFifo_", string(argsJSON))
+
+	var result struct {
+		Result   string `json:"result"`
+		ExitCode int    `json:"exit_code"`
+	}
+	json.Unmarshal([]byte(resultJSON), &result)
+
+	if result.ExitCode != 0 {
+		return C.TT_MakeNil()
+	}
+	cResult := C.CString(result.Result)
+	return C.TT_MakeString(cResult)
+}
+
+//export __File_classmethod_IsSocket_
+func __File_classmethod_IsSocket_(self *C.TTInstance, args *C.TTValue, numArgs C.int) C.TTValue {
+	goArgs := make([]string, int(numArgs))
+	if args != nil && numArgs > 0 {
+		cArgs := unsafe.Slice(args, int(numArgs))
+		for i, cArg := range cArgs {
+			cStr := C.TT_ValueAsString(cArg)
+			if cStr != nil {
+				goArgs[i] = C.GoString(cStr)
+				C.free(unsafe.Pointer(cStr))
+			}
+		}
+	}
+
+	argsJSON, _ := json.Marshal(goArgs)
+	resultJSON := dispatchInternal("", "isSocket_", string(argsJSON))
+
+	var result struct {
+		Result   string `json:"result"`
+		ExitCode int    `json:"exit_code"`
+	}
+	json.Unmarshal([]byte(resultJSON), &result)
+
+	if result.ExitCode != 0 {
+		return C.TT_MakeNil()
+	}
+	cResult := C.CString(result.Result)
+	return C.TT_MakeString(cResult)
+}
+
+//export __File_classmethod_IsBlockDevice_
+func __File_classmethod_IsBlockDevice_(self *C.TTInstance, args *C.TTValue, numArgs C.int) C.TTValue {
+	goArgs := make([]string, int(numArgs))
+	if args != nil && numArgs > 0 {
+		cArgs := unsafe.Slice(args, int(numArgs))
+		for i, cArg := range cArgs {
+			cStr := C.TT_ValueAsString(cArg)
+			if cStr != nil {
+				goArgs[i] = C.GoString(cStr)
+				C.free(unsafe.Pointer(cStr))
+			}
+		}
+	}
+
+	argsJSON, _ := json.Marshal(goArgs)
+	resultJSON := dispatchInternal("", "isBlockDevice_", string(argsJSON))
+
+	var result struct {
+		Result   string `json:"result"`
+		ExitCode int    `json:"exit_code"`
+	}
+	json.Unmarshal([]byte(resultJSON), &result)
+
+	if result.ExitCode != 0 {
+		return C.TT_MakeNil()
+	}
+	cResult := C.CString(result.Result)
+	return C.TT_MakeString(cResult)
+}
+
+//export __File_classmethod_IsCharDevice_
+func __File_classmethod_IsCharDevice_(self *C.TTInstance, args *C.TTValue, numArgs C.int) C.TTValue {
+	goArgs := make([]string, int(numArgs))
+	if args != nil && numArgs > 0 {
+		cArgs := unsafe.Slice(args, int(numArgs))
+		for i, cArg := range cArgs {
+			cStr := C.TT_ValueAsString(cArg)
+			if cStr != nil {
+				goArgs[i] = C.GoString(cStr)
+				C.free(unsafe.Pointer(cStr))
+			}
+		}
+	}
+
+	argsJSON, _ := json.Marshal(goArgs)
+	resultJSON := dispatchInternal("", "isCharDevice_", string(argsJSON))
+
+	var result struct {
+		Result   string `json:"result"`
+		ExitCode int    `json:"exit_code"`
+	}
+	json.Unmarshal([]byte(resultJSON), &result)
+
+	if result.ExitCode != 0 {
+		return C.TT_MakeNil()
+	}
+	cResult := C.CString(result.Result)
+	return C.TT_MakeString(cResult)
+}
+
+//export __File_classmethod_IsReadable_
+func __File_classmethod_IsReadable_(self *C.TTInstance, args *C.TTValue, numArgs C.int) C.TTValue {
+	goArgs := make([]string, int(numArgs))
+	if args != nil && numArgs > 0 {
+		cArgs := unsafe.Slice(args, int(numArgs))
+		for i, cArg := range cArgs {
+			cStr := C.TT_ValueAsString(cArg)
+			if cStr != nil {
+				goArgs[i] = C.GoString(cStr)
+				C.free(unsafe.Pointer(cStr))
+			}
+		}
+	}
+
+	argsJSON, _ := json.Marshal(goArgs)
+	resultJSON := dispatchInternal("", "isReadable_", string(argsJSON))
+
+	var result struct {
+		Result   string `json:"result"`
+		ExitCode int    `json:"exit_code"`
+	}
+	json.Unmarshal([]byte(resultJSON), &result)
+
+	if result.ExitCode != 0 {
+		return C.TT_MakeNil()
+	}
+	cResult := C.CString(result.Result)
+	return C.TT_MakeString(cResult)
+}
+
+//export __File_classmethod_IsWritable_
+func __File_classmethod_IsWritable_(self *C.TTInstance, args *C.TTValue, numArgs C.int) C.TTValue {
+	goArgs := make([]string, int(numArgs))
+	if args != nil && numArgs > 0 {
+		cArgs := unsafe.Slice(args, int(numArgs))
+		for i, cArg := range cArgs {
+			cStr := C.TT_ValueAsString(cArg)
+			if cStr != nil {
+				goArgs[i] = C.GoString(cStr)
+				C.free(unsafe.Pointer(cStr))
+			}
+		}
+	}
+
+	argsJSON, _ := json.Marshal(goArgs)
+	resultJSON := dispatchInternal("", "isWritable_", string(argsJSON))
+
+	var result struct {
+		Result   string `json:"result"`
+		ExitCode int    `json:"exit_code"`
+	}
+	json.Unmarshal([]byte(resultJSON), &result)
+
+	if result.ExitCode != 0 {
+		return C.TT_MakeNil()
+	}
+	cResult := C.CString(result.Result)
+	return C.TT_MakeString(cResult)
+}
+
+//export __File_classmethod_IsExecutable_
+func __File_classmethod_IsExecutable_(self *C.TTInstance, args *C.TTValue, numArgs C.int) C.TTValue {
+	goArgs := make([]string, int(numArgs))
+	if args != nil && numArgs > 0 {
+		cArgs := unsafe.Slice(args, int(numArgs))
+		for i, cArg := range cArgs {
+			cStr := C.TT_ValueAsString(cArg)
+			if cStr != nil {
+				goArgs[i] = C.GoString(cStr)
+				C.free(unsafe.Pointer(cStr))
+			}
+		}
+	}
+
+	argsJSON, _ := json.Marshal(goArgs)
+	resultJSON := dispatchInternal("", "isExecutable_", string(argsJSON))
+
+	var result struct {
+		Result   string `json:"result"`
+		ExitCode int    `json:"exit_code"`
+	}
+	json.Unmarshal([]byte(resultJSON), &result)
+
+	if result.ExitCode != 0 {
+		return C.TT_MakeNil()
+	}
+	cResult := C.CString(result.Result)
+	return C.TT_MakeString(cResult)
+}
+
+//export __File_classmethod_IsEmpty_
+func __File_classmethod_IsEmpty_(self *C.TTInstance, args *C.TTValue, numArgs C.int) C.TTValue {
+	goArgs := make([]string, int(numArgs))
+	if args != nil && numArgs > 0 {
+		cArgs := unsafe.Slice(args, int(numArgs))
+		for i, cArg := range cArgs {
+			cStr := C.TT_ValueAsString(cArg)
+			if cStr != nil {
+				goArgs[i] = C.GoString(cStr)
+				C.free(unsafe.Pointer(cStr))
+			}
+		}
+	}
+
+	argsJSON, _ := json.Marshal(goArgs)
+	resultJSON := dispatchInternal("", "isEmpty_", string(argsJSON))
+
+	var result struct {
+		Result   string `json:"result"`
+		ExitCode int    `json:"exit_code"`
+	}
+	json.Unmarshal([]byte(resultJSON), &result)
+
+	if result.ExitCode != 0 {
+		return C.TT_MakeNil()
+	}
+	cResult := C.CString(result.Result)
+	return C.TT_MakeString(cResult)
+}
+
+//export __File_classmethod_NotEmpty_
+func __File_classmethod_NotEmpty_(self *C.TTInstance, args *C.TTValue, numArgs C.int) C.TTValue {
+	goArgs := make([]string, int(numArgs))
+	if args != nil && numArgs > 0 {
+		cArgs := unsafe.Slice(args, int(numArgs))
+		for i, cArg := range cArgs {
+			cStr := C.TT_ValueAsString(cArg)
+			if cStr != nil {
+				goArgs[i] = C.GoString(cStr)
+				C.free(unsafe.Pointer(cStr))
+			}
+		}
+	}
+
+	argsJSON, _ := json.Marshal(goArgs)
+	resultJSON := dispatchInternal("", "notEmpty_", string(argsJSON))
+
+	var result struct {
+		Result   string `json:"result"`
+		ExitCode int    `json:"exit_code"`
+	}
+	json.Unmarshal([]byte(resultJSON), &result)
+
+	if result.ExitCode != 0 {
+		return C.TT_MakeNil()
+	}
+	cResult := C.CString(result.Result)
+	return C.TT_MakeString(cResult)
+}
+
+//export __File_classmethod_IsNewer_than_
+func __File_classmethod_IsNewer_than_(self *C.TTInstance, args *C.TTValue, numArgs C.int) C.TTValue {
+	goArgs := make([]string, int(numArgs))
+	if args != nil && numArgs > 0 {
+		cArgs := unsafe.Slice(args, int(numArgs))
+		for i, cArg := range cArgs {
+			cStr := C.TT_ValueAsString(cArg)
+			if cStr != nil {
+				goArgs[i] = C.GoString(cStr)
+				C.free(unsafe.Pointer(cStr))
+			}
+		}
+	}
+
+	argsJSON, _ := json.Marshal(goArgs)
+	resultJSON := dispatchInternal("", "isNewer_than_", string(argsJSON))
+
+	var result struct {
+		Result   string `json:"result"`
+		ExitCode int    `json:"exit_code"`
+	}
+	json.Unmarshal([]byte(resultJSON), &result)
+
+	if result.ExitCode != 0 {
+		return C.TT_MakeNil()
+	}
+	cResult := C.CString(result.Result)
+	return C.TT_MakeString(cResult)
+}
+
+//export __File_classmethod_IsOlder_than_
+func __File_classmethod_IsOlder_than_(self *C.TTInstance, args *C.TTValue, numArgs C.int) C.TTValue {
+	goArgs := make([]string, int(numArgs))
+	if args != nil && numArgs > 0 {
+		cArgs := unsafe.Slice(args, int(numArgs))
+		for i, cArg := range cArgs {
+			cStr := C.TT_ValueAsString(cArg)
+			if cStr != nil {
+				goArgs[i] = C.GoString(cStr)
+				C.free(unsafe.Pointer(cStr))
+			}
+		}
+	}
+
+	argsJSON, _ := json.Marshal(goArgs)
+	resultJSON := dispatchInternal("", "isOlder_than_", string(argsJSON))
+
+	var result struct {
+		Result   string `json:"result"`
+		ExitCode int    `json:"exit_code"`
+	}
+	json.Unmarshal([]byte(resultJSON), &result)
+
+	if result.ExitCode != 0 {
+		return C.TT_MakeNil()
+	}
+	cResult := C.CString(result.Result)
+	return C.TT_MakeString(cResult)
+}
+
+//export __File_classmethod_IsSame_as_
+func __File_classmethod_IsSame_as_(self *C.TTInstance, args *C.TTValue, numArgs C.int) C.TTValue {
+	goArgs := make([]string, int(numArgs))
+	if args != nil && numArgs > 0 {
+		cArgs := unsafe.Slice(args, int(numArgs))
+		for i, cArg := range cArgs {
+			cStr := C.TT_ValueAsString(cArg)
+			if cStr != nil {
+				goArgs[i] = C.GoString(cStr)
+				C.free(unsafe.Pointer(cStr))
+			}
+		}
+	}
+
+	argsJSON, _ := json.Marshal(goArgs)
+	resultJSON := dispatchInternal("", "isSame_as_", string(argsJSON))
+
+	var result struct {
+		Result   string `json:"result"`
+		ExitCode int    `json:"exit_code"`
+	}
+	json.Unmarshal([]byte(resultJSON), &result)
+
+	if result.ExitCode != 0 {
+		return C.TT_MakeNil()
+	}
+	cResult := C.CString(result.Result)
+	return C.TT_MakeString(cResult)
+}
+
+//export __File_classmethod_Read_
+func __File_classmethod_Read_(self *C.TTInstance, args *C.TTValue, numArgs C.int) C.TTValue {
+	goArgs := make([]string, int(numArgs))
+	if args != nil && numArgs > 0 {
+		cArgs := unsafe.Slice(args, int(numArgs))
+		for i, cArg := range cArgs {
+			cStr := C.TT_ValueAsString(cArg)
+			if cStr != nil {
+				goArgs[i] = C.GoString(cStr)
+				C.free(unsafe.Pointer(cStr))
+			}
+		}
+	}
+
+	argsJSON, _ := json.Marshal(goArgs)
+	resultJSON := dispatchInternal("", "read_", string(argsJSON))
+
+	var result struct {
+		Result   string `json:"result"`
+		ExitCode int    `json:"exit_code"`
+	}
+	json.Unmarshal([]byte(resultJSON), &result)
+
+	if result.ExitCode != 0 {
+		return C.TT_MakeNil()
+	}
+	cResult := C.CString(result.Result)
+	return C.TT_MakeString(cResult)
+}
+
+//export __File_classmethod_Write_to_
+func __File_classmethod_Write_to_(self *C.TTInstance, args *C.TTValue, numArgs C.int) C.TTValue {
+	goArgs := make([]string, int(numArgs))
+	if args != nil && numArgs > 0 {
+		cArgs := unsafe.Slice(args, int(numArgs))
+		for i, cArg := range cArgs {
+			cStr := C.TT_ValueAsString(cArg)
+			if cStr != nil {
+				goArgs[i] = C.GoString(cStr)
+				C.free(unsafe.Pointer(cStr))
+			}
+		}
+	}
+
+	argsJSON, _ := json.Marshal(goArgs)
+	resultJSON := dispatchInternal("", "write_to_", string(argsJSON))
+
+	var result struct {
+		Result   string `json:"result"`
+		ExitCode int    `json:"exit_code"`
+	}
+	json.Unmarshal([]byte(resultJSON), &result)
+
+	if result.ExitCode != 0 {
+		return C.TT_MakeNil()
+	}
+	cResult := C.CString(result.Result)
+	return C.TT_MakeString(cResult)
+}
+
+//export __File_classmethod_Delete_
+func __File_classmethod_Delete_(self *C.TTInstance, args *C.TTValue, numArgs C.int) C.TTValue {
+	goArgs := make([]string, int(numArgs))
+	if args != nil && numArgs > 0 {
+		cArgs := unsafe.Slice(args, int(numArgs))
+		for i, cArg := range cArgs {
+			cStr := C.TT_ValueAsString(cArg)
+			if cStr != nil {
+				goArgs[i] = C.GoString(cStr)
+				C.free(unsafe.Pointer(cStr))
+			}
+		}
+	}
+
+	argsJSON, _ := json.Marshal(goArgs)
+	resultJSON := dispatchInternal("", "delete_", string(argsJSON))
+
+	var result struct {
+		Result   string `json:"result"`
+		ExitCode int    `json:"exit_code"`
+	}
+	json.Unmarshal([]byte(resultJSON), &result)
+
+	if result.ExitCode != 0 {
+		return C.TT_MakeNil()
+	}
+	cResult := C.CString(result.Result)
+	return C.TT_MakeString(cResult)
+}
+
+// init registers this class with the shared runtime
+func init() {
+	className := C.CString("File")
+	defer C.free(unsafe.Pointer(className))
+	superclass := func() *C.char {
+		if "Object" == "" {
+			return nil
+		}
+		return C.CString("Object")
+	}()
+	instanceVars := func() **C.char {
+		vars := make([]*C.char, 1)
+		vars[0] = C.CString("path")
+		return &vars[0]
+	}()
+	instMethodsPtr := (*C.TTMethodEntry)(C.malloc(C.size_t(unsafe.Sizeof(C.TTMethodEntry{}) * 23)))
+	instMethods := unsafe.Slice(instMethodsPtr, 23)
+	instMethods[0] = C.TTMethodEntry{
+		flags:    C.TT_METHOD_NATIVE,
+		impl:     (C.TTMethodFunc)(C.__File_method_Path),
+		numArgs:  C.int(0),
+		selector: C.CString("path"),
+	}
+	instMethods[1] = C.TTMethodEntry{
+		flags:    C.TT_METHOD_NATIVE,
+		impl:     (C.TTMethodFunc)(C.__File_method_Exists),
+		numArgs:  C.int(0),
+		selector: C.CString("exists"),
+	}
+	instMethods[2] = C.TTMethodEntry{
+		flags:    C.TT_METHOD_NATIVE,
+		impl:     (C.TTMethodFunc)(C.__File_method_IsFile),
+		numArgs:  C.int(0),
+		selector: C.CString("isFile"),
+	}
+	instMethods[3] = C.TTMethodEntry{
+		flags:    C.TT_METHOD_NATIVE,
+		impl:     (C.TTMethodFunc)(C.__File_method_IsDirectory),
+		numArgs:  C.int(0),
+		selector: C.CString("isDirectory"),
+	}
+	instMethods[4] = C.TTMethodEntry{
+		flags:    C.TT_METHOD_NATIVE,
+		impl:     (C.TTMethodFunc)(C.__File_method_IsFifo),
+		numArgs:  C.int(0),
+		selector: C.CString("isFifo"),
+	}
+	instMethods[5] = C.TTMethodEntry{
+		flags:    C.TT_METHOD_NATIVE,
+		impl:     (C.TTMethodFunc)(C.__File_method_Read),
+		numArgs:  C.int(0),
+		selector: C.CString("read"),
+	}
+	instMethods[6] = C.TTMethodEntry{
+		flags:    C.TT_METHOD_NATIVE,
+		impl:     (C.TTMethodFunc)(C.__File_method_ReadLines),
+		numArgs:  C.int(0),
+		selector: C.CString("readLines"),
+	}
+	instMethods[7] = C.TTMethodEntry{
+		flags:    C.TT_METHOD_NATIVE,
+		impl:     (C.TTMethodFunc)(C.__File_method_Write_),
+		numArgs:  C.int(1),
+		selector: C.CString("write_"),
+	}
+	instMethods[8] = C.TTMethodEntry{
+		flags:    C.TT_METHOD_NATIVE,
+		impl:     (C.TTMethodFunc)(C.__File_method_WriteLine_),
+		numArgs:  C.int(1),
+		selector: C.CString("writeLine_"),
+	}
+	instMethods[9] = C.TTMethodEntry{
+		flags:    C.TT_METHOD_NATIVE,
+		impl:     (C.TTMethodFunc)(C.__File_method_Append_),
+		numArgs:  C.int(1),
+		selector: C.CString("append_"),
+	}
+	instMethods[10] = C.TTMethodEntry{
+		flags:    C.TT_METHOD_NATIVE,
+		impl:     (C.TTMethodFunc)(C.__File_method_AppendLine_),
+		numArgs:  C.int(1),
+		selector: C.CString("appendLine_"),
+	}
+	instMethods[11] = C.TTMethodEntry{
+		flags:    C.TT_METHOD_NATIVE,
+		impl:     (C.TTMethodFunc)(C.__File_method_Delete),
+		numArgs:  C.int(0),
+		selector: C.CString("delete"),
+	}
+	instMethods[12] = C.TTMethodEntry{
+		flags:    C.TT_METHOD_NATIVE,
+		impl:     (C.TTMethodFunc)(C.__File_method_Size),
+		numArgs:  C.int(0),
+		selector: C.CString("size"),
+	}
+	instMethods[13] = C.TTMethodEntry{
+		flags:    C.TT_METHOD_NATIVE,
+		impl:     (C.TTMethodFunc)(C.__File_method_Directory),
+		numArgs:  C.int(0),
+		selector: C.CString("directory"),
+	}
+	instMethods[14] = C.TTMethodEntry{
+		flags:    C.TT_METHOD_NATIVE,
+		impl:     (C.TTMethodFunc)(C.__File_method_Basename),
+		numArgs:  C.int(0),
+		selector: C.CString("basename"),
+	}
+	instMethods[15] = C.TTMethodEntry{
+		flags:    C.TT_METHOD_NATIVE,
+		impl:     (C.TTMethodFunc)(C.__File_method_Extension),
+		numArgs:  C.int(0),
+		selector: C.CString("extension"),
+	}
+	instMethods[16] = C.TTMethodEntry{
+		flags:    C.TT_METHOD_NATIVE,
+		impl:     (C.TTMethodFunc)(C.__File_method_Stem),
+		numArgs:  C.int(0),
+		selector: C.CString("stem"),
+	}
+	instMethods[17] = C.TTMethodEntry{
+		flags:    C.TT_METHOD_NATIVE,
+		impl:     (C.TTMethodFunc)(C.__File_method_CopyTo_),
+		numArgs:  C.int(1),
+		selector: C.CString("copyTo_"),
+	}
+	instMethods[18] = C.TTMethodEntry{
+		flags:    C.TT_METHOD_NATIVE,
+		impl:     (C.TTMethodFunc)(C.__File_method_MoveTo_),
+		numArgs:  C.int(1),
+		selector: C.CString("moveTo_"),
+	}
+	instMethods[19] = C.TTMethodEntry{
+		flags:    C.TT_METHOD_NATIVE,
+		impl:     (C.TTMethodFunc)(C.__File_method_Touch),
+		numArgs:  C.int(0),
+		selector: C.CString("touch"),
+	}
+	instMethods[20] = C.TTMethodEntry{
+		flags:    C.TT_METHOD_NATIVE,
+		impl:     (C.TTMethodFunc)(C.__File_method_ModificationTime),
+		numArgs:  C.int(0),
+		selector: C.CString("modificationTime"),
+	}
+	instMethods[21] = C.TTMethodEntry{
+		flags:    C.TT_METHOD_NATIVE,
+		impl:     (C.TTMethodFunc)(C.__File_method_Info),
+		numArgs:  C.int(0),
+		selector: C.CString("info"),
+	}
+	instMethods[22] = C.TTMethodEntry{
+		flags:    C.TT_METHOD_NATIVE,
+		impl:     (C.TTMethodFunc)(C.__File_method_PrintString),
+		numArgs:  C.int(0),
+		selector: C.CString("printString"),
+	}
+	classMethodsPtr := (*C.TTMethodEntry)(C.malloc(C.size_t(unsafe.Sizeof(C.TTMethodEntry{}) * 23)))
+	classMethods := unsafe.Slice(classMethodsPtr, 23)
+	classMethods[0] = C.TTMethodEntry{
+		flags:    C.TT_METHOD_NATIVE | C.TT_METHOD_CLASS_METHOD,
+		impl:     (C.TTMethodFunc)(C.__File_classmethod_At_),
+		numArgs:  C.int(1),
+		selector: C.CString("at_"),
+	}
+	classMethods[1] = C.TTMethodEntry{
+		flags:    C.TT_METHOD_NATIVE | C.TT_METHOD_CLASS_METHOD,
+		impl:     (C.TTMethodFunc)(C.__File_classmethod_Temp),
+		numArgs:  C.int(0),
+		selector: C.CString("temp"),
+	}
+	classMethods[2] = C.TTMethodEntry{
+		flags:    C.TT_METHOD_NATIVE | C.TT_METHOD_CLASS_METHOD,
+		impl:     (C.TTMethodFunc)(C.__File_classmethod_TempWithPrefix_),
+		numArgs:  C.int(1),
+		selector: C.CString("tempWithPrefix_"),
+	}
+	classMethods[3] = C.TTMethodEntry{
+		flags:    C.TT_METHOD_NATIVE | C.TT_METHOD_CLASS_METHOD,
+		impl:     (C.TTMethodFunc)(C.__File_classmethod_Mkfifo_),
+		numArgs:  C.int(1),
+		selector: C.CString("mkfifo_"),
+	}
+	classMethods[4] = C.TTMethodEntry{
+		flags:    C.TT_METHOD_NATIVE | C.TT_METHOD_CLASS_METHOD,
+		impl:     (C.TTMethodFunc)(C.__File_classmethod_Exists_),
+		numArgs:  C.int(1),
+		selector: C.CString("exists_"),
+	}
+	classMethods[5] = C.TTMethodEntry{
+		flags:    C.TT_METHOD_NATIVE | C.TT_METHOD_CLASS_METHOD,
+		impl:     (C.TTMethodFunc)(C.__File_classmethod_IsFile_),
+		numArgs:  C.int(1),
+		selector: C.CString("isFile_"),
+	}
+	classMethods[6] = C.TTMethodEntry{
+		flags:    C.TT_METHOD_NATIVE | C.TT_METHOD_CLASS_METHOD,
+		impl:     (C.TTMethodFunc)(C.__File_classmethod_IsDirectory_),
+		numArgs:  C.int(1),
+		selector: C.CString("isDirectory_"),
+	}
+	classMethods[7] = C.TTMethodEntry{
+		flags:    C.TT_METHOD_NATIVE | C.TT_METHOD_CLASS_METHOD,
+		impl:     (C.TTMethodFunc)(C.__File_classmethod_IsSymlink_),
+		numArgs:  C.int(1),
+		selector: C.CString("isSymlink_"),
+	}
+	classMethods[8] = C.TTMethodEntry{
+		flags:    C.TT_METHOD_NATIVE | C.TT_METHOD_CLASS_METHOD,
+		impl:     (C.TTMethodFunc)(C.__File_classmethod_IsFifo_),
+		numArgs:  C.int(1),
+		selector: C.CString("isFifo_"),
+	}
+	classMethods[9] = C.TTMethodEntry{
+		flags:    C.TT_METHOD_NATIVE | C.TT_METHOD_CLASS_METHOD,
+		impl:     (C.TTMethodFunc)(C.__File_classmethod_IsSocket_),
+		numArgs:  C.int(1),
+		selector: C.CString("isSocket_"),
+	}
+	classMethods[10] = C.TTMethodEntry{
+		flags:    C.TT_METHOD_NATIVE | C.TT_METHOD_CLASS_METHOD,
+		impl:     (C.TTMethodFunc)(C.__File_classmethod_IsBlockDevice_),
+		numArgs:  C.int(1),
+		selector: C.CString("isBlockDevice_"),
+	}
+	classMethods[11] = C.TTMethodEntry{
+		flags:    C.TT_METHOD_NATIVE | C.TT_METHOD_CLASS_METHOD,
+		impl:     (C.TTMethodFunc)(C.__File_classmethod_IsCharDevice_),
+		numArgs:  C.int(1),
+		selector: C.CString("isCharDevice_"),
+	}
+	classMethods[12] = C.TTMethodEntry{
+		flags:    C.TT_METHOD_NATIVE | C.TT_METHOD_CLASS_METHOD,
+		impl:     (C.TTMethodFunc)(C.__File_classmethod_IsReadable_),
+		numArgs:  C.int(1),
+		selector: C.CString("isReadable_"),
+	}
+	classMethods[13] = C.TTMethodEntry{
+		flags:    C.TT_METHOD_NATIVE | C.TT_METHOD_CLASS_METHOD,
+		impl:     (C.TTMethodFunc)(C.__File_classmethod_IsWritable_),
+		numArgs:  C.int(1),
+		selector: C.CString("isWritable_"),
+	}
+	classMethods[14] = C.TTMethodEntry{
+		flags:    C.TT_METHOD_NATIVE | C.TT_METHOD_CLASS_METHOD,
+		impl:     (C.TTMethodFunc)(C.__File_classmethod_IsExecutable_),
+		numArgs:  C.int(1),
+		selector: C.CString("isExecutable_"),
+	}
+	classMethods[15] = C.TTMethodEntry{
+		flags:    C.TT_METHOD_NATIVE | C.TT_METHOD_CLASS_METHOD,
+		impl:     (C.TTMethodFunc)(C.__File_classmethod_IsEmpty_),
+		numArgs:  C.int(1),
+		selector: C.CString("isEmpty_"),
+	}
+	classMethods[16] = C.TTMethodEntry{
+		flags:    C.TT_METHOD_NATIVE | C.TT_METHOD_CLASS_METHOD,
+		impl:     (C.TTMethodFunc)(C.__File_classmethod_NotEmpty_),
+		numArgs:  C.int(1),
+		selector: C.CString("notEmpty_"),
+	}
+	classMethods[17] = C.TTMethodEntry{
+		flags:    C.TT_METHOD_NATIVE | C.TT_METHOD_CLASS_METHOD,
+		impl:     (C.TTMethodFunc)(C.__File_classmethod_IsNewer_than_),
+		numArgs:  C.int(2),
+		selector: C.CString("isNewer_than_"),
+	}
+	classMethods[18] = C.TTMethodEntry{
+		flags:    C.TT_METHOD_NATIVE | C.TT_METHOD_CLASS_METHOD,
+		impl:     (C.TTMethodFunc)(C.__File_classmethod_IsOlder_than_),
+		numArgs:  C.int(2),
+		selector: C.CString("isOlder_than_"),
+	}
+	classMethods[19] = C.TTMethodEntry{
+		flags:    C.TT_METHOD_NATIVE | C.TT_METHOD_CLASS_METHOD,
+		impl:     (C.TTMethodFunc)(C.__File_classmethod_IsSame_as_),
+		numArgs:  C.int(2),
+		selector: C.CString("isSame_as_"),
+	}
+	classMethods[20] = C.TTMethodEntry{
+		flags:    C.TT_METHOD_NATIVE | C.TT_METHOD_CLASS_METHOD,
+		impl:     (C.TTMethodFunc)(C.__File_classmethod_Read_),
+		numArgs:  C.int(1),
+		selector: C.CString("read_"),
+	}
+	classMethods[21] = C.TTMethodEntry{
+		flags:    C.TT_METHOD_NATIVE | C.TT_METHOD_CLASS_METHOD,
+		impl:     (C.TTMethodFunc)(C.__File_classmethod_Write_to_),
+		numArgs:  C.int(2),
+		selector: C.CString("write_to_"),
+	}
+	classMethods[22] = C.TTMethodEntry{
+		flags:    C.TT_METHOD_NATIVE | C.TT_METHOD_CLASS_METHOD,
+		impl:     (C.TTMethodFunc)(C.__File_classmethod_Delete_),
+		numArgs:  C.int(1),
+		selector: C.CString("delete_"),
+	}
+	methods := &C.TTMethodTable{
+		classMethods:       classMethodsPtr,
+		instanceMethods:    instMethodsPtr,
+		numClassMethods:    C.int(23),
+		numInstanceMethods: C.int(23),
+	}
+	C.TT_RegisterClass(className, superclass, instanceVars, C.int(1), methods)
+}
+
+//export GetClassName
+func GetClassName() *C.char {
+	return C.CString("File")
 }
 
 func At_(filepath string) (string, error) {
