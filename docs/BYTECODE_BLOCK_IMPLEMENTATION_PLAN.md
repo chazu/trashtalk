@@ -1831,7 +1831,7 @@ func (c *CaptureCell) Get() string {
 
 ### Goals
 - Enable blocks created in one plugin to execute in another
-- Integrate bytecode execution with tt daemon
+- Integrate bytecode execution with trashtalk-daemon
 - Support serialized block transfer over Unix socket
 
 ### Deliverables
@@ -1841,7 +1841,7 @@ func (c *CaptureCell) Get() string {
 
 ### Files to Modify
 
-#### `/Users/chazu/dev/go/procyon/cmd/tt/main.go`
+#### `/Users/chazu/dev/go/procyon/cmd/trashtalk-daemon/main.go`
 
 Add bytecode block registry and invocation:
 

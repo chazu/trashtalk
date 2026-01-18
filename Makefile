@@ -4,13 +4,13 @@
 # Architecture:
 #   - Bash compilation: jq-compiler parses .trash → Procyon generates bash
 #   - Native plugins: jq-compiler parses .trash → Procyon generates Go → .dylib
-#   - Daemon: tt loads plugins, handles native dispatch
+#   - Daemon: trashtalk-daemon loads plugins, handles native dispatch
 #
 # Usage:
 #   make          - Full build (bash + plugins + daemon)
 #   make bash     - Compile to bash only
 #   make plugins  - Build native .dylib plugins only
-#   make daemon   - Build tt daemon only
+#   make daemon   - Build trashtalk-daemon only
 #   make legacy   - Use legacy jq-compiler (no Procyon)
 #   make clean    - Remove all build artifacts
 
@@ -64,7 +64,7 @@ build: bash plugins daemon
 	@echo "✓ Build complete"
 	@echo "  Bash:    $(COMPILED_DIR)/*"
 	@echo "  Plugins: $(COMPILED_DIR)/*.$(DYLIB_EXT)"
-	@echo "  Daemon:  $(LIB_DIR)/tt"
+	@echo "  Daemon:  $(LIB_DIR)/trashtalk-daemon"
 
 # =============================================================================
 # Bash Compilation (Procyon --mode=bash)
@@ -100,12 +100,12 @@ plugins: $(BUILD_DIR)
 
 daemon:
 	@echo ""
-	@echo "Building tt daemon..."
+	@echo "Building trashtalk-daemon..."
 	@if [[ -d "$(PROCYON_SRC)" ]]; then \
-		if cd "$(PROCYON_SRC)" && go build -o "$(CURDIR)/$(LIB_DIR)/tt" ./cmd/tt; then \
-			echo "  ✓ tt"; \
+		if cd "$(PROCYON_SRC)" && go build -o "$(CURDIR)/$(LIB_DIR)/trashtalk-daemon" ./cmd/trashtalk-daemon; then \
+			echo "  ✓ trashtalk-daemon"; \
 		else \
-			echo "  ✗ tt (build failed)"; \
+			echo "  ✗ trashtalk-daemon (build failed)"; \
 			exit 1; \
 		fi; \
 	else \
@@ -257,7 +257,7 @@ watch:
 clean:
 	@echo "Cleaning all build artifacts..."
 	@rm -rf $(COMPILED_DIR)
-	@rm -f $(LIB_DIR)/tt
+	@rm -f $(LIB_DIR)/trashtalk-daemon
 	@echo "✓ Clean complete"
 
 clean-plugins:
@@ -292,7 +292,7 @@ help:
 	@echo "  make              Full build (bash + plugins + daemon)"
 	@echo "  make bash         Compile .trash to bash only"
 	@echo "  make plugins      Build native .dylib plugins"
-	@echo "  make daemon       Build tt daemon"
+	@echo "  make daemon       Build trashtalk-daemon"
 	@echo "  make legacy       Use legacy jq-compiler (no Procyon)"
 	@echo ""
 	@echo "Single Class:"
@@ -326,4 +326,4 @@ info:
 	@echo "Tools:"
 	@echo "  Procyon:    $(PROCYON)"
 	@echo "  jq-compiler: $(JQ_COMPILER)"
-	@echo "  Daemon:     $(LIB_DIR)/tt"
+	@echo "  Daemon:     $(LIB_DIR)/trashtalk-daemon"
