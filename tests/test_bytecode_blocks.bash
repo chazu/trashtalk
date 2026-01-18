@@ -181,7 +181,7 @@ echo ""
 
 if [[ "$DAEMON_AVAILABLE" != "true" ]]; then
     echo "Skipping daemon-dependent tests (daemon not available)"
-    echo "Start the daemon with: _native_daemon_ensure"
+    echo "Start the daemon with: @ NativeDaemon instance"
     echo ""
 
     # Count skipped tests
