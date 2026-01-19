@@ -1,5 +1,4 @@
 Block subclass: Object
-  pragma: primitiveClass
   instanceVars: params code captured
 
   # Create a new block with parameters, code, and captured variables

@@ -1,7 +1,6 @@
 # FIFO - Named pipe abstraction
 # Encapsulates creation, access, and cleanup of POSIX named pipes (FIFOs)
 FIFO subclass: Object
-  pragma: primitiveClass
   instanceVars: path:'' keeperPid:'' writerPid:'' readerPid:''
 
   # Create a FIFO instance for a given path (does not create the pipe yet)

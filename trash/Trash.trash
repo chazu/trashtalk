@@ -306,12 +306,12 @@ EOF
       return 0
     fi
 
-    # Fall back to legacy class file
+    # Fall back to raw .trash source file (uncompiled)
     if [[ -f "$class_file" ]]; then
-      echo "Reloading legacy class $class_name..."
+      echo "Warning: Loading uncompiled source for $class_name..."
       source "$class_file"
       _mark_class_sourced "$class_name"
-      echo "✓ Legacy class $class_name reloaded"
+      echo "✓ Class $class_name loaded from source"
       return 0
     fi
 

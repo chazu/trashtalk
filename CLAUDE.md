@@ -4,97 +4,61 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What is Trashtalk?
 
-Trashtalk is a Smalltalk-inspired DSL compiler and runtime for Bash. It transforms `.trash` source files into executable code, providing OOP semantics (classes, inheritance, traits, instance persistence).
-
-## Critical Invariants
-
-### Primitive vs Non-Primitive Classes
-
-**This is the most important architectural constraint.**
-
-| Class Type | Pragma | Methods | Traits | Execution |
-|------------|--------|---------|--------|-----------|
-| **Primitive** | `pragma: primitiveClass` | ALL must be `rawMethod`/`rawClassMethod` | NOT allowed | Bash (rawMethods) or Native (Procyon) |
-| **Non-Primitive** | (none) | ZERO raw methods | Allowed | Pure DSL, compiles to native |
-
-**Primitive classes** wrap system/external functionality and must have **semantically parallel implementations** in both:
-- Bash: via `rawMethod`/`rawClassMethod` (using shell commands, grpcurl, etc.)
-- Native: via Procyon codegen (Go implementations in `pkg/codegen/primitives.go`)
-
-**Current primitive classes**: Object, File, String, Shell, Console, GrpcClient, Http, Time, Env, Block, Coproc, FIFO, Store, Runtime, Protocol, Tool, Future
-
-**Non-primitive classes** are pure Trashtalk DSL. They use primitive classes for any system interaction.
-
-**Current goal**: Convert all non-primitive classes to pure Trashtalk that executes fully in native mode.
+Trashtalk is a Smalltalk-inspired DSL compiler and runtime for Bash. It transforms `.trash` source files into executable Bash functions, providing OOP semantics (classes, inheritance, traits, instance persistence).
 
 ## Architecture
 
 ### Compilation Pipeline
 
 ```
-.trash source → jq-compiler (parse) → AST JSON → Procyon → Output
-                                                    │
-                                    ┌───────────────┴───────────────┐
-                                    │                               │
-                              --mode=bash                    --mode=plugin
-                                    │                               │
-                                    ▼                               ▼
-                           Compiled Bash              Go source → .dylib plugin
-                         (trash/.compiled/)         (trash/.compiled/.build/)
+.trash source → jq-compiler → Compiled Bash
+                    │
+              ┌─────┴─────┐
+              │           │
+         tokenizer    codegen
+          (bash)        (jq)
+              │           │
+              └─────┬─────┘
+                    ▼
+           trash/.compiled/*
 ```
 
 ### Key Components
 
 | Component | Location | Purpose |
 |-----------|----------|---------|
-| jq-compiler | `lib/jq-compiler/` | Tokenizes and parses `.trash` → AST JSON |
-| Procyon | `lib/procyon/procyon` | Code generator (bash and native backends) |
-| Procyon source | `~/dev/go/procyon` | Go project with parser, IR, codegen |
-| tt | `lib/tt` | Loads native plugins, handles dispatch |
+| jq-compiler | `lib/jq-compiler/` | Tokenizes and parses `.trash` → generates Bash |
 | Runtime | `lib/trash.bash` | Bash dispatcher, routes `@` message sends |
-| Compiled bash | `trash/.compiled/*` | Generated bash functions |
-| Native plugins | `trash/.compiled/*.dylib` | Compiled Go shared libraries |
+| Compiled classes | `trash/.compiled/*` | Generated bash functions |
 
-### Procyon
+### jq-compiler
 
-Procyon is the code generator that produces both bash and native Go code from Trashtalk AST.
-
-**Repository**: `~/dev/go/procyon`
-
-**Modes**:
-- `--mode=bash`: Generates bash functions (default compilation target)
-- `--mode=plugin`: Generates Go code that compiles to `.dylib` plugins
-
-**Key files in Procyon**:
-- `pkg/codegen/codegen.go` - Main code generation
-- `pkg/codegen/primitives.go` - Native implementations for primitive classes
-- `pkg/codegen/codegen_grpc.go` - GrpcClient native implementations
+The jq-compiler is a three-stage pipeline:
+- **Tokenizer** (`tokenizer.bash`): Converts .trash source to JSON tokens
+- **Parser** (`parser.jq`): PEG-style combinators parse tokens to JSON AST
+- **CodeGen** (`codegen.jq`): Generates bash functions from AST
 
 ### Runtime Execution Model
 
-1. **Bash mode**: `source lib/trash.bash` loads runtime, dispatcher routes `@` sends to compiled bash functions
-2. **Native mode**: `tt` daemon loads `.dylib` plugins, handles dispatch with fallback to bash for uncompiled methods
-3. **Hybrid**: Native daemon can call bash methods and vice versa; instances stored in shared SQLite
+1. `source lib/trash.bash` loads the runtime
+2. The `@` dispatcher routes message sends to compiled bash functions
+3. Instances are stored in SQLite as JSON
 
 ## Build Commands
 
 ```bash
-make                      # Full build (bash + plugins + daemon)
-make bash                 # Compile to bash only
-make plugins              # Build native .dylib plugins
-make daemon               # Build tt daemon
-make legacy               # Use legacy jq-compiler only (no Procyon)
-make single CLASS=Counter # Compile single class
-make single CLASS=Yutani/Widget  # Namespaced class
-make test                 # Run all tests
-make clean                # Remove build artifacts
+make              # Compile all classes to bash
+make bash         # Same as above
+make single CLASS=Counter  # Compile single class
+make test         # Run all tests
+make clean        # Remove build artifacts
 ```
 
 ## Testing
 
 ```bash
-make test                 # Run all tests, show pass/fail summary
-make test-verbose         # Run tests with bash -x tracing
+make test         # Run all tests, show pass/fail summary
+make test-verbose # Run tests with bash -x tracing
 ```
 
 Test files are in `tests/test_*.bash`.
@@ -111,7 +75,7 @@ counter=$(@ Counter new)           # Create instance
 ## DSL Syntax Quick Reference
 
 ```smalltalk
-# Non-primitive class (pure DSL, no rawMethods)
+# Class with regular methods (DSL transformation applied)
 Counter subclass: Object
   instanceVars: value:0 step:1
 
@@ -126,9 +90,8 @@ Counter subclass: Object
     @ Counter new
   ]
 
-# Primitive class (all rawMethods, no traits)
-MyPrimitive subclass: Object
-  pragma: primitiveClass
+# Class with raw methods (no DSL transformation, direct Bash)
+MyClass subclass: Object
   instanceVars: data:''
 
   rawMethod: doSomething [
@@ -138,10 +101,19 @@ MyPrimitive subclass: Object
 
   rawClassMethod: create [
     local instance
-    instance=$(@ MyPrimitive new)
+    instance=$(@ MyClass new)
     echo "$instance"
   ]
 ```
+
+### When to Use rawMethod vs method
+
+- Use `method:` for most code - it handles variable inference and message transformation
+- Use `rawMethod:` when you need:
+  - Heredocs, traps, or complex Bash constructs
+  - Process substitution (`<(...)`)
+  - Complex loops or conditionals
+  - Direct control over Bash execution
 
 ### Key Patterns
 
@@ -150,7 +122,7 @@ MyPrimitive subclass: Object
 value := @ String jsonPath: 'session.id' from: jsonResponse.
 ```
 
-**Handler/closure pattern** (for callbacks in non-primitive classes):
+**Handler/closure pattern** (for callbacks):
 ```smalltalk
 # Store handler in ivar, implement valueWith: to receive callbacks
 method: onEventDo: handler [
@@ -209,6 +181,21 @@ Counter subclass: Object
 - Compiled function: `__MyApp__Counter__increment`
 - Instance ID: `myapp_counter_uuid`
 
+## Pragmas
+
+### `pragma: direct`
+
+Bypasses subshell capture, allowing methods to modify variables in the calling shell:
+
+```smalltalk
+rawMethod: setGlobalCounter [
+  pragma: direct
+  GLOBAL_COUNTER="modified"
+]
+```
+
+Use for methods that need to modify shell state.
+
 ## Issue Tracking
 
 We use **bd** (beads) for issue tracking.
@@ -230,7 +217,7 @@ bd sync                   # Sync with git (run at session end)
 
 ## External Dependencies
 
-Required: `jo`, `jq`, `sqlite3`, `uuidgen`, `grpcurl` (for GrpcClient bash fallback)
+Required: `jo`, `jq`, `sqlite3`, `uuidgen`
 
 ## Known Issues
 
