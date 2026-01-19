@@ -8,6 +8,7 @@
 #   result := @ String trimSuffix: ".trash" from: filename
 #
 String subclass: Object
+  pragma: primitiveClass
 
   # ========================================
   # String Tests

@@ -66,10 +66,10 @@ world'''
   ]
 EOF
 
-result=$("$DRIVER" parse /tmp/test_triple_parse.trash 2>&1 | jq -r '.class.methods[0].body.tokens[] | select(.type == "TRIPLESTRING") | .type')
+result=$("$DRIVER" parse /tmp/test_triple_parse.trash 2>&1 | jq -r '.methods[0].body.tokens[] | select(.type == "TRIPLESTRING") | .type')
 run_test "parser sees TRIPLESTRING token" "TRIPLESTRING" "$result"
 
-result=$("$DRIVER" parse /tmp/test_triple_parse.trash 2>&1 | jq -r '.class.methods[0].body.tokens[] | select(.type == "TRIPLESTRING") | .value')
+result=$("$DRIVER" parse /tmp/test_triple_parse.trash 2>&1 | jq -r '.methods[0].body.tokens[] | select(.type == "TRIPLESTRING") | .value')
 run_test "parser preserves newline in value" "hello
 world" "$result"
 
@@ -80,7 +80,7 @@ TestTriple subclass: Object
 value'''
 EOF
 
-result=$("$DRIVER" parse /tmp/test_triple_ivar.trash 2>&1 | jq -r '.class.instanceVars[0].default.type')
+result=$("$DRIVER" parse /tmp/test_triple_ivar.trash 2>&1 | jq -r '.instanceVars[0].default.type')
 run_test "instance var default type" "triplestring" "$result"
 
 # ------------------------------------------------------------------------------

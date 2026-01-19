@@ -1,6 +1,7 @@
 # Coproc - Bidirectional subprocess communication
 # Provides reliable async process interaction via FIFOs
 Coproc subclass: Object
+  pragma: primitiveClass
   instanceVars: command:'' pid:'' fifoIn:'' fifoOut:'' status:''
 
   # Create a coproc for a command (does not start it yet)
