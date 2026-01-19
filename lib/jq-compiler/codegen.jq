@@ -2039,9 +2039,13 @@ def should_use_expr_parser:
       # Bash control keyword anywhere
       ($tokens[$i].type == "IDENTIFIER" and ($tokens[$i].value | is_bash_control))
       or
-      # Bare bash command (not preceded by @ which would make it a message send)
+      # Bare bash command used as actual command at start of statement
+      # Only consider it a command if:
+      # 1. Preceded by NEWLINE or DOT (start of statement) or at position 0
+      # 2. NOT followed by := (which would make it an assignment target)
       ($tokens[$i].type == "IDENTIFIER" and ($tokens[$i].value | is_bash_command) and
-       ($i == 0 or $tokens[$i - 1].type != "AT"))
+       ($i == 0 or $tokens[$i - 1].type == "NEWLINE" or $tokens[$i - 1].type == "DOT") and
+       (($i + 1 >= ($tokens | length)) or $tokens[$i + 1].type != "ASSIGN"))
     )) as $has_bash_constructs |
 
     # Check for pipe used for command chaining (not local var decl)
