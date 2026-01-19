@@ -2472,7 +2472,6 @@ def transformMethodBody($className; $isRaw):
       gsub("> /"; ">/") |              # Remove space after > before path
       gsub("< (?<c>[^<])"; "<\(.c)") |  # Remove space after < unless followed by < (process substitution)
       gsub("(?<a>[a-zA-Z0-9_]) = (?<c>[0-9\"'$])"; "\(.a)=\(.c)") |  # Fix assignments: var = "val" → var="val"
-      gsub("(?<a>[a-zA-Z0-9_]) =(?<c>[\"'$])"; "\(.a)=\(.c)") |  # Fix assignments: var ="val" → var="val"
       gsub("(?<a>[a-zA-Z0-9_])= (?<c>true|false|yes|no)(?<d>[ \n;)$])"; "\(.a)=\(.c)\(.d)") |  # Fix bool: var= true → var=true
       gsub("(?<a>[a-zA-Z0-9_]) = (?<c>true|false|yes|no)(?<d>[ \n;)$])"; "\(.a)=\(.c)\(.d)") |  # Fix bool: var = true → var=true
       gsub("(?<a>[a-zA-Z0-9_]) = (?<c>[a-zA-Z])"; "\(.a)= \(.c)")   # Keep space for env var assignments: IFS= read
@@ -2719,8 +2718,7 @@ def generateMethod($funcPrefix; $ivars; $cvars):
   ($funcPrefix | ltrimstr("__")) as $className |
 
   # Generate body - use expression parser for non-raw methods with Smalltalk syntax
-  # Treat pragma: primitive same as raw method (bash passthrough)
-  (.raw or ((.pragmas // []) | contains(["primitive"]))) as $isRaw |
+  .raw as $isRaw |
   (if $isRaw then
     # Raw method - use existing transformation
     .body | transformMethodBody($className; true)
