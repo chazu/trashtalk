@@ -2156,38 +2156,6 @@ def funcPrefix:
 def funcPrefixFromName($name):
   "__\($name | gsub("::"; "__"))";
 
-# ------------------------------------------------------------------------------
-# Transform: primitiveClass pragma
-# ------------------------------------------------------------------------------
-
-# Transforms a class with pragma: primitiveClass by setting raw=true on all methods.
-# This allows primitiveClass classes to use plain method:/classMethod: syntax while
-# having the compiler treat them as raw bash (no code transformation).
-# Returns: the class with all methods marked as raw
-def transformPrimitiveClass:
-  if ((.classPragmas // []) | index("primitiveClass")) then
-    # Transform all methods to have raw=true (skip code transformation)
-    .methods = [.methods[] | . + {raw: true}]
-  else .
-  end;
-
-# Validates primitiveClass constraints:
-# 1. No traits allowed
-# 2. All methods must be raw (rawMethod: or rawClassMethod:)
-# Input: CompilationUnit { "class": {...}, "traits": {...} }
-def validatePrimitiveClass:
-  if (.class.classPragmas // []) | index("primitiveClass") then
-    # Primitive classes cannot include traits
-    if ((.class.traits // []) | length) > 0 then
-      "Error: Class '\(.class.name)' has pragma: primitiveClass but includes traits: \(.class.traits | join(", "))\nPrimitive classes cannot include traits." | halt_error
-    # Primitive classes must have only raw methods
-    elif ([.class.methods[] | select(.raw != true)] | length) > 0 then
-      ([.class.methods[] | select(.raw != true) | .selector] | join(", ")) as $nonRaw |
-      "Error: Class '\(.class.name)' has pragma: primitiveClass but contains non-raw methods: \($nonRaw)\nPrimitive classes must use only rawMethod: and rawClassMethod:." | halt_error
-    else .
-    end
-  else .
-  end;
 
 # ------------------------------------------------------------------------------
 # Code Generation: Header
@@ -2231,10 +2199,6 @@ def generateMetadata:
     ([.methods[] | select(.category != null) | "\(.selector):\(.category)"] as $cats |
     if ($cats | length) > 0 then
       "\($prefix)__methodCategories=\"\($cats | join(" "))\""
-    else empty end),
-    # Generate class-level pragma markers
-    (if (.classPragmas // []) | index("primitiveClass") then
-      "\($prefix)__primitiveClass=\"1\""
     else empty end),
     ""
   end;
@@ -2809,8 +2773,6 @@ def generateAdvice($funcPrefix; $qualifiedName; $ivars; $cvars):
 # ------------------------------------------------------------------------------
 
 def generate:
-  # Transform primitiveClass: all methods become raw (skip code transformation)
-  transformPrimitiveClass |
   . as $class |
   # Compute the function prefix and qualified name for namespaced classes
   funcPrefix as $funcPrefix |
@@ -2837,8 +2799,6 @@ def generate:
 
 # Handle both plain Class input and CompilationUnit { "class": {...}, "traits": {...} }
 if .class != null then
-  # Validate primitiveClass constraint including trait methods
-  validatePrimitiveClass |
   # When using CompilationUnit, merge top-level metadata into the class before generating
   (.inheritedInstanceVars // []) as $inherited |
   (.sourceHash // "") as $hash |
