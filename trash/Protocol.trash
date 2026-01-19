@@ -1,6 +1,7 @@
 # Protocol - Base class for protocol definitions
 # Protocols define required methods that implementing classes must provide
 Protocol subclass: Object
+  pragma: primitiveClass
 
   # Returns the list of required method selectors as space-separated string
   # Populated from __ProtocolName__requires metadata by compiler

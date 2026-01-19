@@ -1,0 +1,151 @@
+package: Yutani
+
+# EventDispatcher - routes UI events to Block handlers
+# Uses Dictionary for O(1) widget handler lookup
+# All handlers are Blocks invoked with: @ block valueWith: event
+
+EventDispatcher subclass: Object
+  instanceVars: widgetHandlers:'{}' keyHandler:'' mouseHandler:'' resizeHandler:'' focusHandler:'' running:''
+
+  # ============================================================================
+  # Initialization
+  # ============================================================================
+
+  # Create a new dispatcher with its own handler registry
+  classMethod: new [
+    | instance |
+    instance := $(@ Runtime generateId: 'Yutani::EventDispatcher').
+    @ Runtime create: 'Yutani::EventDispatcher' id: instance.
+    @ instance _setRunning: 'true'.
+    ^ instance
+  ]
+
+  # ============================================================================
+  # Widget Handler Registration
+  # ============================================================================
+
+  # Register a Block handler for a specific widget
+  # Block will be invoked with event as argument: @ aBlock valueWith: event
+  method: onWidget: widgetId do: aBlock [
+    widgetHandlers := widgetHandlers objectAt: widgetId put: aBlock
+  ]
+
+  # Remove handler for a widget
+  method: removeHandlerFor: widgetId [
+    widgetHandlers := widgetHandlers objectRemoveKey: widgetId
+  ]
+
+  # ============================================================================
+  # Global Event Handlers
+  # ============================================================================
+
+  # Register a global key handler
+  method: onKeyDo: handler [
+    keyHandler := handler
+  ]
+
+  # Register a global mouse handler
+  method: onMouseDo: handler [
+    mouseHandler := handler
+  ]
+
+  # Register a global resize handler
+  method: onResizeDo: handler [
+    resizeHandler := handler
+  ]
+
+  # Register a global focus handler
+  method: onFocusDo: handler [
+    focusHandler := handler
+  ]
+
+  # ============================================================================
+  # Event Dispatch
+  # ============================================================================
+
+  # Dispatch an event to the appropriate handler Block
+  # Invokes blocks with event as argument
+  method: dispatch: event [
+    | eventType widgetId handler |
+    eventType := @ event eventType.
+
+    (eventType = 'key') ifTrue: [
+      (keyHandler notEmpty) ifTrue: [
+        @ keyHandler valueWith: event
+      ].
+      ^ nil
+    ].
+
+    (eventType = 'widget') ifTrue: [
+      widgetId := @ event widgetId.
+      (widgetId notEmpty) ifTrue: [
+        handler := widgetHandlers objectAt: widgetId.
+        (handler notEmpty) ifTrue: [
+          @ handler valueWith: event
+        ]
+      ].
+      ^ nil
+    ].
+
+    (eventType = 'mouse') ifTrue: [
+      (mouseHandler notEmpty) ifTrue: [
+        @ mouseHandler valueWith: event
+      ].
+      ^ nil
+    ].
+
+    (eventType = 'resize') ifTrue: [
+      (resizeHandler notEmpty) ifTrue: [
+        @ resizeHandler valueWith: event
+      ].
+      ^ nil
+    ].
+
+    (eventType = 'focus') ifTrue: [
+      (focusHandler notEmpty) ifTrue: [
+        @ focusHandler valueWith: event
+      ]
+    ]
+  ]
+
+  # Dispatch a raw JSON event (creates Event, then dispatches)
+  # Skip non-JSON lines by checking for opening brace
+  method: dispatchJson: json [
+    | event |
+    (@ String startsWith: json prefix: '{') ifTrue: [
+      event := $(@ Yutani::Event fromJson: json).
+      @ self dispatch: event
+    ]
+  ]
+
+  # ============================================================================
+  # Lifecycle
+  # ============================================================================
+
+  # Check if dispatcher is still running
+  method: isRunning [
+    ^ running
+  ]
+
+  # Stop the dispatcher
+  method: stop [
+    running := 'false'
+  ]
+
+  # Clean up all handlers for this dispatcher
+  method: cleanup [
+    # Clear widget handlers dictionary
+    widgetHandlers := '{}'.
+    # Clear global handlers
+    keyHandler := ''.
+    mouseHandler := ''.
+    resizeHandler := ''.
+    focusHandler := ''
+  ]
+
+  # ============================================================================
+  # Private Setters
+  # ============================================================================
+
+  method: _setRunning: v [ running := v ]
+

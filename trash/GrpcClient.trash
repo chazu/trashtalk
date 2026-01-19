@@ -28,6 +28,7 @@
 #   cd ~/.trashtalk && make plugins
 
 GrpcClient subclass: Object
+  pragma: primitiveClass
   instanceVars: address:'' useReflection:'yes' protoFile:'' poolConnections:'no' usePlaintext:'yes'
 
   # ==========================================================================
