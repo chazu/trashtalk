@@ -204,64 +204,67 @@ test_connection_errors() {
     local client
     client=$(@ GrpcClient connectTo: 'localhost:99999')
 
-    # This should fail gracefully - grpcurl returns error for bad connection
+    # This should fail gracefully
     local result
     result=$(@ $client call: 'test.Service/Method' with: '{}' 2>&1)
     local exit_code=$?
 
-    # Accept either non-zero exit or error message in output
-    if [[ $exit_code -ne 0 ]] || [[ "$result" == *"error"* ]] || [[ "$result" == *"refused"* ]] || [[ "$result" == *"failed"* ]]; then
+    if [[ $exit_code -ne 0 ]]; then
         pass "connection error handled gracefully"
     else
-        fail "connection error handled gracefully" "error indication" "exit code $exit_code, output: $result"
+        fail "connection error handled gracefully" "error exit code" "exit code $exit_code"
     fi
 }
 
 run_test test_connection_errors
 
 # ------------------------------------------------------------------------------
-# Test 5: Streaming methods return error in bash-only mode
+# Test 5: Streaming methods dispatch to native Procyon
 # ------------------------------------------------------------------------------
-# Note: Streaming methods require native plugin which was removed in v1.0.
-# In bash-only mode, they return an error indicating the limitation.
+# Note: These methods require the native Procyon plugin (GrpcClient.dylib).
+# Since the plugin exists, calls are dispatched to native which tries to connect.
 
-test_streaming_bash_mode() {
+test_streaming_native_dispatch() {
     echo ""
-    echo "--- Streaming Bash Mode Tests ---"
+    echo "--- Streaming Native Dispatch Tests ---"
 
     local client
     client=$(@ GrpcClient connectTo: "$GRPC_HOST")
 
-    # Server streaming - should indicate not supported in bash mode
+    # Server streaming - native impl will try to connect
+    # Without a server/service, we expect a connection or service error
     local result
     result=$(@ $client serverStream: 'test.Service/Stream' with: '{}' handler: 'block123' 2>&1)
+    local exit_code=$?
 
-    if [[ "$result" == *"requires native"* ]] || [[ "$result" == *"not supported"* ]]; then
-        pass "serverStream returns appropriate error in bash mode"
+    if [[ $exit_code -ne 0 ]]; then
+        pass "serverStream dispatches to native (error expected without service)"
     else
-        pass "serverStream returns error in bash mode"
+        fail "serverStream dispatches to native" "non-zero exit" "$result"
     fi
 
-    # Client streaming
+    # Client streaming - native impl will try to connect
     result=$(@ $client clientStream: 'test.Service/Stream' handler: 'block123' 2>&1)
+    exit_code=$?
 
-    if [[ "$result" == *"requires native"* ]] || [[ "$result" == *"not supported"* ]]; then
-        pass "clientStream returns appropriate error in bash mode"
+    if [[ $exit_code -ne 0 ]]; then
+        pass "clientStream dispatches to native (error expected without service)"
     else
-        pass "clientStream returns error in bash mode"
+        fail "clientStream dispatches to native" "non-zero exit" "$result"
     fi
 
-    # Bidi streaming
+    # Bidi streaming - native impl will try to connect
     result=$(@ $client bidiStream: 'test.Service/Stream' handler: 'block123' 2>&1)
+    exit_code=$?
 
-    if [[ "$result" == *"requires native"* ]] || [[ "$result" == *"not supported"* ]]; then
-        pass "bidiStream returns appropriate error in bash mode"
+    if [[ $exit_code -ne 0 ]]; then
+        pass "bidiStream dispatches to native (error expected without service)"
     else
-        pass "bidiStream returns error in bash mode"
+        fail "bidiStream dispatches to native" "non-zero exit" "$result"
     fi
 }
 
-run_test test_streaming_bash_mode
+run_test test_streaming_native_dispatch
 
 # ==============================================================================
 # Summary
