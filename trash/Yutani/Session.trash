@@ -1,0 +1,566 @@
+package: Yutani
+
+# Yutani Session - manages connection to Yutani UI server
+# Refactored to use GrpcClient for connection pooling and native Procyon support
+
+Session subclass: Object
+  instanceVars: sessionId:'' host:'localhost:7755' eventCoproc:'' grpcClient:'' eventDispatcher:''
+
+  # ============================================================================
+  # Factory Methods
+  # ============================================================================
+
+  classMethod: connectTo: theHost [
+    | client session builder json response sid _ |
+    # Create GrpcClient with pooling enabled
+    client := @ GrpcClient connectTo: theHost.
+    _ := @ client enablePooling.
+    # Create session instance
+    session := @ Yutani::Session new.
+    _ := @ session setHost: theHost.
+    _ := @ session setGrpcClient: client.
+    # Create session on server
+    builder := @ Json object.
+    _ := @ builder at: 'client_name' put: 'trashtalk'.
+    json := @ builder build.
+    response := @ client call: 'industries.loosh.yutani.v1.SessionService/CreateSession' with: json.
+    sid := @ String jsonPath: 'sessionId.id' from: response.
+    _ := @ session setSessionId: sid.
+    ^ session
+  ]
+
+  classMethod: connect [
+    @ Yutani::Session connectTo: 'localhost:7755'
+  ]
+
+  # ============================================================================
+  # Accessors
+  # ============================================================================
+
+  method: getSessionId [ ^ sessionId ]
+  method: getHost [ ^ host ]
+  method: getGrpcClient [ ^ grpcClient ]
+
+  # Setters (used by factory methods)
+  method: setSessionId: sid [ sessionId := sid ]
+  method: setHost: h [ host := h ]
+  method: setGrpcClient: client [ grpcClient := client ]
+
+  # ============================================================================
+  # Session Lifecycle
+  # ============================================================================
+
+  method: disconnect [
+    @ self destroySession.
+    @ self stopEventStream
+  ]
+
+  method: destroySession [
+    | json |
+    json := @ Json sessionId: sessionId.
+    @ grpcClient call: 'industries.loosh.yutani.v1.SessionService/DestroySession' with: json
+  ]
+
+  method: ping [
+    | ts builder json _ |
+    ts := @ Time now.
+    builder := @ Json object.
+    _ := @ builder at: 'timestamp' putNumber: ts.
+    json := @ builder build.
+    @ grpcClient call: 'industries.loosh.yutani.v1.SessionService/Ping' with: json
+  ]
+
+  method: serverInfo [
+    @ grpcClient call: 'industries.loosh.yutani.v1.SessionService/GetServerInfo' with: '{}'
+  ]
+
+  # ============================================================================
+  # Screen Operations
+  # ============================================================================
+
+  method: screenSize [
+    | json |
+    json := @ Json sessionId: sessionId.
+    @ grpcClient call: 'industries.loosh.yutani.v1.ScreenService/GetSize' with: json
+  ]
+
+  method: clearScreen [
+    | json |
+    json := @ Json sessionId: sessionId.
+    @ grpcClient call: 'industries.loosh.yutani.v1.ScreenService/Clear' with: json
+  ]
+
+  method: sync [
+    | json |
+    json := @ Json sessionId: sessionId.
+    @ grpcClient call: 'industries.loosh.yutani.v1.ScreenService/Sync' with: json
+  ]
+
+  # ============================================================================
+  # Widget Creation
+  # ============================================================================
+
+  method: createList: title [
+    | sidBuilder propsBuilder builder sidJson propsJson json response _ |
+    sidBuilder := @ Json object.
+    _ := @ sidBuilder at: 'id' put: sessionId.
+    sidJson := @ sidBuilder build.
+    propsBuilder := @ Json object.
+    _ := @ propsBuilder at: 'border' putBool: 'true'.
+    _ := @ propsBuilder at: 'title' put: title.
+    propsJson := @ propsBuilder build.
+    builder := @ Json object.
+    _ := @ builder at: 'session_id' putJson: sidJson.
+    _ := @ builder at: 'type' put: 'WIDGET_LIST'.
+    _ := @ builder at: 'properties' putJson: propsJson.
+    json := @ builder build.
+    response := @ grpcClient call: 'industries.loosh.yutani.v1.WidgetService/CreateWidget' with: json.
+    ^ @ String jsonPath: 'widgetId.id' from: response
+  ]
+
+  method: createTextView: title [
+    | sidBuilder tvBuilder propsBuilder builder sidJson tvJson propsJson json response _ |
+    sidBuilder := @ Json object.
+    _ := @ sidBuilder at: 'id' put: sessionId.
+    sidJson := @ sidBuilder build.
+    tvBuilder := @ Json object.
+    _ := @ tvBuilder at: 'word_wrap' putBool: 'true'.
+    _ := @ tvBuilder at: 'dynamic_colors' putBool: 'true'.
+    tvJson := @ tvBuilder build.
+    propsBuilder := @ Json object.
+    _ := @ propsBuilder at: 'border' putBool: 'true'.
+    _ := @ propsBuilder at: 'title' put: title.
+    _ := @ propsBuilder at: 'text_view' putJson: tvJson.
+    propsJson := @ propsBuilder build.
+    builder := @ Json object.
+    _ := @ builder at: 'session_id' putJson: sidJson.
+    _ := @ builder at: 'type' put: 'WIDGET_TEXT_VIEW'.
+    _ := @ builder at: 'properties' putJson: propsJson.
+    json := @ builder build.
+    response := @ grpcClient call: 'industries.loosh.yutani.v1.WidgetService/CreateWidget' with: json.
+    ^ @ String jsonPath: 'widgetId.id' from: response
+  ]
+
+  method: createTextViewWithText: title text: text [
+    | sidBuilder tvBuilder propsBuilder builder sidJson tvJson propsJson json response _ |
+    sidBuilder := @ Json object.
+    _ := @ sidBuilder at: 'id' put: sessionId.
+    sidJson := @ sidBuilder build.
+    tvBuilder := @ Json object.
+    _ := @ tvBuilder at: 'text' put: text.
+    _ := @ tvBuilder at: 'word_wrap' putBool: 'true'.
+    _ := @ tvBuilder at: 'dynamic_colors' putBool: 'true'.
+    tvJson := @ tvBuilder build.
+    propsBuilder := @ Json object.
+    _ := @ propsBuilder at: 'border' putBool: 'true'.
+    _ := @ propsBuilder at: 'title' put: title.
+    _ := @ propsBuilder at: 'text_view' putJson: tvJson.
+    propsJson := @ propsBuilder build.
+    builder := @ Json object.
+    _ := @ builder at: 'session_id' putJson: sidJson.
+    _ := @ builder at: 'type' put: 'WIDGET_TEXT_VIEW'.
+    _ := @ builder at: 'properties' putJson: propsJson.
+    json := @ builder build.
+    response := @ grpcClient call: 'industries.loosh.yutani.v1.WidgetService/CreateWidget' with: json.
+    ^ @ String jsonPath: 'widgetId.id' from: response
+  ]
+
+  method: createInputField: label [
+    | sidBuilder ifBuilder propsBuilder builder sidJson ifJson propsJson json response _ |
+    sidBuilder := @ Json object.
+    _ := @ sidBuilder at: 'id' put: sessionId.
+    sidJson := @ sidBuilder build.
+    ifBuilder := @ Json object.
+    _ := @ ifBuilder at: 'label' put: label.
+    _ := @ ifBuilder at: 'placeholder' put: ''.
+    _ := @ ifBuilder at: 'text' put: ''.
+    ifJson := @ ifBuilder build.
+    propsBuilder := @ Json object.
+    _ := @ propsBuilder at: 'border' putBool: 'true'.
+    _ := @ propsBuilder at: 'input_field' putJson: ifJson.
+    propsJson := @ propsBuilder build.
+    builder := @ Json object.
+    _ := @ builder at: 'session_id' putJson: sidJson.
+    _ := @ builder at: 'type' put: 'WIDGET_INPUT_FIELD'.
+    _ := @ builder at: 'properties' putJson: propsJson.
+    json := @ builder build.
+    response := @ grpcClient call: 'industries.loosh.yutani.v1.WidgetService/CreateWidget' with: json.
+    ^ @ String jsonPath: 'widgetId.id' from: response
+  ]
+
+  method: createInputFieldWithPlaceholder: label placeholder: placeholder [
+    | sidBuilder ifBuilder propsBuilder builder sidJson ifJson propsJson json response _ |
+    sidBuilder := @ Json object.
+    _ := @ sidBuilder at: 'id' put: sessionId.
+    sidJson := @ sidBuilder build.
+    ifBuilder := @ Json object.
+    _ := @ ifBuilder at: 'label' put: label.
+    _ := @ ifBuilder at: 'placeholder' put: placeholder.
+    _ := @ ifBuilder at: 'text' put: ''.
+    ifJson := @ ifBuilder build.
+    propsBuilder := @ Json object.
+    _ := @ propsBuilder at: 'border' putBool: 'true'.
+    _ := @ propsBuilder at: 'input_field' putJson: ifJson.
+    propsJson := @ propsBuilder build.
+    builder := @ Json object.
+    _ := @ builder at: 'session_id' putJson: sidJson.
+    _ := @ builder at: 'type' put: 'WIDGET_INPUT_FIELD'.
+    _ := @ builder at: 'properties' putJson: propsJson.
+    json := @ builder build.
+    response := @ grpcClient call: 'industries.loosh.yutani.v1.WidgetService/CreateWidget' with: json.
+    ^ @ String jsonPath: 'widgetId.id' from: response
+  ]
+
+  # FLEX_COLUMN = items side by side (horizontal)
+  method: createHorizontalLayout [
+    | sidBuilder flexBuilder propsBuilder builder sidJson flexJson propsJson json response _ |
+    sidBuilder := @ Json object.
+    _ := @ sidBuilder at: 'id' put: sessionId.
+    sidJson := @ sidBuilder build.
+    flexBuilder := @ Json object.
+    _ := @ flexBuilder at: 'direction' put: 'FLEX_COLUMN'.
+    flexJson := @ flexBuilder build.
+    propsBuilder := @ Json object.
+    _ := @ propsBuilder at: 'flex' putJson: flexJson.
+    propsJson := @ propsBuilder build.
+    builder := @ Json object.
+    _ := @ builder at: 'session_id' putJson: sidJson.
+    _ := @ builder at: 'type' put: 'WIDGET_FLEX'.
+    _ := @ builder at: 'properties' putJson: propsJson.
+    json := @ builder build.
+    response := @ grpcClient call: 'industries.loosh.yutani.v1.WidgetService/CreateWidget' with: json.
+    ^ @ String jsonPath: 'widgetId.id' from: response
+  ]
+
+  # FLEX_ROW = items stacked vertically (top to bottom)
+  method: createVerticalLayout [
+    | sidBuilder flexBuilder propsBuilder builder sidJson flexJson propsJson json response _ |
+    sidBuilder := @ Json object.
+    _ := @ sidBuilder at: 'id' put: sessionId.
+    sidJson := @ sidBuilder build.
+    flexBuilder := @ Json object.
+    _ := @ flexBuilder at: 'direction' put: 'FLEX_ROW'.
+    flexJson := @ flexBuilder build.
+    propsBuilder := @ Json object.
+    _ := @ propsBuilder at: 'flex' putJson: flexJson.
+    propsJson := @ propsBuilder build.
+    builder := @ Json object.
+    _ := @ builder at: 'session_id' putJson: sidJson.
+    _ := @ builder at: 'type' put: 'WIDGET_FLEX'.
+    _ := @ builder at: 'properties' putJson: propsJson.
+    json := @ builder build.
+    response := @ grpcClient call: 'industries.loosh.yutani.v1.WidgetService/CreateWidget' with: json.
+    ^ @ String jsonPath: 'widgetId.id' from: response
+  ]
+
+  # ============================================================================
+  # Widget Operations
+  # ============================================================================
+
+  method: setText: text on: wid [
+    | sidBuilder widBuilder tvBuilder propsBuilder builder sidJson widJson tvJson propsJson json _ |
+    sidBuilder := @ Json object.
+    _ := @ sidBuilder at: 'id' put: sessionId.
+    sidJson := @ sidBuilder build.
+    widBuilder := @ Json object.
+    _ := @ widBuilder at: 'id' put: wid.
+    widJson := @ widBuilder build.
+    tvBuilder := @ Json object.
+    _ := @ tvBuilder at: 'text' put: text.
+    tvJson := @ tvBuilder build.
+    propsBuilder := @ Json object.
+    _ := @ propsBuilder at: 'text_view' putJson: tvJson.
+    propsJson := @ propsBuilder build.
+    builder := @ Json object.
+    _ := @ builder at: 'session_id' putJson: sidJson.
+    _ := @ builder at: 'widget_id' putJson: widJson.
+    _ := @ builder at: 'properties' putJson: propsJson.
+    json := @ builder build.
+    @ grpcClient call: 'industries.loosh.yutani.v1.WidgetService/SetProperties' with: json
+  ]
+
+  method: setInputText: text on: wid [
+    | sidBuilder widBuilder ifBuilder propsBuilder builder sidJson widJson ifJson propsJson json _ |
+    sidBuilder := @ Json object.
+    _ := @ sidBuilder at: 'id' put: sessionId.
+    sidJson := @ sidBuilder build.
+    widBuilder := @ Json object.
+    _ := @ widBuilder at: 'id' put: wid.
+    widJson := @ widBuilder build.
+    ifBuilder := @ Json object.
+    _ := @ ifBuilder at: 'text' put: text.
+    ifJson := @ ifBuilder build.
+    propsBuilder := @ Json object.
+    _ := @ propsBuilder at: 'input_field' putJson: ifJson.
+    propsJson := @ propsBuilder build.
+    builder := @ Json object.
+    _ := @ builder at: 'session_id' putJson: sidJson.
+    _ := @ builder at: 'widget_id' putJson: widJson.
+    _ := @ builder at: 'properties' putJson: propsJson.
+    json := @ builder build.
+    @ grpcClient call: 'industries.loosh.yutani.v1.WidgetService/SetProperties' with: json
+  ]
+
+  method: getInputText: wid [
+    | json response result |
+    json := @ Json sessionId: sessionId widgetId: wid.
+    response := @ grpcClient call: 'industries.loosh.yutani.v1.WidgetService/GetProperties' with: json.
+    # Try camelCase first, then snake_case
+    result := @ String jsonPath: 'properties.inputField.text' from: response.
+    result isEmpty ifTrue: [
+      result := @ String jsonPath: 'properties.input_field.text' from: response
+    ].
+    ^ result
+  ]
+
+  method: focusWidget: wid [
+    | json |
+    json := @ Json sessionId: sessionId widgetId: wid.
+    @ grpcClient call: 'industries.loosh.yutani.v1.WidgetService/SetFocus' with: json
+  ]
+
+  method: setRoot: wid [
+    | json |
+    json := @ Json sessionId: sessionId widgetId: wid.
+    @ grpcClient call: 'industries.loosh.yutani.v1.WidgetService/SetRoot' with: json
+  ]
+
+  method: listWidgets [
+    | json |
+    json := @ Json sessionId: sessionId.
+    @ grpcClient call: 'industries.loosh.yutani.v1.WidgetService/ListWidgets' with: json
+  ]
+
+  method: deleteWidget: wid [
+    | json |
+    json := @ Json sessionId: sessionId widgetId: wid.
+    @ grpcClient call: 'industries.loosh.yutani.v1.WidgetService/DeleteWidget' with: json
+  ]
+
+  # ============================================================================
+  # List Operations
+  # ============================================================================
+
+  method: addItem: mainText to: listId [
+    | sidBuilder widBuilder builder sidJson widJson json _ |
+    sidBuilder := @ Json object.
+    _ := @ sidBuilder at: 'id' put: sessionId.
+    sidJson := @ sidBuilder build.
+    widBuilder := @ Json object.
+    _ := @ widBuilder at: 'id' put: listId.
+    widJson := @ widBuilder build.
+    builder := @ Json object.
+    _ := @ builder at: 'session_id' putJson: sidJson.
+    _ := @ builder at: 'widget_id' putJson: widJson.
+    _ := @ builder at: 'main_text' put: mainText.
+    json := @ builder build.
+    @ grpcClient call: 'industries.loosh.yutani.v1.ListService/AddItem' with: json
+  ]
+
+  method: addItem: mainText secondary: secondaryText to: listId [
+    | sidBuilder widBuilder builder sidJson widJson json _ |
+    sidBuilder := @ Json object.
+    _ := @ sidBuilder at: 'id' put: sessionId.
+    sidJson := @ sidBuilder build.
+    widBuilder := @ Json object.
+    _ := @ widBuilder at: 'id' put: listId.
+    widJson := @ widBuilder build.
+    builder := @ Json object.
+    _ := @ builder at: 'session_id' putJson: sidJson.
+    _ := @ builder at: 'widget_id' putJson: widJson.
+    _ := @ builder at: 'main_text' put: mainText.
+    _ := @ builder at: 'secondary_text' put: secondaryText.
+    json := @ builder build.
+    @ grpcClient call: 'industries.loosh.yutani.v1.ListService/AddItem' with: json
+  ]
+
+  method: clearList: listId [
+    | json |
+    json := @ Json sessionId: sessionId widgetId: listId.
+    @ grpcClient call: 'industries.loosh.yutani.v1.ListService/Clear' with: json
+  ]
+
+  # ============================================================================
+  # Layout Operations
+  # ============================================================================
+
+  method: addChild: childId to: layoutId [
+    | sidBuilder flexBuilder itemBuilder builder sidJson flexJson itemJson json _ |
+    sidBuilder := @ Json object.
+    _ := @ sidBuilder at: 'id' put: sessionId.
+    sidJson := @ sidBuilder build.
+    flexBuilder := @ Json object.
+    _ := @ flexBuilder at: 'id' put: layoutId.
+    flexJson := @ flexBuilder build.
+    itemBuilder := @ Json object.
+    _ := @ itemBuilder at: 'id' put: childId.
+    itemJson := @ itemBuilder build.
+    builder := @ Json object.
+    _ := @ builder at: 'session_id' putJson: sidJson.
+    _ := @ builder at: 'flex_id' putJson: flexJson.
+    _ := @ builder at: 'item_id' putJson: itemJson.
+    _ := @ builder at: 'proportion' putNumber: '1'.
+    _ := @ builder at: 'fixed_size' putNumber: '0'.
+    _ := @ builder at: 'focus' putBool: 'false'.
+    json := @ builder build.
+    @ grpcClient call: 'industries.loosh.yutani.v1.LayoutService/FlexAddItem' with: json
+  ]
+
+  method: addChild: childId to: layoutId fixedSize: size [
+    | sidBuilder flexBuilder itemBuilder builder sidJson flexJson itemJson json _ |
+    sidBuilder := @ Json object.
+    _ := @ sidBuilder at: 'id' put: sessionId.
+    sidJson := @ sidBuilder build.
+    flexBuilder := @ Json object.
+    _ := @ flexBuilder at: 'id' put: layoutId.
+    flexJson := @ flexBuilder build.
+    itemBuilder := @ Json object.
+    _ := @ itemBuilder at: 'id' put: childId.
+    itemJson := @ itemBuilder build.
+    builder := @ Json object.
+    _ := @ builder at: 'session_id' putJson: sidJson.
+    _ := @ builder at: 'flex_id' putJson: flexJson.
+    _ := @ builder at: 'item_id' putJson: itemJson.
+    _ := @ builder at: 'proportion' putNumber: '0'.
+    _ := @ builder at: 'fixed_size' putNumber: size.
+    _ := @ builder at: 'focus' putBool: 'false'.
+    json := @ builder build.
+    @ grpcClient call: 'industries.loosh.yutani.v1.LayoutService/FlexAddItem' with: json
+  ]
+
+  method: addChild: childId to: layoutId fixedSize: size focus: shouldFocus [
+    | sidBuilder flexBuilder itemBuilder builder sidJson flexJson itemJson json _ |
+    sidBuilder := @ Json object.
+    _ := @ sidBuilder at: 'id' put: sessionId.
+    sidJson := @ sidBuilder build.
+    flexBuilder := @ Json object.
+    _ := @ flexBuilder at: 'id' put: layoutId.
+    flexJson := @ flexBuilder build.
+    itemBuilder := @ Json object.
+    _ := @ itemBuilder at: 'id' put: childId.
+    itemJson := @ itemBuilder build.
+    builder := @ Json object.
+    _ := @ builder at: 'session_id' putJson: sidJson.
+    _ := @ builder at: 'flex_id' putJson: flexJson.
+    _ := @ builder at: 'item_id' putJson: itemJson.
+    _ := @ builder at: 'proportion' putNumber: '0'.
+    _ := @ builder at: 'fixed_size' putNumber: size.
+    _ := @ builder at: 'focus' putBool: shouldFocus.
+    json := @ builder build.
+    @ grpcClient call: 'industries.loosh.yutani.v1.LayoutService/FlexAddItem' with: json
+  ]
+
+  # ============================================================================
+  # Event Streaming - Native (preferred) or Coproc (fallback)
+  # ============================================================================
+
+  # Native streaming using GrpcClient.serverStream (requires native daemon)
+  # This is the preferred method - uses persistent gRPC connection, no subprocess
+  # The block receives JSON event data for each streamed message
+  method: streamEventsWithBlock: block [
+    | sidBuilder filterBuilder builder sidJson filterJson json _ |
+    sidBuilder := @ Json object.
+    _ := @ sidBuilder at: 'id' put: sessionId.
+    sidJson := @ sidBuilder build.
+    filterBuilder := @ Json object.
+    _ := @ filterBuilder at: 'receive_key_events' putBool: 'true'.
+    _ := @ filterBuilder at: 'receive_mouse_events' putBool: 'true'.
+    _ := @ filterBuilder at: 'receive_resize_events' putBool: 'true'.
+    _ := @ filterBuilder at: 'receive_focus_events' putBool: 'true'.
+    _ := @ filterBuilder at: 'receive_widget_events' putBool: 'true'.
+    filterJson := @ filterBuilder build.
+    builder := @ Json object.
+    _ := @ builder at: 'session_id' putJson: sidJson.
+    _ := @ builder at: 'filter' putJson: filterJson.
+    json := @ builder build.
+    @ grpcClient serverStream: 'industries.loosh.yutani.v1.EventService/Subscribe' with: json handler: block
+  ]
+
+  # High-level streaming with EventDispatcher integration
+  # Creates Event objects and dispatches them through the provided dispatcher
+  # Usage: @ $session runEventLoopWithDispatcher: $dispatcher
+  method: runEventLoopWithDispatcher: aDispatcher [
+    # Store dispatcher so valueWith: can access it
+    eventDispatcher := aDispatcher.
+    # Pass self as handler - Session.valueWith: will dispatch events
+    @ self streamEventsWithBlock: self
+  ]
+
+  # Called by streamEventsWithBlock: for each JSON line
+  # Converts to Event and dispatches through stored eventDispatcher
+  method: valueWith: json [
+    (eventDispatcher notEmpty) ifTrue: [
+      @ eventDispatcher dispatchJson: json
+    ]
+  ]
+
+  # ============================================================================
+  # Fallback: Coproc-based streaming (for when native daemon unavailable)
+  # ============================================================================
+
+  # Fallback coproc-based event streaming (for when native daemon unavailable)
+  # Writes JSON to temp file to avoid shell quoting issues
+  method: startEventStream [
+    | sidBuilder filterBuilder builder sidJson filterJson json tmpFile cmd cmdPart1 cmdPart2 ec f _ |
+    # Build filter JSON using Json builder
+    sidBuilder := @ Json object.
+    _ := @ sidBuilder at: 'id' put: sessionId.
+    sidJson := @ sidBuilder build.
+    filterBuilder := @ Json object.
+    _ := @ filterBuilder at: 'receive_key_events' putBool: 'true'.
+    _ := @ filterBuilder at: 'receive_mouse_events' putBool: 'true'.
+    _ := @ filterBuilder at: 'receive_resize_events' putBool: 'true'.
+    _ := @ filterBuilder at: 'receive_focus_events' putBool: 'true'.
+    _ := @ filterBuilder at: 'receive_widget_events' putBool: 'true'.
+    filterJson := @ filterBuilder build.
+    builder := @ Json object.
+    _ := @ builder at: 'session_id' putJson: sidJson.
+    _ := @ builder at: 'filter' putJson: filterJson.
+    json := @ builder build.
+    # Write JSON to temp file to avoid quoting issues in command string
+    tmpFile := '/tmp/yutani_subscribe_filter.json'.
+    f := @ File for: tmpFile.
+    _ := @ f write: json.
+    # Build grpcurl command: grpcurl -plaintext -d @FILE HOST SERVICE | jq -c .
+    cmdPart1 := @ String concat: 'grpcurl -plaintext -d @' with: tmpFile with: ' '.
+    cmdPart2 := @ String concat: host with: ' industries.loosh.yutani.v1.EventService/Subscribe | jq --unbuffered -c .'.
+    cmd := @ String concat: cmdPart1 with: cmdPart2.
+    # Create and start coproc
+    ec := @ Coproc for: cmd.
+    _ := @ ec startReadOnly.
+    eventCoproc := ec
+  ]
+
+  method: stopEventStream [
+    | ec |
+    ec := eventCoproc.
+    (ec notEmpty) ifTrue: [
+      @ ec terminate.
+      eventCoproc := ''
+    ]
+  ]
+
+  # Process events with a handler (coproc mode). Handler can read $__COPROC_LINE.
+  # Usage: @ $session onEventDo: '@ $obj handleEvent'
+  method: onEventDo: handler [
+    | ec |
+    ec := eventCoproc.
+    (ec isEmpty) ifTrue: [
+      @ self startEventStream.
+      ec := eventCoproc
+    ].
+    @ ec readLinesDo: handler
+  ]
+
+  method: nextEvent [
+    | ec line |
+    ec := eventCoproc.
+    (ec isEmpty) ifTrue: [
+      @ self startEventStream.
+      ec := eventCoproc
+    ].
+    line := @ ec readLine.
+    ^ line
+  ]
+
+
