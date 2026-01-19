@@ -15,7 +15,6 @@
 #   @ Store ensureIndex <name> <path>         - Create virtual column + index
 
 Store subclass: Object
-  pragma: primitiveClass
 
   # Initialize the database
   rawClassMethod: init [

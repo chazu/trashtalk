@@ -76,25 +76,25 @@ echo "  Setting up counters with different values..."
 @ $c2 save
 @ $c3 save
 
-echo "  Testing find with 'value > 4'..."
-found=$(@ Counter find 'value > 4')
-[[ "$found" == *"$c2"* ]] && pass "find 'value > 4' includes c2 (value=7)" || fail "find missing c2"
-[[ "$found" == *"$c3"* ]] && pass "find 'value > 4' includes c3 (value=5)" || fail "find missing c3"
-[[ "$found" != *"$c1"* ]] && pass "find 'value > 4' excludes c1 (value=3)" || fail "find should not include c1"
+echo "  Testing find: with 'value > 4'..."
+found=$(@ Counter find: 'value > 4')
+[[ "$found" == *"$c2"* ]] && pass "find: 'value > 4' includes c2 (value=7)" || fail "find missing c2"
+[[ "$found" == *"$c3"* ]] && pass "find: 'value > 4' includes c3 (value=5)" || fail "find missing c3"
+[[ "$found" != *"$c1"* ]] && pass "find: 'value > 4' excludes c1 (value=3)" || fail "find should not include c1"
 
-echo "  Testing find with 'value = 7'..."
-found=$(@ Counter find 'value = 7')
-[[ "$found" == *"$c2"* ]] && pass "find 'value = 7' includes c2" || fail "find missing c2"
+echo "  Testing find: with 'value = 7'..."
+found=$(@ Counter find: 'value = 7')
+[[ "$found" == *"$c2"* ]] && pass "find: 'value = 7' includes c2" || fail "find missing c2"
 found_count=$(echo "$found" | grep -c . || echo 0)
-[[ "$found_count" == "1" ]] && pass "find 'value = 7' returns exactly 1 result" || fail "Expected 1 result, got $found_count"
+[[ "$found_count" == "1" ]] && pass "find: 'value = 7' returns exactly 1 result" || fail "Expected 1 result, got $found_count"
 
-echo "  Testing find with 'value >= 5'..."
-found=$(@ Counter find 'value >= 5')
-[[ "$found" == *"$c2"* ]] && pass "find 'value >= 5' includes c2 (value=7)" || fail "find missing c2"
-[[ "$found" == *"$c3"* ]] && pass "find 'value >= 5' includes c3 (value=5)" || fail "find missing c3"
+echo "  Testing find: with 'value >= 5'..."
+found=$(@ Counter find: 'value >= 5')
+[[ "$found" == *"$c2"* ]] && pass "find: 'value >= 5' includes c2 (value=7)" || fail "find missing c2"
+[[ "$found" == *"$c3"* ]] && pass "find: 'value >= 5' includes c3 (value=5)" || fail "find missing c3"
 
-echo "  Testing find with no predicate (same as findAll)..."
-found=$(@ Counter find '')
+echo "  Testing find: with no predicate (same as findAll)..."
+found=$(@ Counter find: '')
 all=$(@ Counter findAll)
 [[ "$found" == "$all" ]] && pass "find with empty predicate equals findAll" || fail "find empty != findAll"
 
