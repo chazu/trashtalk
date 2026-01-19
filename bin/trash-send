@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# trash-send - Dispatch a message send from native plugins
+#
+# Usage: trash-send <receiver> <selector> [args...]
+#
+# This script is called by native Go plugins when they need to send
+# messages to objects that they can't handle natively (e.g., calls to
+# Runtime, String, or other classes).
+
+# Don't try to connect to daemon from here - we're being called BY the daemon
+export TRASHTALK_DISABLE_NATIVE=1
+
+# Suppress loading messages - we only want the result on stdout
+export BSFL_QUIET=1
+export TRASHTALK_QUIET=1
+
+# Find the trashtalk installation
+TRASH_DIR="${TRASHTALK_DIR:-$HOME/.trashtalk}"
+
+# Source the runtime with loading messages suppressed
+{
+  source "$TRASH_DIR/lib/trash.bash"
+} 2>/dev/null
+
+# Dispatch the message (suppress info messages to stderr)
+@ "$@" 2>/dev/null

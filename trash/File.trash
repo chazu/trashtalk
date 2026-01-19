@@ -1,7 +1,6 @@
 # File - File system operations
 # Provides an interface for reading, writing, and managing files
 File subclass: Object
-  pragma: primitiveClass
   instanceVars: path:''
 
   # Create a File object for a given path
