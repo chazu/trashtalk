@@ -12,7 +12,6 @@
 #     classMethod: installCommand [ ^ "brew install jq" ]
 #
 Tool subclass: Object
-  pragma: primitiveClass
 
   # Override in subclasses to return the command name
   rawClassMethod: name [

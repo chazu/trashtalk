@@ -7,7 +7,6 @@
 #   @ Runtime create: 'Counter' id: id
 #
 Runtime subclass: Object
-  pragma: primitiveClass
 
   # ==========================================
   # Context Access

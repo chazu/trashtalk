@@ -7,7 +7,6 @@
 #   pid := @ Shell spawn: 'sleep 10'
 #
 Shell subclass: Object
-  pragma: primitiveClass
 
   # ==========================================
   # Simple Execution
