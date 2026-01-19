@@ -3,12 +3,16 @@
 Debuggable trait
 
   # Output debug message to stderr with timestamp
+  # Only outputs if TRASH_DEBUG is set and non-zero
   # Usage: @ self debug: 'Something happened'
   method: debug: message [
-    | timestamp output |
-    timestamp := @ Time nowFormatted: '%Y-%m-%d %H:%M:%S'.
-    output := "[" , timestamp , "] DEBUG (" , self , "): " , message.
-    @ Console error: output
+    | debugFlag timestamp output |
+    debugFlag := @ Env get: 'TRASH_DEBUG' default: '1'.
+    (debugFlag == '0') ifFalse: [
+      timestamp := @ Time nowFormatted: '%Y-%m-%d %H:%M:%S'.
+      output := "[" , timestamp , "] DEBUG (" , self , "): " , message.
+      @ Console error: output
+    ]
   ]
 
   # Trace a method call

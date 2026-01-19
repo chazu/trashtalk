@@ -1584,8 +1584,32 @@ def expr_gen($locals; $ivars; $cvars):
   elif .type == "json_primitive" then
     # JSON primitive operations - generate jq pipelines
     (.receiver | expr_gen($locals; $ivars; $cvars)) as $recv |
-    # Quote receiver if it's a variable expansion
+    # Determine how to pipe receiver to jq:
+    # - Variables ($...) need: echo "$var" |
+    # - Message sends (@...) need: $( @ ... ) | (no echo, wrap in subshell)
+    # - Already-evaluated subshells ($(...)) need: echo "$(...)"|
+    (if ($recv | test("^@")) then
+      # Message send - needs subshell wrapper, no echo
+      { "prefix": "$(", "recv": $recv, "suffix": ") |" }
+    elif ($recv | test("^\\$")) then
+      # Variable or subshell - needs echo with quotes
+      { "prefix": "$(echo \"", "recv": $recv, "suffix": "\" |" }
+    else
+      # Literal or other - use echo
+      { "prefix": "$(echo ", "recv": $recv, "suffix": " |" }
+    end) as $pipe_recv |
+    # For backward compat, also set quoted_recv
     (if ($recv | test("^\\$")) then "\"\($recv)\"" else $recv end) as $quoted_recv |
+    # Helper: generate proper jq pipe - handles message sends vs variables/literals
+    # Message sends (@...) are executed directly, others need echo
+    def jq_pipe($jq_cmd):
+      if ($recv | test("^@")) then
+        # Message send - execute directly and pipe to jq
+        "$(\($recv) | \($jq_cmd))"
+      else
+        # Variable or literal - use echo
+        "$(echo \($quoted_recv) | \($jq_cmd))"
+      end;
     # Generate arguments - for jq --arg, strings need raw values without outer quotes
     # But variables and other expressions need proper quoting
     def gen_jq_arg($arg):
@@ -1599,68 +1623,68 @@ def expr_gen($locals; $ivars; $cvars):
     ([(.args // [])[] | . as $a | gen_jq_arg($a)]) as $arg_codes |
     if .operation == "arrayPush" then
       # arr arrayPush: val -> $(echo "$arr" | jq -c --arg v "$val" '. + [$v]')
-      "$(echo \($quoted_recv) | jq -c --arg v \"\($arg_codes[0])\" '. + [$v]')"
+      jq_pipe("jq -c --arg v \"\($arg_codes[0])\" '. + [$v]'")
     elif .operation == "arrayAt" then
       # arr arrayAt: idx -> $(echo "$arr" | jq -r --argjson i "$idx" '.[$i] // empty')
-      "$(echo \($quoted_recv) | jq -r --argjson i \"\($arg_codes[0])\" '.[$i] // empty')"
+      jq_pipe("jq -r --argjson i \"\($arg_codes[0])\" '.[$i] // empty'")
     elif .operation == "arrayAtPut" then
       # arr arrayAt: idx put: val -> $(echo "$arr" | jq -c --argjson i "$idx" --arg v "$val" '.[$i] = $v')
-      "$(echo \($quoted_recv) | jq -c --argjson i \"\($arg_codes[0])\" --arg v \"\($arg_codes[1])\" '.[$i] = $v')"
+      jq_pipe("jq -c --argjson i \"\($arg_codes[0])\" --arg v \"\($arg_codes[1])\" '.[$i] = $v'")
     elif .operation == "arrayRemoveAt" then
       # arr arrayRemoveAt: idx -> $(echo "$arr" | jq -c --argjson i "$idx" 'del(.[$i])')
-      "$(echo \($quoted_recv) | jq -c --argjson i \"\($arg_codes[0])\" 'del(.[$i])')"
+      jq_pipe("jq -c --argjson i \"\($arg_codes[0])\" 'del(.[$i])'")
     elif .operation == "arrayLength" then
       # arr arrayLength -> $(echo "$arr" | jq 'length')
-      "$(echo \($quoted_recv) | jq 'length')"
+      jq_pipe("jq 'length'")
     elif .operation == "arrayFirst" then
       # arr arrayFirst -> $(echo "$arr" | jq -r '.[0] // empty')
-      "$(echo \($quoted_recv) | jq -r '.[0] // empty')"
+      jq_pipe("jq -r '.[0] // empty'")
     elif .operation == "arrayLast" then
       # arr arrayLast -> $(echo "$arr" | jq -r '.[-1] // empty')
-      "$(echo \($quoted_recv) | jq -r '.[-1] // empty')"
+      jq_pipe("jq -r '.[-1] // empty'")
     elif .operation == "arrayIsEmpty" then
       # arr arrayIsEmpty -> $(echo "$arr" | jq 'length == 0')
-      "$(echo \($quoted_recv) | jq 'length == 0')"
+      jq_pipe("jq 'length == 0'")
     elif .operation == "objectAt" then
       # obj objectAt: key -> $(echo "$obj" | jq -r --arg k "$key" '.[$k] // empty')
-      "$(echo \($quoted_recv) | jq -r --arg k \"\($arg_codes[0])\" '.[$k] // empty')"
+      jq_pipe("jq -r --arg k \"\($arg_codes[0])\" '.[$k] // empty'")
     elif .operation == "objectAtPut" then
       # obj objectAt: key put: val -> $(echo "$obj" | jq -c --arg k "$key" --arg v "$val" '.[$k] = $v')
-      "$(echo \($quoted_recv) | jq -c --arg k \"\($arg_codes[0])\" --arg v \"\($arg_codes[1])\" '.[$k] = $v')"
+      jq_pipe("jq -c --arg k \"\($arg_codes[0])\" --arg v \"\($arg_codes[1])\" '.[$k] = $v'")
     elif .operation == "objectHasKey" then
       # obj objectHasKey: key -> $(echo "$obj" | jq --arg k "$key" 'has($k)')
-      "$(echo \($quoted_recv) | jq --arg k \"\($arg_codes[0])\" 'has($k)')"
+      jq_pipe("jq --arg k \"\($arg_codes[0])\" 'has($k)'")
     elif .operation == "objectRemoveKey" then
       # obj objectRemoveKey: key -> $(echo "$obj" | jq -c --arg k "$key" 'del(.[$k])')
-      "$(echo \($quoted_recv) | jq -c --arg k \"\($arg_codes[0])\" 'del(.[$k])')"
+      jq_pipe("jq -c --arg k \"\($arg_codes[0])\" 'del(.[$k])'")
     elif .operation == "objectKeys" then
       # obj objectKeys -> $(echo "$obj" | jq -c 'keys')
-      "$(echo \($quoted_recv) | jq -c 'keys')"
+      jq_pipe("jq -c 'keys'")
     elif .operation == "objectValues" then
       # obj objectValues -> $(echo "$obj" | jq -c '[.[]]')
-      "$(echo \($quoted_recv) | jq -c '[.[]]')"
+      jq_pipe("jq -c '[.[]]'")
     elif .operation == "objectLength" then
       # obj objectLength -> $(echo "$obj" | jq 'length')
-      "$(echo \($quoted_recv) | jq 'length')"
+      jq_pipe("jq 'length'")
     elif .operation == "objectIsEmpty" then
       # obj objectIsEmpty -> $(echo "$obj" | jq 'length == 0')
-      "$(echo \($quoted_recv) | jq 'length == 0')"
+      jq_pipe("jq 'length == 0'")
     elif .operation == "stringToJsonArray" then
       # str stringToJsonArray -> $(echo "$str" | jq -Rc '[., inputs]')
       # Converts newline-separated string to JSON array
-      "$(echo \($quoted_recv) | jq -Rc '[., inputs]')"
+      jq_pipe("jq -Rc '[., inputs]'")
     elif .operation == "arrayPushJson" then
       # arr arrayPushJson: jsonVal -> $(echo "$arr" | jq -c --argjson v "$jsonVal" '. + [$v]')
       # Pushes raw JSON value without quoting (for nested objects/arrays)
-      "$(echo \($quoted_recv) | jq -c --argjson v \"\($arg_codes[0])\" '. + [$v]')"
+      jq_pipe("jq -c --argjson v \"\($arg_codes[0])\" '. + [$v]'")
     elif .operation == "objectAtPutJson" then
       # obj objectAt: key putJson: jsonVal -> $(echo "$obj" | jq -c --arg k "$key" --argjson v "$jsonVal" '.[$k] = $v')
       # Sets key to raw JSON value without quoting (for nested objects/arrays)
-      "$(echo \($quoted_recv) | jq -c --arg k \"\($arg_codes[0])\" --argjson v \"\($arg_codes[1])\" '.[$k] = $v')"
+      jq_pipe("jq -c --arg k \"\($arg_codes[0])\" --argjson v \"\($arg_codes[1])\" '.[$k] = $v'")
     elif .operation == "jsonPath" then
       # json jsonPath: 'a.b.c' -> $(echo "$json" | jq -r '.a.b.c // empty')
       # Extracts value at dot-separated path
-      "$(echo \($quoted_recv) | jq -r '.\($arg_codes[0]) // empty')"
+      jq_pipe("jq -r '.\($arg_codes[0]) // empty'")
     else
       "# ERROR: unknown json_primitive operation \(.operation)"
     end
