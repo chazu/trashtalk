@@ -1,0 +1,169 @@
+package: Yutani
+
+Application subclass: Object
+  instanceVars: session:'' dispatcher:'' rootWidget:'' running:''
+
+  # Launch application on default host
+  classMethod: launch [
+    @ self launchOn: 'localhost:7755'
+  ]
+
+  # Launch application on specified host
+  classMethod: launchOn: host [
+    | app session dispatcher |
+
+    # Create application instance (self is the class in classMethod)
+    app := @ self new.
+
+    # Connect to Yutani
+    session := @ Yutani::Session connectTo: host.
+    (session isEmpty) ifTrue: [
+      @ Console error: 'Error: Could not connect to Yutani server'.
+      ^ nil
+    ].
+
+    # Create dispatcher
+    dispatcher := @ Yutani::EventDispatcher new.
+
+    # Set up application
+    @ app _setSession: session.
+    @ app _setDispatcher: dispatcher.
+    @ app _setRunning: 'true'.
+
+    # Call user's setup method
+    @ app setup.
+
+    # Run event loop
+    @ app run.
+
+    # Cleanup
+    @ app cleanup
+  ]
+
+  # Subclasses override this to build UI
+  method: setup [
+    ^ nil
+  ]
+
+  # Main event loop - tries native streaming first, falls back to coproc
+  method: run [
+    | result |
+    # Try native streaming first (requires native GrpcClient.dylib and daemon)
+    result := @ self _tryNativeEventLoop.
+    # If native succeeded (non-empty result), we're done
+    (result notEmpty) ifTrue: [^ result].
+    # Fallback: coproc-based event loop
+    @ self _runCoprocEventLoop
+  ]
+
+  # Native event loop using GrpcClient.serverStream
+  method: _tryNativeEventLoop [
+    @ session runEventLoopWithDispatcher: dispatcher
+  ]
+
+  # Fallback: coproc-based event loop (uses grpcurl subprocess)
+  # Handler embeds instance IDs directly to avoid global variables
+  method: _runCoprocEventLoop [
+    | handler d s selfId |
+    d := dispatcher.
+    s := session.
+    selfId := @ self id.
+    # Build handler with embedded instance IDs
+    handler := '@ "' , d , '" dispatchJson: "$__COPROC_LINE"; if [[ $(@ "' , d , '" isRunning) != "true" ]]; then @ "' , selfId , '" stop; fi'.
+    @ s onEventDo: handler
+  ]
+
+  # Stop the application
+  method: stop [
+    running := 'false'
+  ]
+
+  # Cleanup resources
+  method: cleanup [
+    (dispatcher notEmpty) ifTrue: [
+      @ dispatcher cleanup
+    ].
+    (session notEmpty) ifTrue: [
+      @ session disconnect
+    ]
+  ]
+
+  # === Widget Creation Helpers ===
+  # These create widgets with dispatcher already set
+
+  method: createTextView: title [
+    | widget |
+    widget := $(@ Yutani::TextView titled: title inSession: session).
+    @ widget setDispatcher: dispatcher.
+    ^ widget
+  ]
+
+  method: createTextView: title text: initialText [
+    | widget |
+    widget := $(@ Yutani::TextView titled: title text: initialText inSession: session).
+    @ widget setDispatcher: dispatcher.
+    ^ widget
+  ]
+
+  method: createInputField: label [
+    | widget |
+    widget := $(@ Yutani::InputField labeled: label inSession: session).
+    @ widget setDispatcher: dispatcher.
+    ^ widget
+  ]
+
+  method: createInputField: label placeholder: placeholder [
+    | widget |
+    widget := $(@ Yutani::InputField labeled: label placeholder: placeholder inSession: session).
+    @ widget setDispatcher: dispatcher.
+    ^ widget
+  ]
+
+  method: createListView: title [
+    | widget |
+    widget := $(@ Yutani::ListView titled: title inSession: session).
+    @ widget setDispatcher: dispatcher.
+    ^ widget
+  ]
+
+  method: createVerticalLayout [
+    | widget |
+    widget := $(@ Yutani::VerticalLayout inSession: session).
+    @ widget setDispatcher: dispatcher.
+    ^ widget
+  ]
+
+  method: createHorizontalLayout [
+    | widget |
+    widget := $(@ Yutani::HorizontalLayout inSession: session).
+    @ widget setDispatcher: dispatcher.
+    ^ widget
+  ]
+
+  # Set root widget
+  method: setRoot: widget [
+    rootWidget := widget
+    @ widget setAsRoot
+  ]
+
+  # === Event Handler Registration ===
+
+  # Register global key handler
+  method: onKeyDo: handler [
+    @ dispatcher onKeyDo: handler
+  ]
+
+  # Register global mouse handler
+  method: onMouseDo: handler [
+    @ dispatcher onMouseDo: handler
+  ]
+
+  # Accessors
+  method: getSession [ ^ session ]
+  method: getDispatcher [ ^ dispatcher ]
+  method: getRootWidget [ ^ rootWidget ]
+
+  # Private setters
+  method: _setSession: v [ session := v ]
+  method: _setDispatcher: v [ dispatcher := v ]
+  method: _setRunning: v [ running := v ]

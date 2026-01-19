@@ -7,6 +7,7 @@
 #   line := @ Console readLine
 #
 Console subclass: Object
+  pragma: primitiveClass
 
   # ==========================================
   # Output Methods

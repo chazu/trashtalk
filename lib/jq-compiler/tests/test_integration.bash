@@ -68,10 +68,10 @@ run_test "parse produces object" "true" \
     "$(echo "$AST" | jq 'type == "object"' 2>/dev/null || echo false)"
 
 run_test "parse has name field" "true" \
-    "$(echo "$AST" | jq '.class | has("name")' 2>/dev/null || echo false)"
+    "$(echo "$AST" | jq 'has("name")' 2>/dev/null || echo false)"
 
 run_test "parse has methods field" "true" \
-    "$(echo "$AST" | jq '.class | has("methods")' 2>/dev/null || echo false)"
+    "$(echo "$AST" | jq 'has("methods")' 2>/dev/null || echo false)"
 
 # ------------------------------------------------------------------------------
 # End-to-End Execution Tests

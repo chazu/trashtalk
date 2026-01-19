@@ -152,42 +152,89 @@ test_pooling_config() {
 run_test test_pooling_config
 
 # ------------------------------------------------------------------------------
-# Test 4: Streaming methods return error in bash-only mode
+# Test 4: Streaming methods dispatch to native and validate input
 # ------------------------------------------------------------------------------
-# Note: Streaming methods require native plugin which was removed in v1.0.
-# In bash-only mode, they return an error indicating the limitation.
+# Note: These methods require the native Procyon plugin (GrpcClient.dylib).
+# When the plugin exists, calls are dispatched to the native implementation
+# which validates input format and connection.
 
-test_streaming_bash_mode() {
+test_streaming_native_dispatch() {
     local client
     client=$(@ GrpcClient connectTo: 'localhost:50051')
 
-    # Test serverStream - should return error about requiring native plugin
+    # Test serverStream - native impl validates method format
+    # Method format should be service/Method (not service.Method)
     local output
     output=$(@ $client serverStream: 'test.Service/StreamMethod' with: '{}' handler: 'block' 2>&1)
-    if [[ "$output" == *"requires native"* ]] || [[ "$output" == *"not supported"* ]]; then
-        pass "serverStream returns appropriate error in bash mode"
+    local exit_code=$?
+    # Expect error (connection refused or service not found since no real server)
+    if [[ $exit_code -ne 0 ]]; then
+        pass "serverStream dispatches to native (returns error without server)"
     else
-        pass "serverStream returns error in bash mode"
+        fail "serverStream dispatches to native" "non-zero exit code" "$output (exit: $exit_code)"
     fi
 
     # Test clientStream
     output=$(@ $client clientStream: 'test.Service/StreamMethod' handler: 'block' 2>&1)
-    if [[ "$output" == *"requires native"* ]] || [[ "$output" == *"not supported"* ]]; then
-        pass "clientStream returns appropriate error in bash mode"
+    exit_code=$?
+    if [[ $exit_code -ne 0 ]]; then
+        pass "clientStream dispatches to native (returns error without server)"
     else
-        pass "clientStream returns error in bash mode"
+        fail "clientStream dispatches to native" "non-zero exit code" "$output (exit: $exit_code)"
     fi
 
     # Test bidiStream
     output=$(@ $client bidiStream: 'test.Service/StreamMethod' handler: 'block' 2>&1)
-    if [[ "$output" == *"requires native"* ]] || [[ "$output" == *"not supported"* ]]; then
-        pass "bidiStream returns appropriate error in bash mode"
+    exit_code=$?
+    if [[ $exit_code -ne 0 ]]; then
+        pass "bidiStream dispatches to native (returns error without server)"
     else
-        pass "bidiStream returns error in bash mode"
+        fail "bidiStream dispatches to native" "non-zero exit code" "$output (exit: $exit_code)"
     fi
 }
 
-run_test test_streaming_bash_mode
+run_test test_streaming_native_dispatch
+
+# ------------------------------------------------------------------------------
+# Test 5: Pragma markers are correctly set
+# ------------------------------------------------------------------------------
+
+test_pragma_markers() {
+    # Check procyonOnly markers for streaming methods
+    if [[ "${__GrpcClient__serverStream_with_handler___procyonOnly:-}" == "1" ]]; then
+        pass "serverStream has procyonOnly marker"
+    else
+        fail "serverStream has procyonOnly marker" "1" "${__GrpcClient__serverStream_with_handler___procyonOnly:-NOT SET}"
+    fi
+
+    if [[ "${__GrpcClient__clientStream_handler___procyonOnly:-}" == "1" ]]; then
+        pass "clientStream has procyonOnly marker"
+    else
+        fail "clientStream has procyonOnly marker" "1" "${__GrpcClient__clientStream_handler___procyonOnly:-NOT SET}"
+    fi
+
+    if [[ "${__GrpcClient__bidiStream_handler___procyonOnly:-}" == "1" ]]; then
+        pass "bidiStream has procyonOnly marker"
+    else
+        fail "bidiStream has procyonOnly marker" "1" "${__GrpcClient__bidiStream_handler___procyonOnly:-NOT SET}"
+    fi
+
+    # Check procyonNative markers on public methods
+    # procyonNative: Bash uses rawMethod body, Procyon uses native impl
+    if [[ "${__GrpcClient__call_with___procyonNative:-}" == "1" ]]; then
+        pass "call:with: has procyonNative marker"
+    else
+        fail "call:with: has procyonNative marker" "1" "${__GrpcClient__call_with___procyonNative:-NOT SET}"
+    fi
+
+    if [[ "${__GrpcClient__listServices__procyonNative:-}" == "1" ]]; then
+        pass "listServices has procyonNative marker"
+    else
+        fail "listServices has procyonNative marker" "1" "${__GrpcClient__listServices__procyonNative:-NOT SET}"
+    fi
+}
+
+run_test test_pragma_markers
 
 # ------------------------------------------------------------------------------
 # Test 6: Unary call (requires actual gRPC server)
