@@ -507,6 +507,7 @@ def parseAdvice:
   end;
 
 # Parse: pragma: pragmaName (class-level pragma)
+# Valid class pragmas: primitiveClass
 def parseClassPragma:
   if current.value == "pragma:" then
     # Capture location from pragma: keyword

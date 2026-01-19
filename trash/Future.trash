@@ -1,5 +1,6 @@
 # Future - Simple async computation with result retrieval
 Future subclass: Object
+  pragma: primitiveClass
   instanceVars: command pid result_file status exit_code
 
   # Create a future for a command (does not start it yet)

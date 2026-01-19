@@ -1,5 +1,6 @@
 # Object - Base class for all Trashtalk objects
 Object subclass: nil
+  pragma: primitiveClass
 
   # Create a new instance of this class
   # Subclasses inherit this - no need to define your own unless custom init needed

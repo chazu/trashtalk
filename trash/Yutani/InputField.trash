@@ -1,0 +1,60 @@
+package: Yutani
+
+InputField subclass: Yutani::Widget
+  instanceVars: label:'' placeholder:''
+
+  # Create a new InputField with given label
+  classMethod: labeled: label inSession: sess [
+    | instance wid |
+    instance := @ Yutani::InputField new.
+    @ instance setSession: sess.
+    @ instance setLabel: label.
+    wid := @ sess createInputField: label.
+    @ instance setWidgetId: wid.
+    ^ instance
+  ]
+
+  # Create a new InputField with label and placeholder
+  classMethod: labeled: label placeholder: placeholder inSession: sess [
+    | instance wid |
+    instance := @ Yutani::InputField new.
+    @ instance setSession: sess.
+    @ instance setLabel: label.
+    @ instance setPlaceholder: placeholder.
+    wid := @ sess createInputFieldWithPlaceholder: label placeholder: placeholder.
+    @ instance setWidgetId: wid.
+    ^ instance
+  ]
+
+  # Label accessor
+  method: getLabel [
+    ^ label
+  ]
+
+  method: setLabel: l [
+    label := l
+  ]
+
+  # Placeholder accessor
+  method: getPlaceholder [
+    ^ placeholder
+  ]
+
+  method: setPlaceholder: p [
+    placeholder := p
+  ]
+
+  # Get current text from server
+  method: getText [
+    ^ @ session getInputText: widgetId.
+  ]
+
+  # Set text (updates server)
+  method: setText: newText [
+    @ session setInputText: newText on: widgetId.
+  ]
+
+  # Clear input
+  method: clear [
+    @ session setInputText: '' on: widgetId.
+  ]
