@@ -7,7 +7,6 @@
 #   status := @ Http status: 'https://example.com'
 #
 Http subclass: Object
-  pragma: primitiveClass
 
   # ==========================================
   # Basic Methods
