@@ -2006,7 +2006,8 @@ function is_a() {
 }
 
 # Include a trait (mixin)
-function include() {
+# Named include_trait to avoid collision with common shell patterns like "include ~/.workrc"
+function include_trait() {
   local trait_name="$1"
   local trait_file="$TRASHDIR/traits/$trait_name"
 
