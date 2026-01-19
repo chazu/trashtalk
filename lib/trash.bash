@@ -1641,7 +1641,7 @@ function send {
     # For class calls (no instance), try class methods FIRST
     # This prevents instance method `exists` from shadowing class method `exists:`
     if [[ -z "$_INSTANCE" ]]; then
-      local class_method_func="${func_prefix}__class__${_SELECTOR}"
+      local class_method_func="${func_prefix}__class__${normalized_selector}"
       if declare -F "$class_method_func" >/dev/null 2>&1; then
         msg_debug "Calling class method: $class_method_func"
         "$class_method_func" "$@"
@@ -1652,7 +1652,7 @@ function send {
     fi
 
     # Try namespaced instance method
-    local namespaced_func="${func_prefix}__${_SELECTOR}"
+    local namespaced_func="${func_prefix}__${normalized_selector}"
     if declare -F "$namespaced_func" >/dev/null 2>&1; then
       msg_debug "Calling namespaced function: $namespaced_func"
       "$namespaced_func" "$@"
@@ -1662,7 +1662,7 @@ function send {
     fi
 
     # Try class method (for instance calls that might fall through)
-    local class_method_func="${func_prefix}__class__${_SELECTOR}"
+    local class_method_func="${func_prefix}__class__${normalized_selector}"
     if declare -F "$class_method_func" >/dev/null 2>&1; then
       msg_debug "Calling class method: $class_method_func"
       "$class_method_func" "$@"
@@ -1686,7 +1686,7 @@ function send {
           fi
         fi
         # Try trait class method first (for class-level calls)
-        local trait_class_func="__${trait_name}__class__${_SELECTOR}"
+        local trait_class_func="__${trait_name}__class__${normalized_selector}"
         if declare -F "$trait_class_func" >/dev/null 2>&1; then
           msg_debug "Calling trait class method: $trait_class_func"
           "$trait_class_func" "$@"
@@ -1695,7 +1695,7 @@ function send {
           return $exit_code
         fi
         # Try trait instance method
-        local trait_func="__${trait_name}__${_SELECTOR}"
+        local trait_func="__${trait_name}__${normalized_selector}"
         if declare -F "$trait_func" >/dev/null 2>&1; then
           msg_debug "Calling trait method: $trait_func"
           "$trait_func" "$@"
