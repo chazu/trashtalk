@@ -1,0 +1,39 @@
+package: Yutani
+
+FlexLayout subclass: Yutani::Widget
+  instanceVars: direction:'' children:''
+
+  # Direction accessor
+  method: getDirection [
+    ^ direction
+  ]
+
+  method: setDirection: d [
+    direction := d
+  ]
+
+  # Add a child widget (proportional sizing)
+  method: addChild: child [
+    | childWid |
+    childWid := @ child getWidgetId.
+    @ session addChild: childWid to: widgetId.
+  ]
+
+  # Add a child widget with fixed size
+  method: addChild: child fixedSize: size [
+    | childWid |
+    childWid := @ child getWidgetId.
+    @ session addChild: childWid to: widgetId fixedSize: size.
+  ]
+
+  # Add a child widget with fixed size and focus
+  method: addChild: child fixedSize: size focus: shouldFocus [
+    | childWid |
+    childWid := @ child getWidgetId.
+    @ session addChild: childWid to: widgetId fixedSize: size focus: shouldFocus.
+  ]
+
+  # Set this layout as the root widget
+  method: setAsRoot [
+    @ session setRoot: widgetId.
+  ]
