@@ -7,11 +7,31 @@
 
 A Smalltalk-inspired message-passing system for Bash.
 
-Trashtalk brings object-oriented programming concepts to shell scripting: message passing, inheritance, traits, and instance persistence - all compiled to namespaced Bash functions.
+Trashtalk implements message passing, inheritance, traits, aspect-oriented programming and persistent instances - with bash.
+
+## Why would you do this?
+
+I'm not a big fan of bash. I think POSIX is the computing environment we deserve, not the one we need. Bash's ubiquity is its strongest selling point, so strong in fact that bash scripting remains the more-or-less correct choice for a lot of situations, especially in my line of work. This really gets my goat.
+
+I've seen others twist bash/sh into strange loops to give themselves superpowers - both in-person and from afar: a few small tricks, conventions or utilities can become a force-multiplier for software authorship. _Personal_ software authorship. Trashtalk started as a minimal message-passing implementation in bash, intended as an experiment in the direction of enabling expressive personal tool-making in the ugly substrate of shell-scripting.
+
+It lingered in my dotfiles repo for years.
+
+Then LLMs came. I said "Hey Claude, what do you think about this gewgaw over here?" Claude said "You're absolutely right!" and we were off - it morphed into a DSL transpiled into bash, then I added a compiler written in golang to provide native compilation for a subset of the DSL, then I started trying to add a TUI-based Smalltalk-style IDE on top of it. Things continued to get weirder and weirder, each day I travelled half the distance between here and v1.0, and eventually it dawned on me that I'd gone too far, so I dialed back Trashtalk and jettisoned the non-bash bits. More precisely, I spun them off into their own projects. Anyhow, here we are.
+
+## What's it good for?
+
+So far I've only really used Trashtalk to work on Trashtalk. I'll let you know when that changes. Until then, some things I'm thinking about doing include:
+
+- Improving the `@ Trash edit <class>` flow to provide better feedback when your code contains errors. It'd be particularly nice if TestCases in the same code unit executed on save and spat you back into the editor when they failed
+- Exploring the idea of an acme-like editor as a subtitute for the whiz-bang TUI I tried so desperately to make work
+- Improving the SQLite instance persistence layer, maybe adding some kind of superadjacent analytical layer using duckdb
+
+If you have any ideas that aren't terribly rude, I'd love to hear them!
 
 ## Architecture
 
-Trashtalk uses a **DSL compiler** that transforms Smalltalk-inspired source files (`.trash`) into namespaced Bash functions. This avoids polluting the global namespace while providing clean OOP semantics.
+Trashtalk uses a **DSL compiler** that transforms Smalltalk-inspired source files (`.trash`) into namespaced Bash functions. This way, we implement message passing without polluting the global namespace. Or, well, we pollute it _in a principled fashion_.
 
 ```
 ┌─────────────────┐     ┌──────────────┐     ┌─────────────────┐
@@ -299,8 +319,6 @@ RECOMMENDATIONS
 | `Future` | Async computation with result retrieval |
 | `Process` | External OS process management (subprocess-like) |
 | `ReplServer` | Socket-based REPL server for Emacs integration |
-| `Tuplespace` | Linda-style tuple coordination (SQLite backend) |
-| `Twin` | Window manager integration (twsendmsg) |
 
 ### Traits
 
@@ -322,7 +340,9 @@ RECOMMENDATIONS
 ```
 
 ## Instance Persistence
+TODO Hang on i think i mullered the Persistable trait in my last "refactor". Gotta fix that.
 
+TODO And wait, where's AOP? Did I nuke AOP accidentally? Bring that back!
 Instances are stored in SQLite via the Store class:
 
 ```bash
@@ -372,7 +392,7 @@ Or with `use-package`:
 ```
 
 ### REPL Server
-
+TODO Think we nuked it
 The REPL server provides interactive evaluation, hot reloading, and introspection from Emacs.
 
 **Start the server** in a terminal:
@@ -384,7 +404,7 @@ The REPL server provides interactive evaluation, hot reloading, and introspectio
 **Connect from Emacs** with `C-c C-z` in any `.trash` buffer.
 
 ### Key Bindings
-
+TODO Lord have mercy this is too much
 | Key | Command | Description |
 |-----|---------|-------------|
 | `C-c C-c` | `trashtalk-eval-defun` | Evaluate method at point |
@@ -397,7 +417,7 @@ The REPL server provides interactive evaluation, hot reloading, and introspectio
 | `C-c C-m` | `trashtalk-methods-for-class` | List methods for a class |
 
 ### REPL Protocol
-
+TODO Didn't we kill this??? Shit should we bring it back?
 The server uses a simple line-based protocol over a Unix socket (`/tmp/trashtalk-repl.sock`):
 
 ```
@@ -438,7 +458,7 @@ echo "EVAL:@ Counter new" | nc -U /tmp/trashtalk-repl.sock
 
 ## Version
 
-0.1.0
+Supposedly v1.0.0
 
 ## Author
 
