@@ -199,35 +199,6 @@ Debuggable trait
   ]
 ```
 
-### Aspect-Oriented Programming (AOP)
-
-Trashtalk supports before/after advice for cross-cutting concerns like logging, validation, or notifications:
-
-```smalltalk
-Account subclass: Object
-  instanceVars: balance:0
-
-  method: withdraw: amount [
-    balance := balance - amount
-  ]
-
-  method: deposit: amount [
-    balance := balance + amount
-  ]
-
-  # Run before withdraw: executes
-  before: withdraw: do: [
-    @ self log: "Attempting withdrawal"
-  ]
-
-  # Run after deposit: completes
-  after: deposit: do: [
-    @ self notifyBalanceChanged
-  ]
-```
-
-Advice hooks execute automatically - `before:do:` runs prior to the method, `after:do:` runs after it returns.
-
 ## Compiling Classes
 
 Compile a single class:
@@ -369,7 +340,9 @@ RECOMMENDATIONS
 ```
 
 ## Instance Persistence
+TODO Hang on i think i mullered the Persistable trait in my last "refactor". Gotta fix that.
 
+TODO And wait, where's AOP? Did I nuke AOP accidentally? Bring that back!
 Instances are stored in SQLite via the Store class:
 
 ```bash
