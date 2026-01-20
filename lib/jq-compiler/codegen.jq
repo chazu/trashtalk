@@ -2200,12 +2200,15 @@ def generateMetadata:
   funcPrefix as $prefix |
   qualifiedName as $qname |
   # Qualify parent name with package if unqualified and class is in a package
-  # Exception: core classes like "Object" should never be qualified
-  (if .parent == null or .parent == "" then ""
-   elif (.parent | contains("::")) then .parent
-   elif .parent == "Object" then "Object"
-   elif .package != null then "\(.package)::\(.parent)"
-   else .parent end) as $qualifiedParent |
+  # Exception: core/global classes should never be qualified
+  # These are base classes that exist at the global level, not in any package
+  .parent as $parentName |
+  ["Object", "Tool", "TestCase"] as $globalClasses |
+  (if $parentName == null or $parentName == "" then ""
+   elif ($parentName | contains("::")) then $parentName
+   elif ($globalClasses | index($parentName)) then $parentName
+   elif .package != null then "\(.package)::\($parentName)"
+   else $parentName end) as $qualifiedParent |
   if .isTrait then
     "\($prefix)__is_trait=\"1\"",
     "\($prefix)__sourceHash=\"\(.sourceHash // "")\"",
@@ -2472,6 +2475,7 @@ def transformMethodBody($className; $isRaw):
       gsub("> /"; ">/") |              # Remove space after > before path
       gsub("< (?<c>[^<])"; "<\(.c)") |  # Remove space after < unless followed by < (process substitution)
       gsub("(?<a>[a-zA-Z0-9_]) = (?<c>[0-9\"'$])"; "\(.a)=\(.c)") |  # Fix assignments: var = "val" → var="val"
+      gsub("(?<a>[a-zA-Z0-9_]) =(?<c>[\"'$])"; "\(.a)=\(.c)") |  # Fix assignments: var ="val" → var="val"
       gsub("(?<a>[a-zA-Z0-9_])= (?<c>true|false|yes|no)(?<d>[ \n;)$])"; "\(.a)=\(.c)\(.d)") |  # Fix bool: var= true → var=true
       gsub("(?<a>[a-zA-Z0-9_]) = (?<c>true|false|yes|no)(?<d>[ \n;)$])"; "\(.a)=\(.c)\(.d)") |  # Fix bool: var = true → var=true
       gsub("(?<a>[a-zA-Z0-9_]) = (?<c>[a-zA-Z])"; "\(.a)= \(.c)")   # Keep space for env var assignments: IFS= read
@@ -2490,7 +2494,7 @@ def transformMethodBody($className; $isRaw):
       gsub("> ?/"; ">/") |
       gsub("2> ?/"; "2>/") |
       # Fix assignment spacing
-      gsub(" =(?<c>[a-zA-Z0-9_$])"; "=\(.c)")
+      gsub(" =(?<c>[a-zA-Z0-9_$\"'])"; "=\(.c)")
     end)
     ;
 
@@ -2718,7 +2722,8 @@ def generateMethod($funcPrefix; $ivars; $cvars):
   ($funcPrefix | ltrimstr("__")) as $className |
 
   # Generate body - use expression parser for non-raw methods with Smalltalk syntax
-  .raw as $isRaw |
+  # Treat pragma: primitive same as raw method (bash passthrough)
+  (.raw or ((.pragmas // []) | contains(["primitive"]))) as $isRaw |
   (if $isRaw then
     # Raw method - use existing transformation
     .body | transformMethodBody($className; true)
