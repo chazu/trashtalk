@@ -64,9 +64,7 @@ Runtime subclass: Object
 
   # Get instance data as JSON
   # Usage: json := @ Runtime dataFor: instanceId
-  # Auto-loads from Store if not in memory, with lazy schema migration
   rawClassMethod: dataFor: instanceId [
-    _ensure_loaded "$1"
     _env_get "$1"
   ]
 
