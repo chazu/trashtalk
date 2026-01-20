@@ -123,10 +123,10 @@ fi
 echo ""
 echo "Test 10: sourceFor: works for class not yet loaded"
 
-# Use a class we haven't touched yet
-unset -f __Widget__source 2>/dev/null
-source_widget=$(@ Trash sourceFor: Widget 2>/dev/null)
-if [[ "$source_widget" == *"Widget subclass:"* ]]; then
+# Use a class we haven't touched yet (Array)
+unset -f __Array__source 2>/dev/null
+source_array=$(@ Trash sourceFor: Array 2>/dev/null)
+if [[ "$source_array" == *"Array subclass:"* ]]; then
   pass "sourceFor: loads and returns source for unloaded class"
 else
   fail "sourceFor: failed for unloaded class"
