@@ -460,6 +460,145 @@ export -f _add_before_advice _add_after_advice _remove_advice
 export -f _run_before_advice _run_after_advice
 
 # ============================================
+# Test Assertions (TAP Protocol)
+# ============================================
+# These functions emit TAP-compatible output for use in testMethod: blocks.
+# TAP = Test Anything Protocol (https://testanything.org/)
+
+# Global test counter for TAP output
+declare -g _TEST_COUNT=0
+declare -g _TEST_FAILURES=0
+
+# Assert two values are equal
+# Usage: _assert_eq "$actual" "$expected" "description"
+_assert_eq() {
+  local actual="$1"
+  local expected="$2"
+  local description="${3:-values should be equal}"
+  ((_TEST_COUNT++))
+  if [[ "$actual" == "$expected" ]]; then
+    echo "ok $_TEST_COUNT - $description"
+    return 0
+  else
+    echo "not ok $_TEST_COUNT - $description"
+    echo "#   expected: $expected"
+    echo "#   got:      $actual"
+    ((_TEST_FAILURES++))
+    return 1
+  fi
+}
+
+# Assert two values are not equal
+# Usage: _assert_neq "$actual" "$unexpected" "description"
+_assert_neq() {
+  local actual="$1"
+  local unexpected="$2"
+  local description="${3:-values should not be equal}"
+  ((_TEST_COUNT++))
+  if [[ "$actual" != "$unexpected" ]]; then
+    echo "ok $_TEST_COUNT - $description"
+    return 0
+  else
+    echo "not ok $_TEST_COUNT - $description"
+    echo "#   got unexpected: $actual"
+    ((_TEST_FAILURES++))
+    return 1
+  fi
+}
+
+# Assert value is truthy (non-empty)
+# Usage: _assert_true "$value" "description"
+_assert_true() {
+  local value="$1"
+  local description="${2:-value should be truthy}"
+  ((_TEST_COUNT++))
+  if [[ -n "$value" ]]; then
+    echo "ok $_TEST_COUNT - $description"
+    return 0
+  else
+    echo "not ok $_TEST_COUNT - $description"
+    echo "#   expected truthy, got empty"
+    ((_TEST_FAILURES++))
+    return 1
+  fi
+}
+
+# Assert value is falsy (empty)
+# Usage: _assert_false "$value" "description"
+_assert_false() {
+  local value="$1"
+  local description="${2:-value should be falsy}"
+  ((_TEST_COUNT++))
+  if [[ -z "$value" ]]; then
+    echo "ok $_TEST_COUNT - $description"
+    return 0
+  else
+    echo "not ok $_TEST_COUNT - $description"
+    echo "#   expected empty, got: $value"
+    ((_TEST_FAILURES++))
+    return 1
+  fi
+}
+
+# Assert string contains substring
+# Usage: _assert_contains "$haystack" "$needle" "description"
+_assert_contains() {
+  local haystack="$1"
+  local needle="$2"
+  local description="${3:-string should contain substring}"
+  ((_TEST_COUNT++))
+  if [[ "$haystack" == *"$needle"* ]]; then
+    echo "ok $_TEST_COUNT - $description"
+    return 0
+  else
+    echo "not ok $_TEST_COUNT - $description"
+    echo "#   string: $haystack"
+    echo "#   does not contain: $needle"
+    ((_TEST_FAILURES++))
+    return 1
+  fi
+}
+
+# Assert command succeeds (exit code 0)
+# Usage: _assert_ok "command" "description"
+_assert_ok() {
+  local cmd="$1"
+  local description="${2:-command should succeed}"
+  ((_TEST_COUNT++))
+  if eval "$cmd" >/dev/null 2>&1; then
+    echo "ok $_TEST_COUNT - $description"
+    return 0
+  else
+    echo "not ok $_TEST_COUNT - $description"
+    echo "#   command failed: $cmd"
+    ((_TEST_FAILURES++))
+    return 1
+  fi
+}
+
+# Reset test counters (called before running a test suite)
+_test_reset() {
+  _TEST_COUNT=0
+  _TEST_FAILURES=0
+}
+
+# Get test summary (called after running tests)
+_test_summary() {
+  echo "1..$_TEST_COUNT"
+  if [[ $_TEST_FAILURES -eq 0 ]]; then
+    echo "# All $_TEST_COUNT tests passed"
+    return 0
+  else
+    echo "# $_TEST_FAILURES of $_TEST_COUNT tests failed"
+    return 1
+  fi
+}
+
+# Export test functions
+export -f _assert_eq _assert_neq _assert_true _assert_false _assert_contains _assert_ok
+export -f _test_reset _test_summary
+
+# ============================================
 
 function wrapped_readlink {
   if command -v greadlink >/dev/null 2>&1; then

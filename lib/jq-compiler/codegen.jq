@@ -2231,6 +2231,11 @@ def generateMetadata:
     if ($cats | length) > 0 then
       "\($prefix)__methodCategories=\"\($cats | join(" "))\""
     else empty end),
+    # Generate test methods metadata: list of test method selectors
+    ([.methods[] | select(.kind == "test") | .selector] as $tests |
+    if ($tests | length) > 0 then
+      "\($prefix)__tests=\"\($tests | join(" "))\""
+    else empty end),
     ""
   end;
 
@@ -2694,6 +2699,8 @@ def generateMethod($funcPrefix; $ivars; $cvars):
   # Build function name
   (if .kind == "class" then
     "\($funcPrefix)__class__\(.selector)"
+  elif .kind == "test" then
+    "\($funcPrefix)__test__\(.selector)"
   else
     "\($funcPrefix)__\(.selector)"
   end) as $funcName |
