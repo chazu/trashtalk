@@ -63,6 +63,8 @@ def isSyncPoint:
   current.value == "rawMethod:" or
   current.value == "classMethod:" or
   current.value == "rawClassMethod:" or
+  current.value == "testMethod:" or
+  current.value == "rawTestMethod:" or
   current.value == "instanceVars:" or
   current.value == "classInstanceVars:" or
   current.value == "include:" or
@@ -203,6 +205,7 @@ def parseInstanceVars:
       (current.type != "KEYWORD" and current.type != "IDENTIFIER") or
       current.value == "method:" or current.value == "classMethod:" or
       current.value == "rawMethod:" or current.value == "rawClassMethod:" or
+      current.value == "testMethod:" or current.value == "rawTestMethod:" or
       current.value == "include:" or current.value == "requires:" or
       current.value == "instanceVars:";
 
@@ -615,6 +618,8 @@ def parseMethod:
    elif current.value == "rawMethod:" then {kind: "instance", raw: true}
    elif current.value == "classMethod:" then {kind: "class", raw: false}
    elif current.value == "rawClassMethod:" then {kind: "class", raw: true}
+   elif current.value == "testMethod:" then {kind: "test", raw: false}
+   elif current.value == "rawTestMethod:" then {kind: "test", raw: true}
    else null end) as $kind |
   if $kind != null then
     advance | skipNewlines |
@@ -784,7 +789,9 @@ def parseClassBody:
     elif (.state | current.value) == "method:" or
          (.state | current.value) == "rawMethod:" or
          (.state | current.value) == "classMethod:" or
-         (.state | current.value) == "rawClassMethod:" then
+         (.state | current.value) == "rawClassMethod:" or
+         (.state | current.value) == "testMethod:" or
+         (.state | current.value) == "rawTestMethod:" then
       .currentCategory as $cat |
       (.state | parseMethod) as $r |
       if $r.result != null then
