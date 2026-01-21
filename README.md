@@ -23,8 +23,7 @@ Then LLMs came. I said "Hey Claude, what do you think about this gewgaw over her
 
 So far I've only really used Trashtalk to work on Trashtalk. I'll let you know when that changes. Until then, some things I'm thinking about doing include:
 
-- Improving the `@ Trash edit <class>` flow to provide better feedback when your code contains errors. It'd be particularly nice if TestCases in the same code unit executed on save and spat you back into the editor when they failed
-- Exploring the idea of an acme-like editor as a subtitute for the whiz-bang TUI I tried so desperately to make work
+- Exploring the idea of an acme-like editor as a substitute for the whiz-bang TUI I tried so desperately to make work
 - Improving the SQLite instance persistence layer, maybe adding some kind of superadjacent analytical layer using duckdb
 
 If you have any ideas that aren't terribly rude, I'd love to hear them!
@@ -138,6 +137,7 @@ Counter subclass: Object
 | Method with args | `method: foo: x bar: y [body]` | Keyword-style arguments |
 | Class method | `classMethod: name [body]` | Define a class method |
 | Raw method | `rawMethod: name [body]` | Pass-through (no transformation) |
+| Test method | `testMethod: name [body]` | Define an inline test (see Testing) |
 | Local variables | `\| var1 var2 \|` | Declare local variables |
 | Assignment | `var := value` | Assign to variable |
 | Self reference | `@ self methodName` | Message to self |
@@ -197,6 +197,107 @@ Debuggable trait
     echo "Object: $_RECEIVER"
     echo "Class: $_SUPERCLASS"
   ]
+```
+
+### Aspect-Oriented Programming (AOP)
+
+Trashtalk supports before/after advice for cross-cutting concerns like logging, validation, or notifications:
+
+```smalltalk
+Account subclass: Object
+  instanceVars: balance:0
+
+  method: withdraw: amount [
+    balance := balance - amount
+  ]
+
+  method: deposit: amount [
+    balance := balance + amount
+  ]
+
+  # Run before withdraw: executes
+  before: withdraw: do: [
+    @ self log: "Attempting withdrawal"
+  ]
+
+  # Run after deposit: completes
+  after: deposit: do: [
+    @ self notifyBalanceChanged
+  ]
+```
+
+Advice hooks execute automatically - `before:do:` runs prior to the method, `after:do:` runs after it returns.
+
+### Inline Testing
+
+Trashtalk supports defining tests directly in class files using `testMethod:`. Tests run automatically when using `@ Trash edit: ClassName` - if tests fail, you're returned to the editor.
+
+```smalltalk
+Counter subclass: Object
+  instanceVars: value:0 step:1
+
+  method: increment [
+    value := value + step.
+    ^ value
+  ]
+
+  method: setStep: s [
+    step := s
+  ]
+
+  testMethod: testIncrement [
+    pragma: primitive
+    local c result
+    c=$(@ Counter new)
+    result=$(@ "$c" increment)
+    _assert_eq "$result" "1" "increment returns 1"
+    @ "$c" destroy
+  ]
+
+  testMethod: testCustomStep [
+    pragma: primitive
+    local c
+    c=$(@ Counter new)
+    @ "$c" setStep: 5
+    _assert_eq "$(@ "$c" increment)" "5" "custom step works"
+    @ "$c" destroy
+  ]
+```
+
+#### Assertion Functions
+
+Tests use TAP (Test Anything Protocol) assertions:
+
+| Function | Description |
+|----------|-------------|
+| `_assert_eq "$actual" "$expected" "desc"` | Assert values are equal |
+| `_assert_neq "$actual" "$unexpected" "desc"` | Assert values are not equal |
+| `_assert_true "$value" "desc"` | Assert value is non-empty |
+| `_assert_false "$value" "desc"` | Assert value is empty |
+| `_assert_contains "$haystack" "$needle" "desc"` | Assert string contains substring |
+| `_assert_ok "command" "desc"` | Assert command succeeds (exit 0) |
+
+#### Running Tests
+
+```bash
+# Run tests for a class
+@ Trash runTestsFor: Counter
+
+# Check if a class has tests
+@ Trash hasTestsFor: Counter
+
+# Tests run automatically during edit flow
+@ Trash edit: Counter
+```
+
+Output follows TAP format:
+
+```
+# Running tests for Counter
+ok 1 - increment returns 1
+ok 2 - custom step works
+1..2
+# All 2 tests passed
 ```
 
 ## Compiling Classes
@@ -340,9 +441,7 @@ RECOMMENDATIONS
 ```
 
 ## Instance Persistence
-TODO Hang on i think i mullered the Persistable trait in my last "refactor". Gotta fix that.
 
-TODO And wait, where's AOP? Did I nuke AOP accidentally? Bring that back!
 Instances are stored in SQLite via the Store class:
 
 ```bash
