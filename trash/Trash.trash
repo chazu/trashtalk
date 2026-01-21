@@ -601,7 +601,6 @@ EOF
   ]
 
   # Edit an existing class and recompile on save
-  # Enhanced: loops on errors, prepends error info, jumps to error line
   method: edit: class_name [
     pragma: primitive
     local trash_file="$TRASHDIR/${class_name}.trash"
@@ -627,155 +626,20 @@ EOF
       return 1
     fi
 
-    local error_marker="# ══════════════════════════════════════════════════════════════════════"
-    local error_start="# ══ COMPILE ERRORS (fix and save to retry) ══"
-    local temp_compiled="/tmp/trash_edit_compile_$$"
-    local error_line=1
-    local compile_errors=""
-    local had_errors=false
+    # Open in editor and compile if saved
+    local before_mtime after_mtime
+    before_mtime=$(stat -f "%m" "$file_to_edit" 2>/dev/null || stat -c "%Y" "$file_to_edit" 2>/dev/null)
 
-    # Edit-compile loop
-    while true; do
-      local before_mtime after_mtime
-      before_mtime=$(stat -f "%m" "$file_to_edit" 2>/dev/null || stat -c "%Y" "$file_to_edit" 2>/dev/null)
+    ${EDITOR:-vi} "$file_to_edit" </dev/tty >/dev/tty
 
-      # Build editor command with optional line jump
-      local editor_cmd="${EDITOR:-vi}"
-      local editor_base="${editor_cmd%% *}"  # Get base command without args
-      local editor_args=""
+    after_mtime=$(stat -f "%m" "$file_to_edit" 2>/dev/null || stat -c "%Y" "$file_to_edit" 2>/dev/null)
 
-      # Support line jumping for common editors
-      if [[ $error_line -gt 1 ]]; then
-        case "$editor_base" in
-          vi|vim|nvim)
-            editor_args="+$error_line"
-            ;;
-          emacs|emacsclient)
-            editor_args="+$error_line"
-            ;;
-          code)
-            editor_args="--goto ${file_to_edit}:${error_line}"
-            file_to_edit=""  # code uses --goto with full path
-            ;;
-          "code-insiders")
-            editor_args="--goto ${file_to_edit}:${error_line}"
-            file_to_edit=""
-            ;;
-          nano)
-            editor_args="+$error_line"
-            ;;
-          subl|sublime)
-            editor_args="${file_to_edit}:${error_line}"
-            file_to_edit=""
-            ;;
-        esac
-      fi
-
-      # Open editor
-      if [[ -n "$file_to_edit" ]]; then
-        $editor_cmd $editor_args "$file_to_edit" </dev/tty >/dev/tty
-      else
-        $editor_cmd $editor_args </dev/tty >/dev/tty
-        # Restore file_to_edit for next iteration
-        if [[ -f "$user_file" ]]; then
-          file_to_edit="$user_file"
-        elif [[ -f "$trash_file" ]]; then
-          file_to_edit="$trash_file"
-        else
-          file_to_edit="$trait_file"
-        fi
-      fi
-
-      after_mtime=$(stat -f "%m" "$file_to_edit" 2>/dev/null || stat -c "%Y" "$file_to_edit" 2>/dev/null)
-
-      # Strip any existing error comments before checking/compiling
-      if grep -q "^$error_start" "$file_to_edit" 2>/dev/null; then
-        # Remove error block (from error_start to error_marker inclusive)
-        sed -i.bak "/^# ══ COMPILE ERRORS/,/^# ══════════════════════════════════════════════════════════════════════$/d" "$file_to_edit"
-        rm -f "${file_to_edit}.bak"
-        # Recalculate mtime after stripping
-        after_mtime=$(stat -f "%m" "$file_to_edit" 2>/dev/null || stat -c "%Y" "$file_to_edit" 2>/dev/null)
-      fi
-
-      if [[ "$before_mtime" == "$after_mtime" ]]; then
-        if [[ "$had_errors" == true ]]; then
-          echo "No changes - aborting edit"
-          return 1
-        else
-          echo "No changes detected"
-          return 0
-        fi
-      fi
-
+    if [[ "$before_mtime" != "$after_mtime" ]]; then
       echo "File modified, compiling..."
-
-      # Try to compile
-      compile_errors=$("$SCRIPT_DIR/jq-compiler/driver.bash" compile "$file_to_edit" 2>&1)
-      local compile_exit=$?
-
-      if [[ $compile_exit -eq 0 ]]; then
-        # Compilation succeeded, check bash syntax
-        echo "$compile_errors" > "$temp_compiled"
-        local syntax_errors
-        syntax_errors=$(bash -n "$temp_compiled" 2>&1)
-        local syntax_exit=$?
-
-        if [[ $syntax_exit -eq 0 ]]; then
-          # Success! Save compiled output and reload
-          local target_file
-          if [[ "$file_to_edit" == *"/traits/"* ]]; then
-            target_file="$TRASHDIR/.compiled/traits/$class_name"
-          else
-            target_file="$TRASHDIR/.compiled/$class_name"
-          fi
-          mv "$temp_compiled" "$target_file"
-          @ "$_RECEIVER" reloadClass "$class_name"
-          echo "Compiled successfully"
-          return 0
-        else
-          # Bash syntax error
-          compile_errors="Bash syntax error in compiled output:
-$syntax_errors
-
-This usually indicates a DSL construct that compiled to invalid bash.
-Check for unbalanced quotes, brackets, or unsupported syntax."
-
-          # Try to extract line number from bash error (refers to compiled line)
-          error_line=$(echo "$syntax_errors" | grep -oE 'line [0-9]+' | head -1 | grep -oE '[0-9]+' || echo "1")
-          # Bash errors refer to compiled output, not source - reset to 1
-          error_line=1
-        fi
-      else
-        # Compilation failed - try to extract error line
-        error_line=$(echo "$compile_errors" | grep -oE '^\s*[0-9]+:[0-9]+:' | head -1 | cut -d: -f1 | tr -d ' ' || echo "1")
-        [[ -z "$error_line" ]] && error_line=1
-      fi
-
-      # Prepend errors to file for next edit iteration
-      had_errors=true
-      local error_block
-      error_block=$(cat <<EOF
-$error_start
-#
-$(echo "$compile_errors" | sed 's/^/# /')
-#
-$error_marker
-
-EOF
-)
-      # Prepend error block
-      local original_content
-      original_content=$(cat "$file_to_edit")
-      printf '%s\n%s' "$error_block" "$original_content" > "$file_to_edit"
-
-      # Adjust error_line to account for prepended block
-      local block_lines
-      block_lines=$(echo "$error_block" | wc -l | tr -d ' ')
-      error_line=$((error_line + block_lines))
-
-      rm -f "$temp_compiled"
-      echo "Compilation failed - re-opening editor with error details..."
-    done
+      @ "$_RECEIVER" compileAndReload "$class_name"
+    else
+      echo "No changes detected"
+    fi
   ]
 
   # Evaluate a string of Trashtalk code
