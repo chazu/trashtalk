@@ -9,8 +9,13 @@ TRASH_DIR="$4"
 
 relpath="${src#$TRASH_DIR/}"
 if [[ "$relpath" == traits/* ]]; then
+    # Traits go in traits/ subdirectory
     outname="traits/${relpath#traits/}"
+elif [[ "$relpath" == user/* ]]; then
+    # User classes compile to top-level (user/ is organizational, not a namespace)
+    outname="${relpath#user/}"
 else
+    # Namespaced classes: Tools/Jq -> Tools__Jq
     outname="$(echo "$relpath" | sed 's/\//__/g')"
 fi
 outname="${outname%.trash}"
