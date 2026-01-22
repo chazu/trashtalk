@@ -599,61 +599,29 @@ EOF
 
     # Check if class already exists anywhere
     if [[ -f "$user_file" ]]; then
-      echo "Class $class_name already exists in user/. Use '@ Trash edit $class_name' to edit."
+      echo "Class $class_name already exists in user/. Use '@ Trash edit: $class_name' to edit."
       return 1
     fi
     if [[ -f "$system_file" ]]; then
-      echo "Class $class_name already exists as a system class. Use '@ Trash edit $class_name' to edit."
+      echo "Class $class_name already exists as a system class. Use '@ Trash edit: $class_name' to edit."
       return 1
     fi
     if [[ -f "$trait_file" ]]; then
-      echo "A trait named $class_name already exists. Use '@ Trash edit $class_name' to edit."
+      echo "A trait named $class_name already exists. Use '@ Trash edit: $class_name' to edit."
       return 1
     fi
 
     # Ensure user directory exists
     mkdir -p "$TRASHDIR/user"
 
-    # Create minimal skeleton in user directory
-    cat > "$user_file" << EOF
-${class_name} subclass: Object
-  instanceVars:
-
-  classMethod: new [
-    | id |
-    id := @ Runtime generateId: '${class_name}'.
-    @ Runtime create: '${class_name}' id: id.
-    ^ id
-  ]
-
-  method: example [
-    ^ 'Hello from ${class_name}'
-  ]
-
-  rawTestMethod: testExample [
-    local instance result
-    instance=\$(@ ${class_name} new)
-    result=\$(@ "\$instance" example)
-    _assert_eq "\$result" 'Hello from ${class_name}' 'example returns greeting'
-  ]
-EOF
+    # Create from template file (compiler mangles inline templates)
+    local template_file="$SCRIPT_DIR/class_template.txt"
+    sed "s/__CLASS__/${class_name}/g" "$template_file" > "$user_file"
 
     echo "Created $user_file"
 
-    # Open in editor and compile if saved
-    local before_mtime after_mtime
-    before_mtime=$(stat -f "%m" "$user_file" 2>/dev/null || stat -c "%Y" "$user_file" 2>/dev/null)
-
-    ${EDITOR:-vi} "$user_file" </dev/tty >/dev/tty
-
-    after_mtime=$(stat -f "%m" "$user_file" 2>/dev/null || stat -c "%Y" "$user_file" 2>/dev/null)
-
-    if [[ "$before_mtime" != "$after_mtime" ]]; then
-      echo "File modified, compiling..."
-      @ "$_RECEIVER" compileAndReload "$class_name"
-    else
-      echo "No changes detected"
-    fi
+    # Open in editor (edit: handles compile on save)
+    @ "$_RECEIVER" edit: "$class_name"
   ]
 
   # Edit an existing class and recompile on save
