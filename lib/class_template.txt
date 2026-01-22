@@ -1,0 +1,20 @@
+__CLASS__ subclass: Object
+  instanceVars:
+
+  classMethod: new [
+    | id |
+    id := @ Runtime generateId: '__CLASS__'.
+    @ Runtime create: '__CLASS__' id: id.
+    ^ id
+  ]
+
+  method: example [
+    ^ 'Hello from __CLASS__'
+  ]
+
+  rawTestMethod: testExample [
+    local instance result
+    instance=$(@ __CLASS__ new)
+    result=$(@ "$instance" example)
+    _assert_eq "$result" 'Hello from __CLASS__' 'example returns greeting'
+  ]

@@ -170,6 +170,11 @@ File subclass: Object
     touch "$p"
   ]
 
+  # Create directory (and parents if needed)
+  rawClassMethod: mkdir: path [
+    mkdir -p "$1"
+  ]
+
   # Get modification time as unix timestamp
   rawMethod: modificationTime [
     local p=$(_ivar path)
