@@ -32,9 +32,10 @@ endif
 # Source files
 SOURCES := $(wildcard $(TRASH_DIR)/*.trash)
 TRAIT_SOURCES := $(wildcard $(TRASH_DIR)/traits/*.trash)
+USER_SOURCES := $(wildcard $(TRASH_DIR)/user/*.trash)
 NAMESPACE_SOURCES := $(filter-out $(wildcard $(TRASH_DIR)/traits/*.trash) $(wildcard $(TRASH_DIR)/user/*.trash), \
                       $(wildcard $(TRASH_DIR)/*/*.trash))
-ALL_SOURCES := $(SOURCES) $(TRAIT_SOURCES) $(NAMESPACE_SOURCES)
+ALL_SOURCES := $(SOURCES) $(TRAIT_SOURCES) $(USER_SOURCES) $(NAMESPACE_SOURCES)
 
 .PHONY: all bash test test-verbose clean help info single watch
 
@@ -133,7 +134,7 @@ watch:
 	@echo "Watching for changes..."
 	@echo "Press Ctrl+C to stop"
 	@if command -v fswatch >/dev/null 2>&1; then \
-		fswatch -o $(TRASH_DIR)/*.trash $(TRASH_DIR)/traits/*.trash $(TRASH_DIR)/*/*.trash 2>/dev/null | \
+		fswatch -o $(TRASH_DIR)/*.trash $(TRASH_DIR)/traits/*.trash $(TRASH_DIR)/user/*.trash $(TRASH_DIR)/*/*.trash 2>/dev/null | \
 		while read; do \
 			echo ""; \
 			echo "[$(shell date '+%H:%M:%S')] Change detected, rebuilding..."; \
@@ -195,6 +196,7 @@ info:
 	@echo "Source Files:"
 	@echo "  Classes:    $(words $(SOURCES))"
 	@echo "  Traits:     $(words $(TRAIT_SOURCES))"
+	@echo "  User:       $(words $(USER_SOURCES))"
 	@echo "  Namespaced: $(words $(NAMESPACE_SOURCES))"
 	@echo ""
 	@echo "Directories:"
