@@ -111,6 +111,7 @@ FIFO subclass: Object
   # Start a command that writes to this FIFO in the background
   # The command's stdout is redirected to the FIFO
   rawMethod: startWriter: cmd [
+    pragma: direct
     local p cmd="$1" pidfile writer_pid
     p="$(_ivar path)"
     pidfile="/tmp/fifo_writer_${_INSTANCE}.pid"
@@ -129,6 +130,7 @@ FIFO subclass: Object
 
   # Stop the writer process
   rawMethod: stopWriter [
+    pragma: direct
     local writer_pid
     writer_pid="$(_ivar writerPid)"
     if [[ -n "$writer_pid" ]]; then
@@ -145,6 +147,7 @@ FIFO subclass: Object
   # Start a background reader that calls handler for each line
   # The current line is available in $__FIFO_LINE
   rawMethod: startReader: handler [
+    pragma: direct
     local p handler="$1" pidfile reader_pid
     p="$(_ivar path)"
     pidfile="/tmp/fifo_reader_${_INSTANCE}.pid"
@@ -163,6 +166,7 @@ FIFO subclass: Object
 
   # Stop the reader process
   rawMethod: stopReader [
+    pragma: direct
     local reader_pid
     reader_pid="$(_ivar readerPid)"
     if [[ -n "$reader_pid" ]]; then
