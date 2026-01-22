@@ -615,21 +615,28 @@ EOF
     mkdir -p "$TRASHDIR/user"
 
     # Create minimal skeleton in user directory
-    printf '%s\n' \
-      "$class_name subclass: Object" \
-      "  instanceVars:" \
-      "" \
-      "  classMethod: new [
-    pragma: primitive" \
-      "    local id=\$(_generate_instance_id $class_name)" \
-      "    _create_instance $class_name \"\$id\"" \
-      "    echo \"\$id\"" \
-      "  ]" \
-      "" \
-      "  method: example [" \
-      "    ^ \"Hello from $class_name\"" \
-      "  ]" \
-      > "$user_file"
+    cat > "$user_file" << EOF
+${class_name} subclass: Object
+  instanceVars:
+
+  classMethod: new [
+    | id |
+    id := @ Runtime generateId: '${class_name}'.
+    @ Runtime create: '${class_name}' id: id.
+    ^ id
+  ]
+
+  method: example [
+    ^ 'Hello from ${class_name}'
+  ]
+
+  rawTestMethod: testExample [
+    local instance result
+    instance=\$(@ ${class_name} new)
+    result=\$(@ "\$instance" example)
+    _assert_eq "\$result" 'Hello from ${class_name}' 'example returns greeting'
+  ]
+EOF
 
     echo "Created $user_file"
 
