@@ -259,7 +259,7 @@ tokenize() {
                 ;;
 
             # ------------------------------------------------------------------
-            # Less than - redirection or comparison
+            # Less than - redirection, comparison, or heredoc
             # ------------------------------------------------------------------
             '<')
                 if [[ "$next" == "<" ]]; then
@@ -270,9 +270,107 @@ tokenize() {
                         ((i += 3))
                         ((col += 3))
                     else
-                        add_token "HEREDOC" "<<" "$line" "$col"
-                        ((i += 2))
+                        # Heredoc: capture delimiter and body as single token
+                        local heredoc_start=$i
+                        local heredoc_start_col=$col
+                        local heredoc_start_line=$line
+                        ((i += 2))  # skip <<
                         ((col += 2))
+
+                        # Skip optional - for <<- (strip leading tabs)
+                        local strip_tabs=""
+                        if [[ "${input:i:1}" == "-" ]]; then
+                            strip_tabs="-"
+                            ((i++))
+                            ((col++))
+                        fi
+
+                        # Skip whitespace before delimiter
+                        while ((i < len)) && [[ "${input:i:1}" == " " || "${input:i:1}" == $'\t' ]]; do
+                            ((i++))
+                            ((col++))
+                        done
+
+                        # Extract delimiter (may be quoted or unquoted)
+                        local delim=""
+                        local delim_char="${input:i:1}"
+                        if [[ "$delim_char" == "'" || "$delim_char" == '"' ]]; then
+                            # Quoted delimiter - find closing quote
+                            local quote_char="$delim_char"
+                            ((i++))
+                            ((col++))
+                            while ((i < len)) && [[ "${input:i:1}" != "$quote_char" ]]; do
+                                delim+="${input:i:1}"
+                                ((i++))
+                                ((col++))
+                            done
+                            ((i++))  # skip closing quote
+                            ((col++))
+                        else
+                            # Unquoted delimiter - read until whitespace/newline
+                            while ((i < len)) && [[ "${input:i:1}" =~ [a-zA-Z0-9_] ]]; do
+                                delim+="${input:i:1}"
+                                ((i++))
+                                ((col++))
+                            done
+                        fi
+
+                        # Skip to end of line (heredoc body starts on next line)
+                        while ((i < len)) && [[ "${input:i:1}" != $'\n' ]]; do
+                            ((i++))
+                            ((col++))
+                        done
+
+                        # Skip the newline
+                        if ((i < len)) && [[ "${input:i:1}" == $'\n' ]]; then
+                            ((i++))
+                            ((line++))
+                            col=0
+                        fi
+
+                        # Read heredoc body until we find delimiter on its own line
+                        local body=""
+                        local body_start=$i
+                        while ((i < len)); do
+                            # Check if this line is the delimiter
+                            local line_start=$i
+                            local current_line=""
+                            while ((i < len)) && [[ "${input:i:1}" != $'\n' ]]; do
+                                current_line+="${input:i:1}"
+                                ((i++))
+                                ((col++))
+                            done
+
+                            # Check if line matches delimiter (with optional leading whitespace for <<-)
+                            local trimmed_line="$current_line"
+                            if [[ -n "$strip_tabs" ]]; then
+                                trimmed_line="${current_line#"${current_line%%[!$'\t']*}"}"
+                            fi
+
+                            if [[ "$trimmed_line" == "$delim" ]]; then
+                                # Found end delimiter - don't include it in body
+                                # Skip the newline after delimiter if present
+                                if ((i < len)) && [[ "${input:i:1}" == $'\n' ]]; then
+                                    ((i++))
+                                    ((line++))
+                                    col=0
+                                fi
+                                break
+                            else
+                                # Add line to body (including newline)
+                                body+="$current_line"
+                                if ((i < len)) && [[ "${input:i:1}" == $'\n' ]]; then
+                                    body+=$'\n'
+                                    ((i++))
+                                    ((line++))
+                                    col=0
+                                fi
+                            fi
+                        done
+
+                        # Emit heredoc as single HEREDOC_BLOCK token
+                        # Value format: "DELIM:body" where body preserves newlines
+                        add_token "HEREDOC_BLOCK" "<<${strip_tabs}${delim}"$'\n'"${body}${delim}" "$heredoc_start_line" "$heredoc_start_col"
                     fi
                 elif [[ "$next" == "=" ]]; then
                     add_token "LE" "<=" "$line" "$col"

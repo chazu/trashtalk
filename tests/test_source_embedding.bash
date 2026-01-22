@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Tests for source code and hash embedding in compiled classes
+# Tests for source hash embedding in compiled classes
+# Note: Source code embedding (__source function) was removed to reduce compiled file size.
+# Only sourceHash is now embedded for cache invalidation.
 
 cd "$(dirname "$0")/.."
 source lib/trash.bash 2>/dev/null
@@ -10,7 +12,7 @@ FAILED=0
 pass() { echo "  ✓ $1"; ((PASSED++)); }
 fail() { echo "  ✗ $1"; ((FAILED++)); }
 
-echo "=== Source Embedding Tests ==="
+echo "=== Source Hash Tests ==="
 
 # --- Test 1: Compiled class has sourceHash variable ---
 echo ""
@@ -39,30 +41,9 @@ else
   fail "sourceHash is not valid SHA-256: $hash"
 fi
 
-# --- Test 3: Compiled class has __source function ---
+# --- Test 3: Hash matches actual source content ---
 echo ""
-echo "Test 3: Compiled class has __source function"
-
-if declare -f __Counter__source >/dev/null 2>&1; then
-  pass "Counter has __source function"
-else
-  fail "Counter missing __source function"
-fi
-
-# --- Test 4: __source function returns source code ---
-echo ""
-echo "Test 4: __source function returns valid source code"
-
-source_code=$(__Counter__source 2>/dev/null)
-if [[ "$source_code" == *"Counter subclass:"* ]]; then
-  pass "__source returns source containing class definition"
-else
-  fail "__source did not return expected source code"
-fi
-
-# --- Test 5: Hash matches actual source content ---
-echo ""
-echo "Test 5: Hash matches source file content"
+echo "Test 3: Hash matches source file content"
 
 source_file="trash/Counter.trash"
 if [[ -f "$source_file" ]]; then
@@ -76,20 +57,9 @@ else
   fail "Source file not found: $source_file"
 fi
 
-# --- Test 6: Trash sourceFor: method works ---
+# --- Test 4: Trash hashFor: method works ---
 echo ""
-echo "Test 6: @ Trash sourceFor: Counter works"
-
-source_via_trash=$(@ Trash sourceFor: Counter 2>/dev/null)
-if [[ "$source_via_trash" == *"Counter subclass:"* ]]; then
-  pass "sourceFor: returns source code"
-else
-  fail "sourceFor: did not return expected source"
-fi
-
-# --- Test 7: Trash hashFor: method works ---
-echo ""
-echo "Test 7: @ Trash hashFor: Counter works"
+echo "Test 4: @ Trash hashFor: Counter works"
 
 hash_via_trash=$(@ Trash hashFor: Counter 2>/dev/null)
 if [[ "$hash_via_trash" =~ ^[a-f0-9]{64}$ ]]; then
@@ -98,9 +68,9 @@ else
   fail "hashFor: did not return valid hash: $hash_via_trash"
 fi
 
-# --- Test 8: hashFor: matches embedded hash ---
+# --- Test 5: hashFor: matches embedded hash ---
 echo ""
-echo "Test 8: hashFor: matches embedded sourceHash"
+echo "Test 5: hashFor: matches embedded sourceHash"
 
 if [[ "$hash_via_trash" == "$__Counter__sourceHash" ]]; then
   pass "hashFor: matches embedded hash"
@@ -108,28 +78,25 @@ else
   fail "hashFor: mismatch: method=$hash_via_trash, var=$__Counter__sourceHash"
 fi
 
-# --- Test 9: Traits also have source embedding ---
+# --- Test 6: Traits also have sourceHash ---
 echo ""
-echo "Test 9: Traits have source embedding"
+echo "Test 6: Traits have sourceHash"
 
 source trash/.compiled/traits/Persistable 2>/dev/null
-if [[ -n "$__Persistable__sourceHash" ]] && declare -f __Persistable__source >/dev/null 2>&1; then
-  pass "Trait Persistable has sourceHash and __source"
+if [[ -n "$__Persistable__sourceHash" ]]; then
+  pass "Trait Persistable has sourceHash"
 else
-  fail "Trait missing source embedding"
+  fail "Trait missing sourceHash"
 fi
 
-# --- Test 10: sourceFor: works for non-loaded class ---
+# --- Test 7: Trait sourceHash is valid format ---
 echo ""
-echo "Test 10: sourceFor: works for class not yet loaded"
+echo "Test 7: Trait sourceHash is valid SHA-256"
 
-# Use a class we haven't touched yet (Array)
-unset -f __Array__source 2>/dev/null
-source_array=$(@ Trash sourceFor: Array 2>/dev/null)
-if [[ "$source_array" == *"Array subclass:"* ]]; then
-  pass "sourceFor: loads and returns source for unloaded class"
+if [[ "$__Persistable__sourceHash" =~ ^[a-f0-9]{64}$ ]]; then
+  pass "Trait sourceHash is valid SHA-256 format"
 else
-  fail "sourceFor: failed for unloaded class"
+  fail "Trait sourceHash is not valid: $__Persistable__sourceHash"
 fi
 
 # --- Cleanup ---

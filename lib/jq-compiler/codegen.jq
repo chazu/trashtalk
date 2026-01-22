@@ -2239,20 +2239,7 @@ def generateMetadata:
     ""
   end;
 
-# Generate source code embedding function
-# Returns the original source code via a heredoc
-def generateSourceEmbed:
-  funcPrefix as $prefix |
-  if .sourceCode != null then
-    "\($prefix)__source() {",
-    "  cat <<'__TRASHTALK_SOURCE_EOF__'",
-    .sourceCode,
-    "__TRASHTALK_SOURCE_EOF__",
-    "}",
-    ""
-  else
-    empty
-  end;
+# Source embed removed - no longer needed
 
 # Generate class instance variable initializer function
 def generateClassVarsInit:
@@ -2427,6 +2414,7 @@ def transformMethodBody($className; $isRaw):
         elif $tok.type == "GT" then " >"
         elif $tok.type == "LT" then " <"
         elif $tok.type == "HEREDOC" then "<<"
+        elif $tok.type == "HEREDOC_BLOCK" then $tok.value + "\n"
         elif $tok.type == "HERESTRING" then "<<< "
         elif $tok.type == "MATCH" then " =~ "
         elif $tok.type == "EQ" then " == "
@@ -2824,7 +2812,6 @@ def generate:
   (
     generateHeader,
     generateMetadata,
-    generateSourceEmbed,
     generateClassVarsInit,
     generateAccessors,
     generateRequires,
@@ -2842,8 +2829,7 @@ if .class != null then
   # When using CompilationUnit, merge top-level metadata into the class before generating
   (.inheritedInstanceVars // []) as $inherited |
   (.sourceHash // "") as $hash |
-  (.sourceCode // "") as $src |
-  .class + {inheritedInstanceVars: $inherited, sourceHash: $hash, sourceCode: $src} | generate
+  .class + {inheritedInstanceVars: $inherited, sourceHash: $hash} | generate
 else
   generate
 end
