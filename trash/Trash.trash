@@ -419,7 +419,7 @@ EOF
     echo "@ Trash clearStack                  - Clear call stack"
     echo ""
     echo "=== Source Introspection ==="
-    echo "@ Trash sourceFor: <class>          - Get embedded source code"
+    echo "@ Trash sourceFor: <class>          - Get source code from .trash file"
     echo "@ Trash hashFor: <class>            - Get source hash (SHA-256)"
     echo ""
     echo "=== Testing ==="
@@ -436,27 +436,22 @@ EOF
     echo "System: $(uname -s) $(uname -r)"
   ]
 
-  # Get the embedded source code for a class
+  # Get the source code for a class from .trash file
   # Usage: @ Trash sourceFor: Counter
   rawMethod: sourceFor: class_name [
-    local source_func="__${class_name}__source"
-    if declare -f "$source_func" >/dev/null 2>&1; then
-      "$source_func"
+    local source_file="$TRASHDIR/${class_name}.trash"
+    local user_file="$TRASHDIR/user/${class_name}.trash"
+    local trait_file="$TRASHDIR/traits/${class_name}.trash"
+
+    if [[ -f "$user_file" ]]; then
+      cat "$user_file"
+    elif [[ -f "$source_file" ]]; then
+      cat "$source_file"
+    elif [[ -f "$trait_file" ]]; then
+      cat "$trait_file"
     else
-      # Try loading the compiled class first
-      local compiled_file="$TRASHDIR/.compiled/$class_name"
-      if [[ -f "$compiled_file" ]]; then
-        source "$compiled_file"
-        if declare -f "$source_func" >/dev/null 2>&1; then
-          "$source_func"
-        else
-          echo "Error: Class $class_name does not have embedded source"
-          return 1
-        fi
-      else
-        echo "Error: Class $class_name not found"
-        return 1
-      fi
+      echo "Error: Source file for $class_name not found"
+      return 1
     fi
   ]
 
@@ -614,9 +609,29 @@ EOF
     # Ensure user directory exists
     mkdir -p "$TRASHDIR/user"
 
-    # Create from template file (compiler mangles inline templates)
-    local template_file="$SCRIPT_DIR/class_template.txt"
-    sed "s/__CLASS__/${class_name}/g" "$template_file" > "$user_file"
+    # Create minimal skeleton with heredoc
+    cat > "$user_file" <<EOF
+${class_name} subclass: Object
+  instanceVars:
+
+  classMethod: new [
+    | id |
+    id := @ Runtime generateId: '${class_name}'.
+    @ Runtime create: '${class_name}' id: id.
+    ^ id
+  ]
+
+  method: example [
+    ^ 'Hello from ${class_name}'
+  ]
+
+  rawTestMethod: testExample [
+    local instance result
+    instance=\$(@ ${class_name} new)
+    result=\$(@ "\$instance" example)
+    _assert_eq "\$result" 'Hello from ${class_name}' 'example returns greeting'
+  ]
+EOF
 
     echo "Created $user_file"
 

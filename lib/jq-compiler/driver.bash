@@ -389,10 +389,9 @@ cmd_compile() {
         exit 1
     fi
 
-    # Compute source hash (SHA-256) and read source content
-    local source_hash source_content
+    # Compute source hash (SHA-256) for cache invalidation
+    local source_hash
     source_hash=$(shasum -a 256 "$source_file" | cut -d' ' -f1)
-    source_content=$(cat "$source_file")
 
     # Collect inherited instance variables from parent classes
     local parent_class inherited_ivars
@@ -405,8 +404,8 @@ cmd_compile() {
 
     # Add source metadata and inherited ivars to AST
     local ast_with_source
-    ast_with_source=$(echo "$ast" | jq --arg hash "$source_hash" --arg src "$source_content" --argjson inherited "$inherited_ivars" \
-        'del(.warnings) | . + {sourceHash: $hash, sourceCode: $src, inheritedInstanceVars: $inherited}')
+    ast_with_source=$(echo "$ast" | jq --arg hash "$source_hash" --argjson inherited "$inherited_ivars" \
+        'del(.warnings) | . + {sourceHash: $hash, inheritedInstanceVars: $inherited}')
 
     # Generate code
     local output
