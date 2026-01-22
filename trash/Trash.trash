@@ -702,6 +702,13 @@ EOF
     # Edit-compile loop
     while true; do
       local before_mtime after_mtime
+
+      # Strip any existing error comments BEFORE taking mtime
+      if grep -q "^$error_start" "$file_to_edit" 2>/dev/null; then
+        sed -i.bak "/^# ══ COMPILE ERRORS/,/^# ══════════════════════════════════════════════════════════════════════$/d" "$file_to_edit"
+        rm -f "${file_to_edit}.bak"
+      fi
+
       before_mtime=$(stat -f "%m" "$file_to_edit" 2>/dev/null || stat -c "%Y" "$file_to_edit" 2>/dev/null)
 
       # Build editor command with optional line jump
@@ -753,13 +760,10 @@ EOF
 
       after_mtime=$(stat -f "%m" "$file_to_edit" 2>/dev/null || stat -c "%Y" "$file_to_edit" 2>/dev/null)
 
-      # Strip any existing error comments before checking/compiling
+      # Strip any error comments the user may have left in
       if grep -q "^$error_start" "$file_to_edit" 2>/dev/null; then
-        # Remove error block (from error_start to error_marker inclusive)
         sed -i.bak "/^# ══ COMPILE ERRORS/,/^# ══════════════════════════════════════════════════════════════════════$/d" "$file_to_edit"
         rm -f "${file_to_edit}.bak"
-        # Recalculate mtime after stripping
-        after_mtime=$(stat -f "%m" "$file_to_edit" 2>/dev/null || stat -c "%Y" "$file_to_edit" 2>/dev/null)
       fi
 
       if [[ "$before_mtime" == "$after_mtime" ]]; then
