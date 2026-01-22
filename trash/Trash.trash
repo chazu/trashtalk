@@ -365,7 +365,7 @@ EOF
 
     # Success - replace the compiled file
     mv "$temp_file" "$target_file"
-    @ "$_RECEIVER" reloadClass "$class_name"
+    @ "$_RECEIVER" reloadClass: "$class_name"
     return $?
   ]
 
@@ -768,7 +768,7 @@ EOF
             target_file="$TRASHDIR/.compiled/$class_name"
           fi
           mv "$temp_compiled" "$target_file"
-          @ "$_RECEIVER" reloadClass "$class_name"
+          @ "$_RECEIVER" reloadClass: "$class_name"
           echo "Compiled successfully"
 
           # Check for and run tests
