@@ -4,8 +4,7 @@ Trash subclass: Object
   include: Debuggable
 
   # Get system information
-  method: info [
-    pragma: primitive
+  rawMethod: info [
     echo "=== Trash System Information ==="
     echo "Version: 0.1.0"
     echo "Directory: $TRASHDIR"
@@ -16,16 +15,14 @@ Trash subclass: Object
   ]
 
   # List all available objects (compiled classes)
-  method: listObjects [
-    pragma: primitive
+  rawMethod: listObjects [
     find "$TRASHDIR/.compiled" -maxdepth 1 -type f 2>/dev/null | while read -r file; do
       basename "$file"
     done | sort
   ]
 
   # List all available traits (compiled traits)
-  method: listTraits [
-    pragma: primitive
+  rawMethod: listTraits [
     if [[ -d "$TRASHDIR/.compiled/traits" ]]; then
       find "$TRASHDIR/.compiled/traits" -type f 2>/dev/null | while read -r file; do
         basename "$file"
@@ -34,8 +31,7 @@ Trash subclass: Object
   ]
 
   # Get methods available on a class
-  method: methodsFor: class_name [
-    pragma: primitive
+  rawMethod: methodsFor: class_name [
     local compiled_file="$TRASHDIR/.compiled/$class_name"
     local runtime_file="$TRASHDIR/$class_name"
 
@@ -90,8 +86,7 @@ Trash subclass: Object
   ]
 
   # Get methods in a specific category for a class
-  method: methodsIn: class_name category: cat_name [
-    pragma: primitive
+  rawMethod: methodsIn: class_name category: cat_name [
     # Get compiled class metadata
     local compiled_file="$TRASHDIR/.compiled/$class_name"
     if [[ ! -f "$compiled_file" ]]; then
@@ -123,8 +118,7 @@ Trash subclass: Object
   ]
 
   # List all categories for a class
-  method: categoriesFor: class_name [
-    pragma: primitive
+  rawMethod: categoriesFor: class_name [
     # Get compiled class metadata
     local compiled_file="$TRASHDIR/.compiled/$class_name"
     if [[ ! -f "$compiled_file" ]]; then
@@ -157,8 +151,7 @@ Trash subclass: Object
   ]
 
   # Show inheritance hierarchy for a class
-  method: hierarchyFor: class_name [
-    pragma: primitive
+  rawMethod: hierarchyFor: class_name [
     local compiled_file="$TRASHDIR/.compiled/$class_name"
     local runtime_file="$TRASHDIR/$class_name"
 
@@ -172,8 +165,7 @@ Trash subclass: Object
   ]
 
   # Helper for showing hierarchy (uses compiled metadata)
-  method: _showHierarchy: class_name depth: depth [
-    pragma: primitive
+  rawMethod: _showHierarchy: class_name depth: depth [
     local indent="" i superclass super_var
     local compiled_file="$TRASHDIR/.compiled/$class_name"
     local runtime_file="$TRASHDIR/$class_name"
@@ -201,8 +193,7 @@ Trash subclass: Object
   ]
 
   # Create a new class file with modern .trash syntax
-  method: createObject: object_name super: superclass [
-    pragma: primitive
+  rawMethod: createObject: object_name super: superclass [
     local trash_file="$TRASHDIR/${object_name}.trash"
     superclass="${superclass:-Object}"
 
@@ -215,13 +206,11 @@ Trash subclass: Object
 # $object_name - Created by Trash system
 $object_name subclass: $superclass
 
-  method: example [
-    pragma: primitive
+  rawMethod: example [
     echo "Hello from $object_name"
   ]
 
-  classMethod: new [
-    pragma: primitive
+  rawClassMethod: new [
     local id=\$(_generate_instance_id "$object_name")
     _create_instance "$object_name" "\$id"
     echo "\$id"
@@ -236,8 +225,7 @@ EOF
   ]
 
   # Remove an object (with confirmation)
-  method: removeObject: object_name [
-    pragma: primitive
+  rawMethod: removeObject: object_name [
     local object_file confirmation
     object_file="$TRASHDIR/$object_name"
     if [[ ! -f "$object_file" ]]; then
@@ -255,16 +243,15 @@ EOF
   ]
 
   # Reload all object stubs
-  method: reload [
-    pragma: primitive
+  rawMethod: reload [
     echo "Reloading all object stubs..."
     initialize_trash
     echo "Reload complete"
   ]
 
   # Reload a single class (hot reload for development)
-  method: reloadClass: class_name [
-    pragma: primitive
+  rawMethod: reloadClass: class_name [
+    pragma: direct
     if [[ -z "$class_name" ]]; then
       echo "Usage: @ Trash reloadClass <ClassName>"
       return 1
@@ -325,8 +312,8 @@ EOF
 
   # Compile and reload a class from .trash source
   # Safe: compiles to temp file first, validates, only replaces on success
-  method: compileAndReload: class_name [
-    pragma: primitive
+  rawMethod: compileAndReload: class_name [
+    pragma: direct
     if [[ -z "$class_name" ]]; then
       echo "Usage: @ Trash compileAndReload <ClassName>"
       return 1
@@ -383,8 +370,7 @@ EOF
   ]
 
   # Show system statistics
-  method: stats [
-    pragma: primitive
+  rawMethod: stats [
     echo "=== Trash System Statistics ==="
     echo "Objects: $(@ self listObjects | wc -l)"
     echo "Traits: $(@ self listTraits | wc -l)"
@@ -395,57 +381,54 @@ EOF
   ]
 
   # Clean up system
-  method: cleanup [
-    pragma: primitive
+  rawMethod: cleanup [
     echo "Cleaning up trash system..."
     @ Process listProcesses >/dev/null 2>&1
     echo "Cleanup complete"
   ]
 
   # Show help
-  method: help [
-    pragma: primitive
+  rawMethod: help [
     echo "=== Trash System Commands ==="
-    echo "@ Trash info                    - Show system information"
-    echo "@ Trash listObjects             - List all objects"
-    echo "@ Trash listTraits              - List all traits"
-    echo "@ Trash methodsFor <object>     - Show methods for object"
-    echo "@ Trash hierarchyFor <object>   - Show inheritance hierarchy"
-    echo "@ Trash new <class>              - Create class skeleton and edit"
-    echo "@ Trash edit <class>             - Edit class and recompile on save"
-    echo "@ Trash createObject <name> [super] - Create new object (no edit)"
-    echo "@ Trash removeObject <name>     - Remove object"
-    echo "@ Trash reload                  - Reload all object stubs"
-    echo "@ Trash reloadClass <class>     - Hot reload a single class"
-    echo "@ Trash compileAndReload <class> - Compile and reload from .trash"
-    echo "@ Trash stats                   - Show system statistics"
-    echo "@ Trash cleanup                 - Clean up system"
-    echo "@ Trash version                 - Show version information"
-    echo "@ Trash inspect <object>        - Detailed object inspection"
-    echo "@ Trash repl                    - Launch interactive REPL"
+    echo "@ Trash info                        - Show system information"
+    echo "@ Trash listObjects                 - List all objects"
+    echo "@ Trash listTraits                  - List all traits"
+    echo "@ Trash methodsFor: <class>         - Show methods for class"
+    echo "@ Trash hierarchyFor: <class>       - Show inheritance hierarchy"
+    echo "@ Trash new: <class>                - Create class skeleton and edit"
+    echo "@ Trash edit: <class>               - Edit class and recompile on save"
+    echo "@ Trash createObject: <name> super: <super> - Create new object (no edit)"
+    echo "@ Trash removeObject: <name>        - Remove object"
+    echo "@ Trash reload                      - Reload all object stubs"
+    echo "@ Trash reloadClass: <class>        - Hot reload a single class"
+    echo "@ Trash compileAndReload: <class>   - Compile and reload from .trash"
+    echo "@ Trash stats                       - Show system statistics"
+    echo "@ Trash cleanup                     - Clean up system"
+    echo "@ Trash version                     - Show version information"
+    echo "@ Trash inspect: <class>            - Detailed object inspection"
+    echo "@ Trash repl                        - Launch interactive REPL"
     echo ""
     echo "=== Instance Queries (use class methods) ==="
-    echo "@ <Class> findAll               - Find all instances of class"
-    echo "@ <Class> find '<predicate>'    - Find with predicate"
-    echo "@ <Class> count                 - Count instances of class"
-    echo "@ Store listClasses             - List classes with instances"
+    echo "@ <Class> findAll                   - Find all instances of class"
+    echo "@ <Class> find: '<predicate>'       - Find with predicate"
+    echo "@ <Class> count                     - Count instances of class"
+    echo "@ Store listClasses                 - List classes with instances"
     echo ""
     echo "=== Debugging ==="
-    echo "@ Trash showStack               - Show current call stack"
-    echo "@ Trash clearStack              - Clear call stack"
+    echo "@ Trash showStack                   - Show current call stack"
+    echo "@ Trash clearStack                  - Clear call stack"
     echo ""
     echo "=== Source Introspection ==="
-    echo "@ Trash sourceFor: <class>      - Get embedded source code"
-    echo "@ Trash hashFor: <class>        - Get source hash (SHA-256)"
+    echo "@ Trash sourceFor: <class>          - Get embedded source code"
+    echo "@ Trash hashFor: <class>            - Get source hash (SHA-256)"
     echo ""
     echo "=== Testing ==="
-    echo "@ Trash runTestsFor: <class>    - Run testMethod: tests for class"
-    echo "@ Trash hasTestsFor: <class>    - Check if class has tests"
+    echo "@ Trash runTestsFor: <class>        - Run testMethod: tests for class"
+    echo "@ Trash hasTestsFor: <class>        - Check if class has tests"
   ]
 
   # Show version information
-  method: version [
-    pragma: primitive
+  rawMethod: version [
     echo "Trash System v$TRASH_VERSION"
     echo "Author: $TRASH_AUTHOR"
     echo "Description: $TRASH_DESCRIPTION"
@@ -455,8 +438,7 @@ EOF
 
   # Get the embedded source code for a class
   # Usage: @ Trash sourceFor: Counter
-  method: sourceFor: class_name [
-    pragma: primitive
+  rawMethod: sourceFor: class_name [
     local source_func="__${class_name}__source"
     if declare -f "$source_func" >/dev/null 2>&1; then
       "$source_func"
@@ -480,8 +462,7 @@ EOF
 
   # Get the source hash for a class
   # Usage: @ Trash hashFor: Counter
-  method: hashFor: class_name [
-    pragma: primitive
+  rawMethod: hashFor: class_name [
     local hash_var="__${class_name}__sourceHash"
     local compiled_file="$TRASHDIR/.compiled/$class_name"
 
@@ -507,8 +488,7 @@ EOF
   # Run tests for a class
   # Usage: @ Trash runTestsFor: Counter
   # Returns: 0 if all tests pass, 1 if any fail
-  method: runTestsFor: class_name [
-    pragma: primitive
+  rawMethod: runTestsFor: class_name [
     local tests_var="__${class_name}__tests"
     local tests="${!tests_var:-}"
     local compiled_file="$TRASHDIR/.compiled/$class_name"
@@ -551,8 +531,7 @@ EOF
 
   # Check if a class has tests defined
   # Usage: @ Trash hasTestsFor: Counter
-  method: hasTestsFor: class_name [
-    pragma: primitive
+  rawMethod: hasTestsFor: class_name [
     local tests_var="__${class_name}__tests"
     local compiled_file="$TRASHDIR/.compiled/$class_name"
 
@@ -573,16 +552,15 @@ EOF
 
   # Launch interactive REPL
   # Note: For rlwrap support (history, completions), run bin/trash directly
-  classMethod: repl [
-    pragma: primitive
+  rawClassMethod: repl [
+    pragma: direct
     local trashtalk_root
     trashtalk_root="$(dirname "$TRASHDIR")"
     "$trashtalk_root/bin/trash-repl"
   ]
 
   # Detailed object inspection
-  method: inspect: object_name [
-    pragma: primitive
+  rawMethod: inspect: object_name [
     local object_file traits state
     if [[ -z "$object_name" ]]; then
       echo "Usage: @ Trash inspect <object_name>"
@@ -613,8 +591,8 @@ EOF
 
   # Create a new class with minimal skeleton and open in editor
   # New classes are created in the user directory (trash/user/)
-  method: new: class_name [
-    pragma: primitive
+  rawMethod: new: class_name [
+    pragma: direct
     local user_file="$TRASHDIR/user/${class_name}.trash"
     local system_file="$TRASHDIR/${class_name}.trash"
     local trait_file="$TRASHDIR/traits/${class_name}.trash"
@@ -673,8 +651,8 @@ EOF
 
   # Edit an existing class and recompile on save
   # Enhanced: loops on errors, prepends error info, jumps to error line
-  method: edit: class_name [
-    pragma: primitive
+  rawMethod: edit: class_name [
+    pragma: direct
     local trash_file="$TRASHDIR/${class_name}.trash"
     local user_file="$TRASHDIR/user/${class_name}.trash"
     local trait_file="$TRASHDIR/traits/${class_name}.trash"
@@ -899,8 +877,7 @@ EOF
   # Evaluate a string of Trashtalk code
   # Usage: @ Trash eval: 'counter := @ Counter new. @ counter increment. @ counter getValue'
   # Returns the result of the last expression
-  classMethod: eval: code [
-    pragma: primitive
+  rawClassMethod: eval: code [
     local temp_class="_TempEval_$$_$RANDOM"
     local temp_file="/tmp/${temp_class}.trash"
     local compiled_file="/tmp/${temp_class}.compiled"
@@ -909,8 +886,7 @@ EOF
     # Wrap code in a temporary class with a run method
     cat > "$temp_file" << EVALEOF
 ${temp_class} subclass: Object
-  classMethod: run [
-    pragma: primitive
+  rawClassMethod: run [
     $1
   ]
 EVALEOF
@@ -948,8 +924,7 @@ EVALEOF
 
   # Evaluate code from a file
   # Usage: @ Trash evalFile: '/path/to/script.trash'
-  classMethod: evalFile: filepath [
-    pragma: primitive
+  rawClassMethod: evalFile: filepath [
     if [[ ! -f "$1" ]]; then
       echo "Error: File not found: $1" >&2
       return 1
@@ -960,8 +935,7 @@ EVALEOF
   ]
 
   # Quick class creation with template
-  method: quickCreate: class_name template: template [
-    pragma: primitive
+  rawMethod: quickCreate: class_name template: template [
     template="${template:-basic}"
     local trash_file="$TRASHDIR/${class_name}.trash"
 
@@ -977,31 +951,26 @@ EVALEOF
 $class_name subclass: Object
   include: Debuggable
 
-  method: start [
-    pragma: primitive
+  rawMethod: start [
     @ self debug: "Starting service..."
     echo "Service started"
   ]
 
-  method: stop [
-    pragma: primitive
+  rawMethod: stop [
     @ self debug: "Stopping service..."
     echo "Service stopped"
   ]
 
-  method: status [
-    pragma: primitive
+  rawMethod: status [
     echo "Service is running"
   ]
 
-  method: restart [
-    pragma: primitive
+  rawMethod: restart [
     @ "\$_RECEIVER" stop
     @ "\$_RECEIVER" start
   ]
 
-  classMethod: new [
-    pragma: primitive
+  rawClassMethod: new [
     local id=\$(_generate_instance_id "$class_name")
     _create_instance "$class_name" "\$id"
     echo "\$id"
@@ -1015,8 +984,7 @@ $class_name subclass: Object
   include: Debuggable
   instanceVars: status:active
 
-  method: receive: message [
-    pragma: primitive
+  rawMethod: receive: message [
     @ self debug: "Received message: \$message"
     case "\$message" in
       "ping") echo "pong" ;;
@@ -1025,13 +993,11 @@ $class_name subclass: Object
     esac
   ]
 
-  method: initialize [
-    pragma: primitive
+  rawMethod: initialize [
     @ self debug: "Actor initialized"
   ]
 
-  classMethod: new [
-    pragma: primitive
+  rawClassMethod: new [
     local id=\$(_generate_instance_id "$class_name")
     _create_instance "$class_name" "\$id"
     echo "\$id"
@@ -1044,13 +1010,11 @@ EOF
 # $class_name - Created by Trash system
 $class_name subclass: Object
 
-  method: example [
-    pragma: primitive
+  rawMethod: example [
     echo "Hello from $class_name"
   ]
 
-  classMethod: new [
-    pragma: primitive
+  rawClassMethod: new [
     local id=\$(_generate_instance_id "$class_name")
     _create_instance "$class_name" "\$id"
     echo "\$id"

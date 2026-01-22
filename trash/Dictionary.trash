@@ -101,6 +101,7 @@ Dictionary subclass: Object
   # Iterate over each key-value pair, calling block with key and value
   # Usage: @ dict do: [:key :value | @ Console print: key , ' = ' , value]
   method: do: aBlock [
+    pragma: direct
     | keysArray i len key value |
     keysArray := items objectKeys.
     len := keysArray arrayLength.

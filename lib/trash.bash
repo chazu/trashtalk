@@ -2033,12 +2033,8 @@ function @ {
   # - value/valueWith:/valueWith:and:/do: need to modify caller variables (blocks)
   # - startWriter:/startReader:/stopWriter/stopReader: spawn background processes
   local ___selector="${2:-}"
-  if [[ "$___selector" == "repl" || "$___selector" == "reloadClass" || "$___selector" == "compileAndReload" || "$___selector" == "edit" || "$___selector" == "new" || \
-        "$___selector" == "value" || "$___selector" == "valueWith:" || "$___selector" == "do:" || \
-        "$___selector" == "startWriter:" || "$___selector" == "startReader:" || "$___selector" == "stopWriter" || "$___selector" == "stopReader" ]]; then
-    send "$@"
-    return $?
-  fi
+  # Note: Methods needing direct execution should use "pragma: direct" in their class definition.
+  # The pragma: direct marker is checked below and bypasses subshell capture.
 
   # Check for pragma: direct marker on the method
   # Marker format: __ClassName__[class__]selector__direct=1

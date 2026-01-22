@@ -100,6 +100,7 @@ Array subclass: Object
   # Iterate over each element, calling block with each value
   # Usage: @ myArray do: [:each | @ Console print: each]
   method: do: aBlock [
+    pragma: direct
     | i len |
     len := items arrayLength.
     i := 0.
