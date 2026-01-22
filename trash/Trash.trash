@@ -778,7 +778,7 @@ EOF
             echo ""
             echo "Running tests..."
             local test_output test_exit
-            test_output=$(@ "$_RECEIVER" runTestsFor "$class_name" 2>&1)
+            test_output=$(@ "$_RECEIVER" runTestsFor: "$class_name" 2>&1)
             test_exit=$?
             echo "$test_output"
 
