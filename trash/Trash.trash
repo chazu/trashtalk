@@ -510,12 +510,38 @@ EOF
     for test_selector in $tests; do
       func_name="__${class_name}__test__${test_selector}"
       if declare -f "$func_name" >/dev/null 2>&1; then
-        # Run the test
-        "$func_name" || failed=1
+        # Capture output to temp file to check type while preserving counters
+        local tmpfile="/tmp/trash_test_$$"
+        "$func_name" > "$tmpfile" 2>&1
+        local test_exit_code=$?
+        local test_result
+        test_result=$(cat "$tmpfile")
+        rm -f "$tmpfile"
+
+        # Determine test type by output:
+        # - "true"/"false" = DSL testMethod
+        # - Other = rawTestMethod (output already includes TAP from _assert_*)
+        if [[ "$test_result" == "false" ]]; then
+          # DSL testMethod returned false
+          ((_TEST_COUNT++))
+          ((_TEST_FAILURES++))
+          echo "not ok $_TEST_COUNT - $test_selector"
+          failed=1
+        elif [[ "$test_result" == "true" ]]; then
+          # DSL testMethod returned true
+          ((_TEST_COUNT++))
+          echo "ok $_TEST_COUNT - $test_selector"
+        else
+          # rawTestMethod - output already formatted, counters already updated
+          echo "$test_result"
+          if [[ $test_exit_code -ne 0 ]]; then
+            failed=1
+          fi
+        fi
       else
-        echo "not ok - test function $func_name not found"
         ((_TEST_COUNT++))
         ((_TEST_FAILURES++))
+        echo "not ok $_TEST_COUNT - test function $func_name not found"
         failed=1
       fi
     done
