@@ -692,8 +692,8 @@ EOF
       return 1
     fi
 
-    local error_marker="# ══════════════════════════════════════════════════════════════════════"
-    local error_start="# ══ COMPILE ERRORS (fix and save to retry) ══"
+    local error_marker="# ========================================================================"
+    local error_start="# == COMPILE ERRORS (fix and save to retry) =="
     local temp_compiled="/tmp/trash_edit_compile_$$"
     local error_line=1
     local compile_errors=""
@@ -763,7 +763,7 @@ EOF
       if [[ "$before_mtime" == "$after_mtime" ]]; then
         # Strip error block before exiting (clean up the file)
         if [[ "$has_error_block" == true ]]; then
-          sed -i.bak "/^# ══ COMPILE ERRORS/,/^# ══════════════════════════════════════════════════════════════════════$/d" "$file_to_edit"
+          sed -i.bak "/^# == COMPILE ERRORS/,/^# ========================================================================$/d" "$file_to_edit"
           rm -f "${file_to_edit}.bak"
         fi
         if [[ "$had_errors" == true ]]; then
@@ -777,7 +777,7 @@ EOF
 
       # Strip any error comments before compiling
       if grep -q "^$error_start" "$file_to_edit" 2>/dev/null; then
-        sed -i.bak "/^# ══ COMPILE ERRORS/,/^# ══════════════════════════════════════════════════════════════════════$/d" "$file_to_edit"
+        sed -i.bak "/^# == COMPILE ERRORS/,/^# ========================================================================$/d" "$file_to_edit"
         rm -f "${file_to_edit}.bak"
       fi
 
