@@ -701,12 +701,11 @@ EOF
 
     # Edit-compile loop
     while true; do
-      local before_mtime after_mtime
+      local before_mtime after_mtime has_error_block=false
 
-      # Strip any existing error comments BEFORE taking mtime
+      # Check if file has error block (user will see it in editor)
       if grep -q "^$error_start" "$file_to_edit" 2>/dev/null; then
-        sed -i.bak "/^# ══ COMPILE ERRORS/,/^# ══════════════════════════════════════════════════════════════════════$/d" "$file_to_edit"
-        rm -f "${file_to_edit}.bak"
+        has_error_block=true
       fi
 
       before_mtime=$(stat -f "%m" "$file_to_edit" 2>/dev/null || stat -c "%Y" "$file_to_edit" 2>/dev/null)
@@ -760,13 +759,13 @@ EOF
 
       after_mtime=$(stat -f "%m" "$file_to_edit" 2>/dev/null || stat -c "%Y" "$file_to_edit" 2>/dev/null)
 
-      # Strip any error comments the user may have left in
-      if grep -q "^$error_start" "$file_to_edit" 2>/dev/null; then
-        sed -i.bak "/^# ══ COMPILE ERRORS/,/^# ══════════════════════════════════════════════════════════════════════$/d" "$file_to_edit"
-        rm -f "${file_to_edit}.bak"
-      fi
-
+      # Check if user made no changes (didn't even save)
       if [[ "$before_mtime" == "$after_mtime" ]]; then
+        # Strip error block before exiting (clean up the file)
+        if [[ "$has_error_block" == true ]]; then
+          sed -i.bak "/^# ══ COMPILE ERRORS/,/^# ══════════════════════════════════════════════════════════════════════$/d" "$file_to_edit"
+          rm -f "${file_to_edit}.bak"
+        fi
         if [[ "$had_errors" == true ]]; then
           echo "No changes - aborting edit"
           return 1
@@ -774,6 +773,12 @@ EOF
           echo "No changes detected"
           return 0
         fi
+      fi
+
+      # Strip any error comments before compiling
+      if grep -q "^$error_start" "$file_to_edit" 2>/dev/null; then
+        sed -i.bak "/^# ══ COMPILE ERRORS/,/^# ══════════════════════════════════════════════════════════════════════$/d" "$file_to_edit"
+        rm -f "${file_to_edit}.bak"
       fi
 
       echo "File modified, compiling..."
