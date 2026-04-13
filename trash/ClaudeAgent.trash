@@ -1,0 +1,100 @@
+# ClaudeAgent - Concrete agent implementation using Claude Code CLI
+# Provides AI assistant capabilities via Claude Code integration
+# Extends base Agent class with Claude-specific tooling
+#
+# Usage:
+#   @ ClaudeAgent chatOrCreateSession: "help me debug this"
+#   @ ClaudeAgent spawn: "analyze this code"
+#
+ClaudeAgent subclass: Agent
+
+  # Override to specify Claude Code as the tool command
+  rawClassMethod: toolCommand [
+    # Use Claude Code in interactive mode
+    echo "claude"
+  ]
+
+  # Ensure Claude Code CLI is available
+  rawClassMethod: ensureAgentTool [
+    # Check if claude command exists
+    if command -v claude >/dev/null 2>&1; then
+      echo "true"
+    else
+      _throw "AgentError" "Claude Code CLI not found. Install from https://claude.ai/code"
+    fi
+  ]
+
+  # Get version info for Claude Code
+  rawClassMethod: version [
+    if command -v claude >/dev/null 2>&1; then
+      claude --version 2>/dev/null || echo "unknown"
+    else
+      echo "not installed"
+    fi
+  ]
+
+  # Set up the Claude session with specific configuration
+  rawClassMethod: configureSession: sessionName [
+    local sessionName="$1"
+
+    # Send initial configuration to Claude session
+    @ Tools::Tmux sendToSession: "$sessionName" command: "/help"
+
+    # Could add more setup commands here like:
+    # @ Tools::Tmux sendToSession: "$sessionName" command: "/model claude-3-sonnet"
+
+    echo "true"
+  ]
+
+  # Override createSession to add Claude-specific setup
+  rawClassMethod: createSession: sessionName asType: sessionType [
+    local sessionName="$1" sessionType="$2" session
+
+    # Call parent implementation
+    session=$(@ Agent createSession: "$sessionName" asType: "$sessionType")
+
+    if [[ -n "$session" ]]; then
+      # Add Claude-specific configuration
+      @ "$_RECEIVER" configureSession: "$sessionName"
+
+      # Set agent-specific context in the session
+      @ $session setContext: "You are an AI assistant integrated with Trashtalk. You can help with code analysis, debugging, and system administration tasks."
+    fi
+
+    echo "$session"
+  ]
+
+  # Send a message and optionally wait for response
+  classMethod: sendMessage: message toSession: sessionName [
+    | session response |
+    session := @ AgentSession findBySessionName: sessionName
+    (session isEmpty) ifTrue: [
+      _throw "AgentError" "Session not found: " sessionName
+      ^ ""
+    ]
+
+    @ session chat: message
+  ]
+
+  # Interactive method to start a conversation
+  classMethod: startConversation [
+    | session |
+    session := @ self ensurePrimarySession
+    @ Console print: "Starting conversation with Claude Agent..."
+    @ Console print: "Session: " @ session getSessionName
+    @ Console print: "Type 'exit' to end the conversation"
+
+    @ session attach
+  ]
+
+  # Quick chat method for one-off questions
+  classMethod: ask: question [
+    | session sessionName |
+    sessionName := @ Runtime generateId: "claude_query"
+    session := @ self createSession: sessionName asType: "query"
+    @ session chat: question
+
+    # For now, just return the session for inspection
+    # In a full implementation, we'd capture and return the response
+    ^ session
+  ]

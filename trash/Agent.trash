@@ -1,0 +1,135 @@
+# Agent - Base class for AI assistant integration
+# Manages persistent sessions via tmux and provides @@ syntax support
+# Primary session maps to @@ commands, subagents get fresh sessions
+#
+# Configuration via .trashrc:
+#   DEFAULT_AGENT=ClaudeAgent
+#
+# Usage:
+#   @@ "help me debug this"           # Primary session
+#   @ Agent spawn: "analyze code"     # Subagent session
+#
+Agent subclass: Object
+  include: Persistable
+
+  # Get the configured primary agent class from .trashrc
+  rawClassMethod: primary [
+    local defaultAgent configFile
+    configFile="$HOME/.trashrc"
+
+    # Read DEFAULT_AGENT from .trashrc if it exists
+    if [[ -f "$configFile" ]]; then
+      defaultAgent=$(grep "^DEFAULT_AGENT=" "$configFile" | cut -d'=' -f2)
+    fi
+
+    # Default to ClaudeAgent if not configured
+    if [[ -z "$defaultAgent" ]]; then
+      defaultAgent="ClaudeAgent"
+    fi
+
+    echo "$defaultAgent"
+  ]
+
+  # Chat with or create the primary session for this agent type
+  classMethod: chatOrCreateSession: message [
+    | session |
+    session := @ self ensurePrimarySession
+    @ session chat: message
+  ]
+
+  # Ensure the primary session exists, create if needed
+  rawClassMethod: ensurePrimarySession [
+    local agentType sessionName session
+    agentType=$(echo "$_RECEIVER" | tr '[:upper:]' '[:lower:]')
+    sessionName="${agentType}_primary"
+
+    # Check if session exists in tmux
+    if @ Tools::Tmux sessionExists: "$sessionName"; then
+      # Return existing session instance
+      session=$(@ AgentSession findBySessionName: "$sessionName")
+      if [[ -n "$session" ]]; then
+        echo "$session"
+        return
+      fi
+    fi
+
+    # Create new primary session
+    @ "$_RECEIVER" createSession: "$sessionName" asType: "primary"
+  ]
+
+  # Create a new agent session (primary or subagent)
+  rawClassMethod: createSession: sessionName asType: sessionType [
+    local sessionName="$1" sessionType="$2"
+    local session agentType toolCommand
+
+    agentType=$(echo "$_RECEIVER" | tr '[:upper:]' '[:lower:]')
+
+    # Get the tool command for this agent type
+    toolCommand=$(@ "$_RECEIVER" toolCommand)
+    if [[ -z "$toolCommand" ]]; then
+      _throw "AgentError" "No tool command defined for $_RECEIVER"
+      return
+    fi
+
+    # Ensure required tools
+    @ Tools::Tmux ensure
+    @ "$_RECEIVER" ensureAgentTool
+
+    # Create tmux session
+    @ Tools::Tmux createSession: "$sessionName" withCommand: "$toolCommand"
+
+    # Create and store session metadata
+    session=$(@ AgentSession new)
+    @ $session setSessionName: "$sessionName"
+    @ $session setAgentType: "$agentType"
+    @ $session setSessionType: "$sessionType"
+    @ $session setStatus: "active"
+    @ $session setCreated: "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    @ $session setLastActivity: "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+    echo "$session"
+  ]
+
+  # Spawn a subagent for a specific task
+  classMethod: spawn: message [
+    | sessionName session |
+    sessionName := @ Runtime generateId: "agent_session"
+    session := @ self createSession: sessionName asType: "subagent"
+    @ session setSpawnedBy: @ self getCurrentSessionId
+    @ session chat: message
+  ]
+
+  # Get current session ID (for subagent spawning)
+  rawClassMethod: getCurrentSessionId [
+    # This would be set in the session context
+    echo "${TRASHTALK_SESSION_ID:-}"
+  ]
+
+  # Override in subclasses to specify the tool command
+  rawClassMethod: toolCommand [
+    echo ""
+  ]
+
+  # Override in subclasses to ensure the agent tool is available
+  rawClassMethod: ensureAgentTool [
+    echo "true"
+  ]
+
+  # Send a message to a specific session
+  classMethod: sendToSession: sessionName message: message [
+    @ Tools::Tmux sendToSession: sessionName command: message
+  ]
+
+  # List all sessions for this agent type
+  rawClassMethod: listSessions [
+    local agentType
+    agentType=$(echo "$_RECEIVER" | tr '[:upper:]' '[:lower:]')
+    @ AgentSession findByAgentType: "$agentType"
+  ]
+
+  # Clean up inactive sessions
+  classMethod: cleanup [
+    | sessions |
+    sessions := @ self listSessions
+    # TODO: Implement cleanup logic for inactive sessions
+  ]

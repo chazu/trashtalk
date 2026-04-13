@@ -36,6 +36,14 @@ TRASH_AUTHOR="Chazu"
 TRASH_DESCRIPTION="Smalltalk-inspired DSL for Bash"
 
 # ============================================
+# User Configuration
+# ============================================
+# Load user configuration from ~/.trashrc if it exists
+if [[ -f "$HOME/.trashrc" ]]; then
+  source "$HOME/.trashrc"
+fi
+
+# ============================================
 # Profiling Support
 # ============================================
 # Enable with TRASH_PROFILE=1
@@ -2097,6 +2105,37 @@ function @ {
   [[ -n "$___result" ]] && echo "$___result"
 
   return $___exit_code
+}
+
+# @@ syntax - Chat with primary AI agent
+# Usage: @@ "your message here" or @@ your message without quotes
+function @@ {
+  # Combine all arguments into a single message
+  local message="$*"
+
+  # Validate we have a message
+  if [[ -z "$message" ]]; then
+    echo "Error: @@ requires a message" >&2
+    return 1
+  fi
+
+  # For now, just echo the message with a prefix to prove the dispatcher works
+  # TODO: Replace with actual agent integration once dependencies are resolved
+  echo "[Agent] $message"
+  echo "[Agent] This is a placeholder response - agent integration coming soon!"
+
+  # # Get the primary agent class
+  # local primary_agent
+  # primary_agent=$(@ Agent primary)
+  # local exit_code=$?
+
+  # if [[ $exit_code -ne 0 || -z "$primary_agent" ]]; then
+  #   echo "Error: Could not determine primary agent. Check DEFAULT_AGENT in ~/.trashrc" >&2
+  #   return 1
+  # fi
+
+  # # Route to the primary agent's chatOrCreateSession method
+  # @ "$primary_agent" chatOrCreateSession: "$message"
 }
 
 # Get list of functions defined in $1

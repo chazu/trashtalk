@@ -1,0 +1,151 @@
+# Tools::Tmux - Wrapper for tmux session management
+# Extends Tool base class with tmux-specific operations for agent sessions
+#
+# Usage:
+#   @ Tools::Tmux ensure
+#   @ Tools::Tmux createSession: "my_session" withCommand: "claude"
+#   @ Tools::Tmux sendToSession: "my_session" command: "hello"
+#
+package: Tools
+
+Tmux subclass: Tool
+
+  classMethod: name [
+    ^ "tmux"
+  ]
+
+  classMethod: installCommand [
+    ^ "brew install tmux"
+  ]
+
+  # Create a new tmux session with a specific command
+  rawClassMethod: createSession: sessionName withCommand: command [
+    local sessionName="$1" command="$2" toolPath createCmd
+    toolPath=$(@ "$_RECEIVER" path)
+
+    if [[ -z "$toolPath" ]]; then
+      _throw "ToolError" "tmux is not installed"
+      return
+    fi
+
+    # Create detached session with the specified command
+    createCmd="${toolPath} new-session -d -s '${sessionName}' '${command}'"
+    if @ Shell succeeds: "$createCmd"; then
+      echo "true"
+    else
+      _throw "TmuxError" "Failed to create session ${sessionName}"
+    fi
+  ]
+
+  # Check if a session exists
+  rawClassMethod: sessionExists: sessionName [
+    local sessionName="$1" toolPath checkCmd
+    toolPath=$(@ "$_RECEIVER" path)
+
+    if [[ -z "$toolPath" ]]; then
+      echo "false"
+      return
+    fi
+
+    checkCmd="${toolPath} has-session -t '${sessionName}' 2>/dev/null"
+    if @ Shell succeeds: "$checkCmd"; then
+      echo "true"
+    else
+      echo "false"
+    fi
+  ]
+
+  # Send a command to an existing session
+  rawClassMethod: sendToSession: sessionName command: command [
+    local sessionName="$1" command="$2" toolPath sendCmd
+    toolPath=$(@ "$_RECEIVER" path)
+
+    if [[ -z "$toolPath" ]]; then
+      _throw "ToolError" "tmux is not installed"
+      return
+    fi
+
+    # Check if session exists first
+    if [[ $(@ "$_RECEIVER" sessionExists: "$sessionName") != "true" ]]; then
+      _throw "TmuxError" "Session ${sessionName} does not exist"
+      return
+    fi
+
+    # Send command and Enter key
+    sendCmd="${toolPath} send-keys -t '${sessionName}' '${command}' Enter"
+    if @ Shell succeeds: "$sendCmd"; then
+      echo "true"
+    else
+      _throw "TmuxError" "Failed to send command to session ${sessionName}"
+    fi
+  ]
+
+  # Attach to a session
+  rawClassMethod: attachToSession: sessionName [
+    local sessionName="$1" toolPath attachCmd
+    toolPath=$(@ "$_RECEIVER" path)
+
+    if [[ -z "$toolPath" ]]; then
+      _throw "ToolError" "tmux is not installed"
+      return
+    fi
+
+    if [[ $(@ "$_RECEIVER" sessionExists: "$sessionName") != "true" ]]; then
+      _throw "TmuxError" "Session ${sessionName} does not exist"
+      return
+    fi
+
+    attachCmd="${toolPath} attach-session -t '${sessionName}'"
+    @ Shell exec: "$attachCmd"
+  ]
+
+  # Kill a session
+  rawClassMethod: killSession: sessionName [
+    local sessionName="$1" toolPath killCmd
+    toolPath=$(@ "$_RECEIVER" path)
+
+    if [[ -z "$toolPath" ]]; then
+      _throw "ToolError" "tmux is not installed"
+      return
+    fi
+
+    killCmd="${toolPath} kill-session -t '${sessionName}' 2>/dev/null"
+    if @ Shell succeeds: "$killCmd"; then
+      echo "true"
+    else
+      echo "false"
+    fi
+  ]
+
+  # List all tmux sessions
+  rawClassMethod: listSessions [
+    local toolPath listCmd
+    toolPath=$(@ "$_RECEIVER" path)
+
+    if [[ -z "$toolPath" ]]; then
+      _throw "ToolError" "tmux is not installed"
+      return
+    fi
+
+    listCmd="${toolPath} list-sessions -F '#{session_name}' 2>/dev/null"
+    @ Shell exec: "$listCmd"
+  ]
+
+  # Get session status info
+  rawClassMethod: sessionInfo: sessionName [
+    local sessionName="$1" toolPath infoCmd
+    toolPath=$(@ "$_RECEIVER" path)
+
+    if [[ -z "$toolPath" ]]; then
+      _throw "ToolError" "tmux is not installed"
+      return
+    fi
+
+    if [[ $(@ "$_RECEIVER" sessionExists: "$sessionName") != "true" ]]; then
+      _throw "TmuxError" "Session ${sessionName} does not exist"
+      return
+    fi
+
+    infoCmd="${toolPath} display-message -t '${sessionName}' -p '#{session_name}:#{session_created}:#{session_activity}'"
+    @ Shell exec: "$infoCmd"
+  ]

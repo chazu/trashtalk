@@ -1,0 +1,168 @@
+# AgentSession - Persistent metadata for agent conversation sessions
+# Tracks session state, hierarchy, and activity in SQLite
+# Maps to tmux sessions for active runtime state
+#
+# Instance variables:
+#   sessionName   - tmux session name
+#   sessionType   - "primary" or "subagent"
+#   agentType     - agent class name (lowercase)
+#   spawnedBy     - parent session ID (for subagents)
+#   status        - "active", "inactive", "completed"
+#   created       - ISO timestamp
+#   lastActivity  - ISO timestamp
+#   context       - agent context/instructions
+#   messageCount  - number of messages in session
+#
+AgentSession subclass: Object
+  include: Persistable
+  instanceVars: sessionName:'' sessionType:primary agentType:'' spawnedBy:''
+                status:active created:'' lastActivity:'' context:''
+                messageCount:0
+
+  # Find session by tmux session name
+  classMethod: findBySessionName: sessionName [
+    | query result |
+    query := "SELECT instance_id FROM instances WHERE json_extract(data, '$.sessionName') = ?"
+    result := @ Store query: query params: sessionName
+    (result isEmpty) ifTrue: [ ^ "" ]
+    ^ @ Runtime load: @ result first
+  ]
+
+  # Find all sessions for an agent type
+  classMethod: findByAgentType: agentType [
+    | query results sessions |
+    query := "SELECT instance_id FROM instances WHERE json_extract(data, '$.agentType') = ? ORDER BY json_extract(data, '$.lastActivity') DESC"
+    results := @ Store query: query params: agentType
+    sessions := @ Array new
+    results each: [ :instanceId |
+      | session |
+      session := @ Runtime load: instanceId
+      @ sessions add: session
+    ]
+    ^ sessions
+  ]
+
+  # Find active sessions
+  classMethod: findActive [
+    | query results sessions |
+    query := "SELECT instance_id FROM instances WHERE json_extract(data, '$.status') = 'active' ORDER BY json_extract(data, '$.lastActivity') DESC"
+    results := @ Store query: query params: ""
+    sessions := @ Array new
+    results each: [ :instanceId |
+      | session |
+      session := @ Runtime load: instanceId
+      @ sessions add: session
+    ]
+    ^ sessions
+  ]
+
+  # Update last activity timestamp
+  method: updateActivity [
+    lastActivity := @ Time now iso
+    @ self save
+  ]
+
+  # Add a message to the session
+  method: addMessage: role content: content [
+    | newCount |
+    newCount := messageCount + 1
+    messageCount := newCount
+    @ self updateActivity
+    @ self save
+  ]
+
+  # Chat with the agent (send message to tmux session)
+  rawMethod: chat: message [
+    local message="$1" sessionName agentType
+
+    # Update activity
+    @ self updateActivity
+
+    # Get session details
+    sessionName="$(@ self getSessionName)"
+    agentType="$(@ self getAgentType)"
+
+    # Validate session exists in tmux
+    if [[ $(@ Tools::Tmux sessionExists: "$sessionName") != "true" ]]; then
+      @ self setStatus: "inactive"
+      @ self save
+      _throw "SessionError" "Tmux session ${sessionName} no longer exists"
+      return
+    fi
+
+    # Send message to tmux session
+    if @ Tools::Tmux sendToSession: "$sessionName" command: "$message"; then
+      @ self addMessage: "user" content: "$message"
+      echo "Message sent to ${sessionName}"
+    else
+      _throw "SessionError" "Failed to send message to ${sessionName}"
+    fi
+  ]
+
+  # Attach to the tmux session for interactive use
+  method: attach [
+    | sessionName |
+    sessionName := @ self getSessionName
+    (sessionName isEmpty) ifTrue: [
+      _throw "SessionError" "No session name set"
+      ^ self
+    ]
+    @ Tools::Tmux attachToSession: sessionName
+  ]
+
+  # Kill the tmux session and mark as completed
+  method: terminate [
+    | sessionName |
+    sessionName := @ self getSessionName
+    @ Tools::Tmux killSession: sessionName
+    status := "completed"
+    @ self updateActivity
+    @ self save
+  ]
+
+  # Check if the underlying tmux session is still active
+  method: isActive [
+    | sessionName |
+    sessionName := @ self getSessionName
+    (sessionName isEmpty) ifTrue: [ ^ "false" ]
+    @ Tools::Tmux sessionExists: sessionName
+  ]
+
+  # Get child sessions (subagents spawned by this session)
+  method: getChildren [
+    | query results children |
+    query := "SELECT instance_id FROM instances WHERE json_extract(data, '$.spawnedBy') = ?"
+    results := @ Store query: query params: @ self getInstanceId
+    children := @ Array new
+    results each: [ :instanceId |
+      | child |
+      child := @ Runtime load: instanceId
+      @ children add: child
+    ]
+    ^ children
+  ]
+
+  # Get parent session (if this is a subagent)
+  method: getParent [
+    (spawnedBy isEmpty) ifTrue: [ ^ "" ]
+    @ Runtime load: spawnedBy
+  ]
+
+  # Set context/instructions for the agent
+  method: setContext: newContext [
+    context := newContext
+    @ self save
+  ]
+
+  # Session summary for debugging
+  method: summary [
+    | summary |
+    summary := @ Dictionary new
+    @ summary at: "sessionName" put: sessionName
+    @ summary at: "sessionType" put: sessionType
+    @ summary at: "agentType" put: agentType
+    @ summary at: "status" put: status
+    @ summary at: "messageCount" put: @ messageCount toString
+    @ summary at: "lastActivity" put: lastActivity
+    @ summary asJson
+  ]
