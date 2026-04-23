@@ -29,6 +29,8 @@ NC='\033[0m' # No Color
 TESTS_RUN=0
 TESTS_PASSED=0
 TESTS_FAILED=0
+FAILED_TESTS=()
+CURRENT_SECTION=""
 
 # ------------------------------------------------------------------------------
 # Test Utilities
@@ -51,6 +53,7 @@ run_test() {
         echo -e "    ${YELLOW}Expected:${NC} $expected"
         echo -e "    ${YELLOW}Actual:${NC}   $actual"
         ((TESTS_FAILED++)) || true
+        FAILED_TESTS+=("${CURRENT_SECTION}: ${name}")
     fi
     return 0  # Always return success to continue test suite
 }
@@ -72,6 +75,7 @@ run_test_contains() {
         echo -e "    ${YELLOW}Expected to contain:${NC} $expected"
         echo -e "    ${YELLOW}Actual:${NC} $actual"
         ((TESTS_FAILED++)) || true
+        FAILED_TESTS+=("${CURRENT_SECTION}: ${name}")
     fi
     return 0  # Always return success to continue test suite
 }
@@ -97,12 +101,14 @@ run_test_json() {
         echo -e "    ${YELLOW}Expected:${NC} $exp_norm"
         echo -e "    ${YELLOW}Actual:${NC}   $act_norm"
         ((TESTS_FAILED++)) || true
+        FAILED_TESTS+=("${CURRENT_SECTION}: ${name}")
     fi
     return 0  # Always return success to continue test suite
 }
 
 # Print section header
 section() {
+    CURRENT_SECTION="$1"
     echo -e "\n${BLUE}═══ $1 ═══${NC}"
 }
 
@@ -199,6 +205,10 @@ main() {
         echo -e "\n${GREEN}All tests passed!${NC}"
         exit 0
     else
+        echo -e "\n${RED}═══ Failed Tests ═══${NC}"
+        for t in "${FAILED_TESTS[@]}"; do
+            echo -e "  ${RED}✗${NC} $t"
+        done
         echo -e "\n${RED}Some tests failed.${NC}"
         exit 1
     fi

@@ -21,6 +21,10 @@ NC='\033[0m'
 : "${TESTS_RUN:=0}"
 : "${TESTS_PASSED:=0}"
 : "${TESTS_FAILED:=0}"
+: "${CURRENT_SECTION:=}"
+if ! declare -p FAILED_TESTS &>/dev/null; then
+    FAILED_TESTS=()
+fi
 
 # Run a test and check result
 # Usage: run_test "test name" expected actual
@@ -40,6 +44,7 @@ run_test() {
         echo -e "    Expected: $expected"
         echo -e "    Got:      $actual"
         ((TESTS_FAILED++)) || true
+        FAILED_TESTS+=("${CURRENT_SECTION}: ${name}")
         return 1
     fi
 }
