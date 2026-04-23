@@ -571,13 +571,17 @@ EOF
     fi
   ]
 
-  # Launch interactive REPL
-  # Note: For rlwrap support (history, completions), run bin/trash directly
+  # Launch interactive REPL with rlwrap (history, completion).
+  # Falls back to bin/trash-repl if already inside rlwrap to avoid nesting.
   rawClassMethod: repl [
     pragma: direct
     local trashtalk_root
     trashtalk_root="$(dirname "$TRASHDIR")"
-    "$trashtalk_root/bin/trash-repl"
+    if [[ -n "$RLWRAP_VERSION" ]]; then
+      "$trashtalk_root/bin/trash-repl"
+    else
+      "$trashtalk_root/bin/trash"
+    fi
   ]
 
   # Detailed object inspection

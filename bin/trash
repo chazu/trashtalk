@@ -2,4 +2,19 @@
 # Trashtalk REPL launcher
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-exec "$SCRIPT_DIR/trash-repl" "$@"
+TRASHTALK_DIR="$(dirname "$SCRIPT_DIR")"
+export TRASHTALK_DIR
+
+# Locate RlwrapFilter.pm (installed alongside rlwrap)
+RLWRAP_FILTERDIR="$(find /opt/homebrew /usr/local -name "RlwrapFilter.pm" 2>/dev/null | head -1 | xargs dirname 2>/dev/null)"
+export RLWRAP_FILTERDIR
+
+FILTER="$TRASHTALK_DIR/lib/rlwrap-completion.pl"
+
+exec rlwrap \
+    --history-filename "$HOME/.trash_history" \
+    --history-no-dupes 2 \
+    --break-chars $'precisely: \t' \
+    --case-insensitive \
+    -z "$FILTER" \
+    "$SCRIPT_DIR/trash-repl"
