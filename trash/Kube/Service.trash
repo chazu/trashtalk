@@ -1,0 +1,51 @@
+package: Kube
+
+# Kubernetes Service resource.
+# Unpacks type, clusterIP, and port list into ivars.
+Service subclass: Resource
+  instanceVars: rawJson kind name namespace cluster capturedAt identity
+                serviceType clusterIP
+
+  rawClassMethod: fromJson: json cluster: clusterName [
+    local id k n ns svcType cip
+    id=$(@ Runtime generateId: "$_CLASS")
+    @ Runtime create: "$_CLASS" id: "$id"
+    k="Service"
+    n=$(echo      "$json" | jq -r '.metadata.name // ""')
+    ns=$(echo     "$json" | jq -r '.metadata.namespace // ""')
+    svcType=$(echo "$json" | jq -r '.spec.type // "ClusterIP"')
+    cip=$(echo    "$json" | jq -r '.spec.clusterIP // ""')
+    @ "$id" setRawJson:     "$json"
+    @ "$id" setCluster:     "$clusterName"
+    @ "$id" setKind:        "$k"
+    @ "$id" setName:        "$n"
+    @ "$id" setNamespace:   "$ns"
+    @ "$id" setCapturedAt:  "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    @ "$id" setIdentity:    "$k/$ns/$n"
+    @ "$id" setServiceType: "$svcType"
+    @ "$id" setClusterIP:   "$cip"
+    echo "$id"
+  ]
+
+  # Ports as a JSON array of {port, targetPort, protocol} objects.
+  rawMethod: ports [
+    local raw
+    raw=$(_ivar rawJson)
+    echo "$raw" | jq -c '[.spec.ports[]? | {port: .port, targetPort: .targetPort, protocol: .protocol}]'
+  ]
+
+  # Selector labels as a JSON object.
+  rawMethod: selector [
+    local raw
+    raw=$(_ivar rawJson)
+    echo "$raw" | jq -c '.spec.selector // {}'
+  ]
+
+  # One-line summary: type, clusterIP, port list.
+  rawMethod: summary [
+    local t cip ports
+    t=$(_ivar serviceType)
+    cip=$(_ivar clusterIP)
+    ports=$(@ "$_RECEIVER" ports | jq -r '[.[] | "\(.port)/\(.protocol)"] | join(",")')
+    echo "$t $cip [$ports]"
+  ]

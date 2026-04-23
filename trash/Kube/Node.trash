@@ -1,0 +1,58 @@
+package: Kube
+
+# Kubernetes Node resource.
+# Unpacks ready status and schedulability into ivars.
+Node subclass: Resource
+  instanceVars: rawJson kind name cluster capturedAt identity
+                ready unschedulable
+
+  rawClassMethod: fromJson: json cluster: clusterName [
+    local id k n rdy unsched
+    id=$(@ Runtime generateId: "$_CLASS")
+    @ Runtime create: "$_CLASS" id: "$id"
+    k="Node"
+    n=$(echo      "$json" | jq -r '.metadata.name // ""')
+    rdy=$(echo    "$json" | jq -r '.status.conditions[]? | select(.type == "Ready") | .status')
+    unsched=$(echo "$json" | jq -r '.spec.unschedulable // false')
+    @ "$id" setRawJson:       "$json"
+    @ "$id" setCluster:       "$clusterName"
+    @ "$id" setKind:          "$k"
+    @ "$id" setName:          "$n"
+    @ "$id" setCapturedAt:    "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    @ "$id" setIdentity:      "$k//$n"
+    @ "$id" setReady:         "$rdy"
+    @ "$id" setUnschedulable: "$unsched"
+    echo "$id"
+  ]
+
+  # All conditions as a JSON array.
+  rawMethod: conditions [
+    local raw
+    raw=$(_ivar rawJson)
+    echo "$raw" | jq -c '.status.conditions // []'
+  ]
+
+  # Taints as a JSON array.
+  rawMethod: taints [
+    local raw
+    raw=$(_ivar rawJson)
+    echo "$raw" | jq -c '.spec.taints // []'
+  ]
+
+  # Allocatable resources as a JSON object.
+  rawMethod: allocatable [
+    local raw
+    raw=$(_ivar rawJson)
+    echo "$raw" | jq -c '.status.allocatable // {}'
+  ]
+
+  # One-line summary: ready status and schedulability.
+  rawMethod: summary [
+    local rdy unsched
+    rdy=$(_ivar ready)
+    unsched=$(_ivar unschedulable)
+    local label
+    [[ "$rdy" == "True" ]] && label="Ready" || label="NotReady"
+    [[ "$unsched" == "true" ]] && label="$label,SchedulingDisabled"
+    echo "$label"
+  ]

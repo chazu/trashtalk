@@ -1,0 +1,59 @@
+package: Kube
+
+# Kubernetes Deployment resource.
+# Unpacks replica counts into ivars.
+Deployment subclass: Resource
+  instanceVars: rawJson kind name namespace cluster capturedAt identity
+                replicas readyReplicas unavailableReplicas
+
+  rawClassMethod: fromJson: json cluster: clusterName [
+    local id k n ns replicas ready unavail
+    id=$(@ Runtime generateId: "$_CLASS")
+    @ Runtime create: "$_CLASS" id: "$id"
+    k="Deployment"
+    n=$(echo      "$json" | jq -r '.metadata.name // ""')
+    ns=$(echo     "$json" | jq -r '.metadata.namespace // ""')
+    replicas=$(echo  "$json" | jq '.spec.replicas // 0')
+    ready=$(echo     "$json" | jq '.status.readyReplicas // 0')
+    unavail=$(echo   "$json" | jq '.status.unavailableReplicas // 0')
+    @ "$id" setRawJson:             "$json"
+    @ "$id" setCluster:             "$clusterName"
+    @ "$id" setKind:                "$k"
+    @ "$id" setName:                "$n"
+    @ "$id" setNamespace:           "$ns"
+    @ "$id" setCapturedAt:          "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    @ "$id" setIdentity:            "$k/$ns/$n"
+    @ "$id" setReplicas:            "$replicas"
+    @ "$id" setReadyReplicas:       "$ready"
+    @ "$id" setUnavailableReplicas: "$unavail"
+    echo "$id"
+  ]
+
+  # available / progressing / degraded based on .status.conditions.
+  rawMethod: rolloutStatus [
+    local raw
+    raw=$(_ivar rawJson)
+    local available progressing
+    available=$(echo  "$raw" | jq -r '.status.conditions[]? | select(.type == "Available")  | .status')
+    progressing=$(echo "$raw" | jq -r '.status.conditions[]? | select(.type == "Progressing") | .status')
+    if   [[ "$available"  == "True"  ]]; then echo "available"
+    elif [[ "$progressing" == "True" ]]; then echo "progressing"
+    else echo "degraded"
+    fi
+  ]
+
+  # Image of the first container.
+  rawMethod: image [
+    local raw
+    raw=$(_ivar rawJson)
+    echo "$raw" | jq -r '.spec.template.spec.containers[0].image // ""'
+  ]
+
+  # One-line status: ready/desired replicas and rollout status.
+  rawMethod: summary [
+    local r total status
+    r=$(_ivar readyReplicas)
+    total=$(_ivar replicas)
+    status=$(@ "$_RECEIVER" rolloutStatus)
+    echo "$r/$total $status"
+  ]

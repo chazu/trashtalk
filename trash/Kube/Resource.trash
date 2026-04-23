@@ -1,0 +1,99 @@
+package: Kube
+
+# Base class for all Kubernetes resources.
+# Stores full raw kubectl JSON and unpacks common metadata fields into ivars.
+# Subclasses add kind-specific accessors on top.
+#
+# Usage:
+#   resource=$(@ Kube::Resource fromJson: "$json" cluster: 'prod')
+#   @ $resource getName        # => 'api-server'
+#   @ $resource get: '.status.phase'   # jsonPath into rawJson
+#   @ $resource save           # persist snapshot to SQLite
+#   @ Kube::Resource history   # all snapshots ordered by capturedAt
+Resource subclass: Object
+  include: Persistable
+  include: Snapshotable
+  instanceVars: rawJson kind name namespace cluster capturedAt identity
+
+  # Virtual columns for fast querying across snapshots.
+  rawClassMethod: indexedColumns [
+    echo '[
+      {"name": "kube_kind",      "path": "$.kind"},
+      {"name": "kube_name",      "path": "$.name"},
+      {"name": "kube_namespace", "path": "$.namespace"},
+      {"name": "kube_cluster",   "path": "$.cluster"},
+      {"name": "captured_at",    "path": "$.capturedAt"}
+    ]'
+  ]
+
+  # Factory: create a Resource (or subclass instance) from raw kubectl JSON.
+  # capturedAt is stamped at fetch time, not save time.
+  rawClassMethod: fromJson: json cluster: clusterName [
+    local id k n ns
+    id=$(@ Runtime generateId: "$_CLASS")
+    @ Runtime create: "$_CLASS" id: "$id"
+    k=$(echo  "$json" | jq -r '.kind // ""')
+    n=$(echo  "$json" | jq -r '.metadata.name // ""')
+    ns=$(echo "$json" | jq -r '.metadata.namespace // ""')
+    @ "$id" setRawJson:    "$json"
+    @ "$id" setCluster:    "$clusterName"
+    @ "$id" setKind:       "$k"
+    @ "$id" setName:       "$n"
+    @ "$id" setNamespace:  "$ns"
+    @ "$id" setCapturedAt: "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    @ "$id" setIdentity:   "$k/$ns/$n"
+    echo "$id"
+  ]
+
+  # Extract a value from rawJson using a jq path expression.
+  # Usage: phase=$(@ $resource get: '.status.phase')
+  rawMethod: get: path [
+    local raw
+    raw=$(_ivar rawJson)
+    echo "$raw" | jq -r "$path // empty"
+  ]
+
+  # Return labels as a jq-formatted JSON object.
+  rawMethod: labels [
+    local raw
+    raw=$(_ivar rawJson)
+    echo "$raw" | jq -c '.metadata.labels // {}'
+  ]
+
+  # Return annotations as a jq-formatted JSON object.
+  rawMethod: annotations [
+    local raw
+    raw=$(_ivar rawJson)
+    echo "$raw" | jq -c '.metadata.annotations // {}'
+  ]
+
+  # Human-readable age since creationTimestamp.
+  rawMethod: age [
+    local raw created now delta
+    raw=$(_ivar rawJson)
+    created=$(echo "$raw" | jq -r '.metadata.creationTimestamp // ""')
+    [[ -z "$created" ]] && echo "unknown" && return
+    if command -v gdate >/dev/null 2>&1; then
+      now=$(gdate +%s)
+      delta=$((now - $(gdate -d "$created" +%s 2>/dev/null || echo "$now")))
+    else
+      now=$(date +%s)
+      delta=$((now - $(date -j -f '%Y-%m-%dT%H:%M:%SZ' "$created" +%s 2>/dev/null || echo "$now")))
+    fi
+    if   (( delta < 3600   )); then echo "$((delta / 60))m"
+    elif (( delta < 86400  )); then echo "$((delta / 3600))h"
+    else echo "$((delta / 86400))d"
+    fi
+  ]
+
+  # Compare this snapshot with another Resource instance field-by-field.
+  rawMethod: diffWith: other [
+    @ Kube::Diff compareResource: "$_RECEIVER" with: "$other"
+  ]
+
+  # Find all snapshots of a specific resource by identity string (kind/namespace/name).
+  rawClassMethod: historyFor: identity [
+    @ Kube::Resource latestFor: "$identity"
+  ]
+
+@ Kube::Resource initializeSchema

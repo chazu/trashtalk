@@ -1,0 +1,66 @@
+package: Kube
+
+# Kubernetes Pod resource.
+# Unpacks phase, restart count, and container readiness into ivars for fast access.
+Pod subclass: Resource
+  instanceVars: rawJson kind name namespace cluster capturedAt identity
+                phase restartCount readyCount totalCount
+
+  rawClassMethod: fromJson: json cluster: clusterName [
+    local id k n ns phase restarts ready total
+    id=$(@ Runtime generateId: "$_CLASS")
+    @ Runtime create: "$_CLASS" id: "$id"
+    k="Pod"
+    n=$(echo   "$json" | jq -r '.metadata.name // ""')
+    ns=$(echo  "$json" | jq -r '.metadata.namespace // ""')
+    phase=$(echo    "$json" | jq -r '.status.phase // "Unknown"')
+    restarts=$(echo "$json" | jq '[.status.containerStatuses[]?.restartCount // 0] | add // 0')
+    ready=$(echo    "$json" | jq '[.status.containerStatuses[]? | select(.ready == true)] | length')
+    total=$(echo    "$json" | jq '.spec.containers | length')
+    @ "$id" setRawJson:      "$json"
+    @ "$id" setCluster:      "$clusterName"
+    @ "$id" setKind:         "$k"
+    @ "$id" setName:         "$n"
+    @ "$id" setNamespace:    "$ns"
+    @ "$id" setCapturedAt:   "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    @ "$id" setIdentity:     "$k/$ns/$n"
+    @ "$id" setPhase:        "$phase"
+    @ "$id" setRestartCount: "$restarts"
+    @ "$id" setReadyCount:   "$ready"
+    @ "$id" setTotalCount:   "$total"
+    echo "$id"
+  ]
+
+  # true if all containers are ready.
+  rawMethod: ready [
+    local r t
+    r=$(_ivar readyCount)
+    t=$(_ivar totalCount)
+    [[ "$r" == "$t" && -n "$r" ]] && echo "true" || echo "false"
+  ]
+
+  # Container names as a JSON array.
+  rawMethod: containers [
+    local raw
+    raw=$(_ivar rawJson)
+    echo "$raw" | jq -c '[.spec.containers[].name]'
+  ]
+
+  # One-line status summary: phase, ready/total, restart count.
+  rawMethod: summary [
+    local ph r t rc
+    ph=$(_ivar phase)
+    r=$(_ivar readyCount)
+    t=$(_ivar totalCount)
+    rc=$(_ivar restartCount)
+    echo "$ph $r/$t restarts=$rc"
+  ]
+
+  # Fetch current logs via kubectl (requires cluster context).
+  rawMethod: logs [
+    local n ns ctx
+    n=$(_ivar name)
+    ns=$(_ivar namespace)
+    ctx=$(_ivar cluster)
+    @ Kube::Kubectl logs: "$n" namespace: "$ns" context: "$ctx"
+  ]

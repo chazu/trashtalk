@@ -1,0 +1,83 @@
+package: Kube
+
+# Lightweight value object representing a kubectl context + namespace.
+# Not a persistent connection — just named configuration for building kubectl calls.
+# Cascade-friendly: @ $cluster withNamespace: 'kube-system' returns self.
+Cluster subclass: Object
+  instanceVars: context namespace:'default'
+
+  # Create a Cluster for the named kubectl context.
+  rawClassMethod: named: ctx [
+    local id
+    id=$(@ Runtime generateId: "$_CLASS")
+    @ Runtime create: "$_CLASS" id: "$id"
+    @ "$id" setContext: "$ctx"
+    echo "$id"
+  ]
+
+  # Create a Cluster for the current kubectl context.
+  rawClassMethod: current [
+    local ctx
+    ctx=$(@ Kube::Kubectl currentContext)
+    @ Kube::Cluster named: "$ctx"
+  ]
+
+  # Create a Cluster for each available kubectl context.
+  rawClassMethod: all [
+    local arr ctx
+    arr=$(@ Array new)
+    while IFS= read -r ctx; do
+      [[ -z "$ctx" ]] && continue
+      @ "$arr" push: "$(@ Kube::Cluster named: "$ctx")"
+    done < <(@ Kube::Kubectl listContexts)
+    echo "$arr"
+  ]
+
+  # Set namespace and return self (for cascade configuration).
+  rawMethod: withNamespace: ns [
+    _ivar_set namespace "$ns"
+    echo "$_RECEIVER"
+  ]
+
+  # Fetch all resources of a kind, returning an Array of typed Resource instances.
+  # Kind may be plural or singular (e.g. 'pods', 'pod', 'deployments').
+  rawMethod: fetch: kind [
+    local ns ctx resourceClass arr line resource
+    ns=$(_ivar namespace)
+    ctx=$(_ivar context)
+    resourceClass=$(_kube_class_for_kind "$kind")
+    arr=$(@ Array new)
+    while IFS= read -r line; do
+      [[ -z "$line" ]] && continue
+      resource=$(@ "$resourceClass" fromJson: "$line" cluster: "$ctx")
+      @ "$arr" push: "$resource"
+    done < <(@ Kube::Kubectl list: "$kind" namespace: "$ns" context: "$ctx")
+    echo "$arr"
+  ]
+
+  # Fetch a single named resource.
+  rawMethod: fetch: kind named: name [
+    local ns ctx raw resourceClass
+    ns=$(_ivar namespace)
+    ctx=$(_ivar context)
+    raw=$(@ Kube::Kubectl get: "$kind" name: "$name" namespace: "$ns" context: "$ctx")
+    [[ -z "$raw" ]] && return
+    resourceClass=$(_kube_class_for_kind "$kind")
+    @ "$resourceClass" fromJson: "$raw" cluster: "$ctx"
+  ]
+
+  # Map a kind string to its Kube:: class name.
+  rawClassMethod: _classForKind: kind [
+    _kube_class_for_kind "$kind"
+  ]
+
+# Helper function (not a method) — maps kind strings to resource classes.
+_kube_class_for_kind() {
+  case "${1,,}" in
+    pod|pods)                     echo "Kube::Pod" ;;
+    deployment|deployments)       echo "Kube::Deployment" ;;
+    node|nodes)                   echo "Kube::Node" ;;
+    service|services|svc)         echo "Kube::Service" ;;
+    *)                            echo "Kube::Resource" ;;
+  esac
+}

@@ -1,0 +1,61 @@
+package: Kube
+
+# Thin kubectl CLI wrapper. All methods are stateless class methods.
+# Context and namespace default to empty (kubectl uses current config defaults).
+Kubectl subclass: Tool
+
+  rawClassMethod: name [
+    echo "kubectl"
+  ]
+
+  rawClassMethod: installCommand [
+    echo "brew install kubectl"
+  ]
+
+  # Fetch a single resource as compact JSON. Returns empty on failure.
+  rawClassMethod: get: kind name: name namespace: ns context: ctx [
+    local -a args=("get" "$kind" "$name" "-o" "json")
+    [[ -n "$ctx" ]] && args=("--context" "$ctx" "${args[@]}")
+    [[ -n "$ns" ]]  && args=("-n" "$ns" "${args[@]}")
+    kubectl "${args[@]}" 2>/dev/null
+  ]
+
+  # List all resources of a kind, one compact JSON object per line.
+  rawClassMethod: list: kind namespace: ns context: ctx [
+    local -a args=("get" "$kind" "-o" "json")
+    [[ -n "$ctx" ]] && args=("--context" "$ctx" "${args[@]}")
+    [[ -n "$ns" ]]  && args=("-n" "$ns" "${args[@]}")
+    kubectl "${args[@]}" 2>/dev/null | jq -c '.items[]'
+  ]
+
+  # List all resources across all namespaces.
+  rawClassMethod: listAll: kind context: ctx [
+    local -a args=("get" "$kind" "-A" "-o" "json")
+    [[ -n "$ctx" ]] && args=("--context" "$ctx" "${args[@]}")
+    kubectl "${args[@]}" 2>/dev/null | jq -c '.items[]'
+  ]
+
+  # Return the current kubectl context name.
+  rawClassMethod: currentContext [
+    kubectl config current-context 2>/dev/null
+  ]
+
+  # Return all available context names, one per line.
+  rawClassMethod: listContexts [
+    kubectl config get-contexts -o name 2>/dev/null
+  ]
+
+  # Return all namespace names in a cluster, one per line.
+  rawClassMethod: listNamespaces: ctx [
+    local -a args=("get" "namespaces" "-o" "json")
+    [[ -n "$ctx" ]] && args=("--context" "$ctx" "${args[@]}")
+    kubectl "${args[@]}" 2>/dev/null | jq -r '.items[].metadata.name'
+  ]
+
+  # Fetch raw pod logs.
+  rawClassMethod: logs: podName namespace: ns context: ctx [
+    local -a args=("logs" "$podName")
+    [[ -n "$ctx" ]] && args=("--context" "$ctx" "${args[@]}")
+    [[ -n "$ns" ]]  && args=("-n" "$ns" "${args[@]}")
+    kubectl "${args[@]}" 2>/dev/null
+  ]

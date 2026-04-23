@@ -1,0 +1,109 @@
+package: Kube
+
+# A labeled, timestamped set of resource IDs captured together.
+# Represents a point-in-time picture of a cluster's resources.
+#
+# Resource IDs are stored as a JSON array in the resourceIds ivar.
+# SQLite's json_each() can traverse this for cross-reference queries:
+#   SELECT s.id FROM instances s, json_each(json_extract(s.data, '$.resourceIds')) r
+#   WHERE s.class = 'Kube::Snapshot' AND r.value = '<resource-id>'
+#
+# Usage:
+#   snap=$(@ Kube::Snapshot take: 'daily' of: 'pods deployments' onCluster: 'prod')
+#   @ $snap save
+#   snap=$(@ Kube::Snapshot latest: 'daily' onCluster: 'prod')
+Snapshot subclass: Object
+  include: Persistable
+  instanceVars: label cluster takenAt resourceIds
+
+  # Fetch all resources of the given space-separated kinds from a cluster,
+  # save each resource, and collect their IDs into this snapshot.
+  rawClassMethod: take: label of: kinds onCluster: ctx [
+    local id snap ns kind cluster_obj
+    id=$(@ Runtime generateId: "$_CLASS")
+    @ Runtime create: "$_CLASS" id: "$id"
+    @ "$id" setLabel:       "$label"
+    @ "$id" setCluster:     "$ctx"
+    @ "$id" setTakenAt:     "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    @ "$id" setResourceIds: '[]'
+
+    cluster_obj=$(@ Kube::Cluster named: "$ctx")
+
+    for kind in $kinds; do
+      local resources
+      resources=$(@ "$cluster_obj" fetch: "$kind")
+      local size i
+      size=$(@ "$resources" size)
+      i=0
+      while (( i < size )); do
+        local resource
+        resource=$(@ "$resources" at: "$i")
+        @ "$resource" save
+        @ "$id" _addResourceId: "$resource"
+        (( i++ ))
+      done
+    done
+
+    echo "$id"
+  ]
+
+  # Most recent saved snapshot with the given label on the given cluster.
+  rawClassMethod: latest: label onCluster: ctx [
+    local esc_label esc_ctx
+    esc_label=$(_db_escape "$label")
+    esc_ctx=$(_db_escape "$ctx")
+    db_query "class = 'Kube::Snapshot' AND json_extract(data, '$.label') = '$esc_label' AND json_extract(data, '$.cluster') = '$esc_ctx' ORDER BY json_extract(data, '$.takenAt') DESC LIMIT 1"
+  ]
+
+  # All saved snapshots with the given label, ordered newest first.
+  rawClassMethod: history: label onCluster: ctx [
+    local esc_label esc_ctx
+    esc_label=$(_db_escape "$label")
+    esc_ctx=$(_db_escape "$ctx")
+    db_query "class = 'Kube::Snapshot' AND json_extract(data, '$.label') = '$esc_label' AND json_extract(data, '$.cluster') = '$esc_ctx' ORDER BY json_extract(data, '$.takenAt') DESC"
+  ]
+
+  # Append a resource instance ID to the resourceIds array.
+  rawMethod: _addResourceId: resourceId [
+    local current new
+    current=$(_ivar resourceIds)
+    new=$(echo "$current" | jq --arg id "$1" '. + [$id]')
+    _ivar_set resourceIds "$new"
+  ]
+
+  # Return resource IDs as newline-separated list.
+  rawMethod: resourceIds [
+    _ivar resourceIds | jq -r '.[]'
+  ]
+
+  # Return resource IDs for a specific kind.
+  rawMethod: resourcesOfKind: kind [
+    local ids id data k
+    ids=$(_ivar resourceIds)
+    while IFS= read -r id; do
+      [[ -z "$id" ]] && continue
+      data=$(@ Store getInstance: "$id")
+      k=$(echo "$data" | jq -r '.kind // ""')
+      [[ "$k" == "$kind" ]] && echo "$id"
+    done < <(echo "$ids" | jq -r '.[]')
+  ]
+
+  # Count of resources in this snapshot.
+  rawMethod: size [
+    _ivar resourceIds | jq 'length'
+  ]
+
+  # Return a JSON object mapping identity strings to resource IDs.
+  # Used by Kube::Diff to align resources across two snapshots.
+  rawMethod: _identityMap [
+    local ids id data identity map
+    ids=$(_ivar resourceIds)
+    map='{}'
+    while IFS= read -r id; do
+      [[ -z "$id" ]] && continue
+      data=$(@ Store getInstance: "$id")
+      identity=$(echo "$data" | jq -r '.identity // ""')
+      [[ -n "$identity" ]] && map=$(echo "$map" | jq --arg k "$identity" --arg v "$id" '. + {($k): $v}')
+    done < <(echo "$ids" | jq -r '.[]')
+    echo "$map"
+  ]

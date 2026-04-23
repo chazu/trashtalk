@@ -1,0 +1,55 @@
+# Snapshotable trait - point-in-time capture semantics
+# For classes whose instances represent a snapshot of external state at a moment in time.
+# Adds indexed virtual column setup and time-ordered history queries.
+#
+# Requirements:
+#   - Including class must also include Persistable
+#   - Including class must declare a 'capturedAt' instance variable
+#   - Call @ MyClass initializeSchema once at load time to create indexes
+#
+# Usage:
+#   MyResource subclass: Object
+#     include: Persistable
+#     include: Snapshotable
+#     instanceVars: capturedAt ...
+#
+#     rawClassMethod: indexedColumns [
+#       echo '[{"name": "my_field", "path": "$.myField"}]'
+#     ]
+#
+#   @ MyResource initializeSchema
+
+Snapshotable trait
+
+  # Set up virtual columns and indexes declared by indexedColumns.
+  # Call once at load time. Safe to call repeatedly - errors from existing columns are suppressed.
+  rawClassMethod: initializeSchema [
+    pragma: direct
+    local cols col name path
+    cols=$(@ "$_RECEIVER" indexedColumns)
+    while IFS= read -r col; do
+      [[ -z "$col" ]] && continue
+      name=$(echo "$col" | jq -r '.name')
+      path=$(echo "$col" | jq -r '.path')
+      db_ensure_virtual_column "$name" "$path" 2>/dev/null || true
+      db_create_index "$name" 2>/dev/null || true
+    done < <(echo "$cols" | jq -c '.[]')
+  ]
+
+  # Override in subclasses to declare [{name:, path:}] for indexed virtual columns.
+  rawClassMethod: indexedColumns [
+    echo '[]'
+  ]
+
+  # All persisted instances of this class, ordered by capturedAt ascending.
+  rawClassMethod: history [
+    @ Store findByClass: "$_RECEIVER" orderBy: 'captured_at ASC'
+  ]
+
+  # Most recent persisted instance whose identity field matches the given string.
+  # Identity is expected to be a stored field like "Pod/default/api-server".
+  rawClassMethod: latestFor: identity [
+    local esc
+    esc=$(_db_escape "$1")
+    @ Store findByClass: "$_RECEIVER" where: "json_extract(data, '$.identity') = '$esc'" orderBy: 'captured_at DESC' limit: 1
+  ]
