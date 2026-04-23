@@ -4,29 +4,40 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TRASHTALK_DIR="$(dirname "$SCRIPT_DIR")"
 
-# Source the runtime (suppress debug output)
 export TRASH_DEBUG=0
 source "$TRASHTALK_DIR/lib/trash.bash" 2>/dev/null
 
-# Show welcome message
+# Persistent history
+HISTFILE="${TRASH_HISTFILE:-$HOME/.trash_history}"
+HISTSIZE="${TRASH_HISTSIZE:-1000}"
+HISTFILESIZE="${TRASH_HISTFILESIZE:-2000}"
+history -r "$HISTFILE" 2>/dev/null
+
+# Context-aware tab completion
+source "$TRASHTALK_DIR/lib/trash-completion.bash" 2>/dev/null
+bind -x '"\t": _trash_repl_complete' 2>/dev/null
+
 echo "Trashtalk REPL"
 echo "Type 'help' for commands, 'exit' to quit"
-# Show rlwrap hint only if not already wrapped
-[[ -z "$RLWRAP_COMMAND" ]] && echo "(For history/completion, run: ~/.trashtalk/bin/trash)"
 echo ""
 
-while read -rp "@ " cmd; do
-    # Skip empty lines
+_repl_cleanup() {
+    history -w "$HISTFILE" 2>/dev/null
+    echo "Goodbye!"
+}
+trap _repl_cleanup EXIT
+
+while read -rep "@ " cmd; do
     [[ -z "$cmd" ]] && continue
 
-    # Strip leading @ if user typed it (prompt already shows @)
     cmd="${cmd#@ }"
     cmd="${cmd#@}"
 
-    # Handle exit
+    [[ -z "$cmd" ]] && continue
+    history -s "$cmd"
+
     [[ "$cmd" == "exit" || "$cmd" == "quit" || "$cmd" == "q" ]] && break
 
-    # Handle help
     if [[ "$cmd" == "help" ]]; then
         echo "Examples:"
         echo "  Counter new              - Create a counter"
@@ -38,21 +49,16 @@ while read -rp "@ " cmd; do
         continue
     fi
 
-    # Check if it's an assignment: var=$(Command args)
     if [[ "$cmd" =~ ^([a-zA-Z_][a-zA-Z0-9_]*)'=$('(.+)')' ]]; then
         varname="${BASH_REMATCH[1]}"
         subcmd="${BASH_REMATCH[2]}"
         eval "$varname=\$(send $subcmd)"
         echo "$varname=${!varname}"
-    # Check if it's a simple assignment: var=value
     elif [[ "$cmd" =~ ^([a-zA-Z_][a-zA-Z0-9_]*)=(.+)$ ]]; then
         varname="${BASH_REMATCH[1]}"
         value="${BASH_REMATCH[2]}"
         eval "$varname=\"$value\""
     else
-        # Regular command - call send directly (avoids @ subshell capture)
         eval "send $cmd"
     fi
 done
-
-echo "Goodbye!"
