@@ -849,6 +849,24 @@ task=$(@ Task titled "Write docs")
 - **Method name collision**: Keyword methods (e.g., `skip:`) and unary methods with the same base name (e.g., `skip`) compile to the same function. Avoid this pattern.
 - **Negative numbers in arguments**: Arguments like `0 -1` may be mangled. Use variables instead of negative literals in method calls.
 - **Non-local returns in custom methods**: Early return (`^`) works correctly inside compiler-recognized control flow (`ifTrue:`, `ifFalse:`, `whileTrue:`, `timesRepeat:`, `to:do:`) and collection methods (`do:`, `collect:`, `select:`). However, blocks passed to custom methods cannot perform non-local returns due to bash limitations. The `return` only exits the block evaluation, not the enclosing method.
+- **Namespace references in `rawMethod:` bodies**: The tokenizer treats `::` as a `NAMESPACE_SEP` token. In `rawMethod:` and `rawClassMethod:` bodies, writing `@ Pkg::Class method` is tokenized as three separate tokens and compiled with spaces — `@ Pkg :: Class method` — which breaks dispatch at runtime. Use a local variable instead:
+
+  ```smalltalk
+  rawMethod: example [
+    local _Foo="Pkg::Bar"
+    @ "$_Foo" someMethod
+  ]
+  ```
+
+  When sending to the same class you're in, use `"$_RECEIVER"` (class methods) or `"$_CLASS"` (either):
+
+  ```smalltalk
+  rawClassMethod: create [
+    @ "$_RECEIVER" new   # safe: dispatches to self
+  ]
+  ```
+
+  Regular `method:` blocks are not affected — the DSL transformation handles namespace resolution correctly.
 
 ## Development Workflow
 

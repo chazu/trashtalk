@@ -88,12 +88,13 @@ Resource subclass: Object
 
   # Compare this snapshot with another Resource instance field-by-field.
   rawMethod: diffWith: other [
-    @ Kube::Diff compareResource: "$_RECEIVER" with: "$other"
+    local _Diff="Kube::Diff"
+    @ "$_Diff" compareResource: "$_RECEIVER" with: "$other"
   ]
 
   # Find all snapshots of a specific resource by identity string (kind/namespace/name).
   rawClassMethod: historyFor: identity [
-    @ Kube::Resource latestFor: "$identity"
+    @ "$_RECEIVER" latestFor: "$identity"
   ]
 
 @ Kube::Resource initializeSchema

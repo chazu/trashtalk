@@ -143,6 +143,22 @@ Store subclass: Object
     db_clear
   ]
 
+  # Find instances of a class, ordered by a column
+  # Usage: @ Store findByClass: 'Kube::Resource' orderBy: 'captured_at ASC'
+  rawClassMethod: findByClass: class_name orderBy: column [
+    local esc
+    esc=$(_db_escape "$class_name")
+    db_query "class = '$esc' ORDER BY $column"
+  ]
+
+  # Find instances with WHERE + ORDER BY + LIMIT
+  # Usage: @ Store findByClass: 'Kube::Resource' where: "kube_name = 'api'" orderBy: 'captured_at DESC' limit: 1
+  rawClassMethod: findByClass: class_name where: predicate orderBy: column limit: n [
+    local esc
+    esc=$(_db_escape "$class_name")
+    db_query "class = '$esc' AND $predicate ORDER BY $column LIMIT $n"
+  ]
+
   # Raw put - stores JSON data without modification
   # Usage: @ Store put: instanceId data: json
   # This is used by Persistable to save instance state directly

@@ -206,3 +206,4 @@ Required: `jo`, `jq`, `sqlite3`, `uuidgen`
 - **Method name collision**: Keyword methods (e.g., `skip:`) and unary methods with same base name compile to same bash function
 - **Negative numbers in arguments**: Compiler may mangle `0 -1` into `0-1`
 - **ifTrue: with non-predicate expressions**: `(@ String contains:...) ifTrue:` doesn't work correctly (returns "true"/"false" strings but ifTrue: uses `-n` test)
+- **Namespace references in rawMethod/rawClassMethod bodies**: The tokenizer splits `Pkg::Class` into three tokens, so `@ Pkg::Class method` compiles to `@ Pkg :: Class method` and breaks at runtime. Use a local variable instead: `local _Foo="Pkg::Class"; @ "$_Foo" method`. For self-references use `"$_RECEIVER"` or `"$_CLASS"`. Regular `method:` blocks are unaffected.

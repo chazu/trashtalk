@@ -17,19 +17,19 @@ Cluster subclass: Object
 
   # Create a Cluster for the current kubectl context.
   rawClassMethod: current [
-    local ctx
-    ctx=$(@ Kube::Kubectl currentContext)
-    @ Kube::Cluster named: "$ctx"
+    local _Kubectl="Kube::Kubectl" ctx
+    ctx=$(@ "$_Kubectl" currentContext)
+    @ "$_RECEIVER" named: "$ctx"
   ]
 
   # Create a Cluster for each available kubectl context.
   rawClassMethod: all [
-    local arr ctx
+    local _Kubectl="Kube::Kubectl" arr ctx
     arr=$(@ Array new)
     while IFS= read -r ctx; do
       [[ -z "$ctx" ]] && continue
-      @ "$arr" push: "$(@ Kube::Cluster named: "$ctx")"
-    done < <(@ Kube::Kubectl listContexts)
+      @ "$arr" push: "$(@ "$_RECEIVER" named: "$ctx")"
+    done < <(@ "$_Kubectl" listContexts)
     echo "$arr"
   ]
 
@@ -42,6 +42,7 @@ Cluster subclass: Object
   # Fetch all resources of a kind, returning an Array of typed Resource instances.
   # Kind may be plural or singular (e.g. 'pods', 'pod', 'deployments').
   rawMethod: fetch: kind [
+    local _Kubectl="Kube::Kubectl"
     local ns ctx resourceClass arr line resource
     ns=$(_ivar namespace)
     ctx=$(_ivar context)
@@ -51,16 +52,17 @@ Cluster subclass: Object
       [[ -z "$line" ]] && continue
       resource=$(@ "$resourceClass" fromJson: "$line" cluster: "$ctx")
       @ "$arr" push: "$resource"
-    done < <(@ Kube::Kubectl list: "$kind" namespace: "$ns" context: "$ctx")
+    done < <(@ "$_Kubectl" list: "$kind" namespace: "$ns" context: "$ctx")
     echo "$arr"
   ]
 
   # Fetch a single named resource.
   rawMethod: fetch: kind named: name [
+    local _Kubectl="Kube::Kubectl"
     local ns ctx raw resourceClass
     ns=$(_ivar namespace)
     ctx=$(_ivar context)
-    raw=$(@ Kube::Kubectl get: "$kind" name: "$name" namespace: "$ns" context: "$ctx")
+    raw=$(@ "$_Kubectl" get: "$kind" name: "$name" namespace: "$ns" context: "$ctx")
     [[ -z "$raw" ]] && return
     resourceClass=$(_kube_class_for_kind "$kind")
     @ "$resourceClass" fromJson: "$raw" cluster: "$ctx"

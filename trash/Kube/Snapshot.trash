@@ -19,7 +19,8 @@ Snapshot subclass: Object
   # Fetch all resources of the given space-separated kinds from a cluster,
   # save each resource, and collect their IDs into this snapshot.
   rawClassMethod: take: label of: kinds onCluster: ctx [
-    local id snap ns kind cluster_obj
+    local _Cluster="Kube::Cluster"
+    local id snap cluster_obj kind
     id=$(@ Runtime generateId: "$_CLASS")
     @ Runtime create: "$_CLASS" id: "$id"
     @ "$id" setLabel:       "$label"
@@ -27,12 +28,11 @@ Snapshot subclass: Object
     @ "$id" setTakenAt:     "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     @ "$id" setResourceIds: '[]'
 
-    cluster_obj=$(@ Kube::Cluster named: "$ctx")
+    cluster_obj=$(@ "$_Cluster" named: "$ctx")
 
     for kind in $kinds; do
-      local resources
+      local resources size i
       resources=$(@ "$cluster_obj" fetch: "$kind")
-      local size i
       size=$(@ "$resources" size)
       i=0
       while (( i < size )); do

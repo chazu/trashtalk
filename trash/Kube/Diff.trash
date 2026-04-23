@@ -1,10 +1,10 @@
 package: Kube
 
 # Field-level diff between two Resource instances or two Snapshots.
-# Compares .spec and .status subtrees, filtering out high-churn metadata fields.
+# Compares all fields, filtering out high-churn metadata fields.
 #
 # Usage (two resources):
-#   diff=$(@ Kube::Diff compareResource: $snapshotA with: $snapshotB)
+#   diff=$(@ Kube::Diff compareResource: $a with: $b)
 #   @ $diff report
 #   @ $diff hasChanges
 #
@@ -24,8 +24,7 @@ Diff subclass: Object
     patch=$(printf '%s\n%s' "$rawA" "$rawB" | jq -s '
       .[0] as $a | .[1] as $b |
       def noisy: test(
-        "metadata\\.resourceVersion|metadata\\.generation|metadata\\.managedFields|
-         metadata\\.annotations\\.kubectl\\.kubernetes\\.io|metadata\\.creationTimestamp"
+        "metadata\\.resourceVersion|metadata\\.generation|metadata\\.managedFields|metadata\\.annotations\\.kubectl|metadata\\.creationTimestamp"
       );
       [ path($b | .. | scalars) as $p
         | ($p | join(".")) as $pstr
@@ -45,39 +44,36 @@ Diff subclass: Object
 
   # Diff two Snapshots: resources only in A (removed), only in B (added), in both but changed.
   rawClassMethod: compare: snapA with: snapB [
-    local id idsA idsB
+    local id mapA mapB
     id=$(@ Runtime generateId: "$_CLASS")
     @ Runtime create: "$_CLASS" id: "$id"
 
-    # Build identity→id maps for each snapshot
-    local mapA mapB
     mapA=$(@ "$snapA" _identityMap)
     mapB=$(@ "$snapB" _identityMap)
 
-    local added removed changed
-    added=$(echo "$mapA $mapB" | jq -s '
+    local added removed
+    added=$(printf '%s\n%s' "$mapA" "$mapB" | jq -s '
       .[0] as $a | .[1] as $b |
       [$b | keys[] | select(. as $k | $a | has($k) | not)]')
-    removed=$(echo "$mapA $mapB" | jq -s '
+    removed=$(printf '%s\n%s' "$mapA" "$mapB" | jq -s '
       .[0] as $a | .[1] as $b |
       [$a | keys[] | select(. as $k | $b | has($k) | not)]')
 
-    # For resources present in both, collect per-resource diffs
     local shared_diffs='[]'
     while IFS= read -r identity; do
       [[ -z "$identity" ]] && continue
-      local ridA ridB rdiff
+      local ridA ridB rdiff patch
       ridA=$(echo "$mapA" | jq -r --arg k "$identity" '.[$k]')
       ridB=$(echo "$mapB" | jq -r --arg k "$identity" '.[$k]')
-      rdiff=$(@ Kube::Diff compareResource: "$ridA" with: "$ridB")
-      local patch
+      rdiff=$(@ "$_RECEIVER" compareResource: "$ridA" with: "$ridB")
       patch=$(@ Store getField: "$rdiff" field: "changed")
       if echo "$patch" | jq -e 'length > 0' >/dev/null 2>&1; then
         shared_diffs=$(echo "$shared_diffs" | jq --arg id "$identity" --argjson c "$patch" \
           '. + [{identity: $id, changes: $c}]')
       fi
       @ Runtime delete: "$rdiff"
-    done < <(echo "$mapA $mapB" | jq -rs '.[0] as $a | .[1] as $b | [$a | keys[] | select(. as $k | $b | has($k))] | .[]')
+    done < <(printf '%s\n%s' "$mapA" "$mapB" | jq -rs \
+      '.[0] as $a | .[1] as $b | [$a | keys[] | select(. as $k | $b | has($k))] | .[]')
 
     @ "$id" setAdded:   "$added"
     @ "$id" setRemoved: "$removed"
@@ -87,18 +83,16 @@ Diff subclass: Object
 
   # Print a human-readable diff report to stdout.
   rawMethod: report [
-    local added removed changed
+    local added removed changed nadded nremoved nchanged
     added=$(_ivar added)
     removed=$(_ivar removed)
     changed=$(_ivar changed)
-
-    local nadded nremoved nchanged
     nadded=$(echo "$added" | jq 'length')
     nremoved=$(echo "$removed" | jq 'length')
     nchanged=$(echo "$changed" | jq 'length')
 
     echo "=== Kube Diff ==="
-    echo "Added:   $nadded  Removed: $nremoved  Changed: $nchanged"
+    echo "Added: $nadded  Removed: $nremoved  Changed: $nchanged"
     echo ""
 
     if (( nadded > 0 )); then
@@ -115,7 +109,6 @@ Diff subclass: Object
 
     if (( nchanged > 0 )); then
       echo "--- Changed ---"
-      # Handle both resource-diff format and snapshot-diff format
       if echo "$changed" | jq -e '.[0] | has("identity")' >/dev/null 2>&1; then
         echo "$changed" | jq -r '.[] | "  \(.identity):", (.changes[] | "    \(.path): \(.from) → \(.to)")'
       else
@@ -126,11 +119,10 @@ Diff subclass: Object
 
   # true if any fields were added, removed, or changed.
   rawMethod: hasChanges [
-    local a r c
+    local a r c total
     a=$(_ivar added)
     r=$(_ivar removed)
     c=$(_ivar changed)
-    local total
-    total=$(echo "$a $r $c" | jq -s '[.[] | length] | add')
+    total=$(printf '%s\n%s\n%s' "$a" "$r" "$c" | jq -s '[.[] | length] | add')
     (( total > 0 )) && echo "true" || echo "false"
   ]
