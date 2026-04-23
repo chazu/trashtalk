@@ -2119,23 +2119,7 @@ function @@ {
     return 1
   fi
 
-  # For now, just echo the message with a prefix to prove the dispatcher works
-  # TODO: Replace with actual agent integration once dependencies are resolved
   echo "[Agent] $message"
-  echo "[Agent] This is a placeholder response - agent integration coming soon!"
-
-  # # Get the primary agent class
-  # local primary_agent
-  # primary_agent=$(@ Agent primary)
-  # local exit_code=$?
-
-  # if [[ $exit_code -ne 0 || -z "$primary_agent" ]]; then
-  #   echo "Error: Could not determine primary agent. Check DEFAULT_AGENT in ~/.trashrc" >&2
-  #   return 1
-  # fi
-
-  # # Route to the primary agent's chatOrCreateSession method
-  # @ "$primary_agent" chatOrCreateSession: "$message"
 }
 
 # Get list of functions defined in $1
@@ -2152,8 +2136,6 @@ get_fcn_list () {
 '
 }
 
-# TODO Check whether this is available in a utility library already
-# if IFS is set to $1 we can make this join_by and specify separator
 function join { local IFS=""; shift; echo "$*"; }
 
 function file_defines_function() {

@@ -110,6 +110,7 @@ MyClass subclass: Object
 
 - Use `method:` for most code - it handles variable inference and message transformation
 - Use `rawMethod:` when you need:
+  - Direct Bash builtin access / parameter expansion (e.g. `${str##pattern}`, `[[ ... ]]` tests)
   - Heredocs, traps, or complex Bash constructs
   - Process substitution (`<(...)`)
   - Complex loops or conditionals
@@ -150,7 +151,7 @@ method: valueWith: data [
 | `Counter subclass: Object` | Class metadata + function stubs |
 | `method: foo [body]` | `__Counter__foo() { body }` |
 | `method: at: x put: y [...]` | `__Counter__at_put() { local x="$1"; local y="$2"; ... }` |
-| `\| var1 var2 \|` | `local var1 var2` |
+| `| var1 var2 |` | `local var1 var2` |
 | `var := value` | `var="value"` |
 | `@ self method` | `@ "$_RECEIVER" method` |
 
@@ -195,25 +196,6 @@ rawMethod: setGlobalCounter [
 ```
 
 Use for methods that need to modify shell state.
-
-## Issue Tracking
-
-We use **bd** (beads) for issue tracking.
-
-```bash
-bd ready                  # Find available work
-bd show <id>              # View issue details
-bd update <id> --status in_progress  # Claim work
-bd close <id>             # Complete work
-bd sync                   # Sync with git (run at session end)
-```
-
-### Priorities
-- `0` - Critical (P0)
-- `1` - High
-- `2` - Medium
-- `3` - Low
-- `4` - Backlog
 
 ## External Dependencies
 

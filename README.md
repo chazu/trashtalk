@@ -490,48 +490,6 @@ Or with `use-package`:
   :mode "\\.trash\\'")
 ```
 
-### REPL Server
-TODO Think we nuked it
-The REPL server provides interactive evaluation, hot reloading, and introspection from Emacs.
-
-**Start the server** in a terminal:
-
-```bash
-@ ReplServer start
-```
-
-**Connect from Emacs** with `C-c C-z` in any `.trash` buffer.
-
-### Key Bindings
-TODO Lord have mercy this is too much
-| Key | Command | Description |
-|-----|---------|-------------|
-| `C-c C-c` | `trashtalk-eval-defun` | Evaluate method at point |
-| `C-c C-r` | `trashtalk-eval-region` | Evaluate selected region |
-| `C-c C-l` | `trashtalk-eval-line` | Evaluate current line |
-| `C-c C-b` | `trashtalk-eval-buffer` | Evaluate entire buffer |
-| `C-c C-k` | `trashtalk-reload-current-file` | Recompile and reload class |
-| `C-c C-z` | `trashtalk-repl-connect` | Connect to REPL server |
-| `C-c C-i` | `trashtalk-info-at-point` | Show info for symbol at point |
-| `C-c C-m` | `trashtalk-methods-for-class` | List methods for a class |
-
-### REPL Protocol
-TODO Didn't we kill this??? Shit should we bring it back?
-The server uses a simple line-based protocol over a Unix socket (`/tmp/trashtalk-repl.sock`):
-
-```
-Request:  COMMAND:payload
-Response: STATUS:result
-```
-
-Commands: `EVAL`, `COMPLETE`, `INFO`, `METHODS`, `RELOAD`, `PING`, `QUIT`
-
-You can also interact with the server from the command line:
-
-```bash
-echo "PING" | nc -U /tmp/trashtalk-repl.sock
-echo "EVAL:@ Counter new" | nc -U /tmp/trashtalk-repl.sock
-```
 
 ## File Structure
 

@@ -127,9 +127,3 @@ Agent subclass: Object
     @ AgentSession findByAgentType: "$agentType"
   ]
 
-  # Clean up inactive sessions
-  classMethod: cleanup [
-    | sessions |
-    sessions := @ self listSessions
-    # TODO: Implement cleanup logic for inactive sessions
-  ]
