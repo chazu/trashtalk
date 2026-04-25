@@ -1,5 +1,6 @@
 *.db
 trash/user
+trash/.compiled
 trash/.compiled/*.native
 trash/.compiled/*.dylib
 trash/.compiled/*.so
