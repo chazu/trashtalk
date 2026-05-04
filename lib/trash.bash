@@ -54,7 +54,7 @@ fi
 #   TRASH_PROFILE_DEPTH=N      Max call depth to log (default: unlimited)
 #   TRASH_PROFILE_MIN_MS=N     Only log calls taking >= N ms
 
-declare -g _TRASH_PROFILE_DATA=""
+declare _TRASH_PROFILE_DATA=""
 
 # Log a profile entry
 # Usage: _profile_log <direction> <class> <selector> <route> [elapsed_ms] [result_len]
@@ -476,8 +476,8 @@ export -f _run_before_advice _run_after_advice
 # TAP = Test Anything Protocol (https://testanything.org/)
 
 # Global test counter for TAP output
-declare -g _TEST_COUNT=0
-declare -g _TEST_FAILURES=0
+declare _TEST_COUNT=0
+declare _TEST_FAILURES=0
 
 # Assert two values are equal
 # Usage: _assert_eq "$actual" "$expected" "description"
@@ -631,7 +631,7 @@ _CURRENT_CLASS_VARS=""
 
 # Associative array for instance variable defaults
 # Key: var_name, Value: default value (or empty for null)
-declare -gA _CURRENT_CLASS_DEFAULTS
+declare -A _CURRENT_CLASS_DEFAULTS
 
 # Ensure a class is sourced (for accessing its metadata)
 # Usage: _ensure_class_sourced ClassName
@@ -759,7 +759,7 @@ function _get_parent_class {
 # Usage: _collect_inherited_vars ClassName
 # Sets: _INHERITED_VARS (space-separated list)
 #       _INHERITED_DEFAULTS (associative array)
-declare -gA _INHERITED_DEFAULTS
+declare -A _INHERITED_DEFAULTS
 
 function _collect_inherited_vars {
   local class_name="$1"
@@ -1584,7 +1584,7 @@ method_missing() {
 }
 
 # Track which compiled classes have been sourced to avoid re-sourcing
-declare -gA _SOURCED_COMPILED_CLASSES
+declare -A _SOURCED_COMPILED_CLASSES
 
 function send {
   msg_debug "Send: $*"
@@ -2000,7 +2000,7 @@ function receiver_path {
 
 # Last result variable - stores output of most recent @ command
 # Access via $__ in REPL context (double underscore, since $_ is bash special)
-declare -g __=""
+declare __=""
 
 # Invoke trash - Send a message
 # Captures output in $__ for REPL chaining: @ Counter new -> @ $__ increment
