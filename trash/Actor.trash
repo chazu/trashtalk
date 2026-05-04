@@ -1,0 +1,188 @@
+# Actor - Mailbox-style actor using Honker work queues
+# Each actor has a named queue. Messages are enqueued and processed
+# sequentially by a background dispatcher. Honker provides at-least-once
+# delivery with retries and dead-lettering.
+#
+# Usage:
+#   actor=$(@ Actor named: 'order-processor')
+#   @ $actor start                        # start background dispatcher
+#   @ $actor send: 'processOrder' with: '42'
+#   @ $actor send: 'cleanup'
+#   @ $actor pendingCount                 # check mailbox depth
+#   @ $actor stop                         # stop dispatcher
+
+Actor subclass: Object
+  include: Persistable
+  include: Debuggable
+  instanceVars: queueName:'' dispatcherPid:'' status:'idle' maxRetries:3 workerId:''
+
+  # Create an actor with a named mailbox queue
+  rawClassMethod: named: name [
+    local id
+    id=$(_generate_instance_id Actor)
+    _create_instance Actor "$id"
+    _ivar_set queueName "actor.$1"
+    _ivar_set status "idle"
+    _ivar_set workerId "actor_worker_$$_$RANDOM"
+    _ivar_set dispatcherPid ""
+    echo "$id"
+  ]
+
+  # Send a message (no arguments) to this actor's mailbox
+  rawMethod: send: selector [
+    local queue msg
+    queue=$(_ivar queueName)
+    msg=$(jq -n --arg sel "$1" --arg recv "$_RECEIVER" \
+      '{selector: $sel, receiver: $recv, args: []}')
+    honker_enqueue "$queue" "$msg"
+  ]
+
+  # Send a message with one argument
+  rawMethod: send: selector with: arg [
+    local queue msg
+    queue=$(_ivar queueName)
+    msg=$(jq -n --arg sel "$1" --arg recv "$_RECEIVER" --arg a "$2" \
+      '{selector: $sel, receiver: $recv, args: [$a]}')
+    honker_enqueue "$queue" "$msg"
+  ]
+
+  # Send a message with two arguments
+  rawMethod: send: selector with: arg1 and: arg2 [
+    local queue msg
+    queue=$(_ivar queueName)
+    msg=$(jq -n --arg sel "$1" --arg recv "$_RECEIVER" --arg a "$2" --arg b "$3" \
+      '{selector: $sel, receiver: $recv, args: [$a, $b]}')
+    honker_enqueue "$queue" "$msg"
+  ]
+
+  # Send a raw JSON payload (for custom message formats)
+  rawMethod: sendRaw: payload [
+    local queue
+    queue=$(_ivar queueName)
+    honker_enqueue "$queue" "$1"
+  ]
+
+  # Start the background message dispatcher
+  rawMethod: start [
+    pragma: direct
+    local queue worker_id receiver
+    queue=$(_ivar queueName)
+    worker_id=$(_ivar workerId)
+    receiver="$_RECEIVER"
+
+    (
+      while true; do
+        local claimed
+        claimed=$(honker_claim "$queue" "$worker_id" 1 30)
+
+        if [[ -n "$claimed" && "$claimed" != "[]" && "$claimed" != "null" ]]; then
+          local job_id payload selector recv args
+          job_id=$(echo "$claimed" | jq -r '.[0].id // empty' 2>/dev/null)
+          payload=$(echo "$claimed" | jq -r '.[0].payload // empty' 2>/dev/null)
+
+          if [[ -n "$payload" ]]; then
+            selector=$(echo "$payload" | jq -r '.selector // empty' 2>/dev/null)
+            recv=$(echo "$payload" | jq -r '.receiver // empty' 2>/dev/null)
+            args=$(echo "$payload" | jq -r '.args // [] | .[]' 2>/dev/null)
+
+            if [[ -n "$selector" && -n "$recv" ]]; then
+              if @ "$recv" "$selector" $args 2>/dev/null; then
+                [[ -n "$job_id" ]] && honker_ack "[$job_id]" "$worker_id"
+              else
+                honker_sweep "$queue"
+              fi
+            elif [[ -n "$job_id" ]]; then
+              honker_ack "[$job_id]" "$worker_id"
+            fi
+          elif [[ -n "$job_id" ]]; then
+            honker_ack "[$job_id]" "$worker_id"
+          fi
+        else
+          sleep 0.1
+        fi
+      done
+    ) &
+
+    _ivar_set dispatcherPid "$!"
+    _ivar_set status "running"
+  ]
+
+  # Stop the dispatcher
+  rawMethod: stop [
+    pragma: direct
+    local pid
+    pid=$(_ivar dispatcherPid)
+    if [[ -n "$pid" ]]; then
+      kill "$pid" 2>/dev/null
+      wait "$pid" 2>/dev/null
+    fi
+    _ivar_set status "stopped"
+    _ivar_set dispatcherPid ""
+  ]
+
+  # Check if the dispatcher is running
+  rawMethod: isRunning [
+    local pid
+    pid=$(_ivar dispatcherPid)
+    if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+      echo "true"
+    else
+      echo "false"
+    fi
+  ]
+
+  # Get the current status
+  rawMethod: status [
+    local pid status
+    status=$(_ivar status)
+    pid=$(_ivar dispatcherPid)
+    if [[ "$status" == "running" && -n "$pid" ]] && ! kill -0 "$pid" 2>/dev/null; then
+      _ivar_set status "crashed"
+      echo "crashed"
+    else
+      echo "$status"
+    fi
+  ]
+
+  # Get the number of pending messages in the mailbox
+  rawMethod: pendingCount [
+    local queue
+    queue=$(_ivar queueName)
+    _db_sql "SELECT COUNT(*) FROM _honker_live WHERE queue = '$queue' AND state = 'pending';" 2>/dev/null || echo "0"
+  ]
+
+  # Get the queue name
+  rawMethod: queueName [
+    _ivar queueName
+  ]
+
+  # Clean up: stop dispatcher and delete
+  rawMethod: destroy [
+    @ "$_RECEIVER" stop
+    @ "$_RECEIVER" delete
+  ]
+
+  rawClassMethod: help [
+    echo "=== Actor - Mailbox Message Processing ==="
+    echo ""
+    echo "Create:"
+    echo "  actor=\$(@ Actor named: 'processor')"
+    echo ""
+    echo "Start dispatcher:"
+    echo "  @ \$actor start"
+    echo ""
+    echo "Send messages:"
+    echo "  @ \$actor send: 'processOrder'"
+    echo "  @ \$actor send: 'processOrder' with: '42'"
+    echo "  @ \$actor send: 'transfer' with: 'from' and: 'to'"
+    echo "  @ \$actor sendRaw: '{\"custom\":\"payload\"}'"
+    echo ""
+    echo "Monitor:"
+    echo "  @ \$actor isRunning"
+    echo "  @ \$actor status      # idle/running/stopped/crashed"
+    echo "  @ \$actor pendingCount"
+    echo ""
+    echo "Stop:"
+    echo "  @ \$actor stop"
+    echo "  @ \$actor destroy"
+  ]

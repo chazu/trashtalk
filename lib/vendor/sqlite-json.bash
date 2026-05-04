@@ -24,6 +24,29 @@
 
 SQLITE_JSON_DB="${SQLITE_JSON_DB:-$HOME/.trashtalk/instances.db}"
 
+# Honker SQLite extension (optional pub/sub, queues, streams)
+# Set HONKER_EXT to override the extension path
+HONKER_EXT="${HONKER_EXT:-}"
+_HONKER_LOAD_CMD=""
+_HONKER_AVAILABLE=0
+
+_honker_detect() {
+    local path ext
+    [[ "$(uname)" == "Darwin" ]] && ext="dylib" || ext="so"
+    for path in "$HONKER_EXT" \
+                "$HOME/.trashtalk/lib/vendor/honker/libhonker_ext" \
+                "/usr/local/lib/libhonker_ext" \
+                "/opt/homebrew/lib/libhonker_ext"; do
+        if [[ -n "$path" && -f "${path}.${ext}" ]]; then
+            _HONKER_LOAD_CMD=".load ${path}"
+            _HONKER_AVAILABLE=1
+            return 0
+        fi
+    done
+    return 1
+}
+_honker_detect 2>/dev/null || true
+
 # Native Environment accelerator (optional)
 # Set TRASHTALK_NO_NATIVE=1 to disable native acceleration
 _ENVIRONMENT_NATIVE="${_ENVIRONMENT_NATIVE:-$HOME/.trashtalk/trash/.compiled/Environment.native}"
@@ -70,13 +93,23 @@ _db_escape() {
 }
 
 # Run SQL command (with busy timeout for concurrent access)
+# Loads honker extension when available
 _db_sql() {
-    sqlite3 -cmd ".timeout 5000" "$SQLITE_JSON_DB" "$@"
+    if [[ -n "$_HONKER_LOAD_CMD" ]]; then
+        sqlite3 -cmd ".timeout 5000" -cmd "$_HONKER_LOAD_CMD" "$SQLITE_JSON_DB" "$@"
+    else
+        sqlite3 -cmd ".timeout 5000" "$SQLITE_JSON_DB" "$@"
+    fi
 }
 
 # Run SQL and return JSON results (with busy timeout)
+# Loads honker extension when available
 _db_sql_json() {
-    sqlite3 -cmd ".timeout 5000" -json "$SQLITE_JSON_DB" "$@"
+    if [[ -n "$_HONKER_LOAD_CMD" ]]; then
+        sqlite3 -cmd ".timeout 5000" -cmd "$_HONKER_LOAD_CMD" -json "$SQLITE_JSON_DB" "$@"
+    else
+        sqlite3 -cmd ".timeout 5000" -json "$SQLITE_JSON_DB" "$@"
+    fi
 }
 
 ########################

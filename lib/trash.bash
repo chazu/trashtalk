@@ -7,6 +7,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/vendor/bsfl.sh" 2>/dev/null || echo "Warning: bsfl.sh not found"
 source "$SCRIPT_DIR/vendor/fun.sh" 2>/dev/null || echo "Warning: fun.sh not found"
 source "$SCRIPT_DIR/vendor/sqlite-json.bash" 2>/dev/null || echo "Warning: sqlite-json.bash not found"
+source "$SCRIPT_DIR/vendor/honker.bash" 2>/dev/null
 
 # Export sqlite-json functions so they're available in subshells
 export -f db_init db_put db_get db_delete db_find_by_class db_query db_query_data 2>/dev/null
@@ -15,6 +16,7 @@ export -f db_count_by_class db_list_classes db_clear db_drop 2>/dev/null
 export -f _db_validate_id _db_validate_name _db_escape _db_sql 2>/dev/null
 export -f kv_set kv_get kv_del 2>/dev/null
 export SQLITE_JSON_DB
+export _HONKER_AVAILABLE _HONKER_LOAD_CMD 2>/dev/null
 
 # Override msg_debug to respect DEBUG mode and output to stderr
 # This overrides BSFL's msg_debug which outputs to stdout regardless

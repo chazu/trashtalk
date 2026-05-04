@@ -1,0 +1,111 @@
+# EventBus - Observer pattern via Honker ephemeral pub/sub
+# Each bus has a name that scopes its topics. Objects subscribe with handler
+# blocks and receive notifications when events are emitted.
+#
+# Usage:
+#   bus=$(@ EventBus named: 'orders')
+#   handler=$(@ Block params: '["payload"]' code: 'echo "Got: $payload"' captured: '{}')
+#   @ $bus on: 'created' do: $handler
+#   @ $bus emit: 'created' payload: '{"id":42}'
+#   @ $bus shutdown
+
+EventBus subclass: Object
+  include: Debuggable
+  instanceVars: name:'' listenerPids:''
+
+  # Create a named event bus
+  rawClassMethod: named: busName [
+    local id
+    id=$(_generate_instance_id EventBus)
+    _create_instance EventBus "$id"
+    _ivar_set name "$busName"
+    _ivar_set listenerPids ""
+    echo "$id"
+  ]
+
+  # Default global bus (convenience)
+  rawClassMethod: default [
+    @ EventBus named: 'global'
+  ]
+
+  # Subscribe to an event with a handler block
+  # The handler block receives the payload via valueWith:
+  # Returns the listener PID
+  rawMethod: on: eventName do: handler [
+    pragma: direct
+    local topic handler_id="$2"
+    topic="$(_ivar name).$1"
+
+    local wrapper="_eb_${_INSTANCE}_${RANDOM}"
+    eval "${wrapper}() { @ \"${handler_id}\" valueWith: \"\$1\"; }"
+    export -f "$wrapper"
+
+    local pid
+    pid=$(honker_listen "$topic" "$wrapper")
+
+    local pids
+    pids="$(_ivar listenerPids)"
+    _ivar_set listenerPids "${pids:+$pids }$pid"
+    echo "$pid"
+  ]
+
+  # Emit an event with a JSON payload
+  rawMethod: emit: eventName payload: data [
+    local topic
+    topic="$(_ivar name).$1"
+    honker_notify "$topic" "$2"
+  ]
+
+  # Emit an event with no payload
+  rawMethod: emit: eventName [
+    local topic
+    topic="$(_ivar name).$1"
+    honker_notify "$topic" ""
+  ]
+
+  # Get the number of active listeners
+  rawMethod: listenerCount [
+    local pids count=0
+    pids="$(_ivar listenerPids)"
+    for pid in $pids; do
+      kill -0 "$pid" 2>/dev/null && ((count++))
+    done
+    echo "$count"
+  ]
+
+  # Shut down all listeners and clean up
+  rawMethod: shutdown [
+    pragma: direct
+    local pids pid
+    pids="$(_ivar listenerPids)"
+    for pid in $pids; do
+      honker_unlisten "$pid" 2>/dev/null
+    done
+    _ivar_set listenerPids ""
+  ]
+
+  # Clean up on destroy
+  rawMethod: destroy [
+    @ "$_RECEIVER" shutdown
+    @ "$_RECEIVER" delete
+  ]
+
+  rawClassMethod: help [
+    echo "=== EventBus - Observer Pattern ==="
+    echo ""
+    echo "Create a bus:"
+    echo "  bus=\$(@ EventBus named: 'orders')"
+    echo "  bus=\$(@ EventBus default)          # global singleton"
+    echo ""
+    echo "Subscribe:"
+    echo "  @ \$bus on: 'created' do: \$handlerBlock"
+    echo ""
+    echo "Emit:"
+    echo "  @ \$bus emit: 'created' payload: '{\"id\":42}'"
+    echo "  @ \$bus emit: 'created'             # no payload"
+    echo ""
+    echo "Manage:"
+    echo "  @ \$bus listenerCount"
+    echo "  @ \$bus shutdown"
+    echo "  @ \$bus destroy"
+  ]

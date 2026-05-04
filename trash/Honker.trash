@@ -1,0 +1,197 @@
+# Honker - OOP wrapper for the Honker SQLite extension
+# Provides pub/sub, work queues, durable streams, scheduling, locks, and rate limiting.
+# All class methods (singleton-style) — delegates to honker.bash functions.
+#
+# Usage:
+#   @ Honker isAvailable              # Check if honker extension is loaded
+#   @ Honker notify: 'topic' payload: '{"msg":"hi"}'
+#   pid=$(@ Honker listen: 'topic' do: $handler)
+#   @ Honker enqueue: 'myqueue' payload: '{"task":"go"}'
+#   claimed=$(@ Honker claim: 'myqueue')
+
+Honker subclass: Object
+
+  # Check if the honker extension is available
+  rawClassMethod: isAvailable [
+    if honker_available; then
+      echo "true"
+    else
+      echo "false"
+    fi
+  ]
+
+  # Initialize honker tables (idempotent)
+  rawClassMethod: bootstrap [
+    honker_bootstrap
+  ]
+
+  # --- Ephemeral Pub/Sub ---
+
+  rawClassMethod: notify: channel payload: data [
+    honker_notify "$1" "$2"
+  ]
+
+  # Start listening on a channel with a handler block
+  # Returns listener PID
+  rawClassMethod: listen: channel do: handler [
+    local handler_id="$2"
+    local wrapper="_honker_cb_$$_$RANDOM"
+    eval "${wrapper}() { @ \"${handler_id}\" valueWith: \"\$1\"; }"
+    export -f "$wrapper"
+    honker_listen "$1" "$wrapper"
+  ]
+
+  rawClassMethod: unlisten: pid [
+    honker_unlisten "$1"
+  ]
+
+  # --- Work Queue ---
+
+  rawClassMethod: enqueue: queue payload: data [
+    honker_enqueue "$1" "$2"
+  ]
+
+  rawClassMethod: enqueue: queue payload: data priority: pri [
+    honker_enqueue "$1" "$2" "$3"
+  ]
+
+  rawClassMethod: enqueue: queue payload: data delay: seconds [
+    honker_enqueue "$1" "$2" 0 3 "$3"
+  ]
+
+  rawClassMethod: claim: queue [
+    honker_claim "$1"
+  ]
+
+  rawClassMethod: claim: queue batch: n [
+    honker_claim "$1" "worker_$$" "$2"
+  ]
+
+  rawClassMethod: claim: queue timeout: seconds [
+    honker_claim "$1" "worker_$$" 1 "$2"
+  ]
+
+  rawClassMethod: ack: jobIds [
+    honker_ack "$1"
+  ]
+
+  rawClassMethod: sweep: queue [
+    honker_sweep "$1"
+  ]
+
+  # --- Distributed Locks ---
+
+  rawClassMethod: lock: name [
+    honker_lock "$1"
+  ]
+
+  rawClassMethod: lock: name ttl: seconds [
+    honker_lock "$1" "$$" "$2"
+  ]
+
+  rawClassMethod: unlock: name [
+    honker_unlock "$1"
+  ]
+
+  # --- Rate Limiting ---
+
+  rawClassMethod: rateLimit: key limit: n window: seconds [
+    honker_rate_limit "$1" "$2" "$3"
+  ]
+
+  # --- Durable Streams ---
+
+  rawClassMethod: publish: stream key: key payload: data [
+    honker_stream_publish "$1" "$2" "$3"
+  ]
+
+  rawClassMethod: publish: stream payload: data [
+    honker_stream_publish "$1" "default" "$2"
+  ]
+
+  rawClassMethod: readStream: stream offset: offset limit: n [
+    honker_stream_read "$1" "$2" "$3"
+  ]
+
+  rawClassMethod: readStream: stream [
+    honker_stream_read "$1"
+  ]
+
+  rawClassMethod: saveOffset: consumer stream: stream offset: offset [
+    honker_stream_save_offset "$1" "$2" "$3"
+  ]
+
+  rawClassMethod: getOffset: consumer stream: stream [
+    honker_stream_get_offset "$1" "$2"
+  ]
+
+  # --- Scheduler ---
+
+  rawClassMethod: schedule: name task: task cron: expr payload: data [
+    honker_schedule "$1" "$2" "$3" "$4"
+  ]
+
+  rawClassMethod: unschedule: name [
+    honker_unschedule "$1"
+  ]
+
+  rawClassMethod: tick [
+    honker_scheduler_tick
+  ]
+
+  rawClassMethod: soonest [
+    honker_scheduler_soonest
+  ]
+
+  # --- Result Storage ---
+
+  rawClassMethod: saveResult: jobId data: result [
+    honker_result_save "$1" "$2"
+  ]
+
+  rawClassMethod: saveResult: jobId data: result ttl: seconds [
+    honker_result_save "$1" "$2" "$3"
+  ]
+
+  rawClassMethod: getResult: jobId [
+    honker_result_get "$1"
+  ]
+
+  rawClassMethod: sweepResults [
+    honker_result_sweep
+  ]
+
+  # --- Help ---
+
+  rawClassMethod: help [
+    echo "=== Honker - SQLite Pub/Sub, Queues, Streams ==="
+    echo ""
+    echo "Availability:"
+    echo "  @ Honker isAvailable"
+    echo "  @ Honker bootstrap"
+    echo ""
+    echo "Pub/Sub:"
+    echo "  @ Honker notify: 'channel' payload: '{\"msg\":\"hi\"}'"
+    echo "  pid=\$(@ Honker listen: 'channel' do: \$handler)"
+    echo "  @ Honker unlisten: \$pid"
+    echo ""
+    echo "Work Queue:"
+    echo "  @ Honker enqueue: 'queue' payload: '{\"task\":\"go\"}'"
+    echo "  claimed=\$(@ Honker claim: 'queue')"
+    echo "  @ Honker ack: '[\$jobId]'"
+    echo ""
+    echo "Streams:"
+    echo "  @ Honker publish: 'stream' payload: '{\"data\":1}'"
+    echo "  msgs=\$(@ Honker readStream: 'stream')"
+    echo ""
+    echo "Locks:"
+    echo "  @ Honker lock: 'mylock'"
+    echo "  @ Honker unlock: 'mylock'"
+    echo ""
+    echo "Rate Limiting:"
+    echo "  allowed=\$(@ Honker rateLimit: 'action' limit: 10 window: 60)"
+    echo ""
+    echo "Scheduler:"
+    echo "  @ Honker schedule: 'name' task: 'task' cron: '*/5 * * * *' payload: '{}'"
+    echo "  @ Honker tick"
+  ]

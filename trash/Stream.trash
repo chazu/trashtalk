@@ -1,0 +1,248 @@
+# Stream - Cross-process durable streams via Honker
+# Unlike EventBus (ephemeral, fire-and-forget), Stream provides durable
+# messages with consumer offset tracking. Messages survive crashes and
+# consumers can replay from any offset.
+#
+# Two separate trashtalk programs sharing the same SQLITE_JSON_DB can
+# communicate through streams without any additional IPC mechanism.
+#
+# Usage:
+#   # Producer (process A)
+#   producer=$(@ Stream named: 'metrics')
+#   @ $producer publish: '{"cpu":42}'
+#
+#   # Consumer (process B)
+#   consumer=$(@ Stream named: 'metrics' consumer: 'dashboard')
+#   msgs=$(@ $consumer read)
+#   @ $consumer ack: 5
+#
+#   # Continuous consumption
+#   @ $consumer consumeDo: $handlerBlock
+#   @ $consumer stopConsuming
+
+Stream subclass: Object
+  include: Debuggable
+  instanceVars: streamName:'' consumerName:'' readerPid:''
+
+  # Create a stream (producer end — no consumer tracking)
+  rawClassMethod: named: name [
+    local id
+    id=$(_generate_instance_id Stream)
+    _create_instance Stream "$id"
+    _ivar_set streamName "$1"
+    _ivar_set consumerName ""
+    _ivar_set readerPid ""
+    echo "$id"
+  ]
+
+  # Create a stream consumer (reader end — tracks offsets)
+  rawClassMethod: named: name consumer: consumer [
+    local id
+    id=$(_generate_instance_id Stream)
+    _create_instance Stream "$id"
+    _ivar_set streamName "$1"
+    _ivar_set consumerName "$2"
+    _ivar_set readerPid ""
+    echo "$id"
+  ]
+
+  # Publish a message to the stream
+  rawMethod: publish: data [
+    local stream
+    stream=$(_ivar streamName)
+    honker_stream_publish "$stream" "default" "$1"
+  ]
+
+  # Publish with an explicit key (for partitioning/filtering)
+  rawMethod: publish: data key: key [
+    local stream
+    stream=$(_ivar streamName)
+    honker_stream_publish "$stream" "$2" "$1"
+  ]
+
+  # Read messages from the stream (uses consumer offset if set)
+  rawMethod: read [
+    local stream consumer offset
+    stream=$(_ivar streamName)
+    consumer=$(_ivar consumerName)
+    if [[ -n "$consumer" ]]; then
+      offset=$(honker_stream_get_offset "$consumer" "$stream" 2>/dev/null)
+      offset="${offset:-0}"
+    else
+      offset=0
+    fi
+    honker_stream_read "$stream" "$offset" 10
+  ]
+
+  # Read with explicit batch size
+  rawMethod: read: batchSize [
+    local stream consumer offset
+    stream=$(_ivar streamName)
+    consumer=$(_ivar consumerName)
+    if [[ -n "$consumer" ]]; then
+      offset=$(honker_stream_get_offset "$consumer" "$stream" 2>/dev/null)
+      offset="${offset:-0}"
+    else
+      offset=0
+    fi
+    honker_stream_read "$stream" "$offset" "$1"
+  ]
+
+  # Read from a specific offset
+  rawMethod: readFrom: offset limit: n [
+    local stream
+    stream=$(_ivar streamName)
+    honker_stream_read "$stream" "$1" "$2"
+  ]
+
+  # Acknowledge processing up to an offset (advances consumer position)
+  rawMethod: ack: offset [
+    local stream consumer
+    stream=$(_ivar streamName)
+    consumer=$(_ivar consumerName)
+    [[ -n "$consumer" ]] && honker_stream_save_offset "$consumer" "$stream" "$1"
+  ]
+
+  # Get the current consumer offset
+  rawMethod: offset [
+    local stream consumer
+    stream=$(_ivar streamName)
+    consumer=$(_ivar consumerName)
+    if [[ -n "$consumer" ]]; then
+      honker_stream_get_offset "$consumer" "$stream"
+    else
+      echo "0"
+    fi
+  ]
+
+  # Start continuous background consumption with a handler block
+  # The handler receives each message payload via valueWith:
+  rawMethod: consumeDo: handler [
+    pragma: direct
+    local stream consumer handler_id="$1"
+    stream=$(_ivar streamName)
+    consumer=$(_ivar consumerName)
+
+    if [[ -z "$consumer" ]]; then
+      echo "ERROR: consumeDo: requires a consumer name (use named:consumer: to create)" >&2
+      return 1
+    fi
+
+    (
+      while true; do
+        local offset messages
+        offset=$(honker_stream_get_offset "$consumer" "$stream" 2>/dev/null)
+        offset="${offset:-0}"
+        messages=$(honker_stream_read "$stream" "$offset" 10)
+
+        if [[ -n "$messages" && "$messages" != "[]" && "$messages" != "null" ]]; then
+          echo "$messages" | jq -c '.[]' 2>/dev/null | while IFS= read -r msg; do
+            local payload msg_offset
+            payload=$(echo "$msg" | jq -r '.payload // empty' 2>/dev/null)
+            msg_offset=$(echo "$msg" | jq -r '.offset // .id // empty' 2>/dev/null)
+
+            if [[ -n "$payload" ]]; then
+              @ "$handler_id" valueWith: "$payload" 2>/dev/null
+            fi
+
+            if [[ -n "$msg_offset" ]]; then
+              honker_stream_save_offset "$consumer" "$stream" "$msg_offset"
+            fi
+          done
+        else
+          sleep 0.05
+        fi
+      done
+    ) &
+
+    _ivar_set readerPid "$!"
+  ]
+
+  # Start consumption with a raw bash callback function (simpler than blocks)
+  rawMethod: consumeWith: callbackFn [
+    pragma: direct
+    local stream consumer callback="$1"
+    stream=$(_ivar streamName)
+    consumer=$(_ivar consumerName)
+
+    if [[ -z "$consumer" ]]; then
+      echo "ERROR: consumeWith: requires a consumer name" >&2
+      return 1
+    fi
+
+    (
+      while true; do
+        local offset messages
+        offset=$(honker_stream_get_offset "$consumer" "$stream" 2>/dev/null)
+        offset="${offset:-0}"
+        messages=$(honker_stream_read "$stream" "$offset" 10)
+
+        if [[ -n "$messages" && "$messages" != "[]" && "$messages" != "null" ]]; then
+          echo "$messages" | jq -c '.[]' 2>/dev/null | while IFS= read -r msg; do
+            local payload msg_offset
+            payload=$(echo "$msg" | jq -r '.payload // empty' 2>/dev/null)
+            msg_offset=$(echo "$msg" | jq -r '.offset // .id // empty' 2>/dev/null)
+
+            [[ -n "$payload" ]] && "$callback" "$payload"
+
+            if [[ -n "$msg_offset" ]]; then
+              honker_stream_save_offset "$consumer" "$stream" "$msg_offset"
+            fi
+          done
+        else
+          sleep 0.05
+        fi
+      done
+    ) &
+
+    _ivar_set readerPid "$!"
+  ]
+
+  # Stop continuous consumption
+  rawMethod: stopConsuming [
+    pragma: direct
+    local pid
+    pid=$(_ivar readerPid)
+    if [[ -n "$pid" ]]; then
+      kill "$pid" 2>/dev/null
+      wait "$pid" 2>/dev/null
+      _ivar_set readerPid ""
+    fi
+  ]
+
+  # Check if the consumer loop is running
+  rawMethod: isConsuming [
+    local pid
+    pid=$(_ivar readerPid)
+    if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+      echo "true"
+    else
+      echo "false"
+    fi
+  ]
+
+  rawMethod: destroy [
+    @ "$_RECEIVER" stopConsuming
+    @ "$_RECEIVER" delete
+  ]
+
+  rawClassMethod: help [
+    echo "=== Stream - Durable Cross-Process Streams ==="
+    echo ""
+    echo "Producer:"
+    echo "  s=\$(@ Stream named: 'metrics')"
+    echo "  @ \$s publish: '{\"cpu\":42}'"
+    echo "  @ \$s publish: '{\"cpu\":42}' key: 'host1'"
+    echo ""
+    echo "Consumer:"
+    echo "  c=\$(@ Stream named: 'metrics' consumer: 'dashboard')"
+    echo "  msgs=\$(@ \$c read)"
+    echo "  @ \$c ack: 5"
+    echo "  @ \$c offset"
+    echo ""
+    echo "Continuous consumption:"
+    echo "  @ \$c consumeDo: \$handlerBlock"
+    echo "  @ \$c consumeWith: 'my_callback_fn'"
+    echo "  @ \$c stopConsuming"
+    echo "  @ \$c isConsuming"
+  ]

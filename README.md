@@ -24,7 +24,7 @@ Then LLMs came. I said "Hey Claude, what do you think about this gewgaw over her
 So far I've only really used Trashtalk to work on Trashtalk. I'll let you know when that changes. Until then, some things I'm thinking about doing include:
 
 - Exploring the idea of an acme-like editor as a substitute for the whiz-bang TUI I tried so desperately to make work
-- Improving the SQLite instance persistence layer, maybe adding some kind of superadjacent analytical layer using duckdb
+- Building multi-process CLI tools using the Actor/Stream/EventBus classes (backed by [Honker](https://github.com/russellromney/honker) — pub/sub, work queues, and durable streams in SQLite)
 
 If you have any ideas that aren't terribly rude, I'd love to hear them!
 
@@ -420,12 +420,18 @@ RECOMMENDATIONS
 | `Future` | Async computation with result retrieval |
 | `Process` | External OS process management (subprocess-like) |
 | `ReplServer` | Socket-based REPL server for Emacs integration |
+| `Honker` | Pub/sub, work queues, streams, locks, rate limiting (requires honker extension) |
+| `EventBus` | Observer pattern via ephemeral pub/sub |
+| `Actor` | Mailbox-style actors with background dispatch and at-least-once delivery |
+| `Stream` | Cross-process durable streams with consumer offset tracking |
+| `Scheduler` | Cron-based periodic tasks with leader election |
 
 ### Traits
 
 | Trait | Description |
 |-------|-------------|
 | `Debuggable` | Debug logging, inspection, ancestry tracing |
+| `Observable` | Event emission, subscription, and atomic save+emit for any class |
 
 ## Message Sending
 
@@ -455,11 +461,119 @@ counter=$(@ Counter new)
 @ Counter count                   # Count instances
 ```
 
+## Honker Integration
+
+Trashtalk optionally integrates with [Honker](https://github.com/russellromney/honker), a SQLite loadable extension that adds pub/sub, work queues, durable streams, distributed locks, rate limiting, and cron scheduling — all backed by the same SQLite database used for instance persistence. No extra processes or external brokers needed.
+
+### Installation
+
+Build the honker extension from source (requires Rust), then place it where trashtalk can find it:
+
+```bash
+# Option 1: Project-local
+cp libhonker_ext.dylib ~/.trashtalk/lib/vendor/honker/  # macOS
+cp libhonker_ext.so ~/.trashtalk/lib/vendor/honker/     # Linux
+
+# Option 2: System-wide
+cp libhonker_ext.dylib /usr/local/lib/   # macOS
+cp libhonker_ext.so /usr/local/lib/      # Linux
+
+# Option 3: Explicit path
+export HONKER_EXT=/path/to/libhonker_ext
+```
+
+Trashtalk auto-detects honker at startup. Everything works without it — honker-dependent classes degrade gracefully, and tests skip automatically.
+
+### EventBus — Observer Pattern
+
+```bash
+# Create a named event bus
+bus=$(@ EventBus named: 'orders')
+
+# Subscribe with a handler block
+handler=$(@ Block params: '["payload"]' code: 'echo "Got: $payload"' captured: '{}')
+@ $bus on: 'created' do: $handler
+
+# Emit events
+@ $bus emit: 'created' payload: '{"id":42,"total":99.50}'
+@ $bus emit: 'shipped'                # no payload
+
+# Clean up
+@ $bus shutdown
+```
+
+### Observable Trait — Events on Any Class
+
+```smalltalk
+Order subclass: Object
+  include: Persistable
+  include: Observable
+  instanceVars: status:'pending' total:0
+```
+
+```bash
+order=$(@ Order new)
+@ $order on: 'completed' do: $handler    # subscribe to this instance
+@ $order emit: 'completed'               # fire event
+@ $order saveAndEmit: 'saved'            # atomic persist + event in one transaction
+```
+
+### Actor — Mailbox Message Processing
+
+Each actor has a named queue. Messages are processed sequentially by a background dispatcher. Honker provides at-least-once delivery with retries and dead-lettering.
+
+```bash
+actor=$(@ Actor named: 'order-processor')
+@ $actor start                            # start background dispatcher
+
+@ $actor send: 'processOrder' with: '42'
+@ $actor send: 'cleanup'
+@ $actor pendingCount                     # check mailbox depth
+
+@ $actor stop
+```
+
+### Stream — Cross-Process Durable Streams
+
+Two separate trashtalk programs sharing the same database can communicate through streams. Messages survive crashes, and consumers track their position with offsets.
+
+```bash
+# Terminal 1 (producer)
+producer=$(@ Stream named: 'metrics')
+@ $producer publish: '{"cpu":42,"host":"web1"}'
+
+# Terminal 2 (consumer)
+consumer=$(@ Stream named: 'metrics' consumer: 'dashboard')
+msgs=$(@ $consumer read)
+@ $consumer ack: 5                        # advance offset
+@ $consumer consumeDo: $handler           # continuous background consumption
+```
+
+### Scheduler — Cron Tasks with Leader Election
+
+```bash
+@ Scheduler every: '*/5 * * * *' call: 'cleanup_fn' named: 'cleanup'
+@ Scheduler start                         # start tick loop
+@ Scheduler stop
+```
+
+Multiple processes can run the scheduler — honker's leader election ensures each task fires exactly once.
+
+### Locks and Rate Limiting
+
+```bash
+@ Honker lock: 'deploy'                  # acquire distributed lock
+@ Honker unlock: 'deploy'
+
+allowed=$(@ Honker rateLimit: 'api-call' limit: 100 window: 60)
+```
+
 ## Dependencies
 
 Vendored in `lib/vendor/`:
 - `sqlite-json.bash` - SQLite-based JSON document store and key-value persistence
-- `tuplespace/` - Event coordination
+- `honker.bash` - Bash wrapper for the Honker SQLite extension (pub/sub, queues, streams)
+- `tuplespace/` - Event coordination (legacy; can be upgraded to honker via `tuplespace-honker.bash` shim)
 - `bsfl.sh` - Bash utility functions
 - `fun.sh` - Functional programming utilities
 
@@ -468,6 +582,7 @@ External tools (install separately):
 - `jq` - JSON processor
 - `sqlite3` - Database engine
 - `uuidgen` - UUID generation (usually pre-installed)
+- `libhonker_ext` - Honker SQLite extension (optional — enables EventBus, Actor, Stream, Scheduler)
 
 ## Emacs Integration
 
@@ -505,11 +620,17 @@ Or with `use-package`:
 │   │   ├── parser.jq        # Tokens → AST
 │   │   └── codegen.jq       # AST → Bash code
 │   └── vendor/              # Vendored dependencies
+│       ├── sqlite-json.bash # SQLite JSON document store
+│       ├── honker.bash      # Honker extension wrapper
+│       └── tuplespace/      # Legacy event coordination
 ├── trash/
 │   ├── *.trash              # DSL source files
 │   ├── .compiled/           # Compiled output
 │   │   └── traits/          # Compiled traits
 │   └── traits/              # Trait source files
+│       ├── Debuggable.trash
+│       ├── Observable.trash # Event emission mixin
+│       └── ...
 └── tests/                   # Test scripts
 ```
 

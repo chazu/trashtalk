@@ -1,0 +1,67 @@
+# Observable trait - adds event emission and subscription to any class
+# Like Persistable is to Store, Observable is to Honker's pub/sub.
+# Topics are auto-scoped to the instance: <instanceId>.<eventName>
+#
+# Usage:
+#   Counter subclass: Object
+#     include: Observable
+#     include: Persistable
+#     instanceVars: value:0
+#
+#   counter=$(@ Counter new)
+#   @ $counter on: 'incremented' do: $handler
+#   @ $counter emit: 'incremented' payload: '{"value":1}'
+#   @ $counter saveAndEmit: 'saved'        # atomic persist + event
+
+Observable trait
+
+  # Emit an event from this object (no payload)
+  rawMethod: emit: eventName [
+    local topic
+    topic="${_RECEIVER}.$1"
+    honker_notify "$topic" ""
+  ]
+
+  # Emit an event from this object with a JSON payload
+  rawMethod: emit: eventName payload: data [
+    local topic
+    topic="${_RECEIVER}.$1"
+    honker_notify "$topic" "$2"
+  ]
+
+  # Subscribe to events from this object
+  # Returns the listener PID
+  rawMethod: on: eventName do: handler [
+    pragma: direct
+    local topic handler_id="$2"
+    topic="${_RECEIVER}.$1"
+
+    local wrapper="_obs_${_INSTANCE}_${RANDOM}"
+    eval "${wrapper}() { @ \"${handler_id}\" valueWith: \"\$1\"; }"
+    export -f "$wrapper"
+    honker_listen "$topic" "$wrapper"
+  ]
+
+  # Atomically save to Store AND emit a notification
+  # Requires the class to also include Persistable
+  rawMethod: saveAndEmit: eventName [
+    local data topic
+    data=$(@ Runtime dataFor: "$_RECEIVER")
+    topic="${_RECEIVER}.$1"
+    honker_persist_and_notify "$_RECEIVER" "$data" "$topic" ""
+  ]
+
+  # Atomically save to Store AND emit with payload
+  rawMethod: saveAndEmit: eventName payload: data [
+    local instanceData topic
+    instanceData=$(@ Runtime dataFor: "$_RECEIVER")
+    topic="${_RECEIVER}.$1"
+    honker_persist_and_notify "$_RECEIVER" "$instanceData" "$topic" "$2"
+  ]
+
+  # Atomically save to Store AND enqueue a job for reliable processing
+  rawMethod: saveAndEnqueue: queue payload: data [
+    local instanceData
+    instanceData=$(@ Runtime dataFor: "$_RECEIVER")
+    honker_persist_and_enqueue "$_RECEIVER" "$instanceData" "$1" "$2"
+  ]

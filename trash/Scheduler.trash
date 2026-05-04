@@ -1,0 +1,123 @@
+# Scheduler - Cron-based periodic tasks via Honker
+# Registers tasks with cron expressions. A background tick loop claims
+# due tasks and executes them. Honker handles leader election — multiple
+# processes can run the tick loop and only one claims each task.
+#
+# Usage:
+#   @ Scheduler every: '*/5 * * * *' do: $handler named: 'cleanup'
+#   @ Scheduler start           # start tick loop
+#   @ Scheduler stop            # stop tick loop
+#   @ Scheduler unschedule: 'cleanup'
+
+Scheduler subclass: Object
+  include: Debuggable
+
+  # Register a periodic task with a handler block
+  rawClassMethod: every: cronExpr do: handler named: name [
+    local payload
+    payload=$(jq -n --arg h "$2" '{handler: $h, type: "block"}')
+    honker_schedule "$3" "$3" "$1" "$payload"
+  ]
+
+  # Register a periodic task with a bash callback function
+  rawClassMethod: every: cronExpr call: callbackFn named: name [
+    local payload
+    payload=$(jq -n --arg fn "$2" '{callback: $fn, type: "function"}')
+    honker_schedule "$3" "$3" "$1" "$payload"
+  ]
+
+  # Unregister a scheduled task
+  rawClassMethod: unschedule: name [
+    honker_unschedule "$1"
+  ]
+
+  # Start the background tick loop
+  # Checks for due tasks every second and executes them
+  rawClassMethod: start [
+    pragma: direct
+    (
+      while true; do
+        local due
+        due=$(honker_scheduler_tick)
+
+        if [[ -n "$due" && "$due" != "[]" && "$due" != "null" ]]; then
+          echo "$due" | jq -c '.[]' 2>/dev/null | while IFS= read -r task; do
+            local payload task_type handler callback
+            payload=$(echo "$task" | jq -r '.payload // empty' 2>/dev/null)
+
+            if [[ -n "$payload" ]]; then
+              task_type=$(echo "$payload" | jq -r '.type // empty' 2>/dev/null)
+
+              case "$task_type" in
+                block)
+                  handler=$(echo "$payload" | jq -r '.handler // empty' 2>/dev/null)
+                  [[ -n "$handler" ]] && @ "$handler" value 2>/dev/null || true
+                  ;;
+                function)
+                  callback=$(echo "$payload" | jq -r '.callback // empty' 2>/dev/null)
+                  [[ -n "$callback" ]] && "$callback" 2>/dev/null || true
+                  ;;
+                *)
+                  echo "$payload" | jq -r '.handler // .callback // empty' 2>/dev/null | while IFS= read -r h; do
+                    [[ -n "$h" ]] && eval "$h" 2>/dev/null || true
+                  done
+                  ;;
+              esac
+            fi
+          done
+        fi
+
+        sleep 1
+      done
+    ) &
+
+    _SCHEDULER_PID=$!
+    export _SCHEDULER_PID
+  ]
+
+  # Stop the tick loop
+  rawClassMethod: stop [
+    pragma: direct
+    if [[ -n "${_SCHEDULER_PID:-}" ]]; then
+      kill "$_SCHEDULER_PID" 2>/dev/null
+      wait "$_SCHEDULER_PID" 2>/dev/null
+      unset _SCHEDULER_PID
+    fi
+  ]
+
+  # Check if the tick loop is running
+  rawClassMethod: isRunning [
+    if [[ -n "${_SCHEDULER_PID:-}" ]] && kill -0 "$_SCHEDULER_PID" 2>/dev/null; then
+      echo "true"
+    else
+      echo "false"
+    fi
+  ]
+
+  # Get seconds until the next scheduled task fires
+  rawClassMethod: soonest [
+    honker_scheduler_soonest
+  ]
+
+  # Manually tick once (for testing)
+  rawClassMethod: tick [
+    honker_scheduler_tick
+  ]
+
+  rawClassMethod: help [
+    echo "=== Scheduler - Cron-Based Periodic Tasks ==="
+    echo ""
+    echo "Register tasks:"
+    echo "  @ Scheduler every: '*/5 * * * *' do: \$handler named: 'cleanup'"
+    echo "  @ Scheduler every: '0 * * * *' call: 'my_hourly_fn' named: 'hourly'"
+    echo ""
+    echo "Control:"
+    echo "  @ Scheduler start       # start tick loop"
+    echo "  @ Scheduler stop        # stop tick loop"
+    echo "  @ Scheduler isRunning"
+    echo ""
+    echo "Manage:"
+    echo "  @ Scheduler unschedule: 'cleanup'"
+    echo "  @ Scheduler soonest     # seconds until next task"
+    echo "  @ Scheduler tick        # manual tick (testing)"
+  ]
