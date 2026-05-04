@@ -18,8 +18,8 @@ EventBus subclass: Object
     local id
     id=$(_generate_instance_id EventBus)
     _create_instance EventBus "$id"
-    _ivar_set name "$busName"
-    _ivar_set listenerPids ""
+    @ "$id" name: "$busName"
+    @ "$id" listenerPids: ""
     echo "$id"
   ]
 

@@ -21,10 +21,10 @@ Actor subclass: Object
     local id
     id=$(_generate_instance_id Actor)
     _create_instance Actor "$id"
-    _ivar_set queueName "actor.$1"
-    _ivar_set status "idle"
-    _ivar_set workerId "actor_worker_$$_$RANDOM"
-    _ivar_set dispatcherPid ""
+    @ "$id" queueName: "actor.$1"
+    @ "$id" status: "idle"
+    @ "$id" workerId: "actor_worker_$$_$RANDOM"
+    @ "$id" dispatcherPid: ""
     echo "$id"
   ]
 

@@ -49,21 +49,30 @@ honker_listen() {
         poll_sleep="0.${poll_ms}"
     fi
 
+    # Detach the subshell from the caller's stdin/stdout so that
+    # `pid=$(honker_listen ...)` doesn't block waiting for the inherited
+    # cmdsub pipe to close. Callbacks fire with the parent's original stdout.
+    # Each _db_sql invocation opens a fresh sqlite3 connection, so
+    # `PRAGMA data_version` always reads 1 from this side and can't be
+    # used as a change-detection shortcut. Poll the table directly.
+    # Track a per-listener cursor (last seen id) instead of deleting,
+    # so multiple subscribers on the same channel each see every event.
     (
-        local last_version=""
+        exec </dev/null >/dev/null
+        local last_id=0
+        # Skip messages already in the table at start-up
+        last_id=$(_db_sql "SELECT COALESCE(MAX(id), 0) FROM _honker_notifications WHERE channel = '$channel';")
+        last_id="${last_id:-0}"
         while true; do
-            local version
-            version=$(_db_sql "PRAGMA data_version;")
-            if [[ "$version" != "$last_version" ]]; then
-                last_version="$version"
-                local messages
-                messages=$(_db_sql_json "SELECT * FROM _honker_notifications WHERE channel = '$channel';")
-                if [[ -n "$messages" && "$messages" != "[]" ]]; then
-                    echo "$messages" | jq -r '.[].payload // empty' 2>/dev/null | while IFS= read -r payload; do
-                        "$callback" "$payload"
-                    done
-                    _db_sql "DELETE FROM _honker_notifications WHERE channel = '$channel';" >/dev/null 2>&1
-                fi
+            local rows
+            rows=$(_db_sql "SELECT id || char(31) || payload FROM _honker_notifications WHERE channel = '$channel' AND id > $last_id ORDER BY id;")
+            if [[ -n "$rows" ]]; then
+                while IFS= read -r row; do
+                    local id="${row%%$'\x1f'*}"
+                    local payload="${row#*$'\x1f'}"
+                    "$callback" "$payload"
+                    last_id="$id"
+                done <<<"$rows"
             fi
             sleep "$poll_sleep"
         done
@@ -75,7 +84,14 @@ honker_listen() {
 # Usage: honker_unlisten <pid>
 honker_unlisten() {
     local pid="$1"
+    # SIGTERM can be deferred while the subshell is inside a command
+    # substitution, so escalate to SIGKILL after a short grace period.
     kill "$pid" 2>/dev/null
+    for _ in 1 2 3 4 5; do
+        kill -0 "$pid" 2>/dev/null || break
+        sleep 0.05
+    done
+    kill -9 "$pid" 2>/dev/null
     wait "$pid" 2>/dev/null
 }
 
@@ -107,7 +123,10 @@ honker_claim() {
     local queue="$1"
     local worker_id="${2:-worker_$$}"
     local batch="${3:-1}" timeout="${4:-30}"
-    _db_sql_json "SELECT honker_claim_batch('$queue', '$worker_id', $batch, $timeout);"
+    # honker_claim_batch returns a JSON string; -json mode wraps it in a
+    # row keyed by the function-call text, so unwrap it here.
+    _db_sql_json "SELECT honker_claim_batch('$queue', '$worker_id', $batch, $timeout) AS jobs;" \
+        | jq -c '.[0].jobs | fromjson // []' 2>/dev/null
 }
 
 # Acknowledge successful processing of jobs
@@ -172,7 +191,8 @@ honker_stream_publish() {
 # Usage: honker_stream_read <stream> [offset=0] [limit=10]
 honker_stream_read() {
     local stream="$1" offset="${2:-0}" limit="${3:-10}"
-    _db_sql_json "SELECT honker_stream_read_since('$stream', $offset, $limit);"
+    _db_sql_json "SELECT honker_stream_read_since('$stream', $offset, $limit) AS msgs;" \
+        | jq -c '.[0].msgs | fromjson // []' 2>/dev/null
 }
 
 # Save consumer offset for a stream
@@ -212,7 +232,8 @@ honker_unschedule() {
 # Tick the scheduler — claims and returns due tasks
 # Usage: honker_scheduler_tick
 honker_scheduler_tick() {
-    _db_sql_json "SELECT honker_scheduler_tick(unixepoch());"
+    _db_sql_json "SELECT honker_scheduler_tick(unixepoch()) AS due;" \
+        | jq -c '.[0].due | fromjson // []' 2>/dev/null
 }
 
 # Get seconds until the next scheduled task fires

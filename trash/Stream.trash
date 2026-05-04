@@ -29,9 +29,9 @@ Stream subclass: Object
     local id
     id=$(_generate_instance_id Stream)
     _create_instance Stream "$id"
-    _ivar_set streamName "$1"
-    _ivar_set consumerName ""
-    _ivar_set readerPid ""
+    @ "$id" streamName: "$1"
+    @ "$id" consumerName: ""
+    @ "$id" readerPid: ""
     echo "$id"
   ]
 
@@ -40,9 +40,9 @@ Stream subclass: Object
     local id
     id=$(_generate_instance_id Stream)
     _create_instance Stream "$id"
-    _ivar_set streamName "$1"
-    _ivar_set consumerName "$2"
-    _ivar_set readerPid ""
+    @ "$id" streamName: "$1"
+    @ "$id" consumerName: "$2"
+    @ "$id" readerPid: ""
     echo "$id"
   ]
 

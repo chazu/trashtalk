@@ -467,7 +467,21 @@ Trashtalk optionally integrates with [Honker](https://github.com/russellromney/h
 
 ### Installation
 
-Build the honker extension from source (requires Rust), then place it where trashtalk can find it:
+The easiest way is the bundled installer, which clones honker, builds it with `cargo`, and drops the artifact into `~/.trashtalk/lib/vendor/honker/`:
+
+```bash
+bin/install-honker              # build from main + install
+bin/install-honker --ref v0.2   # pin to a tag/branch/commit
+```
+
+Requires `cargo` (Rust toolchain) and a `sqlite3` built with loadable-extension support. On macOS, the system `sqlite3` does **not** allow `.load`; install Homebrew's and put it ahead on `PATH`:
+
+```bash
+brew install sqlite
+export PATH="$(brew --prefix sqlite)/bin:$PATH"
+```
+
+Or install manually:
 
 ```bash
 # Option 1: Project-local

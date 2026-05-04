@@ -1,4 +1,6 @@
 *.db
+lib/vendor/honker/*.dylib
+lib/vendor/honker/*.so
 trash/user
 trash/.compiled
 trash/.compiled/*.native

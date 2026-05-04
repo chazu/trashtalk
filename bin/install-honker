@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# install-honker - Build the Honker SQLite extension from source and install
+# it to the trashtalk-local vendor directory (~/.trashtalk/lib/vendor/honker/).
+#
+# Usage: bin/install-honker [--ref <git-ref>] [--repo <url>] [--keep-build]
+set -euo pipefail
+
+REPO="https://github.com/russellromney/honker"
+REF="main"
+KEEP_BUILD=0
+BUILD_DIR="${TMPDIR:-/tmp}/honker-build-$$"
+DEST="$HOME/.trashtalk/lib/vendor/honker"
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --ref) REF="$2"; shift 2 ;;
+        --repo) REPO="$2"; shift 2 ;;
+        --keep-build) KEEP_BUILD=1; shift ;;
+        -h|--help) sed -n '2,7p' "$0"; exit 0 ;;
+        *) echo "unknown arg: $1" >&2; exit 2 ;;
+    esac
+done
+
+log() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
+err() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; }
+
+# --- preflight ---------------------------------------------------------------
+command -v cargo >/dev/null || { err "cargo not found — install Rust: https://rustup.rs"; exit 1; }
+command -v git   >/dev/null || { err "git not found"; exit 1; }
+command -v sqlite3 >/dev/null || { err "sqlite3 not found"; exit 1; }
+
+# Check that sqlite3 in PATH supports loadable extensions.
+# A supporting build errors with "dlopen"; a non-supporting one with "unknown command".
+_load_probe="$(sqlite3 :memory: ".load /nonexistent" 2>&1 || true)"
+if ! grep -q dlopen <<<"$_load_probe"; then
+    err "Your sqlite3 was built without loadable-extension support."
+    err "On macOS, install Homebrew sqlite and put it on PATH:"
+    err "  brew install sqlite"
+    err "  export PATH=\"\$(brew --prefix sqlite)/bin:\$PATH\""
+    exit 1
+fi
+
+case "$(uname -s)" in
+    Darwin) EXT="dylib" ;;
+    Linux)  EXT="so" ;;
+    *) err "unsupported OS: $(uname -s)"; exit 1 ;;
+esac
+
+# --- build -------------------------------------------------------------------
+log "cloning $REPO @ $REF"
+git clone --depth 1 --branch "$REF" "$REPO" "$BUILD_DIR"
+
+log "building (cargo build --release)"
+( cd "$BUILD_DIR" && cargo build --release )
+
+ARTIFACT="$BUILD_DIR/target/release/libhonker_ext.$EXT"
+[[ -f "$ARTIFACT" ]] || { err "build artifact not found at $ARTIFACT"; exit 1; }
+
+# --- install -----------------------------------------------------------------
+log "installing to $DEST"
+mkdir -p "$DEST"
+cp "$ARTIFACT" "$DEST/libhonker_ext.$EXT"
+
+# --- verify ------------------------------------------------------------------
+log "verifying load"
+sqlite3 :memory: ".load $DEST/libhonker_ext" "SELECT honker_bootstrap();" >/dev/null
+
+if [[ "$KEEP_BUILD" -eq 0 ]]; then
+    rm -rf "$BUILD_DIR"
+fi
+
+log "done. installed: $DEST/libhonker_ext.$EXT"
+log "open a new shell or 'source lib/trash.bash' — _HONKER_AVAILABLE should be 1"
