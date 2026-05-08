@@ -14,13 +14,13 @@ String subclass: Object
   # ========================================
 
   # Test if string is empty (replaces [[ -z "$str" ]])
-  rawClassMethod: isEmpty: str [
-    [[ -z "$str" ]] && echo "true" || echo "false"
+  classMethod: isEmpty: aStr [
+    ^ aStr isEmpty
   ]
 
   # Test if string is not empty (replaces [[ -n "$str" ]])
-  rawClassMethod: notEmpty: str [
-    [[ -n "$str" ]] && echo "true" || echo "false"
+  classMethod: notEmpty: aStr [
+    ^ aStr notEmpty
   ]
 
   # Test if string contains substring

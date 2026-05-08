@@ -209,28 +209,28 @@ File subclass: Object
   # Usage: (@ File exists: myPath) ifTrue: [ ... ]
 
   # Test if path exists (file, directory, symlink, etc.)
-  rawClassMethod: exists: path [
-    [[ -e "$path" ]] && echo "true" || echo "false"
+  classMethod: exists: aPath [
+    ^ aPath fileExists
   ]
 
   # Test if path is a regular file
-  rawClassMethod: isFile: path [
-    [[ -f "$path" ]] && echo "true" || echo "false"
+  classMethod: isFile: aPath [
+    ^ aPath isFile
   ]
 
   # Test if path is a directory
-  rawClassMethod: isDirectory: path [
-    [[ -d "$path" ]] && echo "true" || echo "false"
+  classMethod: isDirectory: aPath [
+    ^ aPath isDirectory
   ]
 
   # Test if path is a symbolic link
-  rawClassMethod: isSymlink: path [
-    [[ -L "$path" ]] && echo "true" || echo "false"
+  classMethod: isSymlink: aPath [
+    ^ aPath isSymlink
   ]
 
   # Test if path is a named pipe (FIFO)
-  rawClassMethod: isFifo: path [
-    [[ -p "$path" ]] && echo "true" || echo "false"
+  classMethod: isFifo: aPath [
+    ^ aPath isFifo
   ]
 
   # Test if path is a socket
@@ -249,18 +249,18 @@ File subclass: Object
   ]
 
   # Test if file is readable
-  rawClassMethod: isReadable: path [
-    [[ -r "$path" ]] && echo "true" || echo "false"
+  classMethod: isReadable: aPath [
+    ^ aPath isReadable
   ]
 
   # Test if file is writable
-  rawClassMethod: isWritable: path [
-    [[ -w "$path" ]] && echo "true" || echo "false"
+  classMethod: isWritable: aPath [
+    ^ aPath isWritable
   ]
 
   # Test if file is executable
-  rawClassMethod: isExecutable: path [
-    [[ -x "$path" ]] && echo "true" || echo "false"
+  classMethod: isExecutable: aPath [
+    ^ aPath isExecutable
   ]
 
   # Test if file is empty (zero size)

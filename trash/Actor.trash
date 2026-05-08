@@ -152,8 +152,8 @@ Actor subclass: Object
   ]
 
   # Get the queue name
-  rawMethod: queueName [
-    _ivar queueName
+  method: queueName [
+    ^ queueName
   ]
 
   # Clean up: stop dispatcher and delete

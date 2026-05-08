@@ -166,8 +166,8 @@ GrpcClient subclass: Object
     echo "$(_ivar address)"
   ]
 
-  rawMethod: isUsingReflection [
-    echo "$(_ivar useReflection)"
+  method: isUsingReflection [
+    ^ useReflection
   ]
 
   rawMethod: isPoolingEnabled [

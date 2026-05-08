@@ -120,8 +120,8 @@ Future subclass: Object
   ]
 
   # Get exit code (empty if still pending)
-  rawMethod: exitCode [
-    _ivar exit_code
+  method: exitCode [
+    ^ exit_code
   ]
 
   # Clean up resources
