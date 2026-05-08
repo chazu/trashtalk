@@ -44,28 +44,28 @@ File subclass: Object
   ]
 
   # Get the file path
-  rawMethod: path [
-    _ivar path
+  method: path [
+    ^ path
   ]
 
   # Check if file exists
-  rawMethod: exists [
-    [[ -e "$(_ivar path)" ]] && echo "true" || echo "false"
+  method: exists [
+    ^ path fileExists
   ]
 
   # Check if it's a regular file
-  rawMethod: isFile [
-    [[ -f "$(_ivar path)" ]] && echo "true" || echo "false"
+  method: isFile [
+    ^ path isFile
   ]
 
   # Check if it's a directory
-  rawMethod: isDirectory [
-    [[ -d "$(_ivar path)" ]] && echo "true" || echo "false"
+  method: isDirectory [
+    ^ path isDirectory
   ]
 
   # Check if it's a FIFO
-  rawMethod: isFifo [
-    [[ -p "$(_ivar path)" ]] && echo "true" || echo "false"
+  method: isFifo [
+    ^ path isFifo
   ]
 
   # Read entire file contents
