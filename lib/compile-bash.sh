@@ -23,9 +23,15 @@ outfile="$COMPILED_DIR/$outname"
 
 mkdir -p "$(dirname "$outfile")"
 
-if "$JQ_COMPILER" compile "$src" > "$outfile" 2>/dev/null; then
+stderr_file=$(mktemp)
+if "$JQ_COMPILER" compile "$src" > "$outfile" 2>"$stderr_file"; then
     echo "  ✓ $outname"
 else
     echo "  ✗ $outname (compilation failed)"
+    if [[ -s "$stderr_file" ]]; then
+        cat "$stderr_file" >&2
+    fi
+    rm -f "$stderr_file"
     exit 1
 fi
+rm -f "$stderr_file"
