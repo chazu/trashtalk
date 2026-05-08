@@ -611,7 +611,8 @@ def expr_parse_expr(min_bp):
       elif (.state | expr_peek_type) == "IDENTIFIER" and
            ((.state | expr_peek.value) | . as $v |
             ["fileExists", "isFile", "isDirectory", "isFifo", "isSymlink",
-             "isReadable", "isWritable", "isExecutable", "isEmpty", "notEmpty"] | index($v) != null) then
+             "isReadable", "isWritable", "isExecutable", "isEmpty", "notEmpty",
+             "isSocket", "isBlockDevice", "isCharDevice"] | index($v) != null) then
         # File/string test predicate (fileExists, isFile, isEmpty, etc.)
         .result as $subject |
         (.state | expr_peek.value) as $test |
@@ -1209,6 +1210,9 @@ def expr_gen($locals; $ivars; $cvars):
        elif $tname == "isExecutable" then "[[ -x \"\($subj)\" ]]"
        elif $tname == "isEmpty" then "[[ -z \"\($subj)\" ]]"
        elif $tname == "notEmpty" then "[[ -n \"\($subj)\" ]]"
+       elif $tname == "isSocket" then "[[ -S \"\($subj)\" ]]"
+       elif $tname == "isBlockDevice" then "[[ -b \"\($subj)\" ]]"
+       elif $tname == "isCharDevice" then "[[ -c \"\($subj)\" ]]"
        else "# unknown test: \($tname)"
        end) as $test |
       "\($test) && echo \"true\" || echo \"false\"; return"
@@ -1317,6 +1321,9 @@ def expr_gen($locals; $ivars; $cvars):
         elif $cond.test == "isExecutable" then {code: "[[ -x \"\($subj)\" ]]", needs_wrapper: false}
         elif $cond.test == "isEmpty" then {code: "[[ -z \"\($subj)\" ]]", needs_wrapper: false}
         elif $cond.test == "notEmpty" then {code: "[[ -n \"\($subj)\" ]]", needs_wrapper: false}
+        elif $cond.test == "isSocket" then {code: "[[ -S \"\($subj)\" ]]", needs_wrapper: false}
+        elif $cond.test == "isBlockDevice" then {code: "[[ -b \"\($subj)\" ]]", needs_wrapper: false}
+        elif $cond.test == "isCharDevice" then {code: "[[ -c \"\($subj)\" ]]", needs_wrapper: false}
         else {code: "# unknown test: \($cond.test)", needs_wrapper: false}
         end
       elif $cond.type == "boolean_op" then
@@ -1720,6 +1727,9 @@ def expr_gen($locals; $ivars; $cvars):
      elif $tname == "isExecutable" then "[[ -x \"\($subj)\" ]]"
      elif $tname == "isEmpty" then "[[ -z \"\($subj)\" ]]"
      elif $tname == "notEmpty" then "[[ -n \"\($subj)\" ]]"
+     elif $tname == "isSocket" then "[[ -S \"\($subj)\" ]]"
+     elif $tname == "isBlockDevice" then "[[ -b \"\($subj)\" ]]"
+     elif $tname == "isCharDevice" then "[[ -c \"\($subj)\" ]]"
      else "# unknown test: \($tname)"
      end) as $test |
     "$(\($test) && echo true || echo false)"
@@ -1779,6 +1789,9 @@ def expr_gen_test_expr($locals; $ivars; $cvars):
   elif .test == "isExecutable" then "[[ -x \"\($subj)\" ]]"
   elif .test == "isEmpty" then "[[ -z \"\($subj)\" ]]"
   elif .test == "notEmpty" then "[[ -n \"\($subj)\" ]]"
+  elif .test == "isSocket" then "[[ -S \"\($subj)\" ]]"
+  elif .test == "isBlockDevice" then "[[ -b \"\($subj)\" ]]"
+  elif .test == "isCharDevice" then "[[ -c \"\($subj)\" ]]"
   else "# unknown test: \(.test)"
   end;
 
@@ -2033,7 +2046,8 @@ def should_use_expr_parser:
     # Test predicates are now IDENTIFIER tokens with specific values
     def is_test_predicate: . as $v |
       ["fileExists", "isFile", "isDirectory", "isFifo", "isSymlink",
-       "isReadable", "isWritable", "isExecutable", "isEmpty", "notEmpty"] | index($v) != null;
+       "isReadable", "isWritable", "isExecutable", "isEmpty", "notEmpty",
+       "isSocket", "isBlockDevice", "isCharDevice"] | index($v) != null;
     # JSON primitive keywords
     def is_json_primitive_keyword: . as $v |
       ["arrayPush:", "arrayPushJson:", "arrayAt:", "arrayRemoveAt:",

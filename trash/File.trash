@@ -234,18 +234,18 @@ File subclass: Object
   ]
 
   # Test if path is a socket
-  rawClassMethod: isSocket: path [
-    [[ -S "$path" ]] && echo "true" || echo "false"
+  classMethod: isSocket: aPath [
+    ^ aPath isSocket
   ]
 
   # Test if path is a block device
-  rawClassMethod: isBlockDevice: path [
-    [[ -b "$path" ]] && echo "true" || echo "false"
+  classMethod: isBlockDevice: aPath [
+    ^ aPath isBlockDevice
   ]
 
   # Test if path is a character device
-  rawClassMethod: isCharDevice: path [
-    [[ -c "$path" ]] && echo "true" || echo "false"
+  classMethod: isCharDevice: aPath [
+    ^ aPath isCharDevice
   ]
 
   # Test if file is readable
