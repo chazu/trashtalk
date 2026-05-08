@@ -37,7 +37,7 @@ NAMESPACE_SOURCES := $(filter-out $(wildcard $(TRASH_DIR)/traits/*.trash) $(wild
                       $(wildcard $(TRASH_DIR)/*/*.trash))
 ALL_SOURCES := $(SOURCES) $(TRAIT_SOURCES) $(USER_SOURCES) $(NAMESPACE_SOURCES)
 
-.PHONY: all bash test test-verbose clean help info single watch
+.PHONY: all bash test test-serial test-verbose clean help info single watch
 
 # =============================================================================
 # Main Targets
@@ -98,23 +98,11 @@ endif
 
 test: bash
 	@echo ""
-	@echo "Running tests..."
-	@failed=0; passed=0; \
-	for test in $(TESTS_DIR)/test_*.bash; do \
-		if [[ -f "$$test" ]]; then \
-			echo ""; \
-			echo "=== $$(basename $$test) ==="; \
-			if bash "$$test"; then \
-				((passed++)); \
-			else \
-				((failed++)); \
-			fi; \
-		fi; \
-	done; \
-	echo ""; \
-	echo "================================"; \
-	echo "Passed: $$passed, Failed: $$failed"; \
-	[[ $$failed -eq 0 ]]
+	@bash $(LIB_DIR)/run-tests.sh $(TESTS_DIR)
+
+test-serial: bash
+	@echo ""
+	@bash $(LIB_DIR)/run-tests.sh $(TESTS_DIR) --serial
 
 test-verbose: bash
 	@echo "Running tests (verbose)..."
