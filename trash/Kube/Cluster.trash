@@ -34,9 +34,9 @@ Cluster subclass: Object
   ]
 
   # Set namespace and return self (for cascade configuration).
-  rawMethod: withNamespace: ns [
-    _ivar_set namespace "$ns"
-    echo "$_RECEIVER"
+  method: withNamespace: ns [
+    namespace := ns.
+    ^ self
   ]
 
   # Fetch all resources of a kind, returning an Array of typed Resource instances.

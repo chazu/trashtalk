@@ -146,20 +146,20 @@ GrpcClient subclass: Object
   # Configuration methods
   # ==========================================================================
 
-  rawMethod: enablePooling [
-    _ivar_set poolConnections 'yes'
+  method: enablePooling [
+    poolConnections := "yes"
   ]
 
-  rawMethod: disablePooling [
-    _ivar_set poolConnections 'no'
+  method: disablePooling [
+    poolConnections := "no"
   ]
 
-  rawMethod: enableTLS [
-    _ivar_set usePlaintext 'no'
+  method: enableTLS [
+    usePlaintext := "no"
   ]
 
-  rawMethod: enablePlaintext [
-    _ivar_set usePlaintext 'yes'
+  method: enablePlaintext [
+    usePlaintext := "yes"
   ]
 
   rawMethod: address [
