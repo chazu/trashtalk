@@ -1195,6 +1195,23 @@ def expr_gen($locals; $ivars; $cvars):
     elif .value.type == "message_send" or .value.type == "cascade" then
       # Message sends output directly, no echo wrapper needed
       "\(.value | expr_gen($locals; $ivars; $cvars)); return"
+    elif .value.type == "test_expr" then
+      # Test expressions evaluate to "true"/"false" directly
+      (.value.subject | expr_gen($locals; $ivars; $cvars)) as $subj |
+      (.value.test) as $tname |
+      (if $tname == "fileExists" then "[[ -e \"\($subj)\" ]]"
+       elif $tname == "isFile" then "[[ -f \"\($subj)\" ]]"
+       elif $tname == "isDirectory" then "[[ -d \"\($subj)\" ]]"
+       elif $tname == "isFifo" then "[[ -p \"\($subj)\" ]]"
+       elif $tname == "isSymlink" then "[[ -L \"\($subj)\" ]]"
+       elif $tname == "isReadable" then "[[ -r \"\($subj)\" ]]"
+       elif $tname == "isWritable" then "[[ -w \"\($subj)\" ]]"
+       elif $tname == "isExecutable" then "[[ -x \"\($subj)\" ]]"
+       elif $tname == "isEmpty" then "[[ -z \"\($subj)\" ]]"
+       elif $tname == "notEmpty" then "[[ -n \"\($subj)\" ]]"
+       else "# unknown test: \($tname)"
+       end) as $test |
+      "\($test) && echo \"true\" || echo \"false\"; return"
     else "echo \"\(.value | expr_gen($locals; $ivars; $cvars))\"; return"
     end
   elif .type == "passthrough" then
@@ -1688,6 +1705,24 @@ def expr_gen($locals; $ivars; $cvars):
     else
       "# ERROR: unknown json_primitive operation \(.operation)"
     end
+  elif .type == "test_expr" then
+    # Test expression used as a value (assignment, standalone, etc.)
+    # Generate a subshell that evaluates to "true" or "false"
+    (.subject | expr_gen($locals; $ivars; $cvars)) as $subj |
+    .test as $tname |
+    (if $tname == "fileExists" then "[[ -e \"\($subj)\" ]]"
+     elif $tname == "isFile" then "[[ -f \"\($subj)\" ]]"
+     elif $tname == "isDirectory" then "[[ -d \"\($subj)\" ]]"
+     elif $tname == "isFifo" then "[[ -p \"\($subj)\" ]]"
+     elif $tname == "isSymlink" then "[[ -L \"\($subj)\" ]]"
+     elif $tname == "isReadable" then "[[ -r \"\($subj)\" ]]"
+     elif $tname == "isWritable" then "[[ -w \"\($subj)\" ]]"
+     elif $tname == "isExecutable" then "[[ -x \"\($subj)\" ]]"
+     elif $tname == "isEmpty" then "[[ -z \"\($subj)\" ]]"
+     elif $tname == "notEmpty" then "[[ -n \"\($subj)\" ]]"
+     else "# unknown test: \($tname)"
+     end) as $test |
+    "$(\($test) && echo true || echo false)"
   else
     "# unknown: \(.type)"
   end;
