@@ -203,7 +203,7 @@ Required: `jo`, `jq`, `sqlite3`, `uuidgen`
 
 ## Known Issues
 
-- **Method name collision**: Keyword methods (e.g., `skip:`) and unary methods with same base name compile to same bash function
-- **Negative numbers in arguments**: Compiler may mangle `0 -1` into `0-1`
-- **ifTrue: with non-predicate expressions**: `(@ String contains:...) ifTrue:` doesn't work correctly (returns "true"/"false" strings but ifTrue: uses `-n` test)
+- **~~Method name collision~~**: ~~Keyword methods (e.g., `skip:`) and unary methods with same base name compile to same bash function~~ - **FIXED**: keyword methods now get a trailing `_` suffix (e.g., `skip` -> `__Class__skip`, `skip:` -> `__Class__skip_`)
+- **~~Negative numbers in arguments~~**: ~~Compiler may mangle `0 -1` into `0-1`~~ - **FIXED**: negative numbers are preserved correctly in both message sends and arithmetic
+- **ifTrue: with non-predicate expressions**: `(@ String contains:...) ifTrue:` doesn't work correctly (returns "true"/"false" strings but ifTrue: uses `-n` test). The codegen puts the message send inside `(( ))` arithmetic context which is invalid.
 - **Namespace references in rawMethod/rawClassMethod bodies**: The tokenizer splits `Pkg::Class` into three tokens, so `@ Pkg::Class method` compiles to `@ Pkg :: Class method` and breaks at runtime. Use a local variable instead: `local _Foo="Pkg::Class"; @ "$_Foo" method`. For self-references use `"$_RECEIVER"` or `"$_CLASS"`. Regular `method:` blocks are unaffected.
