@@ -27,6 +27,11 @@ TOKENIZER="$SCRIPT_DIR/tokenizer.bash"
 PARSER="$SCRIPT_DIR/parser.jq"
 CODEGEN="$SCRIPT_DIR/codegen.jq"
 
+# AST cache directory - avoids re-tokenizing/parsing unchanged files
+TRASHTALK_DIR="${TRASHTALK_DIR:-$HOME/.trashtalk}"
+AST_CACHE_DIR="$TRASHTALK_DIR/trash/.compiled/.astcache"
+mkdir -p "$AST_CACHE_DIR" 2>/dev/null || true
+
 # Colors for output (if terminal supports it)
 if [[ -t 1 ]]; then
     RED='\033[0;31m'
@@ -258,11 +263,22 @@ cmd_tokenize() {
 }
 
 # Internal: Parse a single .trash file to JSON AST (no trait merging)
+# Uses content-hash caching to avoid re-tokenizing/parsing unchanged files.
 _parse_single_file() {
     local source_file="$1"
 
     if [[ ! -f "$source_file" ]]; then
         error "Source file not found: $source_file"
+    fi
+
+    # Check AST cache by content hash
+    local content_hash cache_file
+    content_hash=$(shasum -a 256 "$source_file" | cut -d' ' -f1)
+    cache_file="$AST_CACHE_DIR/$content_hash.json"
+
+    if [[ -f "$cache_file" ]]; then
+        cat "$cache_file"
+        return 0
     fi
 
     local tokens
@@ -296,6 +312,9 @@ _parse_single_file() {
         warnings_json=$(echo "$ast" | jq '.warnings')
         show_errors_with_context "$source_file" "$warnings_json" "$YELLOW"
     fi
+
+    # Cache the result for future compilations
+    echo "$ast" > "$cache_file" 2>/dev/null || true
 
     echo "$ast"
 }
