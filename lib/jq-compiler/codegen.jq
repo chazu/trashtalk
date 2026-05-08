@@ -2119,7 +2119,8 @@ def should_use_expr_parser:
          (($tokens[$i + 2].type == "IDENTIFIER" and
            ($tokens[$i + 2].value != null) and
            ($tokens[$i + 2].value | test("^[a-z]"))) or
-          $tokens[$i + 2].type == "STRING"))
+          $tokens[$i + 2].type == "STRING" or
+          $tokens[$i + 2].type == "DSTRING"))
         or
         # Pattern 2: identifier := number followed by DOT (Smalltalk-style)
         ($tokens[$i].type == "IDENTIFIER" and
