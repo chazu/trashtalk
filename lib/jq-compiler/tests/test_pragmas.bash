@@ -117,7 +117,7 @@ run_test "keyword method selector correct" "dispatch_" \
 echo -e "\n  Pragma Code Generation:"
 
 run_test "generates direct marker for pragma method" "true" \
-    "$(compile_contains "$INPUT_PRAGMA_DIRECT" 'declare -g __TestClass__fastMethod__direct=1')"
+    "$(compile_contains "$INPUT_PRAGMA_DIRECT" 'declare __TestClass__fastMethod__direct=1')"
 
 run_test "generates function after marker" "true" \
     "$(compile_contains "$INPUT_PRAGMA_DIRECT" '__TestClass__fastMethod() {')"
