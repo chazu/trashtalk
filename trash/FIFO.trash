@@ -177,6 +177,6 @@ FIFO subclass: Object
   ]
 
   # Private setter
-  rawMethod: _setPath: aPath [
-    _ivar_set path "$1"
+  method: _setPath: aPath [
+    path := aPath
   ]

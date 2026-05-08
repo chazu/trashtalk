@@ -221,9 +221,9 @@ Stream subclass: Object
     fi
   ]
 
-  rawMethod: destroy [
-    @ "$_RECEIVER" stopConsuming
-    @ "$_RECEIVER" delete
+  method: destroy [
+    @ self stopConsuming.
+    @ self delete
   ]
 
   rawClassMethod: help [

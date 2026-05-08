@@ -201,11 +201,11 @@ Coproc subclass: Object
   ]
 
   # Private setters
-  rawMethod: _setCommand: cmd [
-    _ivar_set command "$1"
+  method: _setCommand: cmd [
+    command := cmd
   ]
 
-  rawMethod: _setStatus: s [
-    _ivar_set status "$1"
+  method: _setStatus: s [
+    status := s
   ]
 

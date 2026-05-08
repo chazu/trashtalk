@@ -73,8 +73,8 @@ GrpcClient subclass: Object
   ]
 
   # Make unary gRPC call without payload (empty JSON)
-  rawMethod: call: method [
-    @ "$_RECEIVER" call: "$1" with: '{}'
+  method: call: aMethod [
+    ^ @ self call: aMethod with: "{}"
   ]
 
   # ==========================================================================
@@ -82,27 +82,27 @@ GrpcClient subclass: Object
   # Bash fallback: no-op (streaming requires native support)
   # ==========================================================================
 
-  rawMethod: serverStream: method with: payload handler: block [
+  method: serverStream: aMethod with: payload handler: block [
     # Streaming not supported in bash mode - requires native plugin
-    @ Console error: 'GrpcClient: serverStream requires native plugin'
+    @ Console error: "GrpcClient: serverStream requires native plugin"
   ]
 
   # ==========================================================================
   # Client Streaming RPC - Native only
   # ==========================================================================
 
-  rawMethod: clientStream: method handler: block [
+  method: clientStream: aMethod handler: block [
     # Streaming not supported in bash mode - requires native plugin
-    @ Console error: 'GrpcClient: clientStream requires native plugin'
+    @ Console error: "GrpcClient: clientStream requires native plugin"
   ]
 
   # ==========================================================================
   # Bidirectional Streaming RPC - Native only
   # ==========================================================================
 
-  rawMethod: bidiStream: method handler: block [
+  method: bidiStream: aMethod handler: block [
     # Streaming not supported in bash mode - requires native plugin
-    @ Console error: 'GrpcClient: bidiStream requires native plugin'
+    @ Console error: "GrpcClient: bidiStream requires native plugin"
   ]
 
   # ==========================================================================
@@ -178,15 +178,15 @@ GrpcClient subclass: Object
   # Private setters (used by factory constructors)
   # ==========================================================================
 
-  rawMethod: _setAddress: a [
-    _ivar_set address "$1"
+  method: _setAddress: a [
+    address := a
   ]
 
-  rawMethod: _setProtoFile: p [
-    _ivar_set protoFile "$1"
+  method: _setProtoFile: p [
+    protoFile := p
   ]
 
-  rawMethod: _setUseReflection: r [
-    _ivar_set useReflection "$1"
+  method: _setUseReflection: r [
+    useReflection := r
   ]
 

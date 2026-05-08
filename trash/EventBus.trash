@@ -85,9 +85,9 @@ EventBus subclass: Object
   ]
 
   # Clean up on destroy
-  rawMethod: destroy [
-    @ "$_RECEIVER" shutdown
-    @ "$_RECEIVER" delete
+  method: destroy [
+    @ self shutdown.
+    @ self delete
   ]
 
   rawClassMethod: help [

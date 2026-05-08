@@ -157,9 +157,9 @@ Actor subclass: Object
   ]
 
   # Clean up: stop dispatcher and delete
-  rawMethod: destroy [
-    @ "$_RECEIVER" stop
-    @ "$_RECEIVER" delete
+  method: destroy [
+    @ self stop.
+    @ self delete
   ]
 
   rawClassMethod: help [
