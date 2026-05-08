@@ -95,8 +95,8 @@ Console subclass: Object
   ]
 
   # Print a horizontal rule
-  rawClassMethod: hr [
-    echo "----------------------------------------"
+  classMethod: hr [
+    ^ "----------------------------------------"
   ]
 
   # Print a horizontal rule with custom width

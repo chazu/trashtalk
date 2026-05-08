@@ -8,8 +8,8 @@ Kubectl subclass: Tool
     echo "kubectl"
   ]
 
-  rawClassMethod: installCommand [
-    echo "brew install kubectl"
+  classMethod: installCommand [
+    ^ "brew install kubectl"
   ]
 
   # Fetch a single resource as compact JSON. Returns empty on failure.

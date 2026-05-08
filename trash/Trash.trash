@@ -990,8 +990,8 @@ $class_name subclass: Object
     echo "Service stopped"
   ]
 
-  rawMethod: status [
-    echo "Service is running"
+  method: status [
+    ^ "Service is running"
   ]
 
   rawMethod: restart [

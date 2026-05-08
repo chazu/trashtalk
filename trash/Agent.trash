@@ -106,8 +106,8 @@ Agent subclass: Object
   ]
 
   # Override in subclasses to specify the tool command
-  rawClassMethod: toolCommand [
-    echo ""
+  classMethod: toolCommand [
+    ^ ""
   ]
 
   # Override in subclasses to ensure the agent tool is available

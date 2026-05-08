@@ -14,8 +14,8 @@
 Tool subclass: Object
 
   # Override in subclasses to return the command name
-  rawClassMethod: name [
-    echo ""
+  classMethod: name [
+    ^ ""
   ]
 
   # Override in subclasses to return the install command
