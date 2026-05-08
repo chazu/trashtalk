@@ -47,10 +47,12 @@ The jq-compiler is a three-stage pipeline:
 ## Build Commands
 
 ```bash
-make              # Compile all classes to bash
+make              # Compile all classes to bash (uses AST cache for ~50x faster warm rebuilds)
 make bash         # Same as above
 make single CLASS=Counter  # Compile single class
-make test         # Run all tests
+make test         # Run all compiler tests in parallel with per-test timeouts
+make test-serial  # Run tests sequentially
+make test-verbose # Run tests with bash -x tracing
 make clean        # Remove build artifacts
 ```
 
@@ -61,7 +63,12 @@ make test         # Run all tests, show pass/fail summary
 make test-verbose # Run tests with bash -x tracing
 ```
 
-Test files are in `tests/test_*.bash`.
+Compiler test files are in `lib/jq-compiler/tests/test_*.bash`.
+
+### Known Pre-Existing Test Issues
+
+- `test_codegen`, `test_integration`, `test_parser`: may timeout (>15s) on some machines
+- `test_to_do`: 4 failures in `to:do:` range iteration codegen (generates raw tokens instead of for-loop)
 
 ## Runtime Usage
 
@@ -109,12 +116,15 @@ MyClass subclass: Object
 ### When to Use rawMethod vs method
 
 - Use `method:` for most code - it handles variable inference and message transformation
-- Use `rawMethod:` when you need:
-  - Direct Bash builtin access / parameter expansion (e.g. `${str##pattern}`, `[[ ... ]]` tests)
-  - Heredocs, traps, or complex Bash constructs
-  - Process substitution (`<(...)`)
-  - Complex loops or conditionals
-  - Direct control over Bash execution
+- DSL methods can now handle: ivar accessors (`^ ivar`), predicate returns (`^ path fileExists`),
+  ivar assignment from params (`ivar := param`) and literals (`ivar := "value"`),
+  message sends to self (`@ self stop`), and string literal returns (`^ "hello"`)
+- Use `rawMethod:` only when you need:
+  - Direct Bash builtins / parameter expansion (e.g. `${str##pattern}`)
+  - External commands (`curl`, `stat`, `printf`, `cat`, etc.)
+  - Runtime context variables (`$_CLASS`, `$_INSTANCE`, `$_RECEIVER`, `$_SELECTOR`)
+  - Heredocs, traps, process substitution, or complex Bash control flow
+  - Pipe chains or redirections
 
 ### Key Patterns
 
@@ -138,11 +148,16 @@ method: valueWith: data [
 ]
 ```
 
-**Predicates that work**:
+**Predicates that work** (in ifTrue:, return, and assignment contexts):
 ```smalltalk
-(value isEmpty) ifTrue: [...]      # Works
-(value notEmpty) ifTrue: [...]     # Works
+(path fileExists) ifTrue: [...]    # Conditional
+^ path isFile                      # Return "true"/"false"
+result := path isEmpty             # Assign "true"/"false"
 ```
+
+Supported predicates: `fileExists`, `isFile`, `isDirectory`, `isFifo`, `isSymlink`,
+`isReadable`, `isWritable`, `isExecutable`, `isEmpty`, `notEmpty`,
+`isSocket`, `isBlockDevice`, `isCharDevice`.
 
 ## Key Transformations
 
@@ -152,7 +167,10 @@ method: valueWith: data [
 | `method: foo [body]` | `__Counter__foo() { body }` |
 | `method: at: x put: y [...]` | `__Counter__at_put() { local x="$1"; local y="$2"; ... }` |
 | `| var1 var2 |` | `local var1 var2` |
-| `var := value` | `var="value"` |
+| `var := value` | `var="value"` (local) or `_ivar_set var "value"` (ivar) |
+| `^ ivar` | `echo "$(_ivar ivar)"; return` |
+| `^ path fileExists` | `[[ -e "$path" ]] && echo "true" \|\| echo "false"; return` |
+| `result := path isEmpty` | `result="$([[ -z "$path" ]] && echo true \|\| echo false)"` |
 | `@ self method` | `@ "$_RECEIVER" method` |
 
 ## Runtime Context Variables
