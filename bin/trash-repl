@@ -1,6 +1,25 @@
 #!/usr/bin/env bash
 # Trashtalk REPL
 
+case "${1:-}" in
+    -h|--help)
+        cat <<'EOF'
+Trashtalk REPL - interactive message-send shell.
+
+Usage: trash-repl              start the REPL
+       trash-repl --help       show this help
+
+Inside the REPL:
+  Counter new               create an instance
+  $counter increment        send a message to an instance
+  Trash listObjects         list known classes
+  help                      show in-REPL examples
+  exit | quit | q           leave the REPL
+EOF
+        exit 0
+        ;;
+esac
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TRASHTALK_DIR="$(dirname "$SCRIPT_DIR")"
 

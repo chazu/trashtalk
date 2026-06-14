@@ -7,6 +7,32 @@
 # messages to objects that they can't handle natively (e.g., calls to
 # Runtime, String, or other classes).
 
+usage() {
+    cat <<'EOF'
+Usage: trash-send <receiver> <selector> [args...]
+
+Dispatch a single message send to the trashtalk runtime and print the result.
+
+  receiver   a class name (e.g. Counter) or instance id
+  selector   the message/method to send (e.g. new, increment)
+
+Examples:
+  trash-send Counter new
+  trash-send "$counter" increment 5
+EOF
+}
+
+case "${1:-}" in
+    -h|--help) usage; exit 0 ;;
+esac
+
+if [[ $# -lt 2 ]]; then
+    echo "Error: trash-send requires a receiver and a selector." >&2
+    echo "" >&2
+    usage >&2
+    exit 2
+fi
+
 # Don't try to connect to daemon from here - we're being called BY the daemon
 export TRASHTALK_DISABLE_NATIVE=1
 
@@ -22,5 +48,6 @@ TRASH_DIR="${TRASHTALK_DIR:-$HOME/.trashtalk}"
   source "$TRASH_DIR/lib/trash.bash"
 } 2>/dev/null
 
-# Dispatch the message (suppress info messages to stderr)
-@ "$@" 2>/dev/null
+# Dispatch the message. Only stdout carries the result; let real errors reach
+# stderr (callers capture stdout, so this aids debugging without polluting it).
+@ "$@"

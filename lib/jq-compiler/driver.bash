@@ -27,6 +27,16 @@ TOKENIZER="$SCRIPT_DIR/tokenizer.bash"
 PARSER="$SCRIPT_DIR/parser.jq"
 CODEGEN="$SCRIPT_DIR/codegen.jq"
 
+# Preflight: the compiler shells out to jq and shasum throughout. Check up front
+# so a missing tool produces one clear message instead of a cascade of failures.
+for _tool in jq shasum; do
+    if ! command -v "$_tool" >/dev/null 2>&1; then
+        echo "Error: trashtalk compiler requires '$_tool' but it was not found in PATH." >&2
+        exit 1
+    fi
+done
+unset _tool
+
 # AST cache directory - avoids re-tokenizing/parsing unchanged files
 TRASHTALK_DIR="${TRASHTALK_DIR:-$HOME/.trashtalk}"
 AST_CACHE_DIR="$TRASHTALK_DIR/trash/.compiled/.astcache"
@@ -324,12 +334,20 @@ _parse_single_file() {
         exit 1
     fi
 
-    # Check for warnings (non-fatal errors)
+    # Check for warnings (non-fatal by default). Under TRASHTALK_STRICT they are
+    # promoted to errors so CI can reject malformed-but-recoverable input instead
+    # of silently emitting code from a partial parse.
     if echo "$ast" | jq -e '.warnings | length > 0' >/dev/null 2>&1; then
-        echo -e "${YELLOW}Parse warnings in ${source_file}:${NC}" >&2
-        local warnings_json
+        local warnings_json _warn_label="$YELLOW" _warn_word="warnings"
+        if [[ -n "${TRASHTALK_STRICT:-}" ]]; then
+            _warn_label="$RED"; _warn_word="warnings (strict mode)"
+        fi
+        echo -e "${_warn_label}Parse ${_warn_word} in ${source_file}:${NC}" >&2
         warnings_json=$(echo "$ast" | jq '.warnings')
-        show_errors_with_context "$source_file" "$warnings_json" "$YELLOW"
+        show_errors_with_context "$source_file" "$warnings_json" "$_warn_label"
+        if [[ -n "${TRASHTALK_STRICT:-}" ]]; then
+            exit 1
+        fi
     fi
 
     # Cache the result for future compilations. Write to a temp file and rename
@@ -349,11 +367,21 @@ _parse_single_file() {
 cmd_parse() {
     local source_file="$1"
     local trashtalk_dir="${TRASHTALK_DIR:-$HOME/.trashtalk}"
-    local traits_dir="$trashtalk_dir/trash/traits"
 
     if [[ ! -f "$source_file" ]]; then
         error "Source file not found: $source_file"
     fi
+
+    # Resolve where trait sources live. Search, in order: TRASHTALK_DIR, then
+    # locations relative to the file being compiled (so building from a repo
+    # checkout finds trash/traits/ without TRASHTALK_DIR pointing at it).
+    local src_dir traits_dir="" cand
+    src_dir=$(cd "$(dirname "$source_file")" && pwd)
+    for cand in "$trashtalk_dir/trash/traits" "$src_dir/traits" "$src_dir/../traits"; do
+        if [[ -d "$cand" ]]; then traits_dir="$cand"; break; fi
+    done
+    # Fall back to the TRASHTALK_DIR location for error messages if none existed.
+    [[ -z "$traits_dir" ]] && traits_dir="$trashtalk_dir/trash/traits"
 
     # Parse the main class
     local class_ast
@@ -382,9 +410,11 @@ cmd_parse() {
                 traits_json=$(echo "$traits_json" | jq --arg name "$trait_name" --slurpfile ast <(printf '%s' "$trait_ast") '. + {($name): $ast[0]}')
             else
                 echo "Warning: Failed to parse trait $trait_name from $trait_file" >&2
+                [[ -n "${TRASHTALK_STRICT:-}" ]] && error "Trait '$trait_name' failed to parse (strict mode)"
             fi
         else
-            echo "Warning: Trait file not found: $trait_file" >&2
+            echo "Warning: Trait '$trait_name' not found (searched: $traits_dir)" >&2
+            [[ -n "${TRASHTALK_STRICT:-}" ]] && error "Trait '$trait_name' not found (strict mode)"
         fi
     done
 

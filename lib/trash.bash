@@ -18,6 +18,27 @@ export -f kv_set kv_get kv_del 2>/dev/null
 export SQLITE_JSON_DB
 export _HONKER_AVAILABLE _HONKER_LOAD_CMD 2>/dev/null
 
+# Preflight: verify external tools the runtime depends on are present. Without
+# this, the first message send fails deep inside a pipeline with a cryptic
+# "command not found", or worse, silently produces empty data. Set
+# TRASH_SKIP_DEPCHECK=1 to bypass (e.g. for partial/offline use).
+_trash_check_deps() {
+    [[ -n "${TRASH_SKIP_DEPCHECK:-}" ]] && return 0
+    local missing=() tool
+    for tool in jq sqlite3 uuidgen jo; do
+        command -v "$tool" >/dev/null 2>&1 || missing+=("$tool")
+    done
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        echo "Error: trashtalk runtime is missing required tool(s): ${missing[*]}" >&2
+        echo "       Install them and re-source lib/trash.bash, or set" >&2
+        echo "       TRASH_SKIP_DEPCHECK=1 to bypass this check." >&2
+        return 1
+    fi
+    return 0
+}
+# Run the check at source time; surface failures but don't hard-abort the shell.
+_trash_check_deps || echo "Warning: continuing with missing dependencies; message sends may fail." >&2
+
 # Override msg_debug to respect DEBUG mode and output to stderr
 # This overrides BSFL's msg_debug which outputs to stdout regardless
 msg_debug() {
@@ -1091,19 +1112,25 @@ function _find_with_predicate {
     op="${BASH_REMATCH[2]}"
     value="${BASH_REMATCH[3]}"
 
-    # Build SQL predicate with json_extract
+    # Build SQL predicate with json_extract. $field is already constrained to a
+    # safe identifier by the regex above; $value and $class_name come from the
+    # caller, so escape any single quotes to prevent SQL injection / breakage on
+    # legitimate apostrophes.
+    local class_name_esc
+    class_name_esc=$(_db_escape "$class_name")
     if [[ "$value" =~ ^-?[0-9]+$ ]]; then
       # Numeric value
       sql_predicate="json_extract(data, '\$.$field') $op $value"
     elif [[ "$value" =~ ^\'.*\'$ ]]; then
-      # Already quoted string
-      sql_predicate="json_extract(data, '\$.$field') $op $value"
+      # Already quoted string - escape the inner content
+      local inner="${value:1:${#value}-2}"
+      sql_predicate="json_extract(data, '\$.$field') $op '$(_db_escape "$inner")'"
     else
-      # Unquoted string - add quotes
-      sql_predicate="json_extract(data, '\$.$field') $op '$value'"
+      # Unquoted string - escape and add quotes
+      sql_predicate="json_extract(data, '\$.$field') $op '$(_db_escape "$value")'"
     fi
 
-    db_query "class = '$class_name' AND $sql_predicate"
+    db_query "class = '$class_name_esc' AND $sql_predicate"
   else
     echo "Error: Invalid predicate format. Use: field op value (e.g., 'value > 5')" >&2
     return 1
@@ -1909,7 +1936,14 @@ function send {
 
   # Legacy mode: source class file directly
   if [[ ! -f "$class_file" ]]; then
-    echo "Error: Class file not found: $class_file" >&2
+    # Give a message keyed to what the receiver looks like rather than leaking
+    # an internal compiled-file path. Instance ids are "<lowercase>_<uuid>";
+    # anything else sent as a receiver is treated as a class name.
+    if [[ "$_RECEIVER" == *_*-*-*-*-* || "$_RECEIVER" =~ ^[a-z][a-z0-9_]*_[0-9a-f] ]]; then
+      echo "Error: Instance '$_RECEIVER' not found (not in memory or the Store). It may have been deleted, or never created." >&2
+    else
+      echo "Error: Unknown class '$_RECEIVER' (no compiled class found). Did you misspell it, or forget to run 'make'?" >&2
+    fi
     _send_cleanup $frame_ensure_start $frame_handler_start 1 "$_profile_start_ms" "error"
     return 1
   fi
