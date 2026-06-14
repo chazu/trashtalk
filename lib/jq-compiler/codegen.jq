@@ -1392,6 +1392,12 @@ def expr_gen($locals; $ivars; $cvars):
         # Boolean json_primitives return "true"/"false" strings - use string comparison
         ($cond | expr_gen($locals; $ivars; $cvars)) as $code |
         {code: "[[ \"\($code)\" == \"true\" ]]", needs_wrapper: false}
+      elif $cond.type == "message_send" or $cond.type == "cascade" then
+        # A message send used directly as a condition (e.g. (@ String contains: 'x')
+        # ifTrue: [...]) yields the string "true"/"false". Compare it as a string
+        # rather than forcing it into an invalid (( )) arithmetic context.
+        ($cond | expr_gen($locals; $ivars; $cvars)) as $code |
+        {code: "[[ \"$(\($code))\" == \"true\" ]]", needs_wrapper: false}
       else {code: ($cond | expr_gen($locals; $ivars; $cvars)), needs_wrapper: true}
       end;
     # Handle nil checks separately (they use .subject not .condition)
