@@ -352,7 +352,9 @@ cmd_parse() {
             trait_ast=$(_parse_single_file "$trait_file" 2>/dev/null)
             if [[ $? -eq 0 ]]; then
                 # Add trait to the traits object
-                traits_json=$(echo "$traits_json" | jq --arg name "$trait_name" --argjson ast "$trait_ast" '. + {($name): $ast}')
+                # Pass trait AST via process substitution (--slurpfile) instead of
+                # --argjson so large traits don't overflow ARG_MAX.
+                traits_json=$(echo "$traits_json" | jq --arg name "$trait_name" --slurpfile ast <(printf '%s' "$trait_ast") '. + {($name): $ast[0]}')
             else
                 echo "Warning: Failed to parse trait $trait_name from $trait_file" >&2
             fi
@@ -361,9 +363,11 @@ cmd_parse() {
         fi
     done
 
-    # Output the CompilationUnit
-    jq -n --argjson class "$class_ast" --argjson traits "$traits_json" \
-        '{ "class": $class, "traits": $traits }'
+    # Output the CompilationUnit. Use --slurpfile with process substitution rather
+    # than --argjson: a large class/trait AST passed as an argv string overflows
+    # ARG_MAX ("jq: Argument list too long") and silently breaks the build.
+    jq -n --slurpfile class <(printf '%s' "$class_ast") --slurpfile traits <(printf '%s' "$traits_json") \
+        '{ "class": $class[0], "traits": $traits[0] }'
 }
 
 # Alias for backwards compatibility
@@ -423,8 +427,8 @@ cmd_compile() {
 
     # Add source metadata and inherited ivars to AST
     local ast_with_source
-    ast_with_source=$(echo "$ast" | jq --arg hash "$source_hash" --argjson inherited "$inherited_ivars" \
-        'del(.warnings) | . + {sourceHash: $hash, inheritedInstanceVars: $inherited}')
+    ast_with_source=$(echo "$ast" | jq --arg hash "$source_hash" --slurpfile inherited <(printf '%s' "$inherited_ivars") \
+        'del(.warnings) | . + {sourceHash: $hash, inheritedInstanceVars: $inherited[0]}')
 
     # Generate code
     local output
