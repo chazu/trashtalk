@@ -8,3 +8,8 @@ trash/.compiled/*.dylib
 trash/.compiled/*.so
 trash/.compiled/*.h
 trash/.compiled/.build/
+
+# Scratch class generated on the fly by tests/test_instance_var_defaults.bash
+# (create_test_class / cleanup_test_class). Not a real source file.
+trash/TestOverride
+trash/TestOverride.trash
