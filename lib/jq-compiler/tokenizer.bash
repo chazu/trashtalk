@@ -41,6 +41,11 @@ set -uo pipefail
 
 declare -a TOKENS=()
 
+# Count of unrecoverable lexical errors (e.g. unterminated strings). When > 0
+# the tokenizer exits non-zero so the driver reports a clear failure instead of
+# silently feeding a malformed token stream to the parser.
+_TOKENIZER_ERRORS=0
+
 # Add a token to the accumulator
 # Arguments: type value line col
 add_token() {
@@ -459,9 +464,12 @@ tokenize() {
             "'")
                 local str_start_col=$col
 
+                local str_start_line=$line
+
                 # Check for triple-quoted string '''...'''
                 if [[ "${input:i:3}" == "'''" ]]; then
                     local str=""
+                    local found_close=0
                     ((i += 3))
                     ((col += 3))
 
@@ -471,6 +479,7 @@ tokenize() {
                             # Found closing delimiter
                             ((i += 3))
                             ((col += 3))
+                            found_close=1
                             break
                         fi
                         local c="${input:i:1}"
@@ -483,6 +492,11 @@ tokenize() {
                         str+="$c"
                         ((i++))
                     done
+
+                    if [[ $found_close -eq 0 ]]; then
+                        echo "Tokenizer error: unterminated triple-quoted string starting at line $str_start_line, col $str_start_col" >&2
+                        ((_TOKENIZER_ERRORS++)) || true
+                    fi
 
                     add_token "TRIPLESTRING" "$str" "$line" "$str_start_col"
                 else
@@ -510,6 +524,9 @@ tokenize() {
                         str+="'"
                         ((i++))
                         ((col++))
+                    else
+                        echo "Tokenizer error: unterminated string literal starting at line $str_start_line, col $str_start_col" >&2
+                        ((_TOKENIZER_ERRORS++)) || true
                     fi
 
                     add_token "STRING" "$str" "$line" "$str_start_col"
@@ -938,6 +955,12 @@ main() {
 
     tokenize "$input"
     emit_tokens
+
+    # Fail if any unrecoverable lexical errors were seen, so the driver can
+    # report a clear failure rather than compiling a malformed token stream.
+    if (( _TOKENIZER_ERRORS > 0 )); then
+        return 1
+    fi
 }
 
 # Run if executed directly (not sourced)
