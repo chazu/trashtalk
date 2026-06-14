@@ -60,16 +60,37 @@ Trashtalk uses a **DSL compiler** that transforms Smalltalk-inspired source file
 
 ## Installation
 
+### Requirements
+
+- **bash 4.0+** — macOS ships bash 3.2 at `/bin/bash`; install a modern one with
+  `brew install bash` and start a session with it (`exec "$(brew --prefix)/bin/bash"`).
+- Required tools: `jo`, `jq`, `sqlite3`, `uuidgen`
+  - macOS: `brew install jo jq sqlite` (`uuidgen` is built in)
+  - Debian/Ubuntu: `sudo apt install jo jq sqlite3 uuid-runtime`
+
 Clone or copy this repository to `~/.trashtalk`:
 
 ```bash
 git clone <repo-url> ~/.trashtalk
 ```
 
+Compile the bundled classes (required before first use — the runtime dispatches
+to generated bash in `trash/.compiled/`):
+
+```bash
+cd ~/.trashtalk && make
+```
+
 Add the following to your `.bashrc` or `.zshrc`:
 
 ```bash
 source ~/.trashtalk/lib/trash.bash
+```
+
+Verify the install:
+
+```bash
+@ Trash info
 ```
 
 ## Quick Start

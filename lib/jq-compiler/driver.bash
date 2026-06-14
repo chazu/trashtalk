@@ -499,13 +499,16 @@ cmd_compile() {
     rm -f "$_codegen_err"
 
     # The codegen emits "# ERROR:" comments when it hits an AST node it can't
-    # handle, then exits 0 -- so broken output ships silently. Surface those
-    # markers; fail the compile under strict mode.
+    # handle, then exits 0 -- so broken output would ship silently. Strict is the
+    # default: fail the compile so broken bash never reaches the runtime. Set
+    # TRASHTALK_LENIENT=1 to downgrade to a warning and ship the partial output.
     if grep -q '# ERROR:' <<<"$output"; then
-        echo -e "${YELLOW}Warning: codegen produced unhandled constructs in ${source_file}:${NC}" >&2
+        echo -e "${YELLOW}codegen produced unhandled constructs in ${source_file}:${NC}" >&2
         grep -n '# ERROR:' <<<"$output" | sed 's/^/  /' >&2
-        if [[ -n "${TRASHTALK_STRICT:-}" ]]; then
-            error "Codegen emitted error markers (strict mode)"
+        if [[ -n "${TRASHTALK_LENIENT:-}" ]]; then
+            echo -e "${YELLOW}Warning: shipping partial output (TRASHTALK_LENIENT=1)${NC}" >&2
+        else
+            error "Codegen emitted error markers; refusing to ship broken output. Set TRASHTALK_LENIENT=1 to override."
         fi
     fi
 

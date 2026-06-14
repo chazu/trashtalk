@@ -3,6 +3,20 @@
 # Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Trashtalk needs bash 4.0+ (associative arrays via `declare -A`, etc.). macOS
+# ships bash 3.2 as /bin/bash, where sourcing this file dies with a cryptic
+# `declare: -A: invalid option` partway through. Fail early with a clear fix.
+if [[ -z "${BASH_VERSINFO:-}" || "${BASH_VERSINFO[0]}" -lt 4 ]]; then
+    printf '%s\n' \
+        "Error: trashtalk requires bash 4.0+ (current: ${BASH_VERSION:-not running under bash})." \
+        "       macOS ships bash 3.2 at /bin/bash. Install a modern bash with:" \
+        "           brew install bash" \
+        "       then start a bash 4+ session, e.g.:" \
+        "           exec \"\$(brew --prefix)/bin/bash\"" \
+        "       and re-source lib/trash.bash. Verify with: bash --version" >&2
+    return 1 2>/dev/null || exit 1
+fi
+
 # Source dependencies quietly
 source "$SCRIPT_DIR/vendor/bsfl.sh" 2>/dev/null || echo "Warning: bsfl.sh not found"
 source "$SCRIPT_DIR/vendor/fun.sh" 2>/dev/null || echo "Warning: fun.sh not found"
@@ -30,14 +44,17 @@ _trash_check_deps() {
     done
     if [[ ${#missing[@]} -gt 0 ]]; then
         echo "Error: trashtalk runtime is missing required tool(s): ${missing[*]}" >&2
-        echo "       Install them and re-source lib/trash.bash, or set" >&2
-        echo "       TRASH_SKIP_DEPCHECK=1 to bypass this check." >&2
+        echo "       Install them, then re-source lib/trash.bash:" >&2
+        echo "           macOS:         brew install jo jq sqlite   # uuidgen is built in" >&2
+        echo "           Debian/Ubuntu: sudo apt install jo jq sqlite3 uuid-runtime" >&2
+        echo "       Or set TRASH_SKIP_DEPCHECK=1 to bypass this check (message sends may fail)." >&2
         return 1
     fi
     return 0
 }
-# Run the check at source time; surface failures but don't hard-abort the shell.
-_trash_check_deps || echo "Warning: continuing with missing dependencies; message sends may fail." >&2
+# Run the check at source time. Missing deps make every message send fail deep in
+# a jq/sqlite pipeline with a cryptic error, so hard-stop here instead.
+_trash_check_deps || return 1 2>/dev/null || exit 1
 
 # Override msg_debug to respect DEBUG mode and output to stderr
 # This overrides BSFL's msg_debug which outputs to stdout regardless
@@ -352,6 +369,19 @@ function _env_cleanup {
 }
 
 export -f _env_init _env_get _env_set _env_exists _env_delete _env_list _env_persist _env_load _env_is_persisted _env_cleanup
+
+# Wipe the ephemeral env dir when the owning shell exits, so /tmp/trashtalk_*
+# dirs don't accumulate across sessions. Guard on BASHPID: a command-substitution
+# subshell (e.g. $(@ Counter new)) must NOT run the trap and delete the live
+# session's in-memory instances. Persisted instances live in SQLite and are
+# unaffected. Set TRASH_KEEP_ENV=1 to keep the dir for debugging.
+_TRASH_ENV_OWNER_PID="$BASHPID"
+_env_cleanup_on_exit() {
+  [[ "$BASHPID" == "$_TRASH_ENV_OWNER_PID" ]] || return 0
+  [[ -n "${TRASH_KEEP_ENV:-}" ]] && return 0
+  _env_cleanup
+}
+trap _env_cleanup_on_exit EXIT
 
 # Reject path-like receivers (.. , /foo, foo/bar) that could escape the compiled
 # class directory. Shared by both message-send entrypoints so the rule can't drift.
