@@ -56,6 +56,19 @@ error() {
     exit 1
 }
 
+# Fingerprint of the compiler itself (tokenizer + parser + codegen + grammar +
+# this driver). Mixed into the AST cache key so that editing the compiler
+# invalidates every cached AST -- otherwise stale entries silently produce
+# output from the old grammar/codegen. Computed once per process.
+_compiler_version() {
+    if [[ -z "${_COMPILER_VERSION:-}" ]]; then
+        _COMPILER_VERSION=$(cat "$SCRIPT_DIR"/*.jq "$SCRIPT_DIR"/grammar/*.jq \
+            "$TOKENIZER" "${BASH_SOURCE[0]}" 2>/dev/null \
+            | shasum -a 256 | cut -d' ' -f1 | cut -c1-16)
+    fi
+    echo "$_COMPILER_VERSION"
+}
+
 info() {
     echo -e "${BLUE}Info:${NC} $1" >&2
 }
@@ -271,14 +284,20 @@ _parse_single_file() {
         error "Source file not found: $source_file"
     fi
 
-    # Check AST cache by content hash
+    # Check AST cache by content hash. The key includes the compiler fingerprint
+    # so a changed tokenizer/parser/codegen invalidates stale entries.
     local content_hash cache_file
     content_hash=$(shasum -a 256 "$source_file" | cut -d' ' -f1)
-    cache_file="$AST_CACHE_DIR/$content_hash.json"
+    cache_file="$AST_CACHE_DIR/$content_hash-$(_compiler_version).json"
 
     if [[ -f "$cache_file" ]]; then
-        cat "$cache_file"
-        return 0
+        # Validate the cached entry; a truncated/corrupt cache (e.g. an
+        # interrupted write) must not be fed into codegen. If invalid, fall
+        # through and re-parse, overwriting the bad entry below.
+        if jq -e . "$cache_file" >/dev/null 2>&1; then
+            cat "$cache_file"
+            return 0
+        fi
     fi
 
     local tokens
@@ -313,8 +332,14 @@ _parse_single_file() {
         show_errors_with_context "$source_file" "$warnings_json" "$YELLOW"
     fi
 
-    # Cache the result for future compilations
-    echo "$ast" > "$cache_file" 2>/dev/null || true
+    # Cache the result for future compilations. Write to a temp file and rename
+    # so a concurrent reader (or an interrupted write) never sees a partial entry.
+    local cache_tmp="$cache_file.$$.tmp"
+    if echo "$ast" > "$cache_tmp" 2>/dev/null; then
+        mv -f "$cache_tmp" "$cache_file" 2>/dev/null || rm -f "$cache_tmp" 2>/dev/null
+    else
+        rm -f "$cache_tmp" 2>/dev/null || true
+    fi
 
     echo "$ast"
 }

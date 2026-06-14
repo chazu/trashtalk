@@ -284,7 +284,18 @@ function _env_persist {
 
   local data
   data=$(cat "$file")
-  db_put "$instance_id" "$data"
+
+  # Refuse to persist corrupt JSON: writing it would propagate the corruption
+  # into the Store and break every later read of this instance.
+  if ! echo "$data" | jq -e . >/dev/null 2>&1; then
+    echo "Error: Refusing to persist instance '$instance_id': in-memory data is not valid JSON" >&2
+    return 1
+  fi
+
+  if ! db_put "$instance_id" "$data"; then
+    echo "Error: Failed to persist instance '$instance_id' to the Store (db_put failed)" >&2
+    return 1
+  fi
 }
 
 # Load an instance from the Store into memory
@@ -1022,10 +1033,22 @@ function _create_instance {
     fi
   done
 
+  # Guard against a jq failure above having produced empty/invalid data, which
+  # would otherwise be persisted as a broken instance.
+  if [[ -z "$data" ]] || ! echo "$data" | jq -e . >/dev/null 2>&1; then
+    echo "Error: Failed to initialize instance '$instance_id' for class '$class_name'" >&2
+    return 1
+  fi
+
   _env_set "$instance_id" "$data"
 
-  # Persist immediately (new model: all instances are persistent by default)
-  _env_persist "$instance_id"
+  # Persist immediately (new model: all instances are persistent by default).
+  # If persistence fails, drop the half-created instance from memory so callers
+  # don't get back an id that will vanish on restart.
+  if ! _env_persist "$instance_id"; then
+    _env_delete "$instance_id" 2>/dev/null
+    return 1
+  fi
 }
 
 # Get the class of an instance (checks memory first, then Store)
@@ -1229,6 +1252,13 @@ function _ivar_set {
   else
     # String value (including "true", "false", "null") - use --arg for safe escaping
     updated=$(echo "$data" | jq -c --arg v "$value" ".$var = \$v")
+  fi
+
+  # If jq failed (corrupt instance data, bad var name) it leaves $updated empty.
+  # Writing that back would silently truncate the instance, so bail out instead.
+  if [[ -z "$updated" ]]; then
+    echo "Error: Failed to set instance variable '$var' on '$_RECEIVER' (jq update failed)" >&2
+    return 1
   fi
 
   _env_set "$_RECEIVER" "$updated"

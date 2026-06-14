@@ -1,0 +1,9 @@
+TestOverride subclass: Object
+  instanceVars: count:100
+
+  rawClassMethod: new [
+    local id=$(_generate_instance_id "TestOverride")
+    _create_instance "TestOverride" "$id"
+    echo "$id"
+  ]
+
