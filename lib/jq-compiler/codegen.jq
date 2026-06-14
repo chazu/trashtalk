@@ -2459,6 +2459,13 @@ def transformMethodBody($className; $isRaw):
   def tokensToString($raw):
     # Token conversion phase
     reduce .[] as $tok ("";
+      if $tok.type == "NAMESPACE_SEP" then
+        # Join qualified names (Pkg::Class) without surrounding spaces. The
+        # preceding identifier already appended a trailing space, so strip it
+        # and attach "::"; the following identifier re-adds its own space.
+        # Without this, raw method bodies emit "@ Pkg :: Class" which breaks.
+        (. | rtrimstr(" ")) + "::"
+      else
       . + (
         if $tok.type == "NEWLINE" then "\n"
         # Comment handling (raw only)
@@ -2525,6 +2532,7 @@ def transformMethodBody($className; $isRaw):
         else $tok.value + " "
         end
       )
+      end
     ) |
     # Post-processing: normalization gsubs
     # Common normalizations for both modes

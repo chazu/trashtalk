@@ -154,12 +154,13 @@ TestNsRaw subclass: Object
 
 compiled=$(compile "$INPUT_NS_RAW")
 
-# In rawMethod bodies, Pkg::Class should ideally be preserved as-is
-# The known bug is that it becomes: @ MyPkg :: Helper doSomething
+# FIXED: in rawMethod bodies, Pkg::Class is now preserved intact rather than
+# being split into "@ MyPkg :: Helper".
 has_split=$(echo "$compiled" | grep -c '@ MyPkg :: Helper' || true)
 has_intact=$(echo "$compiled" | grep -c '@ MyPkg::Helper' || true)
 
-run_xfail "namespace ref in rawMethod body splits :: (known bug)" "1" "$has_split"
+run_test "namespace ref in rawMethod body is not split" "0" "$has_split"
+run_test "namespace ref in rawMethod body stays intact" "1" "$has_intact"
 
 # ==============================================================================
 # Summary
