@@ -68,7 +68,7 @@ Compiler test files are in `lib/jq-compiler/tests/test_*.bash`.
 ### Known Pre-Existing Test Issues
 
 - `test_codegen`, `test_integration`, `test_parser`: may timeout (>15s) on some machines
-- `test_to_do`: 4 failures in `to:do:` range iteration codegen (generates raw tokens instead of for-loop)
+- ~~`test_to_do`: 4 failures in `to:do:` range iteration codegen~~ - **FIXED**: `<start> to: <end> do: [:i | ...]` now compiles to a `for` loop. Detection only fires when `do: [block]` follows, so keyword selectors containing `to:` (e.g. `copyFrom:to:`) are unaffected.
 
 ## Runtime Usage
 

@@ -762,6 +762,33 @@ def expr_parse_expr(min_bp):
           }
         }
         | infix_loop
+      elif (.state | expr_peek_type) == "KEYWORD" and (.state | expr_peek.value) == "to:" then
+        # Range iteration: <start> to: <end> do: [:i | block]. Only treat as a loop
+        # when to: is followed by an expression and then do: [block]; otherwise fall
+        # through unchanged so keyword selectors containing "to:" (e.g. from:to:,
+        # copyFrom:to:) are never clobbered. The else branch returns the original
+        # state, so nothing is consumed when the pattern does not match.
+        .result as $start |
+        (.state | expr_advance | expr_skip_ws | expr_parse_expr(1)) as $end_parse |
+        ($end_parse.state | expr_skip_ws) as $after_end |
+        if ($after_end | expr_peek_type) == "KEYWORD"
+           and ($after_end | expr_peek.value) == "do:"
+           and (($after_end | expr_advance | expr_skip_ws | expr_peek_type) == "LBRACKET") then
+          (($after_end | expr_advance | expr_skip_ws) | expr_parse_block) as $block |
+          {
+            state: $block.state,
+            result: {
+              type: "control_flow",
+              kind: "range_do",
+              start: $start,
+              end: $end_parse.result,
+              block: $block.result
+            }
+          }
+          | infix_loop
+        else
+          .
+        end
       elif $is_op then
         (.state | expr_op_value) as $op |
         (expr_infix_bp[$op] // null) as $bp |
