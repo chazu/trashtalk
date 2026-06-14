@@ -13,7 +13,9 @@ set -euo pipefail
 
 TESTS_DIR="${1:-tests}"
 PARALLEL=true
-TIMEOUT=120  # seconds per test
+# Default per-test timeout; override with TRASH_TEST_TIMEOUT env or --timeout flag
+# (flag wins) so slow CI machines don't need to edit this script.
+TIMEOUT="${TRASH_TEST_TIMEOUT:-120}"
 
 # Parse flags
 shift || true
@@ -64,6 +66,8 @@ run_one_test() {
     if [[ $exit_code -eq 124 ]]; then
         echo "TIMEOUT" > "$result_file"
         echo "=== $test_name === TIMEOUT (${TIMEOUT}s)"
+        # Show what the test printed before it was killed, to help locate the hang.
+        echo "$output" | tail -20
     elif [[ $exit_code -eq 0 ]]; then
         echo "PASS" > "$result_file"
         echo "=== $test_name === PASS"

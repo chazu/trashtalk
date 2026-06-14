@@ -310,19 +310,21 @@ _parse_single_file() {
         fi
     fi
 
-    local tokens
-    tokens=$("$TOKENIZER" "$source_file")
+    local tokens _stage_err
+    _stage_err=$(mktemp)
+    tokens=$("$TOKENIZER" "$source_file" 2>"$_stage_err")
 
     if [[ $? -ne 0 ]]; then
-        error "Tokenization failed"
+        error "Tokenization failed for $source_file:"$'\n'"$(cat "$_stage_err")"
     fi
 
     local ast
-    ast=$(echo "$tokens" | jq -f "$PARSER")
+    ast=$(echo "$tokens" | jq -f "$PARSER" 2>"$_stage_err")
 
     if [[ $? -ne 0 ]]; then
-        error "Parsing failed"
+        error "Parsing failed for $source_file (jq error):"$'\n'"$(cat "$_stage_err")"
     fi
+    rm -f "$_stage_err"
 
     # Check for parse errors in the result
     if echo "$ast" | jq -e '.error == true' >/dev/null 2>&1; then
@@ -486,11 +488,25 @@ cmd_compile() {
         'del(.warnings) | . + {sourceHash: $hash, inheritedInstanceVars: $inherited[0]}')
 
     # Generate code
-    local output
-    output=$(echo "$ast_with_source" | jq -r -f "$CODEGEN")
+    local output _codegen_err
+    _codegen_err=$(mktemp)
+    output=$(echo "$ast_with_source" | jq -r -f "$CODEGEN" 2>"$_codegen_err")
 
     if [[ $? -ne 0 ]]; then
-        error "Code generation failed"
+        local _err_text; _err_text=$(cat "$_codegen_err"); rm -f "$_codegen_err"
+        error "Code generation failed for $source_file (jq error):"$'\n'"$_err_text"
+    fi
+    rm -f "$_codegen_err"
+
+    # The codegen emits "# ERROR:" comments when it hits an AST node it can't
+    # handle, then exits 0 -- so broken output ships silently. Surface those
+    # markers; fail the compile under strict mode.
+    if grep -q '# ERROR:' <<<"$output"; then
+        echo -e "${YELLOW}Warning: codegen produced unhandled constructs in ${source_file}:${NC}" >&2
+        grep -n '# ERROR:' <<<"$output" | sed 's/^/  /' >&2
+        if [[ -n "${TRASHTALK_STRICT:-}" ]]; then
+            error "Codegen emitted error markers (strict mode)"
+        fi
     fi
 
     # Optionally validate bash syntax

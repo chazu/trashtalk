@@ -353,6 +353,19 @@ function _env_cleanup {
 
 export -f _env_init _env_get _env_set _env_exists _env_delete _env_list _env_persist _env_load _env_is_persisted _env_cleanup
 
+# Reject path-like receivers (.. , /foo, foo/bar) that could escape the compiled
+# class directory. Shared by both message-send entrypoints so the rule can't drift.
+# Usage: _reject_path_receiver <receiver>; returns 1 and prints an error if invalid.
+function _reject_path_receiver {
+  local r="$1"
+  if [[ "$r" == *..* ]] || [[ "$r" == /* ]] || [[ "$r" == */* ]]; then
+    echo "Error: Invalid receiver '$r' - path-like receivers are not allowed" >&2
+    return 1
+  fi
+  return 0
+}
+export -f _reject_path_receiver
+
 # ============================================
 # Context Stack System
 # ============================================
@@ -1650,10 +1663,7 @@ function send {
   # Security: Reject dangerous receiver patterns
   # ============================================
   local _raw_receiver="$1"
-  if [[ "$_raw_receiver" == *..* ]] || [[ "$_raw_receiver" == /* ]] || [[ "$_raw_receiver" == */* ]]; then
-    echo "Error: Invalid receiver '$_raw_receiver' - path-like receivers are not allowed" >&2
-    return 1
-  fi
+  _reject_path_receiver "$_raw_receiver" || return 1
 
   # ============================================
   # Context variables - LOCAL for proper nesting
@@ -2076,11 +2086,7 @@ function @ {
   msg_debug "Entrypoint: $*"
 
   # Security: Reject dangerous receiver patterns early
-  local ___check_receiver="$1"
-  if [[ "$___check_receiver" == *..* ]] || [[ "$___check_receiver" == /* ]] || [[ "$___check_receiver" == */* ]]; then
-    echo "Error: Invalid receiver '$___check_receiver' - path-like receivers are not allowed" >&2
-    return 1
-  fi
+  _reject_path_receiver "$1" || return 1
 
   # Pre-source the receiver's class before entering subshell
   # This ensures class methods are available in the parent shell
