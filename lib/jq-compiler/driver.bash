@@ -27,6 +27,16 @@ TOKENIZER="$SCRIPT_DIR/tokenizer.bash"
 PARSER="$SCRIPT_DIR/parser.jq"
 CODEGEN="$SCRIPT_DIR/codegen.jq"
 
+# Preflight: the compiler shells out to jq and shasum throughout. Check up front
+# so a missing tool produces one clear message instead of a cascade of failures.
+for _tool in jq shasum; do
+    if ! command -v "$_tool" >/dev/null 2>&1; then
+        echo "Error: trashtalk compiler requires '$_tool' but it was not found in PATH." >&2
+        exit 1
+    fi
+done
+unset _tool
+
 # AST cache directory - avoids re-tokenizing/parsing unchanged files
 TRASHTALK_DIR="${TRASHTALK_DIR:-$HOME/.trashtalk}"
 AST_CACHE_DIR="$TRASHTALK_DIR/trash/.compiled/.astcache"
@@ -54,6 +64,19 @@ fi
 error() {
     echo -e "${RED}Error:${NC} $1" >&2
     exit 1
+}
+
+# Fingerprint of the compiler itself (tokenizer + parser + codegen + grammar +
+# this driver). Mixed into the AST cache key so that editing the compiler
+# invalidates every cached AST -- otherwise stale entries silently produce
+# output from the old grammar/codegen. Computed once per process.
+_compiler_version() {
+    if [[ -z "${_COMPILER_VERSION:-}" ]]; then
+        _COMPILER_VERSION=$(cat "$SCRIPT_DIR"/*.jq "$SCRIPT_DIR"/grammar/*.jq \
+            "$TOKENIZER" "${BASH_SOURCE[0]}" 2>/dev/null \
+            | shasum -a 256 | cut -d' ' -f1 | cut -c1-16)
+    fi
+    echo "$_COMPILER_VERSION"
 }
 
 info() {
@@ -271,29 +294,37 @@ _parse_single_file() {
         error "Source file not found: $source_file"
     fi
 
-    # Check AST cache by content hash
+    # Check AST cache by content hash. The key includes the compiler fingerprint
+    # so a changed tokenizer/parser/codegen invalidates stale entries.
     local content_hash cache_file
     content_hash=$(shasum -a 256 "$source_file" | cut -d' ' -f1)
-    cache_file="$AST_CACHE_DIR/$content_hash.json"
+    cache_file="$AST_CACHE_DIR/$content_hash-$(_compiler_version).json"
 
     if [[ -f "$cache_file" ]]; then
-        cat "$cache_file"
-        return 0
+        # Validate the cached entry; a truncated/corrupt cache (e.g. an
+        # interrupted write) must not be fed into codegen. If invalid, fall
+        # through and re-parse, overwriting the bad entry below.
+        if jq -e . "$cache_file" >/dev/null 2>&1; then
+            cat "$cache_file"
+            return 0
+        fi
     fi
 
-    local tokens
-    tokens=$("$TOKENIZER" "$source_file")
+    local tokens _stage_err
+    _stage_err=$(mktemp)
+    tokens=$("$TOKENIZER" "$source_file" 2>"$_stage_err")
 
     if [[ $? -ne 0 ]]; then
-        error "Tokenization failed"
+        error "Tokenization failed for $source_file:"$'\n'"$(cat "$_stage_err")"
     fi
 
     local ast
-    ast=$(echo "$tokens" | jq -f "$PARSER")
+    ast=$(echo "$tokens" | jq -f "$PARSER" 2>"$_stage_err")
 
     if [[ $? -ne 0 ]]; then
-        error "Parsing failed"
+        error "Parsing failed for $source_file (jq error):"$'\n'"$(cat "$_stage_err")"
     fi
+    rm -f "$_stage_err"
 
     # Check for parse errors in the result
     if echo "$ast" | jq -e '.error == true' >/dev/null 2>&1; then
@@ -305,16 +336,30 @@ _parse_single_file() {
         exit 1
     fi
 
-    # Check for warnings (non-fatal errors)
+    # Check for warnings (non-fatal by default). Under TRASHTALK_STRICT they are
+    # promoted to errors so CI can reject malformed-but-recoverable input instead
+    # of silently emitting code from a partial parse.
     if echo "$ast" | jq -e '.warnings | length > 0' >/dev/null 2>&1; then
-        echo -e "${YELLOW}Parse warnings in ${source_file}:${NC}" >&2
-        local warnings_json
+        local warnings_json _warn_label="$YELLOW" _warn_word="warnings"
+        if [[ -n "${TRASHTALK_STRICT:-}" ]]; then
+            _warn_label="$RED"; _warn_word="warnings (strict mode)"
+        fi
+        echo -e "${_warn_label}Parse ${_warn_word} in ${source_file}:${NC}" >&2
         warnings_json=$(echo "$ast" | jq '.warnings')
-        show_errors_with_context "$source_file" "$warnings_json" "$YELLOW"
+        show_errors_with_context "$source_file" "$warnings_json" "$_warn_label"
+        if [[ -n "${TRASHTALK_STRICT:-}" ]]; then
+            exit 1
+        fi
     fi
 
-    # Cache the result for future compilations
-    echo "$ast" > "$cache_file" 2>/dev/null || true
+    # Cache the result for future compilations. Write to a temp file and rename
+    # so a concurrent reader (or an interrupted write) never sees a partial entry.
+    local cache_tmp="$cache_file.$$.tmp"
+    if echo "$ast" > "$cache_tmp" 2>/dev/null; then
+        mv -f "$cache_tmp" "$cache_file" 2>/dev/null || rm -f "$cache_tmp" 2>/dev/null
+    else
+        rm -f "$cache_tmp" 2>/dev/null || true
+    fi
 
     echo "$ast"
 }
@@ -324,11 +369,21 @@ _parse_single_file() {
 cmd_parse() {
     local source_file="$1"
     local trashtalk_dir="${TRASHTALK_DIR:-$HOME/.trashtalk}"
-    local traits_dir="$trashtalk_dir/trash/traits"
 
     if [[ ! -f "$source_file" ]]; then
         error "Source file not found: $source_file"
     fi
+
+    # Resolve where trait sources live. Search, in order: TRASHTALK_DIR, then
+    # locations relative to the file being compiled (so building from a repo
+    # checkout finds trash/traits/ without TRASHTALK_DIR pointing at it).
+    local src_dir traits_dir="" cand
+    src_dir=$(cd "$(dirname "$source_file")" && pwd)
+    for cand in "$trashtalk_dir/trash/traits" "$src_dir/traits" "$src_dir/../traits"; do
+        if [[ -d "$cand" ]]; then traits_dir="$cand"; break; fi
+    done
+    # Fall back to the TRASHTALK_DIR location for error messages if none existed.
+    [[ -z "$traits_dir" ]] && traits_dir="$trashtalk_dir/trash/traits"
 
     # Parse the main class
     local class_ast
@@ -352,18 +407,24 @@ cmd_parse() {
             trait_ast=$(_parse_single_file "$trait_file" 2>/dev/null)
             if [[ $? -eq 0 ]]; then
                 # Add trait to the traits object
-                traits_json=$(echo "$traits_json" | jq --arg name "$trait_name" --argjson ast "$trait_ast" '. + {($name): $ast}')
+                # Pass trait AST via process substitution (--slurpfile) instead of
+                # --argjson so large traits don't overflow ARG_MAX.
+                traits_json=$(echo "$traits_json" | jq --arg name "$trait_name" --slurpfile ast <(printf '%s' "$trait_ast") '. + {($name): $ast[0]}')
             else
                 echo "Warning: Failed to parse trait $trait_name from $trait_file" >&2
+                [[ -n "${TRASHTALK_STRICT:-}" ]] && error "Trait '$trait_name' failed to parse (strict mode)"
             fi
         else
-            echo "Warning: Trait file not found: $trait_file" >&2
+            echo "Warning: Trait '$trait_name' not found (searched: $traits_dir)" >&2
+            [[ -n "${TRASHTALK_STRICT:-}" ]] && error "Trait '$trait_name' not found (strict mode)"
         fi
     done
 
-    # Output the CompilationUnit
-    jq -n --argjson class "$class_ast" --argjson traits "$traits_json" \
-        '{ "class": $class, "traits": $traits }'
+    # Output the CompilationUnit. Use --slurpfile with process substitution rather
+    # than --argjson: a large class/trait AST passed as an argv string overflows
+    # ARG_MAX ("jq: Argument list too long") and silently breaks the build.
+    jq -n --slurpfile class <(printf '%s' "$class_ast") --slurpfile traits <(printf '%s' "$traits_json") \
+        '{ "class": $class[0], "traits": $traits[0] }'
 }
 
 # Alias for backwards compatibility
@@ -423,15 +484,29 @@ cmd_compile() {
 
     # Add source metadata and inherited ivars to AST
     local ast_with_source
-    ast_with_source=$(echo "$ast" | jq --arg hash "$source_hash" --argjson inherited "$inherited_ivars" \
-        'del(.warnings) | . + {sourceHash: $hash, inheritedInstanceVars: $inherited}')
+    ast_with_source=$(echo "$ast" | jq --arg hash "$source_hash" --slurpfile inherited <(printf '%s' "$inherited_ivars") \
+        'del(.warnings) | . + {sourceHash: $hash, inheritedInstanceVars: $inherited[0]}')
 
     # Generate code
-    local output
-    output=$(echo "$ast_with_source" | jq -r -f "$CODEGEN")
+    local output _codegen_err
+    _codegen_err=$(mktemp)
+    output=$(echo "$ast_with_source" | jq -r -f "$CODEGEN" 2>"$_codegen_err")
 
     if [[ $? -ne 0 ]]; then
-        error "Code generation failed"
+        local _err_text; _err_text=$(cat "$_codegen_err"); rm -f "$_codegen_err"
+        error "Code generation failed for $source_file (jq error):"$'\n'"$_err_text"
+    fi
+    rm -f "$_codegen_err"
+
+    # The codegen emits "# ERROR:" comments when it hits an AST node it can't
+    # handle, then exits 0 -- so broken output ships silently. Surface those
+    # markers; fail the compile under strict mode.
+    if grep -q '# ERROR:' <<<"$output"; then
+        echo -e "${YELLOW}Warning: codegen produced unhandled constructs in ${source_file}:${NC}" >&2
+        grep -n '# ERROR:' <<<"$output" | sed 's/^/  /' >&2
+        if [[ -n "${TRASHTALK_STRICT:-}" ]]; then
+            error "Codegen emitted error markers (strict mode)"
+        fi
     fi
 
     # Optionally validate bash syntax

@@ -128,17 +128,14 @@ INPUT_IFTRUE='TestIfTrue subclass: Object
 
 compiled=$(compile "$INPUT_IFTRUE")
 
-# The compiled output should NOT put a message send inside (( ))
-# The correct compilation would be something like:
-#   local _tmp=$(@ String contains: "x" in: "$(_ivar data)")
-#   if [[ "$_tmp" == "true" ]]; then ...
-# But the bug is that it generates:
-#   if (( @ String contains: ... )); then ...
+# FIXED: a message send used as an ifTrue: condition now compiles to a string
+# comparison ([[ "$(@ ...)" == "true" ]]) instead of an invalid (( @ ... ))
+# arithmetic context.
 has_arithmetic_send=$(echo "$compiled" | grep -c '(( @' || true)
+run_test "message send inside ifTrue: avoids (( )) arithmetic" "0" "$has_arithmetic_send"
 
-# This test documents the known bug - it will fail when the bug is fixed
-# (at which point, flip the expected values)
-run_xfail "message send inside ifTrue: uses (( )) arithmetic (known bug)" "1" "$has_arithmetic_send"
+uses_string_compare=$(echo "$compiled" | grep -c '\[\[ "\$(@ String contains' || true)
+run_test "message send inside ifTrue: uses string comparison" "1" "$uses_string_compare"
 
 # ==============================================================================
 # Bug 4: Namespace references in rawMethod bodies
@@ -157,12 +154,13 @@ TestNsRaw subclass: Object
 
 compiled=$(compile "$INPUT_NS_RAW")
 
-# In rawMethod bodies, Pkg::Class should ideally be preserved as-is
-# The known bug is that it becomes: @ MyPkg :: Helper doSomething
+# FIXED: in rawMethod bodies, Pkg::Class is now preserved intact rather than
+# being split into "@ MyPkg :: Helper".
 has_split=$(echo "$compiled" | grep -c '@ MyPkg :: Helper' || true)
 has_intact=$(echo "$compiled" | grep -c '@ MyPkg::Helper' || true)
 
-run_xfail "namespace ref in rawMethod body splits :: (known bug)" "1" "$has_split"
+run_test "namespace ref in rawMethod body is not split" "0" "$has_split"
+run_test "namespace ref in rawMethod body stays intact" "1" "$has_intact"
 
 # ==============================================================================
 # Summary

@@ -11,6 +11,15 @@ export RLWRAP_FILTERDIR
 
 FILTER="$TRASHTALK_DIR/lib/rlwrap-completion.pl"
 
+# rlwrap gives line editing, history and completion, but it's optional. If it
+# isn't installed, fall back to the plain REPL rather than dying with a bare
+# "rlwrap: command not found".
+if ! command -v rlwrap >/dev/null 2>&1; then
+    echo "Note: rlwrap not found; starting REPL without line editing/history." >&2
+    echo "      Install rlwrap for a better experience." >&2
+    exec "$SCRIPT_DIR/trash-repl"
+fi
+
 exec rlwrap \
     --history-filename "$HOME/.trash_history" \
     --history-no-dupes 2 \

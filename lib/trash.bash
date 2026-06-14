@@ -18,6 +18,27 @@ export -f kv_set kv_get kv_del 2>/dev/null
 export SQLITE_JSON_DB
 export _HONKER_AVAILABLE _HONKER_LOAD_CMD 2>/dev/null
 
+# Preflight: verify external tools the runtime depends on are present. Without
+# this, the first message send fails deep inside a pipeline with a cryptic
+# "command not found", or worse, silently produces empty data. Set
+# TRASH_SKIP_DEPCHECK=1 to bypass (e.g. for partial/offline use).
+_trash_check_deps() {
+    [[ -n "${TRASH_SKIP_DEPCHECK:-}" ]] && return 0
+    local missing=() tool
+    for tool in jq sqlite3 uuidgen jo; do
+        command -v "$tool" >/dev/null 2>&1 || missing+=("$tool")
+    done
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        echo "Error: trashtalk runtime is missing required tool(s): ${missing[*]}" >&2
+        echo "       Install them and re-source lib/trash.bash, or set" >&2
+        echo "       TRASH_SKIP_DEPCHECK=1 to bypass this check." >&2
+        return 1
+    fi
+    return 0
+}
+# Run the check at source time; surface failures but don't hard-abort the shell.
+_trash_check_deps || echo "Warning: continuing with missing dependencies; message sends may fail." >&2
+
 # Override msg_debug to respect DEBUG mode and output to stderr
 # This overrides BSFL's msg_debug which outputs to stdout regardless
 msg_debug() {
@@ -284,7 +305,18 @@ function _env_persist {
 
   local data
   data=$(cat "$file")
-  db_put "$instance_id" "$data"
+
+  # Refuse to persist corrupt JSON: writing it would propagate the corruption
+  # into the Store and break every later read of this instance.
+  if ! echo "$data" | jq -e . >/dev/null 2>&1; then
+    echo "Error: Refusing to persist instance '$instance_id': in-memory data is not valid JSON" >&2
+    return 1
+  fi
+
+  if ! db_put "$instance_id" "$data"; then
+    echo "Error: Failed to persist instance '$instance_id' to the Store (db_put failed)" >&2
+    return 1
+  fi
 }
 
 # Load an instance from the Store into memory
@@ -320,6 +352,19 @@ function _env_cleanup {
 }
 
 export -f _env_init _env_get _env_set _env_exists _env_delete _env_list _env_persist _env_load _env_is_persisted _env_cleanup
+
+# Reject path-like receivers (.. , /foo, foo/bar) that could escape the compiled
+# class directory. Shared by both message-send entrypoints so the rule can't drift.
+# Usage: _reject_path_receiver <receiver>; returns 1 and prints an error if invalid.
+function _reject_path_receiver {
+  local r="$1"
+  if [[ "$r" == *..* ]] || [[ "$r" == /* ]] || [[ "$r" == */* ]]; then
+    echo "Error: Invalid receiver '$r' - path-like receivers are not allowed" >&2
+    return 1
+  fi
+  return 0
+}
+export -f _reject_path_receiver
 
 # ============================================
 # Context Stack System
@@ -1022,10 +1067,22 @@ function _create_instance {
     fi
   done
 
+  # Guard against a jq failure above having produced empty/invalid data, which
+  # would otherwise be persisted as a broken instance.
+  if [[ -z "$data" ]] || ! echo "$data" | jq -e . >/dev/null 2>&1; then
+    echo "Error: Failed to initialize instance '$instance_id' for class '$class_name'" >&2
+    return 1
+  fi
+
   _env_set "$instance_id" "$data"
 
-  # Persist immediately (new model: all instances are persistent by default)
-  _env_persist "$instance_id"
+  # Persist immediately (new model: all instances are persistent by default).
+  # If persistence fails, drop the half-created instance from memory so callers
+  # don't get back an id that will vanish on restart.
+  if ! _env_persist "$instance_id"; then
+    _env_delete "$instance_id" 2>/dev/null
+    return 1
+  fi
 }
 
 # Get the class of an instance (checks memory first, then Store)
@@ -1068,19 +1125,25 @@ function _find_with_predicate {
     op="${BASH_REMATCH[2]}"
     value="${BASH_REMATCH[3]}"
 
-    # Build SQL predicate with json_extract
+    # Build SQL predicate with json_extract. $field is already constrained to a
+    # safe identifier by the regex above; $value and $class_name come from the
+    # caller, so escape any single quotes to prevent SQL injection / breakage on
+    # legitimate apostrophes.
+    local class_name_esc
+    class_name_esc=$(_db_escape "$class_name")
     if [[ "$value" =~ ^-?[0-9]+$ ]]; then
       # Numeric value
       sql_predicate="json_extract(data, '\$.$field') $op $value"
     elif [[ "$value" =~ ^\'.*\'$ ]]; then
-      # Already quoted string
-      sql_predicate="json_extract(data, '\$.$field') $op $value"
+      # Already quoted string - escape the inner content
+      local inner="${value:1:${#value}-2}"
+      sql_predicate="json_extract(data, '\$.$field') $op '$(_db_escape "$inner")'"
     else
-      # Unquoted string - add quotes
-      sql_predicate="json_extract(data, '\$.$field') $op '$value'"
+      # Unquoted string - escape and add quotes
+      sql_predicate="json_extract(data, '\$.$field') $op '$(_db_escape "$value")'"
     fi
 
-    db_query "class = '$class_name' AND $sql_predicate"
+    db_query "class = '$class_name_esc' AND $sql_predicate"
   else
     echo "Error: Invalid predicate format. Use: field op value (e.g., 'value > 5')" >&2
     return 1
@@ -1229,6 +1292,13 @@ function _ivar_set {
   else
     # String value (including "true", "false", "null") - use --arg for safe escaping
     updated=$(echo "$data" | jq -c --arg v "$value" ".$var = \$v")
+  fi
+
+  # If jq failed (corrupt instance data, bad var name) it leaves $updated empty.
+  # Writing that back would silently truncate the instance, so bail out instead.
+  if [[ -z "$updated" ]]; then
+    echo "Error: Failed to set instance variable '$var' on '$_RECEIVER' (jq update failed)" >&2
+    return 1
   fi
 
   _env_set "$_RECEIVER" "$updated"
@@ -1593,10 +1663,7 @@ function send {
   # Security: Reject dangerous receiver patterns
   # ============================================
   local _raw_receiver="$1"
-  if [[ "$_raw_receiver" == *..* ]] || [[ "$_raw_receiver" == /* ]] || [[ "$_raw_receiver" == */* ]]; then
-    echo "Error: Invalid receiver '$_raw_receiver' - path-like receivers are not allowed" >&2
-    return 1
-  fi
+  _reject_path_receiver "$_raw_receiver" || return 1
 
   # ============================================
   # Context variables - LOCAL for proper nesting
@@ -1879,7 +1946,14 @@ function send {
 
   # Legacy mode: source class file directly
   if [[ ! -f "$class_file" ]]; then
-    echo "Error: Class file not found: $class_file" >&2
+    # Give a message keyed to what the receiver looks like rather than leaking
+    # an internal compiled-file path. Instance ids are "<lowercase>_<uuid>";
+    # anything else sent as a receiver is treated as a class name.
+    if [[ "$_RECEIVER" == *_*-*-*-*-* || "$_RECEIVER" =~ ^[a-z][a-z0-9_]*_[0-9a-f] ]]; then
+      echo "Error: Instance '$_RECEIVER' not found (not in memory or the Store). It may have been deleted, or never created." >&2
+    else
+      echo "Error: Unknown class '$_RECEIVER' (no compiled class found). Did you misspell it, or forget to run 'make'?" >&2
+    fi
     _send_cleanup $frame_ensure_start $frame_handler_start 1 "$_profile_start_ms" "error"
     return 1
   fi
@@ -2012,11 +2086,7 @@ function @ {
   msg_debug "Entrypoint: $*"
 
   # Security: Reject dangerous receiver patterns early
-  local ___check_receiver="$1"
-  if [[ "$___check_receiver" == *..* ]] || [[ "$___check_receiver" == /* ]] || [[ "$___check_receiver" == */* ]]; then
-    echo "Error: Invalid receiver '$___check_receiver' - path-like receivers are not allowed" >&2
-    return 1
-  fi
+  _reject_path_receiver "$1" || return 1
 
   # Pre-source the receiver's class before entering subshell
   # This ensures class methods are available in the parent shell

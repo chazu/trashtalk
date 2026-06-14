@@ -18,6 +18,11 @@ COMPILED_DIR := $(TRASH_DIR)/.compiled
 LIB_DIR := lib
 TESTS_DIR := tests
 
+# AST cache lives under TRASHTALK_DIR (default ~/.trashtalk), separate from the
+# repo's .compiled output, so `clean` must remove it explicitly.
+TRASHTALK_DIR ?= $(HOME)/.trashtalk
+AST_CACHE_DIR := $(TRASHTALK_DIR)/trash/.compiled/.astcache
+
 # Tools
 JQ_COMPILER := $(LIB_DIR)/jq-compiler/driver.bash
 
@@ -140,6 +145,7 @@ watch:
 clean:
 	@echo "Cleaning all build artifacts..."
 	@rm -rf $(COMPILED_DIR)
+	@rm -rf $(AST_CACHE_DIR)
 	@echo "✓ Clean complete"
 
 # =============================================================================
