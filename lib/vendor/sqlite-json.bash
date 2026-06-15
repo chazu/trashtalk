@@ -47,6 +47,58 @@ _honker_detect() {
 }
 _honker_detect 2>/dev/null || true
 
+# sqlite3 binary selection.
+#
+# The honker extension needs a sqlite3 built with extension loading. macOS ships
+# /usr/bin/sqlite3 with extension loading DISABLED, so a bare `sqlite3` there
+# fails every honker query with `unknown command "load"`. Resolve a binary that
+# actually works:
+#   1. Explicit override: TRASH_SQLITE3 (or SQLITE3) env var wins, no probing.
+#   2. If honker is active, pick the first sqlite3 that can really .load the
+#      extension (PATH first, then Homebrew keg-only locations).
+#   3. Otherwise just use `sqlite3` from PATH.
+# If honker is present but nothing can load it, warn once and disable honker so
+# plain document storage keeps working instead of erroring on every query.
+_SQLITE3="${TRASH_SQLITE3:-${SQLITE3:-}}"
+
+_sqlite3_can_load_honker() {
+    [[ -z "$_HONKER_LOAD_CMD" ]] && return 0
+    "$1" ":memory:" "$_HONKER_LOAD_CMD" "SELECT 1;" >/dev/null 2>&1
+}
+
+_sqlite3_detect() {
+    # Explicit override: trust the user, no probing.
+    [[ -n "$_SQLITE3" ]] && return 0
+
+    _SQLITE3="sqlite3"
+
+    # Without honker, any sqlite3 on PATH is fine.
+    [[ -z "$_HONKER_LOAD_CMD" ]] && return 0
+
+    local cand
+    for cand in sqlite3 \
+                /opt/homebrew/opt/sqlite/bin/sqlite3 \
+                /usr/local/opt/sqlite/bin/sqlite3; do
+        command -v "$cand" >/dev/null 2>&1 || continue
+        if _sqlite3_can_load_honker "$cand"; then
+            _SQLITE3="$cand"
+            return 0
+        fi
+    done
+
+    # Honker extension exists but no sqlite3 can load it.
+    echo "Warning: honker extension found, but no sqlite3 can load it" >&2
+    echo "         (your sqlite3 lacks extension support; macOS /usr/bin/sqlite3 does)." >&2
+    echo "         Fix: brew install sqlite, then" >&2
+    echo "           export TRASH_SQLITE3=\"\$(brew --prefix sqlite)/bin/sqlite3\"" >&2
+    echo "         Or set HONKER_EXT= to disable honker. Continuing without honker." >&2
+    _HONKER_LOAD_CMD=""
+    _HONKER_AVAILABLE=0
+    return 0
+}
+_sqlite3_detect
+export _SQLITE3
+
 # Native Environment accelerator (optional)
 # Set TRASHTALK_NO_NATIVE=1 to disable native acceleration
 _ENVIRONMENT_NATIVE="${_ENVIRONMENT_NATIVE:-$HOME/.trashtalk/trash/.compiled/Environment.native}"
@@ -96,9 +148,9 @@ _db_escape() {
 # Loads honker extension when available
 _db_sql() {
     if [[ -n "$_HONKER_LOAD_CMD" ]]; then
-        sqlite3 -cmd ".timeout 5000" -cmd "$_HONKER_LOAD_CMD" "$SQLITE_JSON_DB" "$@"
+        "$_SQLITE3" -cmd ".timeout 5000" -cmd "$_HONKER_LOAD_CMD" "$SQLITE_JSON_DB" "$@"
     else
-        sqlite3 -cmd ".timeout 5000" "$SQLITE_JSON_DB" "$@"
+        "$_SQLITE3" -cmd ".timeout 5000" "$SQLITE_JSON_DB" "$@"
     fi
 }
 
@@ -106,9 +158,9 @@ _db_sql() {
 # Loads honker extension when available
 _db_sql_json() {
     if [[ -n "$_HONKER_LOAD_CMD" ]]; then
-        sqlite3 -cmd ".timeout 5000" -cmd "$_HONKER_LOAD_CMD" -json "$SQLITE_JSON_DB" "$@"
+        "$_SQLITE3" -cmd ".timeout 5000" -cmd "$_HONKER_LOAD_CMD" -json "$SQLITE_JSON_DB" "$@"
     else
-        sqlite3 -cmd ".timeout 5000" -json "$SQLITE_JSON_DB" "$@"
+        "$_SQLITE3" -cmd ".timeout 5000" -json "$SQLITE_JSON_DB" "$@"
     fi
 }
 
