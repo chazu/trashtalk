@@ -2784,11 +2784,14 @@ def generateMethod($funcPrefix; $ivars; $cvars):
   end) as $funcName |
 
   # Check for pragmas and emit markers (supports multiple pragmas)
+  # Use `declare -g`: compiled classes are sourced from inside _ensure_class_sourced,
+  # so a bare `declare` would make these markers function-local and the dispatcher
+  # would never see them (breaking pragma: direct et al).
   ((.pragmas // []) | map(
-    if . == "direct" then "declare \($funcName)__direct=1"
-    elif . == "procyonOnly" then "declare \($funcName)__procyonOnly=1"
-    elif . == "bashOnly" then "declare \($funcName)__bashOnly=1"
-    elif . == "procyonNative" then "declare \($funcName)__procyonNative=1"
+    if . == "direct" then "declare -g \($funcName)__direct=1"
+    elif . == "procyonOnly" then "declare -g \($funcName)__procyonOnly=1"
+    elif . == "bashOnly" then "declare -g \($funcName)__bashOnly=1"
+    elif . == "procyonNative" then "declare -g \($funcName)__procyonNative=1"
     else null end
   ) | map(select(. != null))) as $pragmaMarkers |
 
