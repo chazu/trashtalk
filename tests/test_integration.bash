@@ -163,7 +163,7 @@ result=$(@ "../etc/passwd" foo 2>&1) || true
 
 echo "  Testing non-existent class error..."
 result=$(@ NonExistentClass foo 2>&1) || true
-[[ "$result" == *"not found"* ]] && pass "Non-existent class reports error" || fail "Non-existent class did not report error: $result"
+[[ "$result" == *"Unknown class"* ]] && pass "Non-existent class reports error" || fail "Non-existent class did not report error: $result"
 
 echo ""
 
