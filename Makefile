@@ -42,7 +42,7 @@ NAMESPACE_SOURCES := $(filter-out $(wildcard $(TRASH_DIR)/traits/*.trash) $(wild
                       $(wildcard $(TRASH_DIR)/*/*.trash))
 ALL_SOURCES := $(SOURCES) $(TRAIT_SOURCES) $(USER_SOURCES) $(NAMESPACE_SOURCES)
 
-.PHONY: all bash test test-serial test-verbose clean help info single watch
+.PHONY: all bash test test-serial test-verbose clean help info single watch doctor
 
 # =============================================================================
 # Main Targets
@@ -50,6 +50,10 @@ ALL_SOURCES := $(SOURCES) $(TRAIT_SOURCES) $(USER_SOURCES) $(NAMESPACE_SOURCES)
 
 # Default: compile to bash
 all: bash
+
+# Diagnose environment/setup issues (bash version, deps, sqlite3, compiled classes)
+doctor: bash
+	@source $(LIB_DIR)/trash.bash 2>/dev/null && @ Trash doctor
 
 # =============================================================================
 # Bash Compilation

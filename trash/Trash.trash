@@ -14,6 +14,63 @@ Trash subclass: Object
     echo "Database: $SQLITE_JSON_DB"
   ]
 
+  # Diagnose the environment: bash, required tools, sqlite3 extension support,
+  # and whether classes have been compiled. Exits non-zero if any check fails.
+  rawMethod: doctor [
+    local ok=0 warn=0 bad=0
+    local g='\033[0;32m' y='\033[0;33m' r='\033[0;31m' n='\033[0m'
+    _d_ok()   { echo -e "  ${g}OK${n}   $1"; ok=$((ok+1)); }
+    _d_warn() { echo -e "  ${y}WARN${n} $1"; warn=$((warn+1)); }
+    _d_bad()  { echo -e "  ${r}FAIL${n} $1"; bad=$((bad+1)); }
+
+    echo "=== Trashtalk Doctor ==="
+
+    # bash 4.0+
+    if [[ "${BASH_VERSINFO[0]}" -ge 4 ]]; then
+      _d_ok "bash ${BASH_VERSION%%(*} (>= 4.0)"
+    else
+      _d_bad "bash ${BASH_VERSION%%(*} too old; need 4.0+ (macOS: brew install bash)"
+    fi
+
+    # required tools
+    local tool
+    for tool in jo jq sqlite3 uuidgen; do
+      if command -v "$tool" >/dev/null 2>&1; then
+        _d_ok "$tool found ($(command -v "$tool"))"
+      else
+        _d_bad "$tool missing (macOS: brew install jo jq sqlite; uuidgen is built in)"
+      fi
+    done
+
+    # sqlite3 binary actually in use + honker extension loadability
+    echo "  sqlite3 in use: ${_SQLITE3:-sqlite3}"
+    local ext_suffix ext_base ext_path ext_found=""
+    [[ "$(uname)" == "Darwin" ]] && ext_suffix="dylib" || ext_suffix="so"
+    for ext_base in "$HONKER_EXT" "$HOME/.trashtalk/lib/vendor/honker/libhonker_ext" "/usr/local/lib/libhonker_ext" "/opt/homebrew/lib/libhonker_ext"; do
+      [[ -n "$ext_base" && -f "${ext_base}.${ext_suffix}" ]] && { ext_found="${ext_base}.${ext_suffix}"; break; }
+    done
+    if [[ -z "$ext_found" ]]; then
+      _d_warn "honker extension not installed (optional; run bin/install-honker)"
+    elif "${_SQLITE3:-sqlite3}" ":memory:" ".load ${ext_found}" "SELECT 1;" >/dev/null 2>&1; then
+      _d_ok "honker extension loadable via ${_SQLITE3:-sqlite3}"
+    else
+      _d_warn "honker found but ${_SQLITE3:-sqlite3} can't load it; install extension-capable sqlite3 (brew install sqlite) and set TRASH_SQLITE3"
+    fi
+
+    # compiled classes present
+    local nclasses
+    nclasses=$(find "$TRASHDIR/.compiled" -maxdepth 1 -type f 2>/dev/null | wc -l | tr -d ' ')
+    if [[ "${nclasses:-0}" -gt 0 ]]; then
+      _d_ok "$nclasses compiled classes in $TRASHDIR/.compiled"
+    else
+      _d_bad "no compiled classes in $TRASHDIR/.compiled -- run 'make'"
+    fi
+
+    echo ""
+    echo "Summary: $ok ok, $warn warning(s), $bad problem(s)"
+    [[ $bad -eq 0 ]]
+  ]
+
   # List all available objects (compiled classes)
   rawMethod: listObjects [
     find "$TRASHDIR/.compiled" -maxdepth 1 -type f 2>/dev/null | while read -r file; do
@@ -391,6 +448,7 @@ EOF
   rawMethod: help [
     echo "=== Trash System Commands ==="
     echo "@ Trash info                        - Show system information"
+    echo "@ Trash doctor                      - Diagnose environment/setup issues"
     echo "@ Trash listObjects                 - List all objects"
     echo "@ Trash listTraits                  - List all traits"
     echo "@ Trash methodsFor: <class>         - Show methods for class"

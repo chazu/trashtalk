@@ -93,6 +93,30 @@ Verify the install:
 @ Trash info
 ```
 
+## Troubleshooting
+
+If anything misbehaves, run the built-in diagnostics first:
+
+```bash
+@ Trash doctor      # or: make doctor
+```
+
+It checks bash version (needs 4.0+), required tools (`jo`/`jq`/`sqlite3`/`uuidgen`),
+whether the sqlite3 in use can load the optional honker extension, and whether
+classes have been compiled — and prints a clear OK/WARN/FAIL line for each.
+
+Common fixes:
+
+- **`declare: -A: invalid option` / nothing works on macOS** — you're on the
+  system bash 3.2. `brew install bash` and use it (`exec "$(brew --prefix)/bin/bash"`).
+- **`unknown command "load"` / honker errors** — your `sqlite3` lacks extension
+  support (Apple's does). `brew install sqlite`, then
+  `export TRASH_SQLITE3="$(brew --prefix sqlite)/bin/sqlite3"`.
+- **`Unknown class '...'`** — run `make` to compile the classes.
+
+`@ Trash help` lists all system commands. Tab completion for `@` loads
+automatically in interactive shells.
+
 ## Quick Start
 
 ```bash
