@@ -245,6 +245,10 @@ export -f _is_qualified _get_package _get_class_name _to_func_prefix _to_instanc
 # Directory for ephemeral instance storage
 # Uses TRASH_SESSION_ID if set, otherwise the current shell's PID
 # This ensures subshells share the same environment
+# Track whether we created this session (TRASH_SESSION_ID was unset) vs inherited
+# it from a parent. Only the creator may auto-clean the dir on exit -- a child
+# that re-sources trash.bash shares the parent's dir and must not delete it.
+if [[ -z "${TRASH_SESSION_ID:-}" ]]; then _TRASH_SESSION_CREATOR=1; else _TRASH_SESSION_CREATOR=0; fi
 _TRASH_SESSION_ID="${TRASH_SESSION_ID:-$$}"
 _ENV_DIR="/tmp/trashtalk_${_TRASH_SESSION_ID}"
 export TRASH_SESSION_ID="$_TRASH_SESSION_ID"
@@ -371,12 +375,17 @@ function _env_cleanup {
 export -f _env_init _env_get _env_set _env_exists _env_delete _env_list _env_persist _env_load _env_is_persisted _env_cleanup
 
 # Wipe the ephemeral env dir when the owning shell exits, so /tmp/trashtalk_*
-# dirs don't accumulate across sessions. Guard on BASHPID: a command-substitution
-# subshell (e.g. $(@ Counter new)) must NOT run the trap and delete the live
-# session's in-memory instances. Persisted instances live in SQLite and are
-# unaffected. Set TRASH_KEEP_ENV=1 to keep the dir for debugging.
+# dirs don't accumulate across sessions. Three guards keep this from deleting a
+# dir that's still in use:
+#   - _TRASH_SESSION_CREATOR: only the process that created the session cleans;
+#     a child/re-source that inherited TRASH_SESSION_ID shares the dir and skips.
+#   - BASHPID == owner pid: a command-substitution subshell (e.g. $(@ Counter
+#     new)) must not run the trap against the live session's instances.
+#   - TRASH_KEEP_ENV: manual opt-out for debugging.
+# Persisted instances live in SQLite and are unaffected either way.
 _TRASH_ENV_OWNER_PID="$BASHPID"
 _env_cleanup_on_exit() {
+  [[ "$_TRASH_SESSION_CREATOR" == "1" ]] || return 0
   [[ "$BASHPID" == "$_TRASH_ENV_OWNER_PID" ]] || return 0
   [[ -n "${TRASH_KEEP_ENV:-}" ]] && return 0
   _env_cleanup
