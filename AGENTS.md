@@ -1,9 +1,27 @@
 # Agent Instructions
 
-**Read CLAUDE.md first** - it contains critical architecture information, invariants, and patterns you must understand before making changes.
+Read `CLAUDE.md` first. It contains the compiler and runtime architecture,
+build commands, and established Trashtalk patterns.
 
-## Key Invariants (from CLAUDE.md)
+## Project Direction
 
-1. **Primitive classes** (`pragma: primitiveClass`): ALL methods must be `rawMethod`/`rawClassMethod`, must have semantic parity between bash and native Procyon
-2. **Non-primitive classes**: ZERO raw methods allowed, pure DSL only
-3. **Current goal**: Convert all non-primitive classes to pure Trashtalk that executes fully in native mode
+1. Trashtalk is a Bash-only language and runtime. The jq compiler is canonical.
+   Do not reintroduce the retired native Procyon compiler, plugin mode, `tt`
+   daemon, or Bash/native parity requirements.
+2. Prefer `method:` and `classMethod:` and express behavior in the Trashtalk DSL
+   wherever the DSL can state it clearly.
+3. Use `rawMethod:` and `rawClassMethod:` only at real Bash/OS boundaries or
+   where the current DSL cannot express the behavior. Keep raw methods small,
+   isolate them behind a DSL-facing abstraction, and document why raw code is
+   required.
+4. When the same raw pattern is needed more than once, or substantial domain
+   logic would have to be raw, consider extending the DSL/compiler or adding a
+   reusable primitive before duplicating Bash.
+5. Preserve semantic compatibility with the existing Bash runtime and validate
+   compiler changes against the repository test suite.
+
+## Current Goal
+
+Deepen Trashtalk as a self-contained Bash DSL: move avoidable raw behavior into
+the language, keep unavoidable shell integration narrow, and build tooling on
+the public message-send surface.
