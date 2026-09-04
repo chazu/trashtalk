@@ -9,6 +9,7 @@
 # Usage:
 #   ./driver.bash tokenize <file.trash>     # Output JSON tokens
 #   ./driver.bash parse <file.trash>        # Output JSON AST
+#   ./driver.bash parse-many <files...>     # Output one JSONL AST envelope per file
 #   ./driver.bash compile <file.trash>      # Output compiled bash
 #   ./driver.bash ast <file.trash>          # Pretty-print AST
 #
@@ -72,9 +73,14 @@ error() {
 # output from the old grammar/codegen. Computed once per process.
 _compiler_version() {
     if [[ -z "${_COMPILER_VERSION:-}" ]]; then
-        _COMPILER_VERSION=$(cat "$SCRIPT_DIR"/*.jq "$SCRIPT_DIR"/grammar/*.jq \
+        # symbols.jq and senders.jq consume ASTs but do not affect parsing or
+        # code generation, so changing browser queries must not flush the AST
+        # cache for every source file.
+        _COMPILER_VERSION=$(cat "$PARSER" "$CODEGEN" \
+            "$SCRIPT_DIR/expr-parser.jq" "$SCRIPT_DIR/expr-codegen.jq" \
+            "$SCRIPT_DIR/ir.jq" "$SCRIPT_DIR"/grammar/*.jq \
             "$TOKENIZER" "${BASH_SOURCE[0]}" 2>/dev/null \
-            | shasum -a 256 | cut -d' ' -f1 | cut -c1-16)
+            | shasum -a 256 2>/dev/null | cut -d' ' -f1 | cut -c1-16)
     fi
     echo "$_COMPILER_VERSION"
 }
@@ -146,6 +152,7 @@ Usage:
 Commands:
   tokenize <file>     Output JSON token array from source file
   parse <file>        Output JSON AST from source file
+  parse-many <files>  Output JSONL AST envelopes for multiple source files
   ast <file>          Pretty-print the AST with syntax highlighting
   compile <file>      Compile to bash and output to stdout
   compile <file> -o <output>  Compile to bash and write to file
@@ -159,6 +166,7 @@ Options:
 Examples:
   ./driver.bash tokenize Counter.trash
   ./driver.bash parse Counter.trash | jq .
+  ./driver.bash parse-many Counter.trash Array.trash
   ./driver.bash compile Counter.trash -o Counter.bash
   ./driver.bash compile Counter.trash --check
   ./driver.bash ast Process.trash
@@ -297,7 +305,7 @@ _parse_single_file() {
     # Check AST cache by content hash. The key includes the compiler fingerprint
     # so a changed tokenizer/parser/codegen invalidates stale entries.
     local content_hash cache_file
-    content_hash=$(shasum -a 256 "$source_file" | cut -d' ' -f1)
+    content_hash=$(shasum -a 256 "$source_file" 2>/dev/null | cut -d' ' -f1)
     cache_file="$AST_CACHE_DIR/$content_hash-$(_compiler_version).json"
 
     if [[ -f "$cache_file" ]]; then
@@ -427,6 +435,19 @@ cmd_parse() {
         '{ "class": $class[0], "traits": $traits[0] }'
 }
 
+# Parse multiple source files through the same content-addressed AST cache and
+# emit one JSON Lines envelope per file. Keeping this in one process avoids
+# recomputing the compiler fingerprint for every browser record source.
+cmd_parse_many() {
+    local source_file ast
+    _compiler_version >/dev/null
+    for source_file in "$@"; do
+        ast=$(_parse_single_file "$source_file")
+        jq -cn --arg path "$source_file" --argjson ast "$ast" \
+            '{schema_version:1,path:$path,ast:$ast}'
+    done
+}
+
 # Alias for backwards compatibility
 cmd_parse_with_traits() {
     cmd_parse "$@"
@@ -471,7 +492,7 @@ cmd_compile() {
 
     # Compute source hash (SHA-256) for cache invalidation
     local source_hash
-    source_hash=$(shasum -a 256 "$source_file" | cut -d' ' -f1)
+    source_hash=$(shasum -a 256 "$source_file" 2>/dev/null | cut -d' ' -f1)
 
     # Collect inherited instance variables from parent classes
     local parent_class inherited_ivars
@@ -566,6 +587,13 @@ main() {
                 error "Missing source file"
             fi
             cmd_parse_with_traits "$1"
+            ;;
+
+        parse-many)
+            if [[ $# -lt 1 ]]; then
+                error "Missing source files"
+            fi
+            cmd_parse_many "$@"
             ;;
 
         ast)

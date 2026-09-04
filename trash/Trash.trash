@@ -42,6 +42,38 @@ Trash subclass: Object
       fi
     done
 
+    # Innards is optional; edit/page/browse each retain a terminal fallback.
+    if command -v inmacs >/dev/null 2>&1 && command -v inpage >/dev/null 2>&1; then
+      _d_ok "Innards found (inmacs and inpage)"
+    else
+      _d_warn "Innards not found; edit/page workflows use VISUAL/EDITOR and PAGER fallbacks"
+    fi
+    if command -v inpick >/dev/null 2>&1; then
+      _d_ok "Innards picker found (inpick)"
+    elif command -v fzf >/dev/null 2>&1; then
+      _d_warn "inpick not found; browser workflows use the fzf fallback"
+    else
+      _d_warn "inpick and fzf not found; install Innards or fzf for interactive browsing"
+    fi
+    if command -v ininspect >/dev/null 2>&1; then
+      _d_ok "Innards object inspector found (ininspect)"
+    else
+      _d_warn "ininspect not found; objects retain textual inspect output"
+    fi
+
+    # Axe is optional; only the @@ agent workflow depends on it. Keep setup
+    # explicit because provider credentials and model choice belong to Axe.
+    if command -v axe >/dev/null 2>&1; then
+      _d_ok "Axe found ($(command -v axe)); @@ is available when provider credentials are configured"
+    else
+      _d_warn "Axe not found; @@ is unavailable (install explicitly with: go install github.com/jrswab/axe@latest)"
+    fi
+    if command -v indiff >/dev/null 2>&1 && command -v patch >/dev/null 2>&1; then
+      _d_ok "proposal review found (indiff and patch)"
+    else
+      _d_warn "proposal review unavailable; install Innards indiff and patch to review source proposals"
+    fi
+
     # sqlite3 binary actually in use + honker extension loadability
     echo "  sqlite3 in use: ${_SQLITE3:-sqlite3}"
     local ext_suffix ext_base ext_path ext_found=""
@@ -314,10 +346,13 @@ EOF
       return 1
     fi
 
-    local compiled_file="$TRASHDIR/.compiled/$class_name"
-    local class_file="$TRASHDIR/$class_name"
-    local trait_file="$TRASHDIR/traits/$class_name"
-    local compiled_trait="$TRASHDIR/.compiled/traits/$class_name"
+    local compiled_name="${class_name//::/__}"
+    local source_name="${class_name//:://}"
+    local function_prefix="__${compiled_name}__"
+    local compiled_file="$TRASHDIR/.compiled/$compiled_name"
+    local class_file="$TRASHDIR/$source_name.trash"
+    local trait_file="$TRASHDIR/traits/$source_name.trash"
+    local compiled_trait="$TRASHDIR/.compiled/traits/$compiled_name"
 
     # Clear the sourcing cache so the class will be re-sourced
     _clear_class_cache "$class_name"
@@ -328,7 +363,7 @@ EOF
       # Unset old trait functions
       while IFS= read -r func; do
         unset -f "$func" 2>/dev/null
-      done < <(declare -F | awk '{print $3}' | grep "^__${class_name}__")
+      done < <(declare -F | awk '{print $3}' | grep "^${function_prefix}")
       # Source the compiled trait
       source "$compiled_trait"
       _mark_class_sourced "$class_name"
@@ -342,7 +377,7 @@ EOF
       # Unset old class functions
       while IFS= read -r func; do
         unset -f "$func" 2>/dev/null
-      done < <(declare -F | awk '{print $3}' | grep "^__${class_name}__")
+      done < <(declare -F | awk '{print $3}' | grep "^${function_prefix}")
       # Source the compiled class
       source "$compiled_file"
       _mark_class_sourced "$class_name"
@@ -359,11 +394,20 @@ EOF
       return 0
     fi
 
+    if [[ -f "$trait_file" ]]; then
+      echo "Warning: Loading uncompiled trait source for $class_name..."
+      source "$trait_file"
+      _mark_class_sourced "$class_name"
+      echo "✓ Trait $class_name loaded from source"
+      return 0
+    fi
+
     echo "Error: Class $class_name not found"
     echo "Searched:"
     echo "  - $compiled_file"
     echo "  - $compiled_trait"
     echo "  - $class_file"
+    echo "  - $trait_file"
     return 1
   ]
 
@@ -542,16 +586,29 @@ EOF
   # Usage: @ Trash runTestsFor: Counter
   # Returns: 0 if all tests pass, 1 if any fail
   rawMethod: runTestsFor: class_name [
-    local tests_var="__${class_name}__tests"
-    local tests="${!tests_var:-}"
-    local compiled_file="$TRASHDIR/.compiled/$class_name"
+    local compiled_name="${class_name//::/__}"
+    local compiled_file="$TRASHDIR/.compiled/$compiled_name"
 
-    # Ensure class is loaded
     if [[ ! -f "$compiled_file" ]]; then
       echo "Error: Class $class_name not found"
       return 1
     fi
-    source "$compiled_file"
+    @ "$_RECEIVER" runTestsFromArtifact: "$compiled_file" class: "$class_name"
+  ]
+
+  # Run a class's declared tests from an explicit compiled artifact. Proposal
+  # gates use this before installation; normal tests delegate here as well.
+  rawMethod: runTestsFromArtifact: artifact class: class_name [
+    local artifact="$1" class_name="$2"
+    local compiled_name="${class_name//::/__}"
+    local tests_var="__${compiled_name}__tests"
+    local tests
+
+    if [[ ! -f "$artifact" ]]; then
+      echo "Error: Compiled artifact for $class_name not found"
+      return 1
+    fi
+    source "$artifact"
 
     # Check if class has tests
     tests="${!tests_var:-}"
@@ -566,7 +623,7 @@ EOF
     local failed=0
 
     for test_selector in $tests; do
-      func_name="__${class_name}__test__${test_selector}"
+      func_name="__${compiled_name}__test__${test_selector}"
       if declare -f "$func_name" >/dev/null 2>&1; then
         # Capture output to temp file to check type while preserving counters
         local tmpfile="/tmp/trash_test_$$"
@@ -608,11 +665,23 @@ EOF
     return $failed
   ]
 
+  rawMethod: testCompiledCandidate: artifact class: class_name [
+    local output status
+    output=$(@ "$_RECEIVER" runTestsFromArtifact: "$artifact" class: "$class_name" 2>&1)
+    status=$?
+    if [[ $status -eq 0 ]]; then
+      jq -cn --arg message "$output" '{ok:true,phase:"test",line:1,message:$message}'
+    else
+      jq -cn --arg message "$output" '{ok:false,phase:"test",line:1,message:$message}'
+    fi
+  ]
+
   # Check if a class has tests defined
   # Usage: @ Trash hasTestsFor: Counter
   rawMethod: hasTestsFor: class_name [
-    local tests_var="__${class_name}__tests"
-    local compiled_file="$TRASHDIR/.compiled/$class_name"
+    local compiled_name="${class_name//::/__}"
+    local tests_var="__${compiled_name}__tests"
+    local compiled_file="$TRASHDIR/.compiled/$compiled_name"
 
     # Ensure class is loaded
     if [[ -f "$compiled_file" ]]; then
@@ -727,238 +796,442 @@ EOF
     @ "$_RECEIVER" edit: "$class_name"
   ]
 
-  # Edit an existing class and recompile on save
-  # Enhanced: loops on errors, prepends error info, jumps to error line
-  rawMethod: edit: class_name [
-    pragma: direct
-    local trash_file="$TRASHDIR/${class_name}.trash"
-    local user_file="$TRASHDIR/user/${class_name}.trash"
-    local trait_file="$TRASHDIR/traits/${class_name}.trash"
-    local file_to_edit=""
+  # Resolve a class or trait to its editable source using public DSL helpers.
+  method: sourceFileFor: className [
+    | root relative userSource classSource traitSource |
+    root := @ Env get: 'TRASHDIR'.
+    relative := @ String replaceAll: '::' with: '/' in: className.
+    userSource := root , '/user/' , relative , '.trash'.
+    classSource := root , '/' , relative , '.trash'.
+    traitSource := root , '/traits/' , relative , '.trash'.
+    userSource fileExists ifTrue: [^ userSource].
+    classSource fileExists ifTrue: [^ classSource].
+    traitSource fileExists ifTrue: [^ traitSource].
+    ^ ''
+  ]
 
-    # Find the source file (check user dir before system dir)
-    if [[ -f "$user_file" ]]; then
-      file_to_edit="$user_file"
-    elif [[ -f "$trash_file" ]]; then
-      file_to_edit="$trash_file"
-    elif [[ -f "$trait_file" ]]; then
-      file_to_edit="$trait_file"
-    else
-      echo "Error: No source file found for $class_name"
-      echo "Searched:"
-      echo "  - $user_file"
-      echo "  - $trash_file"
-      echo "  - $trait_file"
-      echo ""
-      echo "Use '@ Trash new $class_name' to create a new class."
-      return 1
+  # Present diagnostics without modifying source. Innards consumes the
+  # temporary annotation document; an external editor remains a safe fallback.
+  method: editFile: sourceFile diagnostics: diagnostics line: line [
+    | available annotationFile annotationPath result file before after outcome builder unused |
+    available := @ Tools::Inmacs isInstalled.
+    (available = 'true') ifTrue: [
+      annotationPath := ''.
+      diagnostics notEmpty ifTrue: [
+        annotationFile := @ File tempWithPrefix: 'trash-edit-annotations-'.
+        unused := @ annotationFile write: diagnostics.
+        annotationPath := @ annotationFile path
+      ].
+      result := @ Tools::Inmacs editFile: sourceFile annotations: annotationPath line: line.
+      annotationPath notEmpty ifTrue: [@ annotationFile delete].
+      ^ result
+    ].
+
+    file := @ File at: sourceFile.
+    before := @ file read.
+    unused := @ Tools::Inmacs fallbackEditFile: sourceFile line: line.
+    after := @ file read.
+    outcome := 'unchanged'.
+    (before ~= after) ifTrue: [outcome := 'saved'].
+    builder := @ Json object.
+    unused := @ builder at: 'schema_version' putNumber: '1'.
+    unused := @ builder at: 'outcome' put: outcome.
+    unused := @ builder at: 'path' put: sourceFile.
+    ^ @ builder build
+  ]
+
+  # Compile to a candidate artifact. This raw method is an OS/compiler boundary;
+  # workflow decisions and diagnostic construction remain in DSL methods.
+  rawMethod: compileClass: className source: sourceFile [
+    local artifact error_file message line
+    artifact=$(mktemp "${TMPDIR:-/tmp}/trash-edit-artifact.XXXXXX")
+    error_file=$(mktemp "${TMPDIR:-/tmp}/trash-edit-compile.XXXXXX")
+
+    if "$SCRIPT_DIR/jq-compiler/driver.bash" compile "$sourceFile" > "$artifact" 2> "$error_file"; then
+      rm -f "$error_file"
+      jq -cn --arg artifact "$artifact" '{ok:true,phase:"compile",artifact:$artifact,line:1,message:""}'
+      return 0
     fi
 
-    local error_marker="# ========================================================================"
-    local error_start="# == COMPILE ERRORS (fix and save to retry) =="
-    local temp_compiled="/tmp/trash_edit_compile_$$"
-    local error_line=1
-    local compile_errors=""
-    local had_errors=false
+    message=$(cat "$error_file")
+    line=$(printf '%s\n' "$message" | grep -oE '[0-9]+:[0-9]+:' | head -1 | cut -d: -f1)
+    [[ -n "$line" ]] || line=1
+    rm -f "$artifact" "$error_file"
+    jq -cn --arg message "$message" --argjson line "$line" '{ok:false,phase:"compile",artifact:"",line:$line,message:$message}'
+  ]
 
-    # Edit-compile loop
-    while true; do
-      local before_mtime after_mtime has_error_block=false
+  rawMethod: validateCompiledCandidate: artifact [
+    local message
+    if message=$(bash -n "$artifact" 2>&1); then
+      jq -cn --arg artifact "$artifact" '{ok:true,phase:"bash",artifact:$artifact,line:1,message:""}'
+      return 0
+    fi
+    rm -f "$artifact"
+    jq -cn --arg message "$message" '{ok:false,phase:"bash",artifact:"",line:1,message:$message}'
+  ]
 
-      # Check if file has error block (user will see it in editor)
-      if grep -q "^$error_start" "$file_to_edit" 2>/dev/null; then
-        has_error_block=true
-      fi
+  rawMethod: validateCompiledIdentity: artifact class: className [
+    local artifact="$1" class_name="$2" compiled_name marker message
+    compiled_name="${class_name//::/__}"
+    marker="__${compiled_name}__superclass="
+    if awk -v marker="$marker" 'index($0, marker) == 1 { found=1 } END { exit !found }' "$artifact"; then
+      jq -cn --arg artifact "$artifact" '{ok:true,phase:"identity",artifact:$artifact,line:1,message:""}'
+    else
+      message="Compiled proposal does not define the declared class $class_name"
+      rm -f "$artifact"
+      jq -cn --arg message "$message" '{ok:false,phase:"identity",artifact:"",line:1,message:$message}'
+    fi
+  ]
 
-      before_mtime=$(stat -f "%m" "$file_to_edit" 2>/dev/null || stat -c "%Y" "$file_to_edit" 2>/dev/null)
+  rawMethod: installCompiledCandidate: artifact for: className source: sourceFile [
+    pragma: direct
+    local compiled_name target output status
+    compiled_name="${className//::/__}"
+    if [[ "$sourceFile" == *"/traits/"* ]]; then
+      target="$TRASHDIR/.compiled/traits/$compiled_name"
+    else
+      target="$TRASHDIR/.compiled/$compiled_name"
+    fi
+    mkdir -p "$(dirname "$target")"
+    if ! mv "$artifact" "$target"; then
+      rm -f "$artifact"
+      jq -cn --arg message "Could not install $target" '{ok:false,phase:"install",line:1,message:$message}'
+      return 0
+    fi
+    output=$(@ "$_RECEIVER" reloadClass: "$className" 2>&1)
+    status=$?
+    if [[ $status -eq 0 ]]; then
+      jq -cn '{ok:true,phase:"install",line:1,message:""}'
+    else
+      jq -cn --arg message "$output" '{ok:false,phase:"install",line:1,message:$message}'
+    fi
+  ]
 
-      # Build editor command with optional line jump
-      local editor_cmd="${EDITOR:-vi}"
-      local editor_base="${editor_cmd%% *}"  # Get base command without args
-      local editor_args=""
+  rawMethod: testClassForEdit: className [
+    local output status
+    output=$(@ "$_RECEIVER" runTestsFor: "$className" 2>&1)
+    status=$?
+    if [[ $status -eq 0 ]]; then
+      jq -cn --arg message "$output" '{ok:true,phase:"test",line:1,message:$message}'
+    else
+      jq -cn --arg message "$output" '{ok:false,phase:"test",line:1,message:$message}'
+    fi
+  ]
 
-      # Support line jumping for common editors
-      if [[ $error_line -gt 1 ]]; then
-        case "$editor_base" in
-          vi|vim|nvim)
-            editor_args="+$error_line"
-            ;;
-          emacs|emacsclient)
-            editor_args="+$error_line"
-            ;;
-          code)
-            editor_args="--goto ${file_to_edit}:${error_line}"
-            file_to_edit=""  # code uses --goto with full path
-            ;;
-          "code-insiders")
-            editor_args="--goto ${file_to_edit}:${error_line}"
-            file_to_edit=""
-            ;;
-          nano)
-            editor_args="+$error_line"
-            ;;
-          subl|sublime)
-            editor_args="${file_to_edit}:${error_line}"
-            file_to_edit=""
-            ;;
-        esac
-      fi
+  method: annotationsFor: message line: line phase: phase [
+    | item items document itemJson itemsJson unused |
+    item := @ Json object.
+    unused := @ item at: 'line' putNumber: line.
+    unused := @ item at: 'column' putNumber: '1'.
+    unused := @ item at: 'severity' put: 'error'.
+    unused := @ item at: 'message' put: (phase , ': ' , message).
+    itemJson := @ item build.
+    items := @ Json array.
+    unused := @ items pushJson: itemJson.
+    itemsJson := @ items build.
+    document := @ Json object.
+    unused := @ document at: 'schema_version' putNumber: '1'.
+    unused := @ document at: 'annotations' putJson: itemsJson.
+    ^ @ document build
+  ]
 
-      # Open editor
-      if [[ -n "$file_to_edit" ]]; then
-        $editor_cmd $editor_args "$file_to_edit" </dev/tty >/dev/tty
-      else
-        $editor_cmd $editor_args </dev/tty >/dev/tty
-        # Restore file_to_edit for next iteration
-        if [[ -f "$user_file" ]]; then
-          file_to_edit="$user_file"
-        elif [[ -f "$trash_file" ]]; then
-          file_to_edit="$trash_file"
-        else
-          file_to_edit="$trait_file"
-        fi
-      fi
+  method: diagnosticsFromCompileResult: result [
+    | message line phase |
+    message := @ String jsonPath: 'message' from: result.
+    line := @ String jsonPath: 'line' from: result.
+    phase := @ String jsonPath: 'phase' from: result.
+    ^ @ self annotationsFor: message line: line phase: phase
+  ]
 
-      after_mtime=$(stat -f "%m" "$file_to_edit" 2>/dev/null || stat -c "%Y" "$file_to_edit" 2>/dev/null)
+  method: diagnosticsFromTestResult: result [
+    ^ @ self diagnosticsFromCompileResult: result
+  ]
 
-      # Check if user made no changes (didn't even save)
-      if [[ "$before_mtime" == "$after_mtime" ]]; then
-        # Strip error block before exiting (clean up the file)
-        if [[ "$has_error_block" == true ]]; then
-          sed -i.bak "/^# == COMPILE ERRORS/,/^# ========================================================================$/d" "$file_to_edit"
-          rm -f "${file_to_edit}.bak"
-        fi
-        if [[ "$had_errors" == true ]]; then
-          echo "No changes - aborting edit"
-          return 1
-        else
-          echo "No changes detected"
-          return 0
-        fi
-      fi
+  # Parse every source through the canonical jq compiler. File discovery and
+  # process invocation are the OS/compiler boundary; no second symbol cache is
+  # introduced.
+  rawMethod: astRecords [
+    pragma: direct
+    local -a sources
+    mapfile -d '' -t sources < <(find "$TRASHDIR" -type f -name '*.trash' \
+      -not -path "$TRASHDIR/.compiled/*" -print0)
+    [[ ${#sources[@]} -gt 0 ]] || return 0
+    "$SCRIPT_DIR/jq-compiler/driver.bash" 'parse-many' "${sources[@]}"
+  ]
 
-      # Strip any error comments before compiling
-      if grep -q "^$error_start" "$file_to_edit" 2>/dev/null; then
-        sed -i.bak "/^# == COMPILE ERRORS/,/^# ========================================================================$/d" "$file_to_edit"
-        rm -f "${file_to_edit}.bak"
-      fi
+  # Turn cached parser AST envelopes into the public picker record schema.
+  rawMethod: symbolRecords [
+    local records
+    records=$(@ "$_RECEIVER" astRecords) || return
+    printf '%s\n' "$records" | jq -c --arg path '' \
+      -f "$SCRIPT_DIR/jq-compiler/symbols.jq"
+  ]
 
-      echo "File modified, compiling..."
+  method: symbolRecordsForClass: className [
+    | records |
+    records := @ self symbolRecords.
+    ^ @ String jsonLinesWhere: 'class_name' equals: className from: records
+  ]
 
-      # Try to compile
-      compile_errors=$("$SCRIPT_DIR/jq-compiler/driver.bash" compile "$file_to_edit" 2>&1)
-      local compile_exit=$?
+  method: classRecords [
+    | records classes traits |
+    records := @ self symbolRecords.
+    classes := @ String jsonLinesWhere: 'kind' equals: 'class' from: records.
+    traits := @ String jsonLinesWhere: 'kind' equals: 'trait' from: records.
+    ^ classes , '
+' , traits
+  ]
 
-      if [[ $compile_exit -eq 0 ]]; then
-        # Compilation succeeded, check bash syntax
-        echo "$compile_errors" > "$temp_compiled"
-        local syntax_errors
-        syntax_errors=$(bash -n "$temp_compiled" 2>&1)
-        local syntax_exit=$?
+  method: implementorsOf: selector [
+    | records |
+    records := @ self symbolRecords.
+    ^ @ String jsonLinesWhere: 'selector' equals: selector from: records
+  ]
 
-        if [[ $syntax_exit -eq 0 ]]; then
-          # Success! Save compiled output and reload
-          local target_file
-          if [[ "$file_to_edit" == *"/traits/"* ]]; then
-            target_file="$TRASHDIR/.compiled/traits/$class_name"
-          else
-            target_file="$TRASHDIR/.compiled/$class_name"
-          fi
-          mv "$temp_compiled" "$target_file"
-          @ "$_RECEIVER" reloadClass: "$class_name"
-          echo "Compiled successfully"
+  # Sender analysis is a compiler query because it must group parsed keyword
+  # message parts. Comparing individual source tokens is not semantically valid.
+  rawMethod: sendersOf: selector [
+    local records
+    records=$(@ "$_RECEIVER" astRecords) || return
+    printf '%s\n' "$records" | jq -c --arg path '' --arg wanted "$1" \
+      -f "$SCRIPT_DIR/jq-compiler/senders.jq"
+  ]
 
-          # Check for and run tests
-          local tests_var="__${class_name}__tests"
-          local tests="${!tests_var:-}"
-          if [[ -n "$tests" ]]; then
-            echo ""
-            echo "Running tests..."
-            local test_output test_exit
-            test_output=$(@ "$_RECEIVER" runTestsFor: "$class_name" 2>&1)
-            test_exit=$?
-            echo "$test_output"
+  # Build persisted-object candidates in the DSL. Only Store and Runtime own
+  # the database boundary; the browser sees ordinary versioned records.
+  method: instanceRecordsFor: className [
+    | ids idArray records source i count instanceId rawData data shortId label detail record recordJson recordsJson unused |
+    ids := @ Store findByClass: className.
+    idArray := @ String splitToArray: ids on: '
+'.
+    records := @ Json array.
+    source := @ self sourceFileFor: className.
+    source isEmpty ifTrue: [^ ''].
+    i := 0.
+    count := idArray arrayLength.
+    [i < count] whileTrue: [
+      instanceId := idArray arrayAt: i.
+      instanceId notEmpty ifTrue: [
+        rawData := @ Runtime dataFor: instanceId.
+        data := @ String jsonInstanceView: rawData.
+        shortId := @ String suffix: instanceId length: '8'.
+        label := className , ' ' , shortId.
+        detail := @ String jsonInstanceSummary: data.
+        record := @ Json object.
+        unused := @ record at: 'schema_version' putNumber: '1'.
+        unused := @ record at: 'id' put: instanceId.
+        unused := @ record at: 'path' put: source.
+        unused := @ record at: 'line' putNumber: '1'.
+        unused := @ record at: 'column' putNumber: '1'.
+        unused := @ record at: 'label' put: label.
+        unused := @ record at: 'kind' put: 'instance'.
+        unused := @ record at: 'detail' put: detail.
+        unused := @ record at: 'class_name' put: className.
+        unused := @ record at: 'object_id' put: instanceId.
+        unused := @ record at: 'data' putJson: data.
+        recordJson := @ record build.
+        unused := @ records pushJson: recordJson
+      ].
+      i := i + 1
+    ].
+    recordsJson := @ records build.
+    ^ @ String jsonArrayAsLines: recordsJson
+  ]
 
-            if [[ $test_exit -ne 0 ]]; then
-              # Tests failed - loop back to edit
-              compile_errors="Tests failed:
+  method: pickRecords: records query: query title: title [
+    | root available |
+    root := @ Env get: 'TRASHDIR'.
+    root := @ String trimSuffix: '/trash' from: root.
+    available := @ Tools::Inpick isInstalled.
+    (available = 'true') ifTrue: [
+      ^ @ Tools::Inpick selectRecords: records root: root query: query title: title
+    ].
+    ^ @ Tools::Inpick fallbackSelectRecords: records query: query title: title
+  ]
 
-$test_output
+  method: pickMethod: className [
+    | records title |
+    records := @ self symbolRecordsForClass: className.
+    title := 'Methods: ' , className.
+    ^ @ self pickRecords: records query: 'method' title: title
+  ]
 
-Fix the failing tests and save to retry."
-              had_errors=true
-              error_line=1
+  method: browseClasses [
+    | records |
+    records := @ self classRecords.
+    ^ @ self pickRecords: records query: '' title: 'Classes and traits'
+  ]
 
-              # Prepend error block
-              local error_block
-              error_block=$(cat <<EOF
-$error_start
-#
-$(echo "$compile_errors" | sed 's/^/# /')
-#
-$error_marker
+  method: browseInstancesOf: className [
+    | records title |
+    records := @ self instanceRecordsFor: className.
+    title := 'Instances: ' , className.
+    ^ @ self pickRecords: records query: '' title: title
+  ]
 
-EOF
-)
-              local original_content
-              original_content=$(cat "$file_to_edit")
-              printf '%s\n%s' "$error_block" "$original_content" > "$file_to_edit"
+  method: inspectionRecordFor: objectId [
+    | className rawData data record unused |
+    className := @ Runtime classFor: objectId.
+    className isEmpty ifTrue: [^ ''].
+    rawData := @ Runtime dataFor: objectId.
+    data := @ String jsonInstanceView: rawData.
+    record := @ Json object.
+    unused := @ record at: 'schema_version' putNumber: '1'.
+    unused := @ record at: 'object_id' put: objectId.
+    unused := @ record at: 'class_name' put: className.
+    unused := @ record at: 'data' putJson: data.
+    ^ @ record build
+  ]
 
-              local block_lines
-              block_lines=$(echo "$error_block" | wc -l | tr -d ' ')
-              error_line=$((error_line + block_lines))
+  method: inspectObject: objectId [
+    | available record className title result valid outcome |
+    available := @ Tools::Ininspect isInstalled.
+    (available ~= 'true') ifTrue: [^ @ objectId inspect].
+    record := @ self inspectionRecordFor: objectId.
+    record isEmpty ifTrue: [
+      ^ @ ObjectEditProposal result: 'invalid' phase: 'lookup' message: 'Object does not exist' object: objectId data: ''
+    ].
+    className := @ String jsonPath: 'class_name' from: record.
+    title := 'Object inspector'.
+    result := @ Tools::Ininspect inspectRecord: record title: title.
+    valid := @ String isJson: result.
+    (valid ~= 'true') ifTrue: [
+      ^ @ ObjectEditProposal result: 'invalid' phase: 'result' message: 'ininspect did not return valid JSON' object: objectId data: ''
+    ].
+    outcome := @ String jsonPath: 'outcome' from: result.
+    (outcome = 'proposed') ifTrue: [^ @ ObjectEditProposal apply: result to: objectId].
+    (outcome = 'viewed') ifTrue: [^ result].
+    (outcome = 'cancelled') ifTrue: [^ result].
+    ^ @ ObjectEditProposal result: 'invalid' phase: 'result' message: 'ininspect returned an unknown outcome' object: objectId data: ''
+  ]
 
-              echo ""
-              echo "Tests failed - re-opening editor..."
-              continue
-            fi
-          fi
+  method: inspectInstancesOf: className [
+    | selection outcome objectId |
+    selection := @ self browseInstancesOf: className.
+    outcome := @ String jsonPath: 'outcome' from: selection.
+    (outcome ~= 'selected') ifTrue: [^ selection].
+    objectId := @ String jsonPath: 'selection.object_id' from: selection.
+    ^ @ self inspectObject: objectId
+  ]
 
-          return 0
-        else
-          # Bash syntax error
-          compile_errors="Bash syntax error in compiled output:
-$syntax_errors
+  method: openBrowserResult: result [
+    | outcome sourceFile className line |
+    outcome := @ String jsonPath: 'outcome' from: result.
+    (outcome ~= 'selected') ifTrue: [^ outcome].
+    sourceFile := @ String jsonPath: 'selection.path' from: result.
+    className := @ String jsonPath: 'selection.class_name' from: result.
+    line := @ String jsonPath: 'selection.line' from: result.
+    ^ @ self editSource: sourceFile class: className line: line
+  ]
 
-This usually indicates a DSL construct that compiled to invalid bash.
-Check for unbalanced quotes, brackets, or unsupported syntax."
+  method: browse [
+    | records result |
+    records := @ self symbolRecords.
+    result := @ self pickRecords: records query: '' title: 'Trashtalk symbols'.
+    ^ @ self openBrowserResult: result
+  ]
 
-          # Try to extract line number from bash error (refers to compiled line)
-          error_line=$(echo "$syntax_errors" | grep -oE 'line [0-9]+' | head -1 | grep -oE '[0-9]+' || echo "1")
-          # Bash errors refer to compiled output, not source - reset to 1
-          error_line=1
-        fi
-      else
-        # Compilation failed - try to extract error line
-        error_line=$(echo "$compile_errors" | grep -oE '^\s*[0-9]+:[0-9]+:' | head -1 | cut -d: -f1 | tr -d ' ' || echo "1")
-        [[ -z "$error_line" ]] && error_line=1
-      fi
+  method: browseClass: className [
+    | records title result |
+    records := @ self symbolRecordsForClass: className.
+    title := 'Browse: ' , className.
+    result := @ self pickRecords: records query: '' title: title.
+    ^ @ self openBrowserResult: result
+  ]
 
-      # Prepend errors to file for next edit iteration
-      had_errors=true
-      local error_block
-      error_block=$(cat <<EOF
-$error_start
-#
-$(echo "$compile_errors" | sed 's/^/# /')
-#
-$error_marker
+  method: browseImplementorsOf: selector [
+    | records title result |
+    records := @ self implementorsOf: selector.
+    title := 'Implementors: ' , selector.
+    result := @ self pickRecords: records query: '' title: title.
+    ^ @ self openBrowserResult: result
+  ]
 
-EOF
-)
-      # Prepend error block
-      local original_content
-      original_content=$(cat "$file_to_edit")
-      printf '%s\n%s' "$error_block" "$original_content" > "$file_to_edit"
+  method: browseSendersOf: selector [
+    | records title result |
+    records := @ self sendersOf: selector.
+    title := 'Senders: ' , selector.
+    result := @ self pickRecords: records query: '' title: title.
+    ^ @ self openBrowserResult: result
+  ]
 
-      # Adjust error_line to account for prepended block
-      local block_lines
-      block_lines=$(echo "$error_block" | wc -l | tr -d ' ')
-      error_line=$((error_line + block_lines))
+  # DSL-first edit/compile/check/reload/test workflow. Diagnostics are passed as
+  # annotations and never written into the .trash source.
+  method: edit: className [
+    | sourceFile message |
+    sourceFile := @ self sourceFileFor: className.
+    sourceFile isEmpty ifTrue: [
+      message := 'No source file found for ' , className.
+      @ Console error: message.
+      ^ ''
+    ].
 
-      rm -f "$temp_compiled"
-      echo "Compilation failed - re-opening editor with error details..."
-    done
+    ^ @ self editSource: sourceFile class: className line: '1'
+  ]
+
+  method: editSource: sourceFile class: className line: initialLine [
+    pragma: direct
+    | diagnostics line editorResult outcome compileResult ok artifact validationResult installResult testResult message |
+
+    diagnostics := ''.
+    line := initialLine.
+    [1 = 1] whileTrue: [
+      editorResult := @ self editFile: sourceFile diagnostics: diagnostics line: line.
+      outcome := @ String jsonPath: 'outcome' from: editorResult.
+      outcome isEmpty ifTrue: [
+        @ Console error: 'Editor failed without a structured result'.
+        ^ ''
+      ].
+      (outcome = 'unchanged') ifTrue: [^ 'unchanged'].
+      (outcome = 'cancelled') ifTrue: [^ 'cancelled'].
+      (outcome = 'discarded') ifTrue: [^ 'discarded'].
+      (outcome ~= 'saved') ifTrue: [
+        message := 'Editor failed: ' , outcome.
+        @ Console error: message.
+        ^ ''
+      ].
+
+      message := 'Compiling ' , className , '...'.
+      @ Console print: message.
+      compileResult := @ self compileClass: className source: sourceFile.
+      ok := @ String jsonPath: 'ok' from: compileResult.
+      (ok ~= 'true') ifTrue: [
+        diagnostics := @ self diagnosticsFromCompileResult: compileResult.
+        line := @ String jsonPath: 'line' from: compileResult.
+        message := @ String jsonPath: 'message' from: compileResult.
+        @ Console error: message
+      ] ifFalse: [
+        artifact := @ String jsonPath: 'artifact' from: compileResult.
+        validationResult := @ self validateCompiledCandidate: artifact.
+        ok := @ String jsonPath: 'ok' from: validationResult.
+        (ok ~= 'true') ifTrue: [
+          diagnostics := @ self diagnosticsFromCompileResult: validationResult.
+          line := '1'.
+          message := @ String jsonPath: 'message' from: validationResult.
+          @ Console error: message
+        ] ifFalse: [
+          installResult := @ self installCompiledCandidate: artifact for: className source: sourceFile.
+          ok := @ String jsonPath: 'ok' from: installResult.
+          (ok ~= 'true') ifTrue: [
+            diagnostics := @ self diagnosticsFromCompileResult: installResult.
+            line := '1'
+          ] ifFalse: [
+            testResult := @ self testClassForEdit: className.
+            ok := @ String jsonPath: 'ok' from: testResult.
+            (ok = 'true') ifTrue: [
+              message := 'Compiled and tested ' , className.
+              @ Console print: message.
+              ^ 'saved'
+            ] ifFalse: [
+              diagnostics := @ self diagnosticsFromTestResult: testResult.
+              line := '1'.
+              message := @ String jsonPath: 'message' from: testResult.
+              @ Console error: message
+            ]
+          ]
+        ]
+      ]
+    ]
   ]
 
   # Evaluate a string of Trashtalk code

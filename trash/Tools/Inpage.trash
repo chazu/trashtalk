@@ -1,0 +1,42 @@
+# Tools::Inpage - Typed wrapper for the Innards inline pager.
+package: Tools
+
+Inpage subclass: Tool
+
+  classMethod: name [
+    ^ 'inpage'
+  ]
+
+  classMethod: viewFile: path annotations: annotationsPath line: line [
+    | builder argv toolPath unused |
+    builder := @ Json array.
+    toolPath := @ self path.
+    unused := @ builder push: toolPath.
+    unused := @ builder push: '--result-json'.
+    annotationsPath notEmpty ifTrue: [
+      unused := @ builder push: '--annotations'.
+      unused := @ builder push: annotationsPath
+    ].
+    line notEmpty ifTrue: [
+      unused := @ builder push: '--line'.
+      unused := @ builder push: line
+    ].
+    unused := @ builder push: path.
+    argv := @ builder build.
+    ^ @ self runArgvJson: argv
+  ]
+
+  classMethod: viewText: text title: title [
+    | builder argv toolPath unused |
+    builder := @ Json array.
+    toolPath := @ self path.
+    unused := @ builder push: toolPath.
+    unused := @ builder push: '--stdin'.
+    unused := @ builder push: '--result-json'.
+    title notEmpty ifTrue: [
+      unused := @ builder push: '--title'.
+      unused := @ builder push: title
+    ].
+    argv := @ builder build.
+    ^ @ self runArgvJson: argv input: text
+  ]

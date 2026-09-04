@@ -1,0 +1,82 @@
+# ObjectEditProposal - Validate and apply one human-authored ininspect leaf edit.
+#
+# Innards only presents state and returns a proposal. This class owns the
+# optimistic concurrency check and the Runtime mutation.
+ObjectEditProposal subclass: Object
+
+  classMethod: result: outcome phase: phase message: message object: objectId data: data [
+    | result unused |
+    result := @ Json object.
+    unused := @ result at: 'schema_version' putNumber: '1'.
+    unused := @ result at: 'outcome' put: outcome.
+    unused := @ result at: 'phase' put: phase.
+    unused := @ result at: 'message' put: message.
+    unused := @ result at: 'object_id' put: objectId.
+    data notEmpty ifTrue: [unused := @ result at: 'data' putJson: data].
+    ^ @ result build
+  ]
+
+  # jq is the typed JSON-path boundary that the DSL does not currently expose.
+  # This validates a closed result schema, checks the original leaf value and
+  # complete ivar snapshot, then stages a new JSON document without mutating it.
+  rawClassMethod: validateAndStage: result view: currentView current: currentData object: expectedObject class: expectedClass [
+    local result_json="$1" current_view="$2" current_json="$3" expected_object="$4" expected_class="$5"
+    jq -cn \
+      --argjson result "$result_json" \
+      --argjson current_view "$current_view" \
+      --argjson current "$current_json" \
+      --arg expected_object "$expected_object" \
+      --arg expected_class "$expected_class" '
+      def invalid($message): {schema_version:1,ok:false,phase:"schema",message:$message};
+      $result.proposal.path as $path |
+      if ($result | type) != "object" or
+         (($result | keys | sort) != ["base_data","class_name","object_id","outcome","proposal","schema_version"]) or
+         $result.schema_version != 1 or $result.outcome != "proposed" or
+         ($result.object_id | type) != "string" or
+         ($result.class_name | type) != "string" or
+         ($result.base_data | type) != "object" or
+         ($result.proposal | type) != "object" or
+         (($result.proposal | keys | sort) != ["new_value","old_value","path"]) or
+         ($result.proposal.path | type) != "array" or
+         ($result.proposal.path | length) == 0 or
+         ([$result.proposal.path[] |
+            select((type != "string") and
+                   (type != "number" or floor != . or . < 0))] | length) != 0
+      then invalid("Expected a closed ininspect proposal result")
+      elif $result.object_id != $expected_object or $result.class_name != $expected_class
+      then invalid("Inspection proposal target does not match the requested object")
+      elif $result.base_data != $current_view
+      then {schema_version:1,ok:false,phase:"stale",message:"Object changed while it was being inspected"}
+      elif (any($result.base_data | paths; . == $path) | not)
+      then invalid("Inspection proposal path does not identify existing object state")
+      elif ($result as $r | ($r.base_data | getpath($r.proposal.path))) != $result.proposal.old_value
+      then invalid("Inspection proposal old_value does not match its base path")
+      else {
+        schema_version:1,
+        ok:true,
+        phase:"stage",
+        message:"",
+        data:($current | setpath($result.proposal.path; $result.proposal.new_value))
+      }
+      end'
+  ]
+
+  classMethod: apply: result to: objectId [
+    | currentData currentView className staged ok phase message updated |
+    currentData := @ Runtime dataFor: objectId.
+    currentView := @ String jsonInstanceView: currentData.
+    className := @ Runtime classFor: objectId.
+    staged := @ self validateAndStage: result view: currentView current: currentData object: objectId class: className.
+    ok := @ String jsonPath: 'ok' from: staged.
+    phase := @ String jsonPath: 'phase' from: staged.
+    message := @ String jsonPath: 'message' from: staged.
+    (ok ~= 'true') ifTrue: [
+      (phase = 'stale') ifTrue: [
+        ^ @ self result: 'stale' phase: phase message: message object: objectId data: ''
+      ].
+      ^ @ self result: 'invalid' phase: phase message: message object: objectId data: ''
+    ].
+    updated := @ String jsonPath: 'data' from: staged.
+    @ Runtime setData: updated for: objectId.
+    ^ @ self result: 'applied' phase: 'commit' message: 'Object state updated' object: objectId data: updated
+  ]

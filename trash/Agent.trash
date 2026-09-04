@@ -12,6 +12,80 @@
 Agent subclass: Object
   include: Persistable
 
+  # Provider-independent one-shot facade used by @@. The existing tmux session
+  # methods remain available for legacy ClaudeAgent workflows, but are not part
+  # of the Axe execution path.
+  classMethod: ask: question [
+    | workingDirectory |
+    workingDirectory := @ Env cwd.
+    ^ @ AxeAgent ask: question workingDirectory: workingDirectory status: '0' lastResult: ''
+  ]
+
+  classMethod: ask: question workingDirectory: workingDirectory status: status lastResult: lastResult [
+    ^ @ AxeAgent ask: question workingDirectory: workingDirectory status: status lastResult: lastResult
+  ]
+
+  classMethod: dryRun: question [
+    | workingDirectory |
+    workingDirectory := @ Env cwd.
+    ^ @ AxeAgent dryRun: question workingDirectory: workingDirectory status: '0' lastResult: ''
+  ]
+
+  classMethod: run: agent withInput: input [
+    ^ @ AxeAgent run: agent withInput: input
+  ]
+
+  classMethod: review: subject [
+    | question |
+    question := 'Review this read-only context and report risks: ' , subject.
+    ^ @ self ask: question
+  ]
+
+  # Requesting a proposal remains read-only. Applying it is a separate,
+  # explicit SourceProposal review transaction.
+  classMethod: propose: question for: className [
+    | workingDirectory |
+    workingDirectory := @ Env cwd.
+    ^ @ AxeAgent propose: question class: className workingDirectory: workingDirectory
+  ]
+
+  classMethod: reviewAndApplyProposal: proposal [
+    ^ @ SourceProposal reviewAndApply: proposal
+  ]
+
+  classMethod: errorLabelForOutcome: outcome [
+    (outcome = 'runtime_error') ifTrue: [^ 'Axe runtime error'].
+    (outcome = 'configuration_error') ifTrue: [^ 'Axe configuration error'].
+    (outcome = 'provider_error') ifTrue: [^ 'Axe provider/network error'].
+    (outcome = 'budget_exceeded') ifTrue: [^ 'Axe token budget exceeded'].
+    (outcome = 'missing_tool') ifTrue: [^ 'Axe unavailable'].
+    (outcome = 'invalid_output') ifTrue: [^ 'Axe returned malformed JSON'].
+    ^ 'Axe process error'
+  ]
+
+  classMethod: answerFromRun: runResult [
+    | outcome content detail label exitCode |
+    outcome := @ String jsonPath: 'outcome' from: runResult.
+    (outcome = 'success') ifTrue: [
+      content := @ String jsonPath: 'result.content' from: runResult.
+      ^ content
+    ].
+    detail := @ String jsonPath: 'stderr' from: runResult.
+    detail isEmpty ifTrue: [detail := @ String jsonPath: 'stdout' from: runResult].
+    label := @ self errorLabelForOutcome: outcome.
+    exitCode := @ String jsonPath: 'exit_code' from: runResult.
+    ^ label , ' (exit ' , exitCode , '): ' , detail
+  ]
+
+  classMethod: present: answer [
+    | available unused |
+    available := @ Tools::Inpage isInstalled.
+    (available = 'true') ifTrue: [
+      unused := @ Tools::Inpage viewText: answer title: '@@ answer'
+    ].
+    @ Console print: answer
+  ]
+
   # Get the configured primary agent class from .trashrc
   rawClassMethod: primary [
     local defaultAgent configFile
@@ -126,4 +200,3 @@ Agent subclass: Object
     agentType=$(echo "$_RECEIVER" | tr '[:upper:]' '[:lower:]')
     @ AgentSession findByAgentType: "$agentType"
   ]
-

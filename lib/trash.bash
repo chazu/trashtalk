@@ -2219,8 +2219,16 @@ function @ {
 }
 
 # @@ syntax - Chat with primary AI agent
-# Usage: @@ "your message here" or @@ your message without quotes
+# Usage: @@ "your message here" or @@ --dry-run "inspect context"
 function @@ {
+  local previous_status=$?
+  local previous_result="${__:-}"
+  local mode="run"
+  if [[ "${1:-}" == "--dry-run" ]]; then
+    mode="dry-run"
+    shift
+  fi
+
   # Combine all arguments into a single message
   local message="$*"
 
@@ -2230,7 +2238,21 @@ function @@ {
     return 1
   fi
 
-  echo "[Agent] $message"
+  local working_directory="$PWD"
+  local run_result answer exit_code
+  if [[ "$mode" == "dry-run" ]]; then
+    run_result=$(@ AxeAgent dryRun: "$message" workingDirectory: "$working_directory" \
+      status: "$previous_status" lastResult: "$previous_result")
+  else
+    run_result=$(@ Agent ask: "$message" workingDirectory: "$working_directory" \
+      status: "$previous_status" lastResult: "$previous_result")
+  fi
+
+  exit_code=$(printf '%s' "$run_result" | jq -r '.exit_code // 1' 2>/dev/null)
+  answer=$(@ Agent answerFromRun: "$run_result")
+  @ Agent present: "$answer"
+  [[ "$exit_code" =~ ^[0-9]+$ ]] || exit_code=1
+  return "$exit_code"
 }
 
 # Get list of functions defined in $1

@@ -1,0 +1,22 @@
+# Tools::Ininspect - Typed wrapper for the Innards object inspector.
+package: Tools
+
+Ininspect subclass: Tool
+
+  classMethod: name [
+    ^ 'ininspect'
+  ]
+
+  classMethod: inspectRecord: record title: title [
+    | builder argv toolPath unused |
+    builder := @ Json array.
+    toolPath := @ self path.
+    unused := @ builder push: toolPath.
+    unused := @ builder push: '--result-json'.
+    title notEmpty ifTrue: [
+      unused := @ builder push: '--title'.
+      unused := @ builder push: title
+    ].
+    argv := @ builder build.
+    ^ @ self runArgvJson: argv input: record
+  ]

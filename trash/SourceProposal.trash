@@ -1,0 +1,332 @@
+# SourceProposal - Optimistic, human-approved .trash source transaction.
+#
+# Version 1 intentionally accepts exactly one file. `indiff` only records the
+# human decision; this class owns schema checks, staging, gates, and commit.
+SourceProposal subclass: Object
+
+  classMethod: result: outcome phase: phase message: message [
+    | result unused |
+    result := @ Json object.
+    unused := @ result at: 'schema_version' putNumber: '1'.
+    unused := @ result at: 'outcome' put: outcome.
+    unused := @ result at: 'phase' put: phase.
+    unused := @ result at: 'message' put: message.
+    ^ @ result build
+  ]
+
+  # jq owns structural JSON validation. This is deliberately a closed schema:
+  # one existing .trash file, one class, one base hash, and one unified diff.
+  rawClassMethod: validate: proposal [
+    local proposal_json="$1" normalized message
+    if ! normalized=$(printf '%s' "$proposal_json" | jq -ce '
+      select(
+        type == "object" and
+        (keys | sort) == ["files", "kind", "schema_version"] and
+        .schema_version == 1 and
+        .kind == "trashtalk_source_patch" and
+        (.files | type == "array" and length == 1) and
+        (.files[0] | type == "object") and
+        (.files[0] | keys | sort) == ["base_sha256", "class_name", "diff", "path"] and
+        (.files[0].class_name | type == "string" and length > 0) and
+        (.files[0].path | type == "string" and length > 0 and endswith(".trash") and (contains("\u0000") | not)) and
+        (.files[0].base_sha256 | type == "string" and test("^[0-9a-f]{64}$")) and
+        (.files[0].diff | type == "string" and length > 0)
+      ) |
+      {schema_version:1, ok:true, phase:"schema", message:"",
+       class_name:.files[0].class_name, path:.files[0].path,
+       base_sha256:.files[0].base_sha256, diff:.files[0].diff}
+    ' 2>/dev/null); then
+      message='Expected SourceProposal schema v1 with kind trashtalk_source_patch and exactly one .trash file'
+      jq -cn --arg message "$message" '{schema_version:1,ok:false,phase:"schema",message:$message}'
+      return 0
+    fi
+    printf '%s\n' "$normalized"
+  ]
+
+  # Validate path and diff headers, re-check the source hash after approval,
+  # and apply the single-file patch to a private copy only.
+  rawClassMethod: stage: validated source: source_file review: review_result [
+    pragma: direct
+    local validated_json="$1" source_file="$2" review_result="$3"
+    local root relative expected_hash diff current_hash candidate diff_file output
+    local old_header new_header old_count new_count hunk_count accepted selected_diff
+    root=$(dirname "$TRASHDIR")
+    relative=$(printf '%s' "$validated_json" | jq -r '.path')
+    expected_hash=$(printf '%s' "$validated_json" | jq -r '.base_sha256')
+    diff=$(printf '%s' "$validated_json" | jq -r '.diff')
+
+    if [[ "$relative" == /* || "$relative" == "." || "$relative" == ".." ]]; then
+      jq -cn '{ok:false,phase:"path",message:"Proposal path must be a normalized repository-relative path"}'
+      return 0
+    fi
+    if [[ "/$relative/" == *"/../"* || "/$relative/" == *"/./"* ]]; then
+      jq -cn '{ok:false,phase:"path",message:"Proposal path must not contain dot path components"}'
+      return 0
+    fi
+    if [[ "$source_file" != "$root/$relative" || ! -f "$source_file" || -L "$source_file" ]]; then
+      jq -cn '{ok:false,phase:"path",message:"Proposal path does not identify the resolved regular source file"}'
+      return 0
+    fi
+    old_count=$(printf '%s\n' "$diff" | grep -c '^--- ')
+    new_count=$(printf '%s\n' "$diff" | grep -c '^+++ ')
+    old_header=$(printf '%s\n' "$diff" | sed -n 's/^--- //p')
+    new_header=$(printf '%s\n' "$diff" | sed -n 's/^+++ //p')
+    if [[ "$old_count" != 1 || "$new_count" != 1 || \
+          "$old_header" != "a/$relative" || "$new_header" != "b/$relative" ]]; then
+      jq -cn '{ok:false,phase:"diff",message:"Proposal must contain one ordinary unified diff for its declared path"}'
+      return 0
+    fi
+    if printf '%s\n' "$diff" | grep -q '^diff --git '; then
+      jq -cn '{ok:false,phase:"diff",message:"Proposal must not contain a multi-file git patch"}'
+      return 0
+    fi
+    hunk_count=$(printf '%s\n' "$diff" | grep -c '^@@ ')
+    if [[ "$hunk_count" -lt 1 ]] || ! printf '%s' "$review_result" | jq -e --argjson count "$hunk_count" '
+      .schema_version == 1 and .outcome == "accepted" and
+      (.accepted_hunks | type == "array" and length > 0) and
+      (.rejected_hunks | type == "array") and
+      (all(.accepted_hunks[], .rejected_hunks[]; type == "number" and floor == . and . >= 0 and . < $count)) and
+      (([.accepted_hunks[], .rejected_hunks[]] | sort) == [range(0; $count)])
+    ' >/dev/null 2>&1; then
+      jq -cn '{ok:false,phase:"review",message:"indiff returned an invalid or incomplete hunk decision"}'
+      return 0
+    fi
+
+    if command -v sha256sum >/dev/null 2>&1; then
+      current_hash=$(sha256sum "$source_file" | cut -d' ' -f1)
+    else
+      current_hash=$(shasum -a 256 "$source_file" | cut -d' ' -f1)
+    fi
+    if [[ "$current_hash" != "$expected_hash" ]]; then
+      jq -cn --arg expected "$expected_hash" --arg actual "$current_hash" \
+        '{ok:false,phase:"stale",message:("Source hash changed; expected " + $expected + ", found " + $actual)}'
+      return 0
+    fi
+
+    if ! command -v patch >/dev/null 2>&1; then
+      jq -cn '{ok:false,phase:"patch",message:"patch is required to stage a source proposal"}'
+      return 0
+    fi
+    if ! candidate=$(mktemp "${TMPDIR:-/tmp}/trash-proposal-source.XXXXXX"); then
+      jq -cn '{ok:false,phase:"stage",message:"Could not create source candidate"}'
+      return 0
+    fi
+    if ! diff_file=$(mktemp "${TMPDIR:-/tmp}/trash-proposal-diff.XXXXXX"); then
+      rm -f "$candidate"
+      jq -cn '{ok:false,phase:"stage",message:"Could not create proposal diff file"}'
+      return 0
+    fi
+    if ! cp -p "$source_file" "$candidate"; then
+      rm -f "$candidate" "$diff_file"
+      jq -cn '{ok:false,phase:"stage",message:"Could not copy source into staging"}'
+      return 0
+    fi
+    accepted=$(printf '%s' "$review_result" | jq -r '[.accepted_hunks[] | tostring] | "," + join(",") + ","')
+    selected_diff=$(printf '%s\n' "$diff" | awk -v accepted="$accepted" '
+      BEGIN { hunk = -1; emit = 1 }
+      /^@@ / { hunk++; emit = index(accepted, "," hunk ",") > 0 }
+      hunk < 0 || emit { print }
+    ')
+    printf '%s\n' "$selected_diff" > "$diff_file"
+    if ! output=$(patch --batch --forward --silent "$candidate" < "$diff_file" 2>&1); then
+      rm -f "$candidate" "$diff_file"
+      jq -cn --arg message "$output" '{ok:false,phase:"patch",message:$message}'
+      return 0
+    fi
+    rm -f "$diff_file"
+    if cmp -s "$source_file" "$candidate"; then
+      rm -f "$candidate"
+      jq -cn '{ok:false,phase:"patch",message:"Proposal produced no source change"}'
+      return 0
+    fi
+    jq -cn --arg candidate "$candidate" --arg base_sha256 "$expected_hash" \
+      '{ok:true,phase:"stage",message:"",candidate:$candidate,base_sha256:$base_sha256}'
+  ]
+
+  # Install two already-gated files with backups. The base hash is checked a
+  # second time to close the review-to-commit race. Any failure restores both
+  # source and compiled artifact before returning.
+  rawClassMethod: commit: candidate artifact: artifact source: source_file class: class_name expectedHash: expected_hash [
+    pragma: direct
+    local candidate="$1" artifact="$2" source_file="$3" class_name="$4" expected_hash="$5"
+    local current_hash compiled_name target source_backup target_backup source_next target_next output
+    if [[ ! -f "$candidate" || -L "$candidate" || ! -f "$artifact" || -L "$artifact" || \
+          ! -f "$source_file" || -L "$source_file" ]]; then
+      rm -f "$candidate" "$artifact"
+      jq -cn '{ok:false,phase:"commit",message:"Proposal commit inputs must be regular files"}'
+      return 0
+    fi
+    compiled_name="${class_name//::/__}"
+    if [[ "$source_file" == *"/traits/"* ]]; then
+      target="$TRASHDIR/.compiled/traits/$compiled_name"
+    else
+      target="$TRASHDIR/.compiled/$compiled_name"
+    fi
+    if command -v sha256sum >/dev/null 2>&1; then
+      current_hash=$(sha256sum "$source_file" | cut -d' ' -f1)
+    else
+      current_hash=$(shasum -a 256 "$source_file" | cut -d' ' -f1)
+    fi
+    if [[ "$current_hash" != "$expected_hash" ]]; then
+      rm -f "$candidate" "$artifact"
+      jq -cn '{ok:false,phase:"stale",message:"Source changed after review; proposal was not committed"}'
+      return 0
+    fi
+
+    mkdir -p "$(dirname "$target")"
+    if ! source_backup=$(mktemp "$(dirname "$source_file")/.trash-proposal-source-backup.XXXXXX"); then
+      rm -f "$candidate" "$artifact"
+      jq -cn '{ok:false,phase:"commit",message:"Could not create source backup"}'
+      return 0
+    fi
+    if ! target_backup=$(mktemp "$(dirname "$target")/.trash-proposal-artifact-backup.XXXXXX"); then
+      rm -f "$candidate" "$artifact" "$source_backup"
+      jq -cn '{ok:false,phase:"commit",message:"Could not create artifact backup"}'
+      return 0
+    fi
+    if ! source_next=$(mktemp "$(dirname "$source_file")/.trash-proposal-source-next.XXXXXX"); then
+      rm -f "$candidate" "$artifact" "$source_backup" "$target_backup"
+      jq -cn '{ok:false,phase:"commit",message:"Could not create source commit file"}'
+      return 0
+    fi
+    if ! target_next=$(mktemp "$(dirname "$target")/.trash-proposal-artifact-next.XXXXXX"); then
+      rm -f "$candidate" "$artifact" "$source_backup" "$target_backup" "$source_next"
+      jq -cn '{ok:false,phase:"commit",message:"Could not create artifact commit file"}'
+      return 0
+    fi
+    if ! cp -p "$source_file" "$source_backup"; then
+      rm -f "$candidate" "$artifact" "$source_backup" "$target_backup" "$source_next" "$target_next"
+      jq -cn '{ok:false,phase:"commit",message:"Could not back up source"}'
+      return 0
+    fi
+    if [[ -f "$target" ]]; then
+      if ! cp -p "$target" "$target_backup"; then
+        rm -f "$candidate" "$artifact" "$source_backup" "$target_backup" "$source_next" "$target_next"
+        jq -cn '{ok:false,phase:"commit",message:"Could not back up compiled artifact"}'
+        return 0
+      fi
+    else
+      : > "$target_backup.absent"
+    fi
+    if ! cp -p "$candidate" "$source_next" || ! cp -p "$artifact" "$target_next"; then
+      rm -f "$candidate" "$artifact" "$source_backup" "$target_backup" "$source_next" "$target_next" "$target_backup.absent"
+      jq -cn '{ok:false,phase:"commit",message:"Could not prepare same-directory commit files"}'
+      return 0
+    fi
+
+    if ! mv "$source_next" "$source_file" || ! mv "$target_next" "$target"; then
+      mv "$source_backup" "$source_file" 2>/dev/null || true
+      if [[ -f "$target_backup.absent" ]]; then rm -f "$target"; else mv "$target_backup" "$target" 2>/dev/null || true; fi
+      rm -f "$candidate" "$artifact" "$source_next" "$target_next" "$source_backup" "$target_backup" "$target_backup.absent"
+      jq -cn '{ok:false,phase:"commit",message:"Could not install proposal; source and artifact were restored"}'
+      return 0
+    fi
+
+    if ! output=$(@ Trash reloadClass: "$class_name" 2>&1); then
+      mv "$source_backup" "$source_file" 2>/dev/null || true
+      if [[ -f "$target_backup.absent" ]]; then rm -f "$target"; else mv "$target_backup" "$target" 2>/dev/null || true; fi
+      @ Trash reloadClass: "$class_name" >/dev/null 2>&1 || true
+      rm -f "$candidate" "$artifact" "$source_next" "$target_next" "$source_backup" "$target_backup" "$target_backup.absent"
+      jq -cn --arg message "$output" '{ok:false,phase:"reload",message:$message}'
+      return 0
+    fi
+
+    rm -f "$candidate" "$artifact" "$source_backup" "$target_backup" "$target_backup.absent"
+    jq -cn '{ok:true,phase:"commit",message:"Proposal applied, compiled, reloaded, and tested"}'
+  ]
+
+  classMethod: reviewAndApply: proposal [
+    pragma: direct
+    | validated ok message className declaredPath diff sourceFile available review reviewOutcome staged candidate compileResult artifact gate commit phase candidateFile unused title baseHash validReview |
+    validated := @ self validate: proposal.
+    ok := @ String jsonPath: 'ok' from: validated.
+    (ok ~= 'true') ifTrue: [
+      message := @ String jsonPath: 'message' from: validated.
+      ^ @ self result: 'invalid' phase: 'schema' message: message
+    ].
+
+    className := @ String jsonPath: 'class_name' from: validated.
+    declaredPath := @ String jsonPath: 'path' from: validated.
+    diff := @ String jsonPath: 'diff' from: validated.
+    sourceFile := @ Trash sourceFileFor: className.
+    sourceFile isEmpty ifTrue: [
+      message := 'No source file found for ' , className.
+      ^ @ self result: 'invalid' phase: 'path' message: message
+    ].
+
+    available := @ Tools::Indiff isInstalled.
+    (available ~= 'true') ifTrue: [
+      ^ @ self result: 'unavailable' phase: 'review' message: 'indiff is required for explicit proposal approval'
+    ].
+    title := 'Review ' , declaredPath.
+    review := @ Tools::Indiff review: diff title: title.
+    validReview := @ String isJson: review.
+    (validReview ~= 'true') ifTrue: [
+      ^ @ self result: 'invalid' phase: 'review' message: 'indiff did not return valid JSON'
+    ].
+    reviewOutcome := @ String jsonPath: 'outcome' from: review.
+    (reviewOutcome = 'rejected') ifTrue: [
+      ^ @ self result: 'rejected' phase: 'review' message: 'Proposal rejected; no files changed'
+    ].
+    (reviewOutcome = 'cancelled') ifTrue: [
+      ^ @ self result: 'cancelled' phase: 'review' message: 'Proposal review cancelled; no files changed'
+    ].
+    (reviewOutcome ~= 'accepted') ifTrue: [
+      ^ @ self result: 'invalid' phase: 'review' message: 'indiff did not return a valid decision'
+    ].
+
+    staged := @ self stage: validated source: sourceFile review: review.
+    ok := @ String jsonPath: 'ok' from: staged.
+    (ok ~= 'true') ifTrue: [
+      phase := @ String jsonPath: 'phase' from: staged.
+      message := @ String jsonPath: 'message' from: staged.
+      (phase = 'stale') ifTrue: [^ @ self result: 'stale' phase: phase message: message].
+      ^ @ self result: 'invalid' phase: phase message: message
+    ].
+    candidate := @ String jsonPath: 'candidate' from: staged.
+
+    compileResult := @ Trash compileClass: className source: candidate.
+    ok := @ String jsonPath: 'ok' from: compileResult.
+    (ok ~= 'true') ifTrue: [
+      candidateFile := @ File at: candidate.
+      unused := @ candidateFile delete.
+      message := @ String jsonPath: 'message' from: compileResult.
+      ^ @ self result: 'gate_failed' phase: 'compile' message: message
+    ].
+    artifact := @ String jsonPath: 'artifact' from: compileResult.
+    gate := @ Trash validateCompiledCandidate: artifact.
+    ok := @ String jsonPath: 'ok' from: gate.
+    (ok ~= 'true') ifTrue: [
+      candidateFile := @ File at: candidate.
+      unused := @ candidateFile delete.
+      message := @ String jsonPath: 'message' from: gate.
+      ^ @ self result: 'gate_failed' phase: 'bash' message: message
+    ].
+    gate := @ Trash validateCompiledIdentity: artifact class: className.
+    ok := @ String jsonPath: 'ok' from: gate.
+    (ok ~= 'true') ifTrue: [
+      candidateFile := @ File at: candidate.
+      unused := @ candidateFile delete.
+      message := @ String jsonPath: 'message' from: gate.
+      ^ @ self result: 'gate_failed' phase: 'identity' message: message
+    ].
+    gate := @ Trash testCompiledCandidate: artifact class: className.
+    ok := @ String jsonPath: 'ok' from: gate.
+    (ok ~= 'true') ifTrue: [
+      candidateFile := @ File at: candidate.
+      unused := @ candidateFile delete.
+      candidateFile := @ File at: artifact.
+      unused := @ candidateFile delete.
+      message := @ String jsonPath: 'message' from: gate.
+      ^ @ self result: 'gate_failed' phase: 'test' message: message
+    ].
+
+    baseHash := @ String jsonPath: 'base_sha256' from: staged.
+    commit := @ self commit: candidate artifact: artifact source: sourceFile class: className expectedHash: baseHash.
+    ok := @ String jsonPath: 'ok' from: commit.
+    phase := @ String jsonPath: 'phase' from: commit.
+    message := @ String jsonPath: 'message' from: commit.
+    (ok = 'true') ifTrue: [^ @ self result: 'applied' phase: phase message: message].
+    (phase = 'stale') ifTrue: [^ @ self result: 'stale' phase: phase message: message].
+    ^ @ self result: 'gate_failed' phase: phase message: message
+  ]

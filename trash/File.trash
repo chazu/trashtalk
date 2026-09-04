@@ -185,6 +185,19 @@ File subclass: Object
     fi
   ]
 
+  # Content hash used by optimistic concurrency and proposal validation.
+  rawClassMethod: sha256: filepath [
+    if command -v sha256sum >/dev/null 2>&1; then
+      sha256sum "$1" | cut -d' ' -f1
+    else
+      shasum -a 256 "$1" | cut -d' ' -f1
+    fi
+  ]
+
+  method: sha256 [
+    ^ @ File sha256: path
+  ]
+
   # Print file info
   rawMethod: info [
     local p=$(_ivar path)

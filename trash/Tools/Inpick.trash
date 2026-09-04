@@ -1,0 +1,55 @@
+# Tools::Inpick - Typed wrapper for the Innards structured picker.
+package: Tools
+
+Inpick subclass: Tool
+
+  classMethod: name [
+    ^ 'inpick'
+  ]
+
+  classMethod: selectRecords: records root: root query: query title: title [
+    | builder argv toolPath unused |
+    builder := @ Json array.
+    toolPath := @ self path.
+    unused := @ builder push: toolPath.
+    unused := @ builder push: '--result-json'.
+    unused := @ builder push: '--root'.
+    unused := @ builder push: root.
+    query notEmpty ifTrue: [
+      unused := @ builder push: '--query'.
+      unused := @ builder push: query
+    ].
+    title notEmpty ifTrue: [
+      unused := @ builder push: '--title'.
+      unused := @ builder push: title
+    ].
+    argv := @ builder build.
+    ^ @ self runArgvJson: argv input: records
+  ]
+
+  # fzf/plain-terminal fallback is inherently a terminal process boundary.
+  # Records stay encoded as JSON; fzf only chooses a presentation row.
+  rawClassMethod: fallbackSelectRecords: records query: query title: title [
+    pragma: direct
+    local records="$1" query="$2" title="$3" selected encoded selection status
+    if command -v fzf >/dev/null 2>&1; then
+      selected=$(printf '%s\n' "$records" | jq -r \
+        '[.label, .kind, (.detail // ""), (tojson | @base64)] | @tsv' | \
+        fzf --delimiter=$'\t' --with-nth=1,2,3 --query="$query" --prompt="${title:-browse}> ")
+      status=$?
+      if [[ $status -eq 0 && -n "$selected" ]]; then
+        encoded="${selected##*$'\t'}"
+        selection=$(jq -rn --arg encoded "$encoded" '$encoded | @base64d | fromjson')
+        jq -cn --argjson selection "$selection" \
+          '{schema_version:1,outcome:"selected",selection:$selection}'
+        return 0
+      fi
+      jq -cn '{schema_version:1,outcome:"cancelled",selection:null}'
+      return 130
+    fi
+
+    printf '%s\n' \
+      'inpick is not installed and fzf is unavailable; install Innards or fzf to browse interactively.' >&2
+    jq -cn '{schema_version:1,outcome:"cancelled",selection:null}'
+    return 130
+  ]

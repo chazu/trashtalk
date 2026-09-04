@@ -163,6 +163,98 @@ Tool subclass: Object
     @ Shell execAll: "$runCmd"
   ]
 
+  # Execute an exact argv vector represented as JSON. The DSL builds the typed
+  # request; the raw primitive below owns only JSON decoding, stdin, and exec.
+  classMethod: runArgvJson: argvJson [
+    | request requestJson unused |
+    request := @ Json object.
+    unused := @ request at: 'argv' putJson: argvJson.
+    requestJson := @ request build.
+    ^ @ self runProcessRequestJson: requestJson
+  ]
+
+  classMethod: runArgvJson: argvJson input: input [
+    | request requestJson unused |
+    request := @ Json object.
+    unused := @ request at: 'argv' putJson: argvJson.
+    unused := @ request at: 'stdin' put: input.
+    requestJson := @ request build.
+    ^ @ self runProcessRequestJson: requestJson
+  ]
+
+  # Execute exact argv while returning stdout, stderr, and the original child
+  # status in a versioned JSON envelope. Capturing is a reusable process
+  # concern; tool-specific exit interpretation remains in each wrapper's DSL.
+  classMethod: captureArgvJson: argvJson [
+    | request requestJson unused |
+    request := @ Json object.
+    unused := @ request at: 'argv' putJson: argvJson.
+    unused := @ request at: 'capture' putBool: 'true'.
+    requestJson := @ request build.
+    ^ @ self runProcessRequestJson: requestJson
+  ]
+
+  classMethod: captureArgvJson: argvJson input: input [
+    | request requestJson unused |
+    request := @ Json object.
+    unused := @ request at: 'argv' putJson: argvJson.
+    unused := @ request at: 'stdin' put: input.
+    unused := @ request at: 'capture' putBool: 'true'.
+    requestJson := @ request build.
+    ^ @ self runProcessRequestJson: requestJson
+  ]
+
+  rawClassMethod: runProcessRequestJson: requestJson [
+    pragma: direct
+    local request_json="$1" status stdout_file stderr_file
+    local -a argv
+
+    if ! printf '%s' "$request_json" | jq -e '
+      type == "object" and
+      (.argv | type == "array" and all(.[]; type == "string" and (contains("\u0000") | not))) and
+      (.stdin == null or (.stdin | type == "string")) and
+      (.capture == null or (.capture | type == "boolean"))
+    ' >/dev/null; then
+      _throw "ToolError" "Invalid process request JSON"
+      return 1
+    fi
+
+    mapfile -d '' -t argv < <(
+      printf '%s' "$request_json" | jq -jr '.argv[] | ., "\u0000"'
+    )
+    if [[ ${#argv[@]} -eq 0 ]]; then
+      _throw "ToolError" "Invalid or empty argv JSON"
+      return 1
+    fi
+
+    if printf '%s' "$request_json" | jq -e '.capture == true' >/dev/null; then
+      stdout_file=$(mktemp "${TMPDIR:-/tmp}/trash-process-stdout.XXXXXX")
+      stderr_file=$(mktemp "${TMPDIR:-/tmp}/trash-process-stderr.XXXXXX")
+      if printf '%s' "$request_json" | jq -e '.stdin != null' >/dev/null; then
+        printf '%s' "$request_json" | jq -jr '.stdin' | \
+          "${argv[@]}" >"$stdout_file" 2>"$stderr_file"
+        # The pipeline is printf | jq | child, so the child is entry 2.
+        status=${PIPESTATUS[2]}
+      else
+        "${argv[@]}" >"$stdout_file" 2>"$stderr_file"
+        status=$?
+      fi
+      jq -cn --argjson exit_code "$status" \
+        --rawfile stdout "$stdout_file" --rawfile stderr "$stderr_file" \
+        '{schema_version:1,exit_code:$exit_code,stdout:$stdout,stderr:$stderr}'
+      rm -f "$stdout_file" "$stderr_file"
+      return 0
+    fi
+
+    if printf '%s' "$request_json" | jq -e '.stdin != null' >/dev/null; then
+      printf '%s' "$request_json" | jq -jr '.stdin' | "${argv[@]}"
+      # The pipeline is printf | jq | child, so preserve the child's status.
+      status=${PIPESTATUS[2]}
+      return "$status"
+    fi
+    "${argv[@]}"
+  ]
+
   # Run the tool asynchronously, returning a Future
   rawClassMethod: runAsync: args [
     local args="$1" toolName toolPath futureCmd

@@ -87,6 +87,18 @@ String subclass: Object
     echo "${#str}"
   ]
 
+  # Return the last N characters. This keeps compact display identities in
+  # ordinary DSL workflows without duplicating Bash slicing at call sites.
+  rawClassMethod: suffix: str length: count [
+    local str="$1" count="$2"
+    if [[ "$count" =~ ^[0-9]+$ ]]; then
+      printf '%s\n' "${str: -count}"
+    else
+      _throw "StringError" "suffix length must be a non-negative integer"
+      return 1
+    fi
+  ]
+
   # Convert to uppercase
   rawClassMethod: uppercase: str [
     echo "${str^^}"
@@ -167,6 +179,62 @@ String subclass: Object
     echo "$2" | jq -r ".$1 // empty"
   ]
 
+  rawClassMethod: isJson: jsonString [
+    if printf '%s' "$1" | jq -e . >/dev/null 2>&1; then
+      echo 'true'
+    else
+      echo 'false'
+    fi
+  ]
+
+  # Filter JSON Lines records by an exact top-level field value. This is a
+  # reusable jq boundary; browser policy stays in ordinary DSL methods.
+  rawClassMethod: jsonLinesWhere: field equals: expected from: records [
+    printf '%s\n' "$3" | jq -c --arg field "$1" --arg expected "$2" \
+      'select(type == "object" and .[$field] == $expected)'
+  ]
+
+  # Convert a JSON array into one compact JSON record per line.
+  rawClassMethod: jsonArrayAsLines: arrayJson [
+    printf '%s' "$1" | jq -c '.[]'
+  ]
+
+  # Present persisted instance state as a compact key=value row for one-line
+  # pickers such as the fzf fallback.
+  rawClassMethod: jsonInstanceSummary: jsonString [
+    printf '%s' "$1" | jq -r '
+      def shown:
+        if type == "string" then .
+        elif type == "null" then "null"
+        else tojson
+        end;
+      if type != "object" then shown
+      elif (._vars | type) == "array" then
+        . as $object
+        | [._vars[] as $key
+           | select($object | has($key))
+           | "\($key)=\($object[$key] | shown)"]
+        | join(" | ")
+      else
+        [to_entries[]
+         | select(.key != "class" and .key != "created_at" and .key != "_vars")
+         | "\(.key)=\(.value | shown)"]
+        | join(" | ")
+      end'
+  ]
+
+  # Project persisted Runtime data to declared instance variables. Class,
+  # creation time, and the _vars manifest are implementation metadata rather
+  # than editable object state in the inspector.
+  rawClassMethod: jsonInstanceView: jsonString [
+    printf '%s' "$1" | jq -c '
+      if type != "object" then {}
+      else . as $object
+        | reduce ($object._vars[]?) as $key
+            ({}; if ($object | has($key)) then .[$key] = $object[$key] else . end)
+      end'
+  ]
+
   # ========================================
   # Whitespace Handling
   # ========================================
@@ -191,4 +259,3 @@ String subclass: Object
     shopt -s extglob
     echo "${str%%+([[:space:]])}"
   ]
-

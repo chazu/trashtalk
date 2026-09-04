@@ -1,7 +1,6 @@
 # Environment - Instance storage layer for Trashtalk
-# This class provides the low-level storage API that the runtime uses
-# to persist and retrieve instances. When compiled with Procyon,
-# it becomes a fast native binary that trash.bash can call.
+# This class documents the low-level storage API that the Bash runtime uses
+# to persist and retrieve instances.
 #
 # Usage from Bash:
 #   data=$(@ Environment get: $instance_id)

@@ -1,0 +1,22 @@
+# Tools::Indiff - Typed wrapper for Innards' presentation-only diff reviewer.
+package: Tools
+
+Indiff subclass: Tool
+
+  classMethod: name [
+    ^ 'indiff'
+  ]
+
+  classMethod: review: diff title: title [
+    | builder argv toolPath unused |
+    builder := @ Json array.
+    toolPath := @ self path.
+    unused := @ builder push: toolPath.
+    unused := @ builder push: '--result-json'.
+    title notEmpty ifTrue: [
+      unused := @ builder push: '--title'.
+      unused := @ builder push: title
+    ].
+    argv := @ builder build.
+    ^ @ self runArgvJson: argv input: diff
+  ]

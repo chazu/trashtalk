@@ -80,6 +80,13 @@ Object subclass: nil
     echo "$filepath"
   ]
 
+  # Open the Innards tree inspector. Unlike inspect, this is explicitly
+  # interactive; any leaf edit is returned as a proposal and validated by
+  # Trashtalk before object state changes.
+  method: inspectInteractive [
+    ^ @ Trash inspectObject: self
+  ]
+
   # Return this object's data as JSON
   rawMethod: asJson [
     @ Runtime dataFor: "$_RECEIVER"

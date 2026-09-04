@@ -275,7 +275,56 @@ Advice hooks execute automatically - `before:do:` runs prior to the method, `aft
 
 ### Inline Testing
 
-Trashtalk supports defining tests directly in class files using `testMethod:`. Tests run automatically when using `@ Trash edit: ClassName` - if tests fail, you're returned to the editor.
+Trashtalk supports defining tests directly in class files using `testMethod:`.
+When `inmacs` is on `PATH`, `@ Trash edit: ClassName` opens the source in the
+Innards inline editor with Trashtalk syntax highlighting and two-space
+indentation. Saving compiles to a temporary artifact, checks the generated Bash,
+installs and reloads the class, then runs its inline tests. Compiler and test
+failures reopen the editor as annotations at the relevant source line; they are
+never inserted into the `.trash` source.
+
+If Innards is unavailable, the edit command falls back to `$VISUAL`, then
+`$EDITOR`, then `vi`. The fallback still uses the same compile, validation,
+reload, and test pipeline after the file changes. `@ Trash doctor` reports
+Innards availability as an optional capability.
+
+### Class, Method, and Instance Browser
+
+With `inpick` on `PATH`, Trashtalk derives browser records directly from the
+canonical jq compiler AST and previews the selected source without maintaining
+a second index. `fzf` is used as a fallback when Innards is unavailable.
+
+```bash
+@ Trash browse                         # choose any symbol and open its source
+@ Trash browseClass: Counter           # browse one class and open a selection
+@ Trash pickMethod: Counter            # return a structured method selection
+@ Trash browseImplementorsOf: 'at:put:'
+@ Trash browseSendersOf: 'at:put:'
+@ Trash browseInstancesOf: Counter     # persisted instances and compact ivar state
+@ Trash inspectInstancesOf: Counter    # choose an instance, then inspect it
+```
+
+Class, trait, instance-variable, class-variable, instance-method, class-method,
+and test-method records carry exact source positions. Namespaced classes and
+complete multi-keyword selectors remain intact. Browser selection results are
+JSON; commands that open source feed the chosen path and line into the same
+transactional edit/compile/test loop described above.
+
+### Object Inspector
+
+With `ininspect` on `PATH`, any persisted object can open as a navigable inline
+tree. Containers expand in place and `e` on a scalar edits it as a JSON value:
+
+```bash
+counter=$(@ Counter create)
+@ "$counter" inspectInteractive
+```
+
+Innards only returns an edit proposal. Trashtalk checks that the object and its
+selected value have not changed, rejects unknown or command-bearing fields,
+and then applies the typed value through `Runtime`. Runtime metadata is not
+offered as editable state. Plain `@ "$counter" inspect` remains the textual
+fallback and never requires Innards.
 
 ```smalltalk
 Counter subclass: Object
@@ -344,6 +393,68 @@ ok 2 - custom step works
 1..2
 # All 2 tests passed
 ```
+
+## Axe-backed one-shot questions
+
+`@@` sends one explicit, read-only request through the external Axe harness.
+The request includes the question, current working directory, previous command
+status, and `$__` when it is set. The final answer opens in `inpage` when
+available and is also printed into shell scrollback.
+
+```bash
+false
+__='the command produced this output'
+@@ 'why did that fail?'
+
+# Inspect Axe's resolved agent, context, and tools without calling a provider.
+@@ --dry-run 'what context would you receive?'
+```
+
+Trashtalk never installs Axe or initializes credentials implicitly. Install it
+explicitly with `go install github.com/jrswab/axe@latest`, configure the
+provider required by `axe/agents/trashtalk-readonly.toml`, and use `@ Trash
+doctor` to check availability. The checked-in agent enables only Axe's
+`list_directory` and `read_file` tools—no file mutation, shell commands, or
+subagents.
+
+`@@` preserves Axe's status distinctions: `1` runtime, `2` configuration, `3`
+provider/network, and `4` budget exhaustion. Missing Axe returns `127`.
+
+## Reviewed source proposals
+
+Source mutation is a separate operation from `@@`. A specialized read-only Axe
+agent can propose a one-file `.trash` unified diff, but cannot apply it:
+
+```bash
+run=$(@ Agent propose: 'make value return 2' for: Counter)
+proposal=$(printf '%s' "$run" | jq -r .result.content)
+@ Agent reviewAndApplyProposal: "$proposal"
+```
+
+Proposal schema v1 is closed and deliberately narrow:
+
+```json
+{
+  "schema_version": 1,
+  "kind": "trashtalk_source_patch",
+  "files": [{
+    "class_name": "Counter",
+    "path": "trash/Counter.trash",
+    "base_sha256": "<64 lowercase hex characters>",
+    "diff": "--- a/trash/Counter.trash\n+++ b/trash/Counter.trash\n..."
+  }]
+}
+```
+
+`indiff` only displays the diff and records zero-based accepted/rejected hunk
+indices. After an acceptance, Trashtalk validates that complete decision,
+rechecks the source hash, applies only accepted hunks to a temporary copy,
+compiles it with the canonical jq compiler, validates generated Bash, runs the
+candidate's tests, checks the hash again, and then installs source and artifact
+with rollback backups. Rejection, cancellation, stale hashes, invalid paths or
+headers, and failed gates leave the working source and compiled artifact
+unchanged. Command fields and multi-file proposals are rejected; no
+agent-authored command is executed.
 
 ## Compiling Classes
 

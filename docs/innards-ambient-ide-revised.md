@@ -509,6 +509,15 @@ that retained the pre-launch tmux scrollback.
 syntax failure, test failure, missing-Innards fallback, and terminal recovery
 are all tested. The source never contains generated diagnostic comments.
 
+**Status (2026-09-03): complete in both worktrees.** Innards now exposes the
+shared configuration/result API, versioned annotations, conflict-aware atomic
+saves, stdin-to-explicit-output editing, and bundled Trashtalk presentation.
+Trashtalk has exact-argv `Tools::Inmacs`/`Tools::Inpage` wrappers and a
+DSL-first edit transaction with narrow compiler, Bash-validation, install, test,
+and fallback boundaries. Automated coverage includes all listed outcomes plus
+namespaced classes; a real PTY exercise also completed edit, save, compile,
+reload, and test with terminal cleanup.
+
 ### Milestone 2: browser
 
 - JSONL `inpick` and a reusable provider interface.
@@ -518,6 +527,17 @@ are all tested. The source never contains generated diagnostic comments.
 
 **Exit:** a user can browse and open every class/method category represented in
 the AST, including namespaced classes and multi-keyword selectors.
+
+Implemented: Innards now provides a JSONL `inpick` surface backed by a reusable
+provider API and the same guarded inline terminal foundation as the editor and
+pager. Trashtalk derives classes, traits, instance/class variables, and every
+method category from cached jq-compiler ASTs, preserves complete keyword
+selectors, previews and opens exact source locations, and provides parsed
+implementors and senders queries. Persisted instances are also available as
+structured picker records, with an `fzf` fallback when `inpick` is absent.
+Automated coverage includes namespaced symbols, source positions, raw/DSL/test
+methods, false-positive sender fragments, JSON-preserving selection, fallback
+selection, instance data, and PTY terminal restoration.
 
 ### Milestone 3: Axe-backed `@@`
 
@@ -531,6 +551,21 @@ the AST, including namespaced classes and multi-keyword selectors.
 provider, configuration, and budget failures remain distinguishable; no Axe
 mutation or command tool is enabled.
 
+**Status (2026-09-03): implemented and deterministically verified.**
+`Tools::Axe` now invokes exact argv with context on stdin, preserves Axe's
+documented exit distinctions, validates successful JSON, and returns a stable
+Trashtalk envelope. `AxeAgent` supplies a versioned context containing the
+question, explicit working directory, prior status, and `$__`; `Agent` owns
+answer/error presentation; and `@@` routes the final text through `inpage` plus
+scrollback. The checked-in `trashtalk-readonly` agent enables only
+`list_directory` and `read_file`. Current Axe omits resolved dry-run context
+from its JSON encoding, so this adapter intentionally captures the complete
+human-readable `--dry-run` output instead of combining `--dry-run` with
+`--json`. Fake-process coverage proves exact context, parsed live-shaped
+results, malformed output handling, missing-tool guidance, and exit codes
+0–4. A credentialed provider call remains an environment acceptance check,
+not an automated repository test.
+
 ### Milestone 4: review surface and proposals
 
 - `indiff` as a presentation-only review surface.
@@ -542,6 +577,22 @@ mutation or command tool is enabled.
 changes, and accepted `.trash` changes either pass the full gate or leave the
 working source/artifact recoverable.
 
+**Status (2026-09-03): implemented and deterministically verified.** Innards
+now provides `indiff`, a presentation-only unified-diff surface whose only
+outputs are versioned accept, reject, and cancel decisions. Trashtalk adds a
+closed, single-file SourceProposal v1 schema, a read-only Axe proposer profile,
+and a separate explicit review/apply transaction. The transaction validates
+repository-relative paths and matching diff headers, checks the base SHA-256
+after review and immediately before commit, patches a private copy, compiles
+with the jq compiler, validates generated Bash, runs tests from the candidate
+artifact, and installs source plus artifact with rollback backups. Automated
+coverage proves rejection and cancellation make no changes, stale proposals
+cannot overwrite concurrent edits, malformed schemas/reviewer output and
+command fields fail closed, compile/test failures preserve both files, and a
+passing accepted proposal reloads successfully. Version 1 intentionally limits
+each proposal to one file; multi-file atomicity is deferred until a workflow
+proves it necessary.
+
 ### Milestone 5: optional ambient features
 
 - `intail`, `ininspect`, and `inprompt` only as required by proven workflows.
@@ -550,6 +601,16 @@ working source/artifact recoverable.
 - Optional read-only MCP tools.
 
 This milestone is intentionally not required for the IDE or `@@` to be useful.
+
+**Status (2026-09-03): partially activated by an observed workflow gap.** The
+instance browser exposed full UUIDs and raw Runtime JSON in a one-line fallback,
+making the useful ivar state unreadable. Instance records now use compact
+identities and ivar summaries, and `ininspect` provides nested JSON navigation
+plus typed scalar edit proposals. Trashtalk validates a closed result schema,
+the target identity, the original state, and the selected old value before
+applying a proposal; Runtime metadata is view-excluded and Innards never
+mutates the object. The other ambient surfaces, background jobs, prompt hook,
+events, and MCP boundary remain inactive until independently justified.
 
 ## 10. Verification matrix
 
@@ -560,6 +621,7 @@ This milestone is intentionally not required for the IDE or `@@` to be useful.
 | Diagnostics | schema/parser/render/navigation tests | compile and test failures are understandable in place |
 | Trashtalk integration | compiler tests and edit-loop integration tests | `$EDITOR` fallback and hot reload |
 | Picker | JSONL/property tests; namespaced and keyword-selector fixtures | browse a representative image quickly |
+| Object inspector | tree/result unit tests; PTY restoration; stale/malformed proposal integration tests | inspect and edit a nested real object in a shell |
 | Axe wrapper | fake `axe` executable covering exit codes and malformed JSON | `axe run <agent> --dry-run`, then one credentialed run |
 | Proposal gate | stale-hash, reject, partial accept, failed compile/test tests | review one nontrivial change without hidden writes |
 
@@ -579,31 +641,41 @@ The revised plan does not initially:
 - make all long `@` output page automatically; or
 - require every proposed Innards surface before shipping the editor/browser.
 
-## 12. Open decisions
+## 12. Resolved implementation decisions
 
-Before Milestone 1:
+Milestone 1 resolved:
 
-- whether the reusable raw boundary belongs on `Process`, `Tool`, or a small
-  `Terminal` abstraction;
-- exact overwrite/conflict and symlink semantics for `inmacs`; and
-- whether the `navsplat` package is renamed now or after the first shared API.
+- The reusable exact-argv/stdin boundary lives on `Tool`.
+- `inmacs` rejects editable symlinks and uses conflict-aware atomic replacement.
+- The crate remains named `navsplat` while the public binaries carry the
+  Innards surface names.
 
-Before Milestone 3:
+Milestone 3 resolved:
 
-- the default project-local Axe agent name and checked-in configuration;
-- whether `AgentSession` is simplified into run metadata or replaced; and
-- how final Axe JSON maps to plain text across supported Axe versions.
+- `trashtalk-readonly` is the checked-in default `@@` profile.
+- Legacy `AgentSession` code remains available but outside the one-shot path.
+- Current Axe JSON maps through `content`; dry-run context uses Axe's complete
+  human-readable representation.
 
-Before Milestone 4:
+Milestone 4 resolved:
 
-- the proposal JSON schema and patch-application library/tool;
-- whether partial hunk acceptance is required in the first `indiff`; and
-- the exact user confirmation required before replacing source.
+- SourceProposal v1 is a closed single-file schema applied with `patch`.
+- `indiff` records explicit per-hunk choices.
+- No accepted hunk reaches the working tree until every candidate gate passes;
+  the structured `indiff` decision is the required confirmation.
+
+Milestone 5 first optional slice resolved:
+
+- `ininspect` receives only declared ivar state and returns typed leaf-edit
+  proposals; it does not execute callbacks or mutate objects.
+- Trashtalk owns optimistic validation and Runtime mutation.
+- Cross-object reference following remains deferred rather than accepting a
+  configured command template.
 
 ## 13. Recommended next action
 
-Start with Milestone 0 in the Innards repository. Do not change `Trash edit:`
-until a standalone proof demonstrates that piped stdin, `/dev/tty` rendering,
-captured stdout JSON, cancellation, and terminal restoration coexist correctly.
-Then implement one end-to-end annotated edit of a Trashtalk class before adding
-the picker or Axe integration.
+Keep provider credentials and installed binaries outside repository tests.
+The remaining acceptance work is operational: install the verified Innards
+checkout, inspect and edit one nested real object, configure Axe, run one
+credentialed `@@`, and review one nontrivial source proposal in a real shell.
+Only add another Milestone 5 slice in response to a separate observed gap.

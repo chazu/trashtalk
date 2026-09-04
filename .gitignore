@@ -13,3 +13,12 @@ trash/.compiled/.build/
 # (create_test_class / cleanup_test_class). Not a real source file.
 trash/TestOverride
 trash/TestOverride.trash
+
+# The parent checkout ignores new lib/ files globally. Keep compiler analysis
+# queries versioned while leaving unrelated local lib artifacts ignored.
+!lib/
+lib/*
+!lib/jq-compiler/
+lib/jq-compiler/*
+!lib/jq-compiler/symbols.jq
+!lib/jq-compiler/senders.jq

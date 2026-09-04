@@ -1,0 +1,46 @@
+# Tools::Inmacs - Typed wrapper for the Innards inline editor.
+package: Tools
+
+Inmacs subclass: Tool
+
+  classMethod: name [
+    ^ 'inmacs'
+  ]
+
+  classMethod: editFile: path annotations: annotationsPath line: line [
+    | builder argv toolPath unused |
+    builder := @ Json array.
+    toolPath := @ self path.
+    unused := @ builder push: toolPath.
+    unused := @ builder push: '--result-json'.
+    unused := @ builder push: '--syntax'.
+    unused := @ builder push: 'trashtalk'.
+    unused := @ builder push: '--tab-width'.
+    unused := @ builder push: '2'.
+    annotationsPath notEmpty ifTrue: [
+      unused := @ builder push: '--annotations'.
+      unused := @ builder push: annotationsPath
+    ].
+    line notEmpty ifTrue: [
+      unused := @ builder push: '--line'.
+      unused := @ builder push: line
+    ].
+    unused := @ builder push: path.
+    argv := @ builder build.
+    ^ @ self runArgvJson: argv
+  ]
+
+  # External editors do not implement the Innards result contract. This narrow
+  # OS boundary keeps descriptor routing and editor-specific line arguments out
+  # of Trash's edit workflow.
+  rawClassMethod: fallbackEditFile: path line: line [
+    local path="$1" line="$2"
+    local editor="${VISUAL:-${EDITOR:-vi}}"
+    local -a command
+    read -r -a command <<< "$editor"
+    if tty -s; then
+      "${command[@]}" "$path" </dev/tty >/dev/tty
+    else
+      "${command[@]}" "$path"
+    fi
+  ]

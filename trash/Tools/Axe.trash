@@ -1,0 +1,140 @@
+# Tools::Axe - Exact argv/stdin adapter for the Axe LLM harness.
+package: Tools
+
+Axe subclass: Tool
+
+  classMethod: name [
+    ^ 'axe'
+  ]
+
+  classMethod: installCommand [
+    ^ 'go install github.com/jrswab/axe@latest'
+  ]
+
+  # Axe uses `axe version`, not the conventional --version flag.
+  classMethod: version [
+    | available path argvBuilder argv capture stdout unused |
+    available := @ self isInstalled.
+    (available ~= 'true') ifTrue: [^ 'not installed'].
+    path := @ self path.
+    argvBuilder := @ Json array.
+    unused := @ argvBuilder push: path.
+    unused := @ argvBuilder push: 'version'.
+    argv := @ argvBuilder build.
+    capture := @ self captureArgvJson: argv.
+    stdout := @ String jsonPath: 'stdout' from: capture.
+    ^ @ String trim: stdout
+  ]
+
+  # Unlike Tool's legacy ensure, Axe installation and credential setup are
+  # always explicit. Asking a question must never modify user configuration.
+  classMethod: ensure [
+    | available guidance |
+    available := @ self isInstalled.
+    (available = 'true') ifTrue: [^ 'true'].
+    guidance := 'Axe is not installed. Install it explicitly with: go install github.com/jrswab/axe@latest; then configure provider credentials as described by axe config init.'.
+    @ Console error: guidance.
+    ^ 'false'
+  ]
+
+  classMethod: agentsDirectory [
+    | root |
+    root := @ Env get: 'TRASHDIR'.
+    root := @ String trimSuffix: '/trash' from: root.
+    ^ root , '/axe/agents'
+  ]
+
+  classMethod: run: agent prompt: prompt workingDirectory: workingDirectory [
+    ^ @ self run: agent input: prompt workingDirectory: workingDirectory
+  ]
+
+  classMethod: run: agent input: input workingDirectory: workingDirectory [
+    ^ @ self invoke: agent input: input workingDirectory: workingDirectory dryRun: 'false'
+  ]
+
+  classMethod: dryRun: agent prompt: prompt workingDirectory: workingDirectory [
+    ^ @ self invoke: agent input: prompt workingDirectory: workingDirectory dryRun: 'true'
+  ]
+
+  classMethod: invoke: agent input: input workingDirectory: workingDirectory dryRun: dryRun [
+    | available path agentsDirectory argvBuilder argv capture expectsJson unused |
+    available := @ self isInstalled.
+    (available ~= 'true') ifTrue: [^ @ self missingToolResult].
+
+    path := @ self path.
+    agentsDirectory := @ self agentsDirectory.
+    argvBuilder := @ Json array.
+    unused := @ argvBuilder push: path.
+    unused := @ argvBuilder push: 'run'.
+    unused := @ argvBuilder push: agent.
+    unused := @ argvBuilder push: '--workdir'.
+    unused := @ argvBuilder push: workingDirectory.
+    unused := @ argvBuilder push: '--agents-dir'.
+    unused := @ argvBuilder push: agentsDirectory.
+    expectsJson := 'true'.
+    (dryRun = 'true') ifTrue: [
+      unused := @ argvBuilder push: '--dry-run'.
+      expectsJson := 'false'
+    ] ifFalse: [
+      unused := @ argvBuilder push: '--json'
+    ].
+    argv := @ argvBuilder build.
+    capture := @ self captureArgvJson: argv input: input.
+    ^ @ self normalizeCaptured: capture expectsJson: expectsJson dryRun: dryRun
+  ]
+
+  classMethod: missingToolResult [
+    | result unused guidance |
+    guidance := 'Axe is not installed. Install it explicitly with: go install github.com/jrswab/axe@latest'.
+    result := @ Json object.
+    unused := @ result at: 'schema_version' putNumber: '1'.
+    unused := @ result at: 'outcome' put: 'missing_tool'.
+    unused := @ result at: 'exit_code' putNumber: '127'.
+    unused := @ result at: 'stdout' put: ''.
+    unused := @ result at: 'stderr' put: guidance.
+    unused := @ result at: 'result' putJson: 'null'.
+    ^ @ result build
+  ]
+
+  classMethod: outcomeForExitCode: exitCode [
+    (exitCode = '0') ifTrue: [^ 'success'].
+    (exitCode = '1') ifTrue: [^ 'runtime_error'].
+    (exitCode = '2') ifTrue: [^ 'configuration_error'].
+    (exitCode = '3') ifTrue: [^ 'provider_error'].
+    (exitCode = '4') ifTrue: [^ 'budget_exceeded'].
+    ^ 'process_error'
+  ]
+
+  classMethod: normalizeCaptured: capture expectsJson: expectsJson dryRun: dryRun [
+    | exitCode stdout stderr outcome valid parsedResult dryResult result unused |
+    exitCode := @ String jsonPath: 'exit_code' from: capture.
+    stdout := @ String jsonPath: 'stdout' from: capture.
+    stderr := @ String jsonPath: 'stderr' from: capture.
+    outcome := @ self outcomeForExitCode: exitCode.
+    parsedResult := 'null'.
+
+    (exitCode = '0') ifTrue: [
+      (expectsJson = 'true') ifTrue: [
+        valid := @ String isJson: stdout.
+        (valid = 'true') ifTrue: [
+          parsedResult := stdout
+        ] ifFalse: [
+          outcome := 'invalid_output'
+        ]
+      ] ifFalse: [
+        dryResult := @ Json object.
+        unused := @ dryResult at: 'content' put: stdout.
+        unused := @ dryResult at: 'dry_run' putBool: dryRun.
+        parsedResult := @ dryResult build
+      ]
+    ].
+
+    result := @ Json object.
+    unused := @ result at: 'schema_version' putNumber: '1'.
+    unused := @ result at: 'outcome' put: outcome.
+    unused := @ result at: 'exit_code' putNumber: exitCode.
+    unused := @ result at: 'stdout' put: stdout.
+    unused := @ result at: 'stderr' put: stderr.
+    unused := @ result at: 'result' putJson: parsedResult.
+    ^ @ result build
+  ]
