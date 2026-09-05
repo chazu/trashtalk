@@ -61,13 +61,33 @@ Trash subclass: Object
       _d_warn "ininspect not found; objects retain textual inspect output"
     fi
 
-    # Axe is optional; only the @@ agent workflow depends on it. Keep setup
-    # explicit because provider credentials and model choice belong to Axe.
-    if command -v axe >/dev/null 2>&1; then
-      _d_ok "Axe found ($(command -v axe)); @@ is available when provider credentials are configured"
-    else
-      _d_warn "Axe not found; @@ is unavailable (install explicitly with: go install github.com/jrswab/axe@latest)"
-    fi
+    # The selected @@ backend is optional. Installation and authentication stay
+    # explicit because they belong to the external harness.
+    local agent_backend="${TRASHTALK_AGENT_BACKEND:-axe}" agent_auth
+    case "$agent_backend" in
+      codex|CodexAgent)
+        if command -v codex >/dev/null 2>&1; then
+          _d_ok "Codex found ($(command -v codex)); @@ backend selected"
+          if agent_auth=$(codex login status 2>&1) && [[ "$agent_auth" == *ChatGPT* ]]; then
+            _d_ok "$agent_auth; subscription-backed @@ is available"
+          else
+            _d_warn "Codex is not authenticated with ChatGPT; run: codex login (${agent_auth:-status unavailable})"
+          fi
+        else
+          _d_warn "Codex backend selected but codex is not installed"
+        fi
+        ;;
+      axe|AxeAgent)
+        if command -v axe >/dev/null 2>&1; then
+          _d_ok "Axe found ($(command -v axe)); @@ backend selected"
+        else
+          _d_warn "Axe backend selected but axe is not installed (install explicitly with: go install github.com/jrswab/axe@latest)"
+        fi
+        ;;
+      *)
+        _d_warn "Unknown TRASHTALK_AGENT_BACKEND '$agent_backend'; @@ falls back to AxeAgent"
+        ;;
+    esac
     if command -v indiff >/dev/null 2>&1 && command -v patch >/dev/null 2>&1; then
       _d_ok "proposal review found (indiff and patch)"
     else
@@ -833,11 +853,8 @@ EOF
     after := @ file read.
     outcome := 'unchanged'.
     (before ~= after) ifTrue: [outcome := 'saved'].
-    builder := @ Json object.
-    unused := @ builder at: 'schema_version' putNumber: '1'.
-    unused := @ builder at: 'outcome' put: outcome.
-    unused := @ builder at: 'path' put: sourceFile.
-    ^ @ builder build
+    builder := #{schema_version: 1 outcome: outcome path: sourceFile} asJson.
+    ^ builder
   ]
 
   # Compile to a candidate artifact. This raw method is an OS/compiler boundary;
@@ -847,7 +864,7 @@ EOF
     artifact=$(mktemp "${TMPDIR:-/tmp}/trash-edit-artifact.XXXXXX")
     error_file=$(mktemp "${TMPDIR:-/tmp}/trash-edit-compile.XXXXXX")
 
-    if "$SCRIPT_DIR/jq-compiler/driver.bash" compile "$sourceFile" > "$artifact" 2> "$error_file"; then
+    if _trash_with_progress "Compiling $className" "$SCRIPT_DIR/jq-compiler/driver.bash" compile "$sourceFile" > "$artifact" 2> "$error_file"; then
       rm -f "$error_file"
       jq -cn --arg artifact "$artifact" '{ok:true,phase:"compile",artifact:$artifact,line:1,message:""}'
       return 0
@@ -919,20 +936,10 @@ EOF
   ]
 
   method: annotationsFor: message line: line phase: phase [
-    | item items document itemJson itemsJson unused |
-    item := @ Json object.
-    unused := @ item at: 'line' putNumber: line.
-    unused := @ item at: 'column' putNumber: '1'.
-    unused := @ item at: 'severity' put: 'error'.
-    unused := @ item at: 'message' put: (phase , ': ' , message).
-    itemJson := @ item build.
-    items := @ Json array.
-    unused := @ items pushJson: itemJson.
-    itemsJson := @ items build.
-    document := @ Json object.
-    unused := @ document at: 'schema_version' putNumber: '1'.
-    unused := @ document at: 'annotations' putJson: itemsJson.
-    ^ @ document build
+    ^ #{schema_version: 1 annotations: #(
+      #{line: (line jsonValue) column: 1 severity: 'error'
+        message: (phase , ': ' , message)}
+    )} asJson
   ]
 
   method: diagnosticsFromCompileResult: result [
@@ -959,17 +966,25 @@ EOF
     "$SCRIPT_DIR/jq-compiler/driver.bash" 'parse-many' "${sources[@]}"
   ]
 
-  # Turn cached parser AST envelopes into the public picker record schema.
+  # Source discovery and compiler invocation are an OS boundary. The compiler
+  # owns content/query invalidation for the derived public symbol records.
   rawMethod: symbolRecords [
-    local records
-    records=$(@ "$_RECEIVER" astRecords) || return
-    printf '%s\n' "$records" | jq -c --arg path '' \
-      -f "$SCRIPT_DIR/jq-compiler/symbols.jq"
+    local -a sources
+    mapfile -d '' -t sources < <(find "$TRASHDIR" -type f -name '*.trash' \
+      -not -path "$TRASHDIR/.compiled/*" -print0)
+    [[ ${#sources[@]} -gt 0 ]] || return 0
+    _trash_with_progress 'Indexing symbols' "$SCRIPT_DIR/jq-compiler/driver.bash" 'symbols-many' "${sources[@]}"
+  ]
+
+  rawMethod: symbolRecordsForSource: sourceFile [
+    _trash_with_progress 'Reading symbols' "$SCRIPT_DIR/jq-compiler/driver.bash" 'symbols-many' "$1"
   ]
 
   method: symbolRecordsForClass: className [
-    | records |
-    records := @ self symbolRecords.
+    | records source |
+    source := @ self sourceFileFor: className.
+    source isEmpty ifTrue: [^ ''].
+    records := @ self symbolRecordsForSource: source.
     ^ @ String jsonLinesWhere: 'class_name' equals: className from: records
   ]
 
@@ -1000,11 +1015,10 @@ EOF
   # Build persisted-object candidates in the DSL. Only Store and Runtime own
   # the database boundary; the browser sees ordinary versioned records.
   method: instanceRecordsFor: className [
-    | ids idArray records source i count instanceId rawData data shortId label detail record recordJson recordsJson unused |
-    ids := @ Store findByClass: className.
-    idArray := @ String splitToArray: ids on: '
-'.
-    records := @ Json array.
+    | snapshots idArray records source i count instanceId rawData data shortId label detail record |
+    snapshots := @ Runtime dataForClass: className.
+    idArray := snapshots objectKeys.
+    records := ''.
     source := @ self sourceFileFor: className.
     source isEmpty ifTrue: [^ ''].
     i := 0.
@@ -1012,30 +1026,20 @@ EOF
     [i < count] whileTrue: [
       instanceId := idArray arrayAt: i.
       instanceId notEmpty ifTrue: [
-        rawData := @ Runtime dataFor: instanceId.
+        rawData := snapshots objectAt: instanceId.
         data := @ String jsonInstanceView: rawData.
         shortId := @ String suffix: instanceId length: '8'.
         label := className , ' ' , shortId.
         detail := @ String jsonInstanceSummary: data.
-        record := @ Json object.
-        unused := @ record at: 'schema_version' putNumber: '1'.
-        unused := @ record at: 'id' put: instanceId.
-        unused := @ record at: 'path' put: source.
-        unused := @ record at: 'line' putNumber: '1'.
-        unused := @ record at: 'column' putNumber: '1'.
-        unused := @ record at: 'label' put: label.
-        unused := @ record at: 'kind' put: 'instance'.
-        unused := @ record at: 'detail' put: detail.
-        unused := @ record at: 'class_name' put: className.
-        unused := @ record at: 'object_id' put: instanceId.
-        unused := @ record at: 'data' putJson: data.
-        recordJson := @ record build.
-        unused := @ records pushJson: recordJson
+        record := #{schema_version: 1 id: instanceId path: source line: 1 column: 1
+                    label: label kind: 'instance' detail: detail class_name: className
+                    object_id: instanceId data: (data jsonValue)} asJson.
+        records := records , record , '
+'
       ].
       i := i + 1
     ].
-    recordsJson := @ records build.
-    ^ @ String jsonArrayAsLines: recordsJson
+    ^ records
   ]
 
   method: pickRecords: records query: query title: title [
@@ -1070,17 +1074,13 @@ EOF
   ]
 
   method: inspectionRecordFor: objectId [
-    | className rawData data record unused |
+    | className rawData data record |
     className := @ Runtime classFor: objectId.
     className isEmpty ifTrue: [^ ''].
     rawData := @ Runtime dataFor: objectId.
     data := @ String jsonInstanceView: rawData.
-    record := @ Json object.
-    unused := @ record at: 'schema_version' putNumber: '1'.
-    unused := @ record at: 'object_id' put: objectId.
-    unused := @ record at: 'class_name' put: className.
-    unused := @ record at: 'data' putJson: data.
-    ^ @ record build
+    record := #{schema_version: 1 object_id: objectId class_name: className data: (data jsonValue)} asJson.
+    ^ record
   ]
 
   method: inspectObject: objectId [

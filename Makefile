@@ -42,7 +42,7 @@ NAMESPACE_SOURCES := $(filter-out $(wildcard $(TRASH_DIR)/traits/*.trash) $(wild
                       $(wildcard $(TRASH_DIR)/*/*.trash))
 ALL_SOURCES := $(SOURCES) $(TRAIT_SOURCES) $(USER_SOURCES) $(NAMESPACE_SOURCES)
 
-.PHONY: all bash test test-serial test-verbose clean help info single watch doctor
+.PHONY: all bash test test-serial test-verbose clean help info single watch doctor bench
 
 # =============================================================================
 # Main Targets
@@ -50,6 +50,10 @@ ALL_SOURCES := $(SOURCES) $(TRAIT_SOURCES) $(USER_SOURCES) $(NAMESPACE_SOURCES)
 
 # Default: compile to bash
 all: bash
+
+# Benchmarks exercise installed/generated classes; build before measuring.
+bench: bash
+	@bash bin/trash-bench
 
 # Diagnose environment/setup issues (bash version, deps, sqlite3, compiled classes)
 doctor: bash

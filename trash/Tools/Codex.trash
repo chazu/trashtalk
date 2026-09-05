@@ -1,0 +1,99 @@
+# Tools::Codex - Exact argv/stdin adapter for non-interactive Codex CLI runs.
+package: Tools
+
+Codex subclass: Tool
+
+  classMethod: name [
+    ^ 'codex'
+  ]
+
+  # Installation and ChatGPT authentication are explicit user operations.
+  classMethod: ensure [
+    | available guidance |
+    available := @ self isInstalled.
+    (available = 'true') ifTrue: [^ 'true'].
+    guidance := 'Codex CLI is not installed. Install it from the official OpenAI Codex documentation, then run: codex login'.
+    @ Console error: guidance.
+    ^ 'false'
+  ]
+
+  classMethod: authStatus [
+    | available path argv capture stdout stderr |
+    available := @ self isInstalled.
+    (available ~= 'true') ifTrue: [^ 'not installed'].
+    path := @ self path.
+    argv := #(path 'login' 'status') asJson.
+
+    capture := @ self captureArgvJson: argv.
+    stdout := @ String jsonPath: 'stdout' from: capture.
+    stdout isEmpty ifTrue: [
+      stderr := @ String jsonPath: 'stderr' from: capture.
+      ^ @ String trim: stderr
+    ].
+    ^ @ String trim: stdout
+  ]
+
+  classMethod: argvForWorkingDirectory: workingDirectory [
+    | path envPath argv |
+    path := @ self path.
+    envPath := @ Env which: 'env'.
+    argv := #(envPath '-u' 'CODEX_API_KEY' '-u' 'OPENAI_API_KEY' path 'exec'
+              '--ephemeral' '--ignore-user-config' '--sandbox' 'read-only'
+              '--skip-git-repo-check' '--color' 'never' '--cd' workingDirectory '-') asJson.
+    ^ argv
+  ]
+
+  classMethod: run: input workingDirectory: workingDirectory [
+    | available authStatus chatgptAuth argv capture |
+    available := @ self isInstalled.
+    (available ~= 'true') ifTrue: [^ @ self missingToolResult].
+    authStatus := @ self authStatus.
+    chatgptAuth := @ String contains: authStatus substring: 'ChatGPT'.
+    (chatgptAuth ~= 'true') ifTrue: [^ @ self authenticationResult: authStatus].
+    argv := @ self argvForWorkingDirectory: workingDirectory.
+    capture := @ self captureArgvJson: argv input: input progress: 'Waiting for Codex'.
+    ^ @ self normalizeCaptured: capture
+  ]
+
+  classMethod: dryRun: input workingDirectory: workingDirectory [
+    | available argv detail dryResult result |
+    available := @ self isInstalled.
+    (available ~= 'true') ifTrue: [^ @ self missingToolResult].
+    argv := @ self argvForWorkingDirectory: workingDirectory.
+    detail := #{argv: (argv jsonValue) stdin: input dry_run: true} asJson.
+    dryResult := detail.
+    result := #{schema_version: 1 backend: 'codex' outcome: 'success' exit_code: 0 stdout: '' stderr: '' result: (dryResult jsonValue)} asJson.
+    ^ result
+  ]
+
+  classMethod: missingToolResult [
+    | result guidance |
+    guidance := 'Codex CLI is not installed. Install it from the official OpenAI Codex documentation, then run: codex login'.
+    result := #{schema_version: 1 backend: 'codex' outcome: 'missing_tool' exit_code: 127 stdout: '' stderr: guidance result: null} asJson.
+    ^ result
+  ]
+
+  classMethod: authenticationResult: authStatus [
+    | result guidance |
+    guidance := 'Codex must be authenticated with ChatGPT for subscription-backed usage. Run: codex login. Current status: ' , authStatus.
+    result := #{schema_version: 1 backend: 'codex' outcome: 'configuration_error' exit_code: 2 stdout: '' stderr: guidance result: null} asJson.
+    ^ result
+  ]
+
+  classMethod: normalizeCaptured: capture [
+    | exitCode stdout stderr outcome content normalized result |
+    exitCode := @ String jsonPath: 'exit_code' from: capture.
+    stdout := @ String jsonPath: 'stdout' from: capture.
+    stderr := @ String jsonPath: 'stderr' from: capture.
+    outcome := 'process_error'.
+    content := @ String trim: stdout.
+    (exitCode = '0') ifTrue: [
+      outcome := 'success'.
+      content isEmpty ifTrue: [outcome := 'invalid_output']
+    ].
+    normalized := #{content: content} asJson.
+    result := #{schema_version: 1 backend: 'codex' outcome: outcome
+                exit_code: (exitCode jsonValue) stdout: stdout stderr: stderr
+                result: (normalized jsonValue)} asJson.
+    ^ result
+  ]

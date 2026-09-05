@@ -54,6 +54,7 @@ make test         # Run all compiler tests in parallel with per-test timeouts
 make test-serial  # Run tests sequentially
 make test-verbose # Run tests with bash -x tracing
 make clean        # Remove build artifacts
+make bench        # Build and measure public messages with isolated object state
 ```
 
 ## Testing
@@ -127,6 +128,17 @@ MyClass subclass: Object
   - Pipe chains or redirections
 
 ### Key Patterns
+
+**Temporary JSON values** (one jq call, no persistent builder objects):
+```smalltalk
+context := #{schema_version: 1 question: question
+             status: (status jsonValue) data: (data jsonValue)} asJson.
+argv := #(toolPath '--result-json' '--title' title) asJson.
+```
+
+Dynamic leaves are strings unless marked `jsonValue`; literal numbers,
+booleans, nulls, and nested collections retain JSON types. Invalid typed input
+fails the method. See `docs/performance.md` for output contracts and benchmarks.
 
 **JSON extraction** (use String primitive):
 ```smalltalk

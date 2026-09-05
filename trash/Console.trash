@@ -132,13 +132,13 @@ Console subclass: Object
     @ "$_CLASS" print: "$1" color: "green"
   ]
 
-  # Print warning message (yellow)
+  # Warnings are diagnostics; color only when stderr is a terminal.
   rawClassMethod: warn: message [
-    @ "$_CLASS" print: "$1" color: "yellow"
+    if [[ -t 2 ]]; then printf '\033[33m%s\033[0m\n' "$1" >&2
+    else printf '%s\n' "$1" >&2; fi
   ]
 
   # Print error message in red to stderr
   rawClassMethod: fail: message [
     printf "\033[31m%s\033[0m\n" "$1" >&2
   ]
-

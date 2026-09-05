@@ -124,8 +124,14 @@ String subclass: Object
   # Split string on delimiter, return as JSON array
   rawClassMethod: splitToArray: str on: delim [
     local IFS="$delim"
-    local parts
-    read -ra parts <<< "$str"
+    local parts newline
+    printf -v newline '\n'
+    if [[ "$delim" == "$newline" ]]; then
+      # read -a stops at the first newline, losing all later Store IDs.
+      mapfile -t parts < <(printf '%s' "$str")
+    else
+      read -ra parts <<< "$str"
+    fi
     jo -a "${parts[@]}"
   ]
 

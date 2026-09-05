@@ -12,9 +12,10 @@ Proceed with Innards as Trashtalk's inline UI layer, with four boundaries:
    reads `/dev/tty`, and reports structured outcomes on stdout.
 2. **Trashtalk owns the model and workflow.** Classes, source, compilation,
    tests, objects, and events remain accessible through message sends.
-3. **Axe owns the LLM harness.** Trashtalk wraps the
-   [Axe CLI](https://github.com/jrswab/axe) instead of implementing providers,
-   retry policy, token budgets, memory, tool loops, or sub-agent delegation.
+3. **External CLIs own the LLM harness.** Trashtalk wraps either the
+   [Axe CLI](https://github.com/jrswab/axe) or the official Codex CLI instead of
+   implementing providers, authentication, retry policy, token budgets,
+   memory, tool loops, or sub-agent delegation itself.
 4. **The DSL is the default implementation language.** Raw methods are allowed
    for real process, TTY, file-descriptor, trap, and shell boundaries. Domain
    decisions and orchestration remain in `method:`/`classMethod:` wherever
@@ -26,7 +27,7 @@ not design constraints.
 
 The first tracer bullet remains the annotated edit loop. The first agent slice
 is much smaller than the original proposal: a read-only, one-shot `@@` command
-implemented as a wrapper around `axe run`, with an Innards view for the result.
+implemented over a selectable CLI backend, with an Innards view for the result.
 
 ## 2. Baseline
 
@@ -49,7 +50,7 @@ the injected comments before compiling.
 
 The current agent classes are tmux automation around an interactive provider
 CLI. They can send keystrokes but cannot reliably receive structured results.
-They should not be extended into a second LLM harness.
+They should not be extended into an in-process LLM harness.
 
 ### 2.2 Innards
 
@@ -79,8 +80,17 @@ Axe is a small Unix-style LLM harness. Its current documented surface includes:
 Those capabilities are owned by Axe. Trashtalk should depend only on a small,
 versioned CLI contract and must continue to work when Axe is absent.
 
-Axe is not currently installed on the development machine. Installation and
-credential setup are separate from implementing the integration.
+Installation and credential setup are explicit user operations, separate from
+the integration.
+
+### 2.4 Codex
+
+The official Codex CLI provides a non-interactive `codex exec` surface and can
+authenticate through a ChatGPT subscription. The Trashtalk adapter is a second
+one-shot backend, not a replacement provider implementation: it supplies
+context on stdin, captures only the final answer, and pins execution to an
+ephemeral read-only sandbox. It requires `codex login status` to identify a
+ChatGPT login and removes API-key variables from the child environment.
 
 ## 3. Responsibility map
 
@@ -89,11 +99,11 @@ credential setup are separate from implementing the integration.
 | Inline rendering, keys, selection, annotations | Innards |
 | Classes, methods, source, objects, compilation, tests | Trashtalk |
 | External program invocation | Trashtalk `Tool`/`Process` boundary |
-| Model providers, prompts, tool loop, retries, budgets | Axe |
+| Model providers, authentication, prompts, tool loop, retries, budgets | Axe or Codex CLI |
 | Human approval of proposed edits or commands | Innards + Trashtalk |
 | Applying accepted source changes and running gates | Trashtalk |
 | Long-lived domain events | Trashtalk streams/events |
-| LLM memory | Axe initially; do not duplicate transcripts in Trashtalk |
+| LLM memory | External harness; do not duplicate transcripts in Trashtalk |
 
 The composition is deliberately process-oriented:
 
@@ -101,7 +111,7 @@ The composition is deliberately process-oriented:
 shell / trash REPL
   -> pure Trashtalk facade and workflow
       -> narrow Tool/Process shell boundary
-          -> inmacs / inpage / inpick / indiff / Axe
+          -> inmacs / inpage / inpick / indiff / Axe / Codex
               UI: /dev/tty
               data: stdin
               result: stdout JSON
@@ -353,7 +363,7 @@ The first browser supports:
 
 Selection and preview records remain JSON throughout the integration.
 
-## 8. Axe integration
+## 8. Agent harness integration
 
 ### 8.1 Layer one: `Tools::Axe`
 
@@ -385,21 +395,24 @@ exact class name can be settled during implementation; the intended split is:
 ```text
 Tools::Axe       exact process/CLI adapter
 AxeAgent         named Axe agent/configuration adapter
-Agent            provider-independent convenience facade used by @@
+Tools::Codex     exact subscription-backed Codex CLI adapter
+CodexAgent       Codex context adapter
+Agent            configured convenience facade used by @@
 ```
 
 The facade provides messages such as:
 
-- `ask:` using the configured default Axe agent;
+- `ask:` using the configured one-shot backend;
 - `run:withInput:` for a named specialized agent;
 - `review:` for a read-only review workflow; and
 - `dryRun:` to show resolved context before an LLM request.
 
 Configuration uses a project-local `axe/agents/` directory where practical.
 Trashtalk stores only references needed for its UI—run id, agent name, status,
-timestamps, and result location. Axe owns model configuration and memory. The
-existing tmux-oriented `ClaudeAgent` path can be deprecated after the Axe slice
-works; it need not be preserved as Axe's execution model.
+timestamps, and result location. Each external harness owns its model
+configuration and memory. The existing tmux-oriented `ClaudeAgent` path can be
+deprecated after the one-shot paths work; it need not be preserved as their
+execution model.
 
 ### 8.3 Minimal `@@`
 
@@ -408,8 +421,9 @@ The first useful `@@` behavior is deliberately small:
 ```text
 @@ "why did this command fail?"
   -> Agent ask:
-  -> Tools::Axe run configured-agent with explicit context on stdin
-  -> parse JSON result and exit status
+  -> AxeAgent or CodexAgent
+  -> exact external CLI invocation with explicit context on stdin
+  -> normalize final result and exit status
   -> show final text in an Innards pager
   -> leave final answer in scrollback
 ```
@@ -439,7 +453,17 @@ File tools being rooted to a working directory is useful, but it is not an
 approval system. Any later mutation path must add an explicit proposal and
 human-review boundary.
 
-### 8.5 Proposed changes
+### 8.5 Subscription-backed Codex profile
+
+`TRASHTALK_AGENT_BACKEND=codex` selects `CodexAgent`. `Tools::Codex` invokes
+`codex exec` with an ephemeral session, ignored user tool configuration, an
+explicit working directory, and a read-only sandbox. The adapter accepts only
+a ChatGPT-authenticated CLI status and removes API-key variables from the child
+environment, preventing an accidental switch to per-token API billing. Its
+dry-run mode is local: it returns the exact argv and stdin without starting
+Codex.
+
+### 8.6 Proposed changes
 
 After read-only `@@` is proven, add one proposal workflow:
 
@@ -455,7 +479,7 @@ After read-only `@@` is proven, add one proposal workflow:
 Command proposals remain text returned to the user. Pre-filling a Readline
 buffer is optional and must never synthesize an Enter key.
 
-### 8.6 Later capabilities
+### 8.7 Later capabilities
 
 Only add these after the basic wrapper is useful:
 
@@ -539,7 +563,7 @@ Automated coverage includes namespaced symbols, source positions, raw/DSL/test
 methods, false-positive sender fragments, JSON-preserving selection, fallback
 selection, instance data, and PTY terminal restoration.
 
-### Milestone 3: Axe-backed `@@`
+### Milestone 3: one-shot `@@` backends
 
 - `Tools::Axe` with typed invocation, JSON parsing, dry-run, and exit mapping.
 - One project-local read-only Axe agent configuration.
@@ -565,6 +589,17 @@ human-readable `--dry-run` output instead of combining `--dry-run` with
 results, malformed output handling, missing-tool guidance, and exit codes
 0–4. A credentialed provider call remains an environment acceptance check,
 not an automated repository test.
+
+**Codex extension (2026-09-04): implemented and deterministically verified.**
+`Tools::Codex` wraps the official non-interactive CLI contract and normalizes
+its final stdout into the same run envelope. `CodexAgent` reuses the common
+versioned context, while `Agent` selects `axe` or `codex` through
+`TRASHTALK_AGENT_BACKEND`. The Codex path is ephemeral and read-only, ignores
+user tool configuration, requires ChatGPT authentication, and strips API-key
+variables before execution. Fake-process coverage proves exact argv/stdin,
+backend selection, local dry runs, auth rejection, missing-tool behavior, and
+`@@` presentation. A live subscription-backed response remains an environment
+acceptance check.
 
 ### Milestone 4: review surface and proposals
 
@@ -597,7 +632,7 @@ proves it necessary.
 
 - `intail`, `ininspect`, and `inprompt` only as required by proven workflows.
 - Run lifecycle events and a prompt-adjacent status line.
-- Background Axe jobs and unread-result picker.
+- Background harness jobs and unread-result picker.
 - Optional read-only MCP tools.
 
 This milestone is intentionally not required for the IDE or `@@` to be useful.
@@ -623,6 +658,7 @@ events, and MCP boundary remain inactive until independently justified.
 | Picker | JSONL/property tests; namespaced and keyword-selector fixtures | browse a representative image quickly |
 | Object inspector | tree/result unit tests; PTY restoration; stale/malformed proposal integration tests | inspect and edit a nested real object in a shell |
 | Axe wrapper | fake `axe` executable covering exit codes and malformed JSON | `axe run <agent> --dry-run`, then one credentialed run |
+| Codex wrapper | fake `codex` covering exact argv/stdin, auth gate, failures, and dry-run isolation | `codex login status`, then one subscription-backed `@@` |
 | Proposal gate | stale-hash, reject, partial accept, failed compile/test tests | review one nontrivial change without hidden writes |
 
 Tests that need a provider, SSH host, or human terminal remain acceptance gates;
@@ -634,7 +670,7 @@ The revised plan does not initially:
 
 - build an LLM provider adapter in Trashtalk;
 - parse provider-specific streaming formats;
-- maintain a second copy of Axe's conversation memory;
+- maintain a second copy of an external harness's conversation memory;
 - capture every shell command;
 - give an agent a generic message-send or shell-execution capability;
 - run a permanent Innards daemon;
@@ -653,6 +689,9 @@ Milestone 1 resolved:
 Milestone 3 resolved:
 
 - `trashtalk-readonly` is the checked-in default `@@` profile.
+- `TRASHTALK_AGENT_BACKEND` selects `axe` (default) or `codex`.
+- The Codex backend requires ChatGPT authentication and strips API-key
+  variables before an ephemeral read-only run.
 - Legacy `AgentSession` code remains available but outside the one-shot path.
 - Current Axe JSON maps through `content`; dry-run context uses Axe's complete
   human-readable representation.
@@ -676,6 +715,7 @@ Milestone 5 first optional slice resolved:
 
 Keep provider credentials and installed binaries outside repository tests.
 The remaining acceptance work is operational: install the verified Innards
-checkout, inspect and edit one nested real object, configure Axe, run one
-credentialed `@@`, and review one nontrivial source proposal in a real shell.
+checkout, inspect and edit one nested real object, run one live `@@` through
+each configured backend, and review one nontrivial source proposal in a real
+shell.
 Only add another Milestone 5 slice in response to a separate observed gap.

@@ -70,6 +70,32 @@ Runtime subclass: Object
     _env_get "$1"
   ]
 
+  # Batch Store I/O is a runtime boundary. Overlay the session's live data and
+  # use the same lazy migration as dataFor: for objects not already loaded.
+  # The DSL receives an ordinary JSON object keyed by instance ID.
+  rawClassMethod: dataForClass: className [
+    local escaped rows id data
+    escaped=$(_db_escape "$1")
+    # IDs cannot contain '|'; read assigns the whole remaining JSON to data.
+    # Use a printable separator: sqlite CLIs can escape control characters.
+    rows=$(_db_sql "SELECT id || '|' || json(data) FROM instances WHERE class = '$escaped';") || return
+    local snapshot
+    snapshot=$(
+      while IFS='|' read -r id data; do
+        [[ -n "$id" ]] || continue
+        _db_validate_id "$id" || return 1
+        if _env_exists "$id"; then
+          data=$(_env_get "$id")
+        else
+          data=$(_migrate_instance_schema "$data") || return
+          _env_set "$id" "$data" || return
+        fi
+        printf '{"id":"%s","data":%s}\n' "$id" "$data"
+      done <<< "$rows"
+    ) || return
+    printf '%s' "$snapshot" | jq -cs 'map({key:.id,value:.data}) | from_entries'
+  ]
+
   # Set instance data from JSON
   # Usage: @ Runtime setData: '{"value":42}' for: instanceId
   rawClassMethod: setData: json for: instanceId [
@@ -181,4 +207,3 @@ Runtime subclass: Object
   rawClassMethod: printStackTrace [
     _print_stack_trace
   ]
-

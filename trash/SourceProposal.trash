@@ -5,13 +5,9 @@
 SourceProposal subclass: Object
 
   classMethod: result: outcome phase: phase message: message [
-    | result unused |
-    result := @ Json object.
-    unused := @ result at: 'schema_version' putNumber: '1'.
-    unused := @ result at: 'outcome' put: outcome.
-    unused := @ result at: 'phase' put: phase.
-    unused := @ result at: 'message' put: message.
-    ^ @ result build
+    | result |
+    result := #{schema_version: 1 outcome: outcome phase: phase message: message} asJson.
+    ^ result
   ]
 
   # jq owns structural JSON validation. This is deliberately a closed schema:

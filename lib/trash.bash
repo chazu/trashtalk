@@ -18,10 +18,10 @@ if [[ -z "${BASH_VERSINFO:-}" || "${BASH_VERSINFO[0]}" -lt 4 ]]; then
 fi
 
 # Source dependencies quietly
-source "$SCRIPT_DIR/vendor/bsfl.sh" 2>/dev/null || echo "Warning: bsfl.sh not found"
-source "$SCRIPT_DIR/vendor/fun.sh" 2>/dev/null || echo "Warning: fun.sh not found"
-source "$SCRIPT_DIR/vendor/sqlite-json.bash" 2>/dev/null || echo "Warning: sqlite-json.bash not found"
-source "$SCRIPT_DIR/vendor/honker.bash" 2>/dev/null
+source "$SCRIPT_DIR/vendor/bsfl.sh" || { echo "Error: cannot load bsfl.sh" >&2; return 1; }
+source "$SCRIPT_DIR/vendor/fun.sh" || { echo "Error: cannot load fun.sh" >&2; return 1; }
+source "$SCRIPT_DIR/vendor/sqlite-json.bash" || { echo "Error: cannot load sqlite-json.bash" >&2; return 1; }
+source "$SCRIPT_DIR/vendor/honker.bash" || { echo "Error: cannot load honker.bash" >&2; return 1; }
 
 # Export sqlite-json functions so they're available in subshells
 export -f db_init db_put db_get db_delete db_find_by_class db_query db_query_data 2>/dev/null
@@ -56,14 +56,35 @@ _trash_check_deps() {
 # a jq/sqlite pipeline with a cryptic error, so hard-stop here instead.
 _trash_check_deps || return 1 2>/dev/null || exit 1
 
-# Override msg_debug to respect DEBUG mode and output to stderr
-# This overrides BSFL's msg_debug which outputs to stdout regardless
-msg_debug() {
-    [[ "${DEBUG:-no}" == "yes" ]] && [[ "${TRASH_DEBUG:-1}" != "0" ]] && echo "[DEBUG] $*" >&2
+# Diagnostics never share stdout with message results. Keep the old DEBUG and
+# quiet switches usable, but allow one explicit level to override them.
+_trash_log_enabled() {
+    local level="${TRASHTALK_LOG_LEVEL:-}" requested="$1" threshold
+    if [[ -z "$level" ]]; then
+        level=warn
+        if [[ "${DEBUG:-no}" == yes && "${TRASH_DEBUG:-1}" != 0 ]]; then level=debug; fi
+        if [[ -n "${TRASHTALK_QUIET:-}${BSFL_QUIET:-}" ]]; then level=error; fi
+    fi
+    case "$level" in
+        off) return 1 ;;
+        error) threshold=0 ;;
+        warn|warning) threshold=1 ;;
+        info) threshold=2 ;;
+        debug) threshold=3 ;;
+        trace) threshold=4 ;;
+        *) threshold=1 ;;
+    esac
+    (( requested <= threshold ))
 }
-
-# Override msg_info to output to stderr (BSFL outputs to stdout)
-msg_info() { echo "[INFO] $*" >&2; }
+_trash_log() {
+    local priority="$1" label="$2"; shift 2
+    if _trash_log_enabled "$priority"; then printf '[%s] %s\n' "$label" "$*" >&2; fi
+    return 0
+}
+msg_debug() { _trash_log 3 DEBUG "$@"; }
+msg_info() { _trash_log 2 INFO "$@"; }
+msg_warning() { _trash_log 1 WARN "$@"; }
+msg_error() { _trash_log 0 ERROR "$@"; }
 
 # Set default TRASHDIR if not already set
 TRASHDIR=${TRASHDIR:-$HOME/.trashtalk/trash}
@@ -82,6 +103,8 @@ TRASH_DESCRIPTION="Smalltalk-inspired DSL for Bash"
 if [[ -f "$HOME/.trashrc" ]]; then
   source "$HOME/.trashrc"
 fi
+
+source "$SCRIPT_DIR/trash-progress.bash" || return 1
 
 # ============================================
 # Profiling Support
@@ -256,7 +279,7 @@ export _ENV_DIR
 
 # Ensure the environment directory exists
 function _env_init {
-  mkdir -p "$_ENV_DIR"
+  [[ -d "$_ENV_DIR" ]] || mkdir -p "$_ENV_DIR"
 }
 
 # Get instance data from the memory environment
@@ -265,7 +288,7 @@ function _env_init {
 function _env_get {
   local instance_id="$1"
   local file="$_ENV_DIR/$instance_id"
-  [[ -f "$file" ]] && cat "$file"
+  [[ -f "$file" ]] && printf '%s\n' "$(<"$file")"
 }
 
 # Set instance data in the memory environment
@@ -729,7 +752,7 @@ function _ensure_class_sourced {
   fi
 
   # Check if already sourced by looking for superclass metadata
-  local func_prefix=$(_to_func_prefix "$class_name")
+  local func_prefix="__${class_name//::/__}"
   local super_var="${func_prefix}__superclass"
   if [[ -n "${!super_var+x}" ]]; then
     _SOURCED_COMPILED_CLASSES["$class_name"]=1
@@ -737,7 +760,7 @@ function _ensure_class_sourced {
   fi
 
   # Try to source the compiled class
-  local compiled_file=$(_compiled_path "$class_name")
+  local compiled_file="$TRASHDIR/.compiled/${class_name//::/__}"
   if [[ -f "$compiled_file" ]]; then
     source "$compiled_file"
     _SOURCED_COMPILED_CLASSES["$class_name"]=1
@@ -806,7 +829,7 @@ function _get_class_instance_vars {
   _ensure_class_sourced "$class_name"
 
   # Get from compiled metadata variable (using func_prefix for namespaced classes)
-  local func_prefix=$(_to_func_prefix "$class_name")
+  local func_prefix="__${class_name//::/__}"
   local vars_var="${func_prefix}__instanceVars"
   if [[ -n "${!vars_var+x}" ]]; then
     echo "${!vars_var}"
@@ -827,7 +850,7 @@ function _get_parent_class {
   _ensure_class_sourced "$class_name"
 
   # Get from compiled metadata variable (using func_prefix for namespaced classes)
-  local func_prefix=$(_to_func_prefix "$class_name")
+  local func_prefix="__${class_name//::/__}"
   local super_var="${func_prefix}__superclass"
   if [[ -n "${!super_var+x}" ]]; then
     parent="${!super_var}"
@@ -1009,7 +1032,7 @@ function _create_instance {
 
   # Convert class name to function prefix for metadata lookup
   # MyApp::Counter -> __MyApp__Counter, Counter -> __Counter
-  local func_prefix=$(_to_func_prefix "$class_name")
+  local func_prefix="__${class_name//::/__}"
 
   # Get instance vars from compiled class metadata (preferred)
   # This avoids using stale global _CURRENT_CLASS_VARS from previous classes
@@ -1142,6 +1165,23 @@ function _is_instance {
   local maybe_instance="$1"
   local type_val=$(_get_instance_class "$maybe_instance")
   [[ -n "$type_val" ]]
+}
+
+# Resolve once at the public send boundary. Class names are reserved receivers;
+# other identifiers (including custom Store IDs) retain lazy Store lookup.
+# Results are caller-local variables, never a cross-subshell object cache.
+_resolve_receiver() {
+  _receiver_class="" _receiver_instance=""
+  if [[ ! -f "$_ENV_DIR/$1" && -f "$TRASHDIR/.compiled/${1//::/__}" ]]; then
+    _receiver_class="$1"
+  else
+    _receiver_class=$(_get_instance_class "$1")
+    if [[ -n "$_receiver_class" ]]; then
+      _receiver_instance="$1"
+    else
+      _receiver_class="$1"
+    fi
+  fi
 }
 
 # Delete an instance from memory (and optionally from Store)
@@ -1542,10 +1582,10 @@ function _class_has_method {
   local current_class="$class_name"
   while [[ -n "$current_class" ]]; do
     # Compute function prefix for namespaced classes
-    local current_prefix=$(_to_func_prefix "$current_class")
+    local current_prefix="__${current_class//::/__}"
 
     # Ensure class is sourced
-    local compiled_file=$(_compiled_path "$current_class")
+    local compiled_file="$TRASHDIR/.compiled/${current_class//::/__}"
     if [[ -f "$compiled_file" && -z "${_SOURCED_COMPILED_CLASSES["$current_class"]:-}" ]]; then
       source "$compiled_file"
       _SOURCED_COMPILED_CLASSES["$current_class"]=1
@@ -1630,10 +1670,10 @@ method_missing() {
     msg_debug "Checking class: $current_class"
 
     # Compute function prefix for namespaced classes
-    local current_prefix=$(_to_func_prefix "$current_class")
+    local current_prefix="__${current_class//::/__}"
 
     # Check for compiled version first (prevents namespace pollution)
-    local compiled_file=$(_compiled_path "$current_class")
+    local compiled_file="$TRASHDIR/.compiled/${current_class//::/__}"
     if [[ -f "$compiled_file" ]]; then
       # Source compiled file only once
       if [[ -z "${_SOURCED_COMPILED_CLASSES["$current_class"]:-}" ]]; then
@@ -1647,7 +1687,7 @@ method_missing() {
       # Check for namespaced method
       local namespaced_func="${current_prefix}__${_SELECTOR}"
       if declare -F "$namespaced_func" >/dev/null 2>&1; then
-        msg_info "Found $_SELECTOR in compiled $current_class"
+        msg_debug "Found $_SELECTOR in compiled $current_class"
         "$namespaced_func" "$@"
         return $?
       fi
@@ -1655,7 +1695,7 @@ method_missing() {
       # Check for class method
       local class_method_func="${current_prefix}__class__${_SELECTOR}"
       if declare -F "$class_method_func" >/dev/null 2>&1; then
-        msg_info "Found $_SELECTOR (class method) in compiled $current_class"
+        msg_debug "Found $_SELECTOR (class method) in compiled $current_class"
         "$class_method_func" "$@"
         return $?
       fi
@@ -1696,7 +1736,7 @@ method_missing() {
 declare -A _SOURCED_COMPILED_CLASSES
 
 function send {
-  msg_debug "Send: $*"
+  _trash_log_enabled 4 && _trash_log 4 TRACE "Send: $*"
 
   # ============================================
   # Security: Reject dangerous receiver patterns
@@ -1720,7 +1760,7 @@ function send {
   local _SELECTOR="${1:-}"; shift || true
 
   # DEBUG: trace args after selector shift
-  msg_debug "[send] After shift: sel=$_SELECTOR argc=$# args=($*)"
+  _trash_log_enabled 4 && _trash_log 4 TRACE "[send] After shift: sel=$_SELECTOR argc=$# args=($*)"
 
   # Validate we have both receiver and selector
   if [[ -z "$_RECEIVER" || -z "$_SELECTOR" ]]; then
@@ -1769,7 +1809,7 @@ function send {
     # Replace positional params with extracted args
     set -- "${_ARGS[@]}"
   fi
-  msg_debug "Parsed selector: $_SELECTOR, args: $*"
+  _trash_log_enabled 4 && _trash_log 4 TRACE "Parsed selector: $_SELECTOR, args: $*"
 
   local class_file
   local class_name
@@ -1783,27 +1823,21 @@ function send {
   local frame_ensure_start=$_ENSURE_DEPTH
   local frame_handler_start=$_HANDLER_DEPTH
 
-  # Check if receiver is an instance or a class
-  if _is_instance "$_RECEIVER"; then
-    class_name=$(_get_instance_class "$_RECEIVER")
-    if [[ -z "$class_name" ]]; then
-      echo "Error: Cannot determine class for instance $_RECEIVER" >&2
-      return 1
-    fi
-    class_file=$(receiver_path "$class_name")
-    msg_debug "Instance $_RECEIVER is of class $class_name"
-    _CLASS="$class_name"
-    _INSTANCE="$_RECEIVER"
+  if [[ "${_resolved_for:-}" == "$_RECEIVER" ]]; then
+    class_name="$_receiver_class"
+    _INSTANCE="$_receiver_instance"
   else
-    class_name="$_RECEIVER"
-    class_file=$(receiver_path "$_RECEIVER")
-    _CLASS="$_RECEIVER"
-    _INSTANCE=""
+    local _receiver_class _receiver_instance
+    _resolve_receiver "$_RECEIVER"
+    class_name="$_receiver_class"
+    _INSTANCE="$_receiver_instance"
   fi
-
-  # Compute function prefix for namespaced classes
-  # MyApp::Counter -> __MyApp__Counter, Counter -> __Counter
-  local func_prefix=$(_to_func_prefix "$class_name")
+  # Nested sends must resolve their own receiver, even when called via send.
+  local _resolved_for=""
+  _CLASS="$class_name"
+  local _SUPERCLASS="${_SUPERCLASS:-Object}"
+  class_file="$TRASHDIR/.compiled/${class_name//::/__}"
+  local func_prefix="__${class_name//::/__}"
 
   # Push to call stack for debugging (lightweight, always on)
   _CALL_STACK[_CALL_DEPTH]="$_CLASS.$_SELECTOR"
@@ -1845,7 +1879,7 @@ function send {
 
   # Check for compiled version first (prevents namespace pollution)
   # Use _compiled_path to handle namespaced classes (MyApp::Counter -> MyApp__Counter)
-  compiled_file=$(_compiled_path "$class_name")
+  compiled_file="$TRASHDIR/.compiled/${class_name//::/__}"
   if [[ -f "$compiled_file" ]]; then
     msg_debug "Found compiled class: $compiled_file"
     # Check for pragma: direct marker
@@ -2122,28 +2156,16 @@ function @ {
     is_a Object
   fi
 
-  msg_debug "Entrypoint: $*"
+  _trash_log_enabled 4 && _trash_log 4 TRACE "Entrypoint: $*"
 
   # Security: Reject dangerous receiver patterns early
   _reject_path_receiver "$1" || return 1
 
-  # Pre-source the receiver's class before entering subshell
-  # This ensures class methods are available in the parent shell
-  local ___receiver="$1"
-  local ___class=""
-  if [[ -n "$___receiver" ]]; then
-    # For instance IDs (lowercase, contains _), look up the class from DB
-    if [[ "$___receiver" =~ ^[a-z] && "$___receiver" == *_* ]]; then
-      ___class=$(_get_instance_class "$___receiver" 2>/dev/null)
-      if [[ -n "$___class" ]]; then
-        _ensure_class_sourced "$___class"
-      fi
-    else
-      # Direct class name (may be qualified like MyApp::Counter)
-      ___class="$___receiver"
-      _ensure_class_sourced "$___receiver"
-    fi
-  fi
+  local ___receiver="$1" ___class
+  local _receiver_class _receiver_instance _resolved_for="$1"
+  _resolve_receiver "$___receiver"
+  ___class="$_receiver_class"
+  _ensure_class_sourced "$___class"
 
   # Skip subshell capture for methods that need to affect the parent shell
   # - repl: needs direct terminal I/O
@@ -2158,7 +2180,7 @@ function @ {
   # Check for pragma: direct marker on the method
   # Marker format: __ClassName__[class__]selector__direct=1
   if [[ -n "$___class" ]]; then
-    local ___func_prefix=$(_to_func_prefix "$___class")
+    local ___func_prefix="__${___class//::/__}"
     # Reconstruct full selector from all keyword arguments (ending with :)
     # e.g., "Env" "set:" "x" "to:" "y" -> "set:to:"
     local ___full_selector=""
@@ -2241,7 +2263,7 @@ function @@ {
   local working_directory="$PWD"
   local run_result answer exit_code
   if [[ "$mode" == "dry-run" ]]; then
-    run_result=$(@ AxeAgent dryRun: "$message" workingDirectory: "$working_directory" \
+    run_result=$(@ Agent dryRun: "$message" workingDirectory: "$working_directory" \
       status: "$previous_status" lastResult: "$previous_result")
   else
     run_result=$(@ Agent ask: "$message" workingDirectory: "$working_directory" \
@@ -2332,13 +2354,13 @@ function initialize_trash() {
   # Create object stubs for all objects
   for file in $TRASHDIR/*; do
     if [[ -f "$file" ]]; then  # Only process files, not directories
-      object_name=`basename $file`
+      object_name="${file##*/}"
       msg_debug "Creating object stub for $object_name"
       create_object_stub $object_name
     fi
   done
 
-  msg_info "Trash system initialized with $(find $TRASHDIR -maxdepth 1 -type f | wc -l) objects"
+  msg_debug "Trash system initialized"
 }
 
 # Auto-initialize when sourced

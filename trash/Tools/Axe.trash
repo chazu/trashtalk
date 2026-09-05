@@ -13,14 +13,12 @@ Axe subclass: Tool
 
   # Axe uses `axe version`, not the conventional --version flag.
   classMethod: version [
-    | available path argvBuilder argv capture stdout unused |
+    | available path argv capture stdout |
     available := @ self isInstalled.
     (available ~= 'true') ifTrue: [^ 'not installed'].
     path := @ self path.
-    argvBuilder := @ Json array.
-    unused := @ argvBuilder push: path.
-    unused := @ argvBuilder push: 'version'.
-    argv := @ argvBuilder build.
+    argv := #(path 'version') asJson.
+
     capture := @ self captureArgvJson: argv.
     stdout := @ String jsonPath: 'stdout' from: capture.
     ^ @ String trim: stdout
@@ -57,43 +55,30 @@ Axe subclass: Tool
   ]
 
   classMethod: invoke: agent input: input workingDirectory: workingDirectory dryRun: dryRun [
-    | available path agentsDirectory argvBuilder argv capture expectsJson unused |
+    | available path agentsDirectory argv capture expectsJson |
     available := @ self isInstalled.
     (available ~= 'true') ifTrue: [^ @ self missingToolResult].
 
     path := @ self path.
     agentsDirectory := @ self agentsDirectory.
-    argvBuilder := @ Json array.
-    unused := @ argvBuilder push: path.
-    unused := @ argvBuilder push: 'run'.
-    unused := @ argvBuilder push: agent.
-    unused := @ argvBuilder push: '--workdir'.
-    unused := @ argvBuilder push: workingDirectory.
-    unused := @ argvBuilder push: '--agents-dir'.
-    unused := @ argvBuilder push: agentsDirectory.
+    argv := #(path 'run' agent '--workdir' workingDirectory '--agents-dir' agentsDirectory) asJson.
     expectsJson := 'true'.
     (dryRun = 'true') ifTrue: [
-      unused := @ argvBuilder push: '--dry-run'.
+      argv := argv arrayPush: '--dry-run'.
       expectsJson := 'false'
     ] ifFalse: [
-      unused := @ argvBuilder push: '--json'
+      argv := argv arrayPush: '--json'
     ].
-    argv := @ argvBuilder build.
-    capture := @ self captureArgvJson: argv input: input.
+
+    capture := @ self captureArgvJson: argv input: input progress: 'Waiting for Axe'.
     ^ @ self normalizeCaptured: capture expectsJson: expectsJson dryRun: dryRun
   ]
 
   classMethod: missingToolResult [
-    | result unused guidance |
+    | result guidance |
     guidance := 'Axe is not installed. Install it explicitly with: go install github.com/jrswab/axe@latest'.
-    result := @ Json object.
-    unused := @ result at: 'schema_version' putNumber: '1'.
-    unused := @ result at: 'outcome' put: 'missing_tool'.
-    unused := @ result at: 'exit_code' putNumber: '127'.
-    unused := @ result at: 'stdout' put: ''.
-    unused := @ result at: 'stderr' put: guidance.
-    unused := @ result at: 'result' putJson: 'null'.
-    ^ @ result build
+    result := #{schema_version: 1 backend: 'axe' outcome: 'missing_tool' exit_code: 127 stdout: '' stderr: guidance result: null} asJson.
+    ^ result
   ]
 
   classMethod: outcomeForExitCode: exitCode [
@@ -106,7 +91,7 @@ Axe subclass: Tool
   ]
 
   classMethod: normalizeCaptured: capture expectsJson: expectsJson dryRun: dryRun [
-    | exitCode stdout stderr outcome valid parsedResult dryResult result unused |
+    | exitCode stdout stderr outcome valid parsedResult dryResult result |
     exitCode := @ String jsonPath: 'exit_code' from: capture.
     stdout := @ String jsonPath: 'stdout' from: capture.
     stderr := @ String jsonPath: 'stderr' from: capture.
@@ -122,19 +107,13 @@ Axe subclass: Tool
           outcome := 'invalid_output'
         ]
       ] ifFalse: [
-        dryResult := @ Json object.
-        unused := @ dryResult at: 'content' put: stdout.
-        unused := @ dryResult at: 'dry_run' putBool: dryRun.
-        parsedResult := @ dryResult build
+        dryResult := #{content: stdout dry_run: (dryRun jsonValue)} asJson.
+        parsedResult := dryResult
       ]
     ].
 
-    result := @ Json object.
-    unused := @ result at: 'schema_version' putNumber: '1'.
-    unused := @ result at: 'outcome' put: outcome.
-    unused := @ result at: 'exit_code' putNumber: exitCode.
-    unused := @ result at: 'stdout' put: stdout.
-    unused := @ result at: 'stderr' put: stderr.
-    unused := @ result at: 'result' putJson: parsedResult.
-    ^ @ result build
+    result := #{schema_version: 1 backend: 'axe' outcome: outcome
+                exit_code: (exitCode jsonValue) stdout: stdout stderr: stderr
+                result: (parsedResult jsonValue)} asJson.
+    ^ result
   ]

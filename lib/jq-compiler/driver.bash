@@ -153,6 +153,7 @@ Commands:
   tokenize <file>     Output JSON token array from source file
   parse <file>        Output JSON AST from source file
   parse-many <files>  Output JSONL AST envelopes for multiple source files
+  symbols-many <files>  Output cached symbol records for the current source files
   ast <file>          Pretty-print the AST with syntax highlighting
   compile <file>      Compile to bash and output to stdout
   compile <file> -o <output>  Compile to bash and write to file
@@ -448,6 +449,69 @@ cmd_parse_many() {
     done
 }
 
+# Browser records are derived compiler data. Hash all sources in one process,
+# reuse unchanged per-content records, and attach current paths on output so
+# moves/deletions do not leave stale candidates. Validate before publishing any
+# stdout; readers must never receive a partial index from a corrupt cache.
+_write_symbol_cache() {
+    local source_file="$1" cache_file="$2" ast records temporary
+    ast=$(_parse_single_file "$source_file") || return
+    records=$(printf '%s' "$ast" | jq -c --arg path '' -f "$SCRIPT_DIR/symbols.jq") || return
+    temporary=$(mktemp "$cache_file.XXXXXX") || return
+    if printf '%s' "$records" | jq -sc '.' >"$temporary"; then
+        mv -f "$temporary" "$cache_file"
+    else
+        rm -f "$temporary"
+        return 1
+    fi
+}
+
+cmd_symbols_many() {
+    local cache_dir="$TRASHTALK_DIR/trash/.compiled/.symbolcache"
+    mkdir -p "$cache_dir"
+    _compiler_version >/dev/null
+    local query_hash hashes paths output i digest cache_file
+    query_hash=$(shasum -a 256 "$SCRIPT_DIR/symbols.jq")
+    query_hash="${query_hash%% *}"
+    hashes=$(shasum -a 256 -- "$@") || return
+    local -a source_files=("$@") hash_lines cache_files=()
+    mapfile -t hash_lines <<< "$hashes"
+    [[ ${#hash_lines[@]} -eq ${#source_files[@]} ]] || { error 'Invalid source hash list'; }
+    for ((i=0; i<${#source_files[@]}; i++)); do
+        # shasum escapes unusual filenames and prefixes the digest with '\'.
+        digest="${hash_lines[i]#\\}"
+        digest="${digest%% *}"
+        [[ "$digest" =~ ^[a-f0-9]{64}$ ]] || { error 'Invalid source hash'; }
+        cache_file="$cache_dir/$digest-$_COMPILER_VERSION-$query_hash.json"
+        cache_files+=("$cache_file")
+        if [[ ! -s "$cache_file" ]]; then
+            _write_symbol_cache "${source_files[i]}" "$cache_file" || return
+        fi
+    done
+    paths=$(printf '%s\0' "$@" | jq -Rsc 'split("\u0000")[:-1]')
+    local render='if length == ($paths | length) and all(.[];
+      type == "array" and length > 0 and all(.[];
+        .schema_version == 1 and (.id | type == "string") and
+        (.class_name | type == "string") and (.kind | type == "string") and
+        (.line | type == "number") and (.column | type == "number")))
+      then to_entries[] as $file | $file.value[] | .path = $paths[$file.key]
+      else error("Invalid symbol cache") end'
+    if ! output=$(jq -cs --argjson paths "$paths" "$render" "${cache_files[@]}" 2>/dev/null); then
+        # Only a damaged cache takes the per-file validation path.
+        for ((i=0; i<${#cache_files[@]}; i++)); do
+            if ! jq -es 'length == 1 and (.[0] | type == "array" and length > 0 and
+                all(.[]; .schema_version == 1 and (.id | type == "string") and
+                    (.class_name | type == "string") and (.kind | type == "string") and
+                    (.line | type == "number") and (.column | type == "number")))' \
+                "${cache_files[i]}" >/dev/null 2>&1; then
+                _write_symbol_cache "${source_files[i]}" "${cache_files[i]}" || return
+            fi
+        done
+        output=$(jq -cs --argjson paths "$paths" "$render" "${cache_files[@]}") || return
+    fi
+    printf '%s\n' "$output"
+}
+
 # Alias for backwards compatibility
 cmd_parse_with_traits() {
     cmd_parse "$@"
@@ -594,6 +658,11 @@ main() {
                 error "Missing source files"
             fi
             cmd_parse_many "$@"
+            ;;
+
+        symbols-many)
+            [[ $# -gt 0 ]] || error 'Missing source files'
+            cmd_symbols_many "$@"
             ;;
 
         ast)

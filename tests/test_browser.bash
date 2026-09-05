@@ -212,6 +212,23 @@ instance_result=$(@ Trash browseInstancesOf: Counter)
 assert_eq "instance browser returns selected object" "$counter" \
     "$(printf '%s' "$instance_result" | jq -r '.selection.object_id')"
 
+# Multiple Store IDs span lines. Keep current unsaved state in the browser,
+# while retrieving the persisted candidates as a batch.
+second_counter=$(@ Counter create)
+@ "$counter" setValue: 37
+multiple=$(@ Trash instanceRecordsFor: Counter)
+assert_eq "browser includes every persisted object" "2" \
+    "$(printf '%s\n' "$multiple" | jq -s 'length')"
+assert_eq "browser preserves unsaved in-memory state" "37" \
+    "$(printf '%s\n' "$multiple" | jq -r --arg id "$counter" 'select(.id == $id) | .data.value')"
+edge_data=$(@ Runtime dataFor: "$counter" | jq -c '.note = "pipes | tabs\t and\nnewlines"')
+@ Runtime setData: "$edge_data" for: "$counter"
+snapshot=$(@ Runtime dataForClass: Counter)
+assert_eq "batch snapshot preserves complete live JSON" \
+    "$(printf '%s' "$edge_data" | jq -Sc .)" \
+    "$(printf '%s' "$snapshot" | jq -Sc --arg id "$counter" '.[$id]')"
+@ "$second_counter" delete >/dev/null 2>&1 || true
+
 @ "$counter" delete >/dev/null 2>&1 || true
 
 echo ""

@@ -394,9 +394,10 @@ ok 2 - custom step works
 # All 2 tests passed
 ```
 
-## Axe-backed one-shot questions
+## One-shot agent questions
 
-`@@` sends one explicit, read-only request through the external Axe harness.
+`@@` sends one explicit, read-only request through the selected external agent
+harness. Axe is the default; the official Codex CLI is also supported.
 The request includes the question, current working directory, previous command
 status, and `$__` when it is set. The final answer opens in `inpage` when
 available and is also printed into shell scrollback.
@@ -406,9 +407,28 @@ false
 __='the command produced this output'
 @@ 'why did that fail?'
 
-# Inspect Axe's resolved agent, context, and tools without calling a provider.
+# Inspect the selected backend's exact context without making an LLM call.
 @@ --dry-run 'what context would you receive?'
 ```
+
+Choose the backend in `~/.trashrc`:
+
+```bash
+# Default: Axe with the checked-in project-local agent profile.
+TRASHTALK_AGENT_BACKEND=axe
+
+# Official Codex CLI using a ChatGPT subscription login.
+TRASHTALK_AGENT_BACKEND=codex
+```
+
+For Codex, run `codex login` and select the ChatGPT login, then verify it with
+`codex login status`. The adapter refuses API-key authentication and removes
+`CODEX_API_KEY` and `OPENAI_API_KEY` from the child process so selecting this
+backend cannot silently fall back to per-token API billing. It invokes
+`codex exec` ephemerally, ignores user tool configuration, and fixes the
+sandbox to read-only. See OpenAI's documentation for
+[authentication](https://learn.chatgpt.com/docs/auth) and
+[non-interactive Codex](https://learn.chatgpt.com/docs/non-interactive-mode).
 
 Trashtalk never installs Axe or initializes credentials implicitly. Install it
 explicitly with `go install github.com/jrswab/axe@latest`, configure the
@@ -419,6 +439,8 @@ subagents.
 
 `@@` preserves Axe's status distinctions: `1` runtime, `2` configuration, `3`
 provider/network, and `4` budget exhaustion. Missing Axe returns `127`.
+Codex failures preserve their original process status; a non-ChatGPT login is
+reported as configuration exit `2`, and a missing Codex CLI as `127`.
 
 ## Reviewed source proposals
 
@@ -481,6 +503,13 @@ lib/jq-compiler/driver.bash compile trash/MyClass.trash > trash/.compiled/MyClas
 Trashtalk includes a built-in profiling system to help identify performance bottlenecks and optimize method dispatch.
 
 ### Enabling Profiling
+
+Runtime diagnostics default to warnings/errors on stderr. Use
+`TRASHTALK_LOG_LEVEL=debug` for method-resolution diagnostics or `trace` to
+include message arguments. Interactive slow operations show delayed progress
+on `/dev/tty`; `TRASHTALK_PROGRESS=0` disables it. See
+[performance and terminal output](docs/performance.md) for JSON-value
+construction, browser caching, and the isolated `bin/trash-bench` harness.
 
 Set `TRASH_PROFILE=1` to enable profiling output:
 

@@ -8,35 +8,30 @@ Inpage subclass: Tool
   ]
 
   classMethod: viewFile: path annotations: annotationsPath line: line [
-    | builder argv toolPath unused |
-    builder := @ Json array.
+    | argv toolPath |
     toolPath := @ self path.
-    unused := @ builder push: toolPath.
-    unused := @ builder push: '--result-json'.
+    argv := #(toolPath '--result-json') asJson.
     annotationsPath notEmpty ifTrue: [
-      unused := @ builder push: '--annotations'.
-      unused := @ builder push: annotationsPath
+      argv := argv arrayPush: '--annotations'.
+      argv := argv arrayPush: annotationsPath
     ].
     line notEmpty ifTrue: [
-      unused := @ builder push: '--line'.
-      unused := @ builder push: line
+      argv := argv arrayPush: '--line'.
+      argv := argv arrayPush: line
     ].
-    unused := @ builder push: path.
-    argv := @ builder build.
+    argv := argv arrayPush: path.
+
     ^ @ self runArgvJson: argv
   ]
 
   classMethod: viewText: text title: title [
-    | builder argv toolPath unused |
-    builder := @ Json array.
+    | argv toolPath |
     toolPath := @ self path.
-    unused := @ builder push: toolPath.
-    unused := @ builder push: '--stdin'.
-    unused := @ builder push: '--result-json'.
+    argv := #(toolPath '--stdin' '--result-json') asJson.
     title notEmpty ifTrue: [
-      unused := @ builder push: '--title'.
-      unused := @ builder push: title
+      argv := argv arrayPush: '--title'.
+      argv := argv arrayPush: title
     ].
-    argv := @ builder build.
+
     ^ @ self runArgvJson: argv input: text
   ]

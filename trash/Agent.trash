@@ -2,8 +2,9 @@
 # Manages persistent sessions via tmux and provides @@ syntax support
 # Primary session maps to @@ commands, subagents get fresh sessions
 #
-# Configuration via .trashrc:
-#   DEFAULT_AGENT=ClaudeAgent
+# One-shot backend configuration via .trashrc:
+#   TRASHTALK_AGENT_BACKEND=axe    # default
+#   TRASHTALK_AGENT_BACKEND=codex  # uses the authenticated Codex CLI
 #
 # Usage:
 #   @@ "help me debug this"           # Primary session
@@ -14,21 +15,45 @@ Agent subclass: Object
 
   # Provider-independent one-shot facade used by @@. The existing tmux session
   # methods remain available for legacy ClaudeAgent workflows, but are not part
-  # of the Axe execution path.
+  # of this execution path.
+  classMethod: oneShotBackend [
+    | configured |
+    configured := @ Env get: 'TRASHTALK_AGENT_BACKEND' default: 'axe'.
+    (configured = 'codex') ifTrue: [^ 'CodexAgent'].
+    (configured = 'CodexAgent') ifTrue: [^ 'CodexAgent'].
+    (configured = 'AxeAgent') ifTrue: [^ 'AxeAgent'].
+    ^ 'AxeAgent'
+  ]
+
+  classMethod: contextFor: question workingDirectory: workingDirectory status: status lastResult: lastResult [
+    ^ #{schema_version: 1 question: question working_directory: workingDirectory
+        last_status: (status jsonValue) last_result: lastResult} asJson
+  ]
+
   classMethod: ask: question [
-    | workingDirectory |
+    | workingDirectory backend |
     workingDirectory := @ Env cwd.
-    ^ @ AxeAgent ask: question workingDirectory: workingDirectory status: '0' lastResult: ''
+    backend := @ self oneShotBackend.
+    ^ @ backend ask: question workingDirectory: workingDirectory status: '0' lastResult: ''
   ]
 
   classMethod: ask: question workingDirectory: workingDirectory status: status lastResult: lastResult [
-    ^ @ AxeAgent ask: question workingDirectory: workingDirectory status: status lastResult: lastResult
+    | backend |
+    backend := @ self oneShotBackend.
+    ^ @ backend ask: question workingDirectory: workingDirectory status: status lastResult: lastResult
   ]
 
   classMethod: dryRun: question [
-    | workingDirectory |
+    | workingDirectory backend |
     workingDirectory := @ Env cwd.
-    ^ @ AxeAgent dryRun: question workingDirectory: workingDirectory status: '0' lastResult: ''
+    backend := @ self oneShotBackend.
+    ^ @ backend dryRun: question workingDirectory: workingDirectory status: '0' lastResult: ''
+  ]
+
+  classMethod: dryRun: question workingDirectory: workingDirectory status: status lastResult: lastResult [
+    | backend |
+    backend := @ self oneShotBackend.
+    ^ @ backend dryRun: question workingDirectory: workingDirectory status: status lastResult: lastResult
   ]
 
   classMethod: run: agent withInput: input [
@@ -53,7 +78,13 @@ Agent subclass: Object
     ^ @ SourceProposal reviewAndApply: proposal
   ]
 
-  classMethod: errorLabelForOutcome: outcome [
+  classMethod: errorLabelForOutcome: outcome backend: backend [
+    (backend = 'codex') ifTrue: [
+      (outcome = 'missing_tool') ifTrue: [^ 'Codex unavailable'].
+      (outcome = 'configuration_error') ifTrue: [^ 'Codex authentication error'].
+      (outcome = 'invalid_output') ifTrue: [^ 'Codex returned no final answer'].
+      ^ 'Codex execution error'
+    ].
     (outcome = 'runtime_error') ifTrue: [^ 'Axe runtime error'].
     (outcome = 'configuration_error') ifTrue: [^ 'Axe configuration error'].
     (outcome = 'provider_error') ifTrue: [^ 'Axe provider/network error'].
@@ -64,15 +95,17 @@ Agent subclass: Object
   ]
 
   classMethod: answerFromRun: runResult [
-    | outcome content detail label exitCode |
+    | outcome backend content detail label exitCode |
     outcome := @ String jsonPath: 'outcome' from: runResult.
+    backend := @ String jsonPath: 'backend' from: runResult.
     (outcome = 'success') ifTrue: [
       content := @ String jsonPath: 'result.content' from: runResult.
+      content isEmpty ifTrue: [content := @ String jsonPath: 'result' from: runResult].
       ^ content
     ].
     detail := @ String jsonPath: 'stderr' from: runResult.
     detail isEmpty ifTrue: [detail := @ String jsonPath: 'stdout' from: runResult].
-    label := @ self errorLabelForOutcome: outcome.
+    label := @ self errorLabelForOutcome: outcome backend: backend.
     exitCode := @ String jsonPath: 'exit_code' from: runResult.
     ^ label , ' (exit ' , exitCode , '): ' , detail
   ]

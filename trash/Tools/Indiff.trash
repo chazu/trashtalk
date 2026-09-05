@@ -8,15 +8,13 @@ Indiff subclass: Tool
   ]
 
   classMethod: review: diff title: title [
-    | builder argv toolPath unused |
-    builder := @ Json array.
+    | argv toolPath |
     toolPath := @ self path.
-    unused := @ builder push: toolPath.
-    unused := @ builder push: '--result-json'.
+    argv := #(toolPath '--result-json') asJson.
     title notEmpty ifTrue: [
-      unused := @ builder push: '--title'.
-      unused := @ builder push: title
+      argv := argv arrayPush: '--title'.
+      argv := argv arrayPush: title
     ].
-    argv := @ builder build.
+
     ^ @ self runArgvJson: argv input: diff
   ]

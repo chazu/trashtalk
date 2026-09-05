@@ -1,11 +1,9 @@
 #!/usr/bin/env bash
-# trash-send - Dispatch a message send from native plugins
+# trash-send - Dispatch a message send from external scripts and tools
 #
 # Usage: trash-send <receiver> <selector> [args...]
 #
-# This script is called by native Go plugins when they need to send
-# messages to objects that they can't handle natively (e.g., calls to
-# Runtime, String, or other classes).
+# Stdout carries the message result; diagnostics use stderr.
 
 usage() {
     cat <<'EOF'
@@ -33,20 +31,11 @@ if [[ $# -lt 2 ]]; then
     exit 2
 fi
 
-# Don't try to connect to daemon from here - we're being called BY the daemon
-export TRASHTALK_DISABLE_NATIVE=1
-
-# Suppress loading messages - we only want the result on stdout
-export BSFL_QUIET=1
-export TRASHTALK_QUIET=1
-
 # Find the trashtalk installation
 TRASH_DIR="${TRASHTALK_DIR:-$HOME/.trashtalk}"
 
-# Source the runtime with loading messages suppressed
-{
-  source "$TRASH_DIR/lib/trash.bash"
-} 2>/dev/null
+# Default logging is quiet; startup failures must remain visible.
+source "$TRASH_DIR/lib/trash.bash" || exit 1
 
 # Dispatch the message. Only stdout carries the result; let real errors reach
 # stderr (callers capture stdout, so this aids debugging without polluting it).

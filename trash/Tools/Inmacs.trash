@@ -8,25 +8,19 @@ Inmacs subclass: Tool
   ]
 
   classMethod: editFile: path annotations: annotationsPath line: line [
-    | builder argv toolPath unused |
-    builder := @ Json array.
+    | argv toolPath |
     toolPath := @ self path.
-    unused := @ builder push: toolPath.
-    unused := @ builder push: '--result-json'.
-    unused := @ builder push: '--syntax'.
-    unused := @ builder push: 'trashtalk'.
-    unused := @ builder push: '--tab-width'.
-    unused := @ builder push: '2'.
+    argv := #(toolPath '--result-json' '--syntax' 'trashtalk' '--tab-width' '2') asJson.
     annotationsPath notEmpty ifTrue: [
-      unused := @ builder push: '--annotations'.
-      unused := @ builder push: annotationsPath
+      argv := argv arrayPush: '--annotations'.
+      argv := argv arrayPush: annotationsPath
     ].
     line notEmpty ifTrue: [
-      unused := @ builder push: '--line'.
-      unused := @ builder push: line
+      argv := argv arrayPush: '--line'.
+      argv := argv arrayPush: line
     ].
-    unused := @ builder push: path.
-    argv := @ builder build.
+    argv := argv arrayPush: path.
+
     ^ @ self runArgvJson: argv
   ]
 

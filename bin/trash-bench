@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Reproducible public-message benchmarks. No network/model requests or user DB
+# writes. Bash 5 supplies the sub-millisecond clock; the runtime still needs 4+.
+set -uo pipefail
+export LC_ALL=C
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [[ -z "${EPOCHREALTIME:-}" ]]; then echo 'trash-bench requires Bash 5+' >&2; exit 1; fi
+samples="${1:-5}"
+[[ "$samples" =~ ^[1-9][0-9]*$ ]] || { echo 'Usage: trash-bench [positive sample count]' >&2; exit 2; }
+BENCH_TMP=$(mktemp -d)
+export SQLITE_JSON_DB="$BENCH_TMP/instances.db" TRASHDIR="$ROOT/trash"
+export TRASHTALK_PROGRESS=0 TRASHTALK_LOG_LEVEL=error
+unset TRASH_SESSION_ID TRASH_PROFILE
+source "$ROOT/lib/trash.bash" || exit 1
+trap '_env_cleanup; rm -rf "$BENCH_TMP"' EXIT
+bench() {
+    local label="$1" start end elapsed status i
+    shift
+    # First invocation loads classes and warms derived compiler records.
+    "$@" >"$BENCH_TMP/result" || return
+    for ((i=0; i<samples; i++)); do
+        start=${EPOCHREALTIME/./}
+        "$@" >"$BENCH_TMP/result"
+        status=$?
+        end=${EPOCHREALTIME/./}
+        elapsed=$((end - start))
+        printf '{"case":"%s","sample":%d,"microseconds":%d,"status":%d}\n' "$label" "$i" "$elapsed" "$status"
+        [[ "$status" == 0 ]] || return "$status"
+    done
+}
+bench class_send @ Counter description || exit
+bench json_context @ Agent contextFor: fixture workingDirectory: "$ROOT" status: 0 lastResult: '' || exit
+bench process_capture @ Tool captureArgvJson: '["/usr/bin/true"]' || exit
+bench class_symbols @ Trash symbolRecordsForClass: Counter || exit
+bench all_symbols @ Trash symbolRecords || exit
+for ((i=0; i<10; i++)); do @ Counter new >/dev/null || exit; done
+bench ten_instances @ Trash instanceRecordsFor: Counter || exit
+jq -se 'length == 10' "$BENCH_TMP/result" >/dev/null || exit
+if command -v codex >/dev/null 2>&1; then
+    bench codex_dry @ CodexAgent dryRun: fixture workingDirectory: "$ROOT" status: 0 lastResult: '' || exit
+fi

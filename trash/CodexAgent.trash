@@ -1,0 +1,15 @@
+# CodexAgent - Subscription-capable one-shot adapter for the official Codex CLI.
+
+CodexAgent subclass: Agent
+
+  classMethod: ask: question workingDirectory: workingDirectory status: status lastResult: lastResult [
+    | context |
+    context := @ self contextFor: question workingDirectory: workingDirectory status: status lastResult: lastResult.
+    ^ @ Tools::Codex run: context workingDirectory: workingDirectory
+  ]
+
+  classMethod: dryRun: question workingDirectory: workingDirectory status: status lastResult: lastResult [
+    | context |
+    context := @ self contextFor: question workingDirectory: workingDirectory status: status lastResult: lastResult.
+    ^ @ Tools::Codex dryRun: context workingDirectory: workingDirectory
+  ]

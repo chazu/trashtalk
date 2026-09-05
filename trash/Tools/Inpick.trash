@@ -8,22 +8,18 @@ Inpick subclass: Tool
   ]
 
   classMethod: selectRecords: records root: root query: query title: title [
-    | builder argv toolPath unused |
-    builder := @ Json array.
+    | argv toolPath |
     toolPath := @ self path.
-    unused := @ builder push: toolPath.
-    unused := @ builder push: '--result-json'.
-    unused := @ builder push: '--root'.
-    unused := @ builder push: root.
+    argv := #(toolPath '--result-json' '--root' root) asJson.
     query notEmpty ifTrue: [
-      unused := @ builder push: '--query'.
-      unused := @ builder push: query
+      argv := argv arrayPush: '--query'.
+      argv := argv arrayPush: query
     ].
     title notEmpty ifTrue: [
-      unused := @ builder push: '--title'.
-      unused := @ builder push: title
+      argv := argv arrayPush: '--title'.
+      argv := argv arrayPush: title
     ].
-    argv := @ builder build.
+
     ^ @ self runArgvJson: argv input: records
   ]
 

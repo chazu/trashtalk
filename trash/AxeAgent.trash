@@ -10,17 +10,6 @@ AxeAgent subclass: Agent
     ^ 'trashtalk-proposer'
   ]
 
-  classMethod: contextFor: question workingDirectory: workingDirectory status: status lastResult: lastResult [
-    | context unused |
-    context := @ Json object.
-    unused := @ context at: 'schema_version' putNumber: '1'.
-    unused := @ context at: 'question' put: question.
-    unused := @ context at: 'working_directory' put: workingDirectory.
-    unused := @ context at: 'last_status' putNumber: status.
-    unused := @ context at: 'last_result' put: lastResult.
-    ^ @ context build
-  ]
-
   classMethod: ask: question workingDirectory: workingDirectory status: status lastResult: lastResult [
     | context agent |
     context := @ self contextFor: question workingDirectory: workingDirectory status: status lastResult: lastResult.
@@ -42,21 +31,15 @@ AxeAgent subclass: Agent
   ]
 
   classMethod: proposalContextFor: question class: className workingDirectory: workingDirectory [
-    | sourceFile hash root relative context unused |
+    | sourceFile hash root relative context |
     sourceFile := @ Trash sourceFileFor: className.
     sourceFile isEmpty ifTrue: [^ ''].
     hash := @ File sha256: sourceFile.
     root := @ Env get: 'TRASHDIR'.
     root := @ String trimSuffix: '/trash' from: root.
     relative := @ String trimPrefix: (root , '/') from: sourceFile.
-    context := @ Json object.
-    unused := @ context at: 'schema_version' putNumber: '1'.
-    unused := @ context at: 'question' put: question.
-    unused := @ context at: 'working_directory' put: workingDirectory.
-    unused := @ context at: 'class_name' put: className.
-    unused := @ context at: 'path' put: relative.
-    unused := @ context at: 'base_sha256' put: hash.
-    ^ @ context build
+    context := #{schema_version: 1 question: question working_directory: workingDirectory class_name: className path: relative base_sha256: hash} asJson.
+    ^ context
   ]
 
   classMethod: propose: question class: className workingDirectory: workingDirectory [

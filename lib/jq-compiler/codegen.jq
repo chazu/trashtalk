@@ -152,7 +152,8 @@ def expr_is_json_unary:
    $tok.value == "arrayLast" or $tok.value == "arrayIsEmpty" or
    $tok.value == "objectKeys" or $tok.value == "objectValues" or
    $tok.value == "objectLength" or $tok.value == "objectIsEmpty" or
-   $tok.value == "stringToJsonArray");
+   $tok.value == "stringToJsonArray" or $tok.value == "asJson" or
+   $tok.value == "jsonValue");
 
 # Combined check for any JSON primitive
 def expr_is_json_primitive:
@@ -1131,6 +1132,15 @@ def expr_gen($locals; $ivars; $cvars):
       end) as $args |
       "@ \($recv) \(.selector // "")\($args)"
     ) | join("; "))
+  elif .type == "assignment" and .value.type == "json_primitive" and
+       (.value.operation == "asJson" or .value.operation == "jsonValue") then
+    (.value | expr_gen($locals; $ivars; $cvars)) as $code |
+    if expr_is_ivar(.target; $ivars) and (expr_is_local(.target; $locals) | not) then
+      "local __json_value__; __json_value__=\"\($code)\" || return; _ivar_set \(.target) \"$__json_value__\""
+    elif expr_is_cvar(.target; $cvars) and (expr_is_local(.target; $locals) | not) then
+      "local __json_value__; __json_value__=\"\($code)\" || return; _cvar_set \(.target) \"$__json_value__\""
+    else "\(.target)=\"\($code)\" || return"
+    end
   elif .type == "assignment" then
     # Check if target is ivar - need to use _ivar_set
     # Note: collection literals in blocks handled by expr_gen_stmts, not here
@@ -1190,6 +1200,11 @@ def expr_gen($locals; $ivars; $cvars):
     end
   elif .type == "return" then
     if .value == null then "return"
+    elif .value.type == "json_primitive" and
+         (.value.operation == "asJson" or .value.operation == "jsonValue") then
+      # Emit the serializer directly so malformed typed input retains its status.
+      (.value | expr_gen($locals; $ivars; $cvars)) as $code |
+      "\($code[2:-1]); return"
     elif .value.type == "string" then "echo \"\(.value.value)\"; return"
     elif .value.type == "symbol" then
       # Check if symbol is an instance variable
@@ -1638,6 +1653,50 @@ def expr_gen($locals; $ivars; $cvars):
       "# ERROR: unknown control flow kind \(.kind)"
     end
     end
+  elif .type == "json_primitive" and
+       (.operation == "asJson" or .operation == "jsonValue") then
+    # Serialize a value tree in one jq process. Bare dynamic leaves are strings;
+    # jsonValue explicitly validates/inserts already encoded JSON. Nested
+    # collection literals never become Bash arrays or persistent Json objects.
+    def json_plan($node; $raw; $next):
+      if $node.type == "json_primitive" and $node.operation == "jsonValue" then
+        json_plan($node.receiver; true; $next)
+      elif $node.type == "json_primitive" and $node.operation == "asJson" then
+        json_plan($node.receiver; false; $next)
+      elif $node.type == "array_literal" then
+        reduce $node.elements[] as $element ({args: [], parts: [], next: $next};
+          json_plan($element; false; .next) as $part |
+          .args += $part.args | .parts += [$part.filter] | .next = $part.next
+        ) | .filter = ("[" + (.parts | join(",")) + "]")
+      elif $node.type == "dict_literal" then
+        reduce $node.pairs[] as $pair ({args: [], parts: [], next: $next};
+          json_plan($pair.value; false; .next) as $part |
+          .args += $part.args | .parts += [(($pair.key | tojson) + ":" + $part.filter)] |
+          .next = $part.next
+        ) | .filter = ("{" + (.parts | join(",")) + "}")
+      elif $node.type == "number" then
+        {args: [], filter: ($node.value | tonumber | tojson), next: $next}
+      elif $node.type == "unary" and $node.op == "-" and $node.operand.type == "number" then
+        {args: [], filter: (-($node.operand.value | tonumber) | tojson), next: $next}
+      elif $node.type == "identifier" and
+           (["true", "false", "null", "nil"] | index($node.name)) != null and
+           (expr_is_local($node.name; $locals) | not) and
+           (expr_is_ivar($node.name; $ivars) | not) and
+           (expr_is_cvar($node.name; $cvars) | not) then
+        {args: [], filter: (if $node.name == "nil" then "null" else $node.name end), next: $next}
+      elif ($node.type == "string" or $node.type == "symbol") and ($raw | not) then
+        {args: [], filter: ($node.value | tojson), next: $next}
+      else
+        ($node | expr_gen($locals; $ivars; $cvars)) as $code |
+        (if $node.type == "message_send" or $node.type == "cascade" then "\"$(\($code))\""
+         elif $node.type == "string" then ($node.value | @sh)
+         elif $node.type == "dstring" or $node.type == "triplestring" then $code
+         else "\"\($code)\"" end) as $argument |
+        {args: [(if $raw then "--argjson" else "--arg" end), "v\($next)", $argument],
+         filter: "$v\($next)", next: ($next + 1)}
+      end;
+    json_plan(.receiver; .operation == "jsonValue"; 0) as $plan |
+    "$(jq -cn \($plan.args | join(" ")) \($plan.filter | @sh))"
   elif .type == "json_primitive" then
     # JSON primitive operations - generate jq pipelines
     (.receiver | expr_gen($locals; $ivars; $cvars)) as $recv |
@@ -1964,6 +2023,9 @@ def expr_gen_stmts($locals; $ivars; $cvars):
     if $stmt.type == "locals" then
       .lines += ["  local \(($stmt.names // []) | join(" "))"] |
       .locals += ($stmt.names // [])
+    elif $stmt.type == "assignment" and $stmt.value.type == "json_primitive" and
+         ($stmt.value.operation == "asJson" or $stmt.value.operation == "jsonValue") then
+      .lines += ["  \($stmt | expr_gen($current_locals; $ivars; $cvars))"]
     elif $stmt.type == "assignment" then
       # If target is a local variable, use regular assignment
       # If target is an ivar (not local), use _ivar_set
@@ -2089,7 +2151,7 @@ def should_use_expr_parser:
     def is_json_primitive_unary: . as $v |
       ["arrayLength", "arrayFirst", "arrayLast", "arrayIsEmpty",
        "objectKeys", "objectValues", "objectLength", "objectIsEmpty",
-       "stringToJsonArray"] | index($v) != null;
+       "stringToJsonArray", "asJson", "jsonValue"] | index($v) != null;
     (any($tokens[]; .type == "SYMBOL" or .type == "HASH_LPAREN" or .type == "HASH_LBRACE" or .type == "TRIPLESTRING" or
                     (.type == "IDENTIFIER" and (.value | is_test_predicate)))) as $has_collection_literals |
     (any($tokens[]; .type == "KEYWORD" and .value == "try:")) as $has_try_catch |

@@ -5,15 +5,10 @@
 ObjectEditProposal subclass: Object
 
   classMethod: result: outcome phase: phase message: message object: objectId data: data [
-    | result unused |
-    result := @ Json object.
-    unused := @ result at: 'schema_version' putNumber: '1'.
-    unused := @ result at: 'outcome' put: outcome.
-    unused := @ result at: 'phase' put: phase.
-    unused := @ result at: 'message' put: message.
-    unused := @ result at: 'object_id' put: objectId.
-    data notEmpty ifTrue: [unused := @ result at: 'data' putJson: data].
-    ^ @ result build
+    | result |
+    result := #{schema_version: 1 outcome: outcome phase: phase message: message object_id: objectId} asJson.
+    data notEmpty ifTrue: [result := result objectAt: 'data' putJson: data].
+    ^ result
   ]
 
   # jq is the typed JSON-path boundary that the DSL does not currently expose.

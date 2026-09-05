@@ -15,10 +15,15 @@ trash/TestOverride
 trash/TestOverride.trash
 
 # The parent checkout ignores new lib/ files globally. Keep compiler analysis
-# queries versioned while leaving unrelated local lib artifacts ignored.
+# queries/runtime helpers versioned while leaving unrelated local artifacts ignored.
 !lib/
 lib/*
+!lib/trash-progress.bash
 !lib/jq-compiler/
 lib/jq-compiler/*
 !lib/jq-compiler/symbols.jq
 !lib/jq-compiler/senders.jq
+!lib/jq-compiler/tests/
+lib/jq-compiler/tests/*
+!lib/jq-compiler/tests/test_json_values.bash
+!lib/jq-compiler/tests/test_symbol_cache.bash
