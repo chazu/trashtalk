@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Standalone invocations use the same isolated checkout as the suite runner.
+if [[ "${TRASHTALK_TEST_ISOLATED:-}" != 1 ]]; then
+    exec bash "$(dirname "${BASH_SOURCE[0]}")/../../test-isolated.bash" "${BASH_SOURCE[0]}" "$@"
+fi
 # Test that rawMethod assignments compile with correct spacing
 # Regression test for: keys =false -> keys=false bug
 
@@ -250,6 +254,25 @@ else
 fi
 
 echo ""
+# Array assignments are actual argv boundaries, not arithmetic parentheses.
+cat > "$TMPFILE" <<'EOF'
+TestAssign subclass: Object
+  rawClassMethod: argv: text [
+    local -a args=("get" "$text" "-o" "json")
+    args=("--context" "space ctx" "${args[@]}")
+    printf '<%s>\n' "${args[@]}"
+  ]
+  classMethod: quoted: text [ ^ "say \"$text\"" ]
+EOF
+OUTPUT=$("$DRIVER" compile "$TMPFILE" --check)
+source /dev/stdin <<< "$OUTPUT"
+if [[ "$(__TestAssign__class__argv_ 'two words')" == $'<--context>\n<space ctx>\n<get>\n<two words>\n<-o>\n<json>' ]]; then
+    pass 'raw array assignment preserves exact argv'
+else fail 'raw array assignment changed argv'; fi
+if [[ "$(__TestAssign__class__quoted_ 'two words')" == 'say "two words"' ]]; then
+    pass 'escaped quotes survive tokenization and DSL compilation'
+else fail 'escaped string quotes changed'; fi
+
 echo "=== Results ==="
 echo "Passed: $PASSED"
 echo "Failed: $FAILED"

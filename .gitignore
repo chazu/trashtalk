@@ -27,3 +27,11 @@ lib/jq-compiler/*
 lib/jq-compiler/tests/*
 !lib/jq-compiler/tests/test_json_values.bash
 !lib/jq-compiler/tests/test_symbol_cache.bash
+
+# Shared DSL primitives, build/test tooling, and their regressions.
+!lib/trash-json.bash
+!lib/json-values.jq
+!lib/test-isolated.bash
+!lib/jq-compiler/build-cache.bash
+!lib/jq-compiler/tests/test_json_reads.bash
+!lib/jq-compiler/tests/test_build_cache.bash

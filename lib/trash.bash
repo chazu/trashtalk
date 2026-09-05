@@ -100,11 +100,12 @@ TRASH_DESCRIPTION="Smalltalk-inspired DSL for Bash"
 # User Configuration
 # ============================================
 # Load user configuration from ~/.trashrc if it exists
-if [[ -f "$HOME/.trashrc" ]]; then
+if [[ -z "${TRASHTALK_SKIP_USER_CONFIG:-}" && -f "$HOME/.trashrc" ]]; then
   source "$HOME/.trashrc"
 fi
 
 source "$SCRIPT_DIR/trash-progress.bash" || return 1
+source "$SCRIPT_DIR/trash-json.bash" || return 1
 
 # ============================================
 # Profiling Support

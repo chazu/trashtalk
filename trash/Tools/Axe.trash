@@ -91,29 +91,28 @@ Axe subclass: Tool
   ]
 
   classMethod: normalizeCaptured: capture expectsJson: expectsJson dryRun: dryRun [
-    | exitCode stdout stderr outcome valid parsedResult dryResult result |
-    exitCode := @ String jsonPath: 'exit_code' from: capture.
-    stdout := @ String jsonPath: 'stdout' from: capture.
-    stderr := @ String jsonPath: 'stderr' from: capture.
-    outcome := @ self outcomeForExitCode: exitCode.
-    parsedResult := 'null'.
+    | outcome valid parsedResult dryResult result |
+    capture jsonUnpack: #('exit_code' 'stdout' 'stderr') into: [:exitCode :stdout :stderr |
+      outcome := @ self outcomeForExitCode: exitCode.
+      parsedResult := 'null'.
 
-    (exitCode = '0') ifTrue: [
-      (expectsJson = 'true') ifTrue: [
-        valid := @ String isJson: stdout.
-        (valid = 'true') ifTrue: [
-          parsedResult := stdout
+      (exitCode = '0') ifTrue: [
+        (expectsJson = 'true') ifTrue: [
+          valid := @ String isJson: stdout.
+          (valid = 'true') ifTrue: [
+            parsedResult := stdout
+          ] ifFalse: [
+            outcome := 'invalid_output'
+          ]
         ] ifFalse: [
-          outcome := 'invalid_output'
+          dryResult := #{content: stdout dry_run: (dryRun jsonValue)} asJson.
+          parsedResult := dryResult
         ]
-      ] ifFalse: [
-        dryResult := #{content: stdout dry_run: (dryRun jsonValue)} asJson.
-        parsedResult := dryResult
-      ]
-    ].
+      ].
 
-    result := #{schema_version: 1 backend: 'axe' outcome: outcome
-                exit_code: (exitCode jsonValue) stdout: stdout stderr: stderr
-                result: (parsedResult jsonValue)} asJson.
-    ^ result
+      result := #{schema_version: 1 backend: 'axe' outcome: outcome
+                  exit_code: (exitCode jsonValue) stdout: stdout stderr: stderr
+                  result: (parsedResult jsonValue)} asJson.
+      ^ result
+    ]
   ]

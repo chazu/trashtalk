@@ -10,122 +10,56 @@
 
 _trash_receivers_list() {
   local cur="${1:-}"
-  local compiled_dir="${TRASHTALK_DIR:-${TRASHDIR:-.}}/trash/.compiled"
-
-  if [[ -d "$compiled_dir" ]]; then
-    while IFS= read -r -d '' file; do
-      local name
-      name=$(basename "$file")
-      name="${name//__/::}"
-      [[ -z "$cur" || "$name" == "$cur"* ]] && echo "$name"
-    done < <(find "$compiled_dir" -maxdepth 1 -type f -print0 2>/dev/null)
-  fi
+  local name
+  while IFS= read -r name; do
+    name=${name//__/::}
+    [[ -z "$cur" || "$name" == "$cur"* ]] && printf '%s\n' "$name"
+  done < <(@ Trash listObjects)
 
   # Shell variables that look like object IDs
   while IFS= read -r var; do
-    local val="${!var}"
-    if [[ "$val" =~ ^[a-z]+_[A-F0-9-]+$ ]]; then
+    local val="${!var-}"
+    if [[ "$val" =~ ^[a-z][a-z0-9_]*_[[:xdigit:]-]+$ ]]; then
       local candidate="\$$var"
       [[ -z "$cur" || "$candidate" == "$cur"* ]] && echo "$candidate"
     fi
   done < <(compgen -v)
 }
 
+# Ask the public compiler-backed browser for selectors; completion never
+# sources class artifacts or guesses selectors by reversing Bash function names.
 _trash_methods_list() {
-  local receiver="$1"
-  local cur="${2:-}"
-  local class_name=""
-
-  if [[ "$receiver" =~ ^[A-Z] ]]; then
-    class_name="$receiver"
-  elif [[ "$receiver" =~ ^\$ ]]; then
-    local varname="${receiver#\$}"
-    local instance_id="${!varname}"
-    [[ -n "$instance_id" ]] && class_name=$(_class_from_instance_id "$instance_id" 2>/dev/null)
+  local receiver="$1" class_name varname
+  if [[ "$receiver" == '$'* ]]; then
+    varname=${receiver#\$}
+    [[ "$varname" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]] || return
+    receiver=${!varname-}
+    [[ -n "$receiver" ]] || return
+    class_name=$(@ Runtime classFor: "$receiver" 2>/dev/null)
+  elif [[ "$receiver" =~ ^[A-Z] && "$receiver" != *_* ]]; then
+    class_name=$receiver
   else
-    class_name=$(_class_from_instance_id "$receiver" 2>/dev/null)
+    class_name=$(@ Runtime classFor: "$receiver" 2>/dev/null)
+    [[ -n "$class_name" ]] || class_name=$receiver
   fi
-
-  [[ -z "$class_name" ]] && return
-
-  local compiled_name="${class_name//::/__}"
-  local compiled_dir="${TRASHTALK_DIR:-${TRASHDIR:-.}}/trash/.compiled"
-  local compiled_file="$compiled_dir/$compiled_name"
-
-  [[ ! -f "$compiled_file" ]] && return
-
-  source "$compiled_file" 2>/dev/null
-
-  local is_class=0
-  [[ "$receiver" =~ ^[A-Z] ]] && is_class=1
-
-  _trash_methods_from_compiled "$compiled_name" "$is_class"
-
-  # Trait methods
-  local traits_var="__${compiled_name}__traits"
-  local traits="${!traits_var:-}"
-  for trait in $traits; do
-    local trait_file="$compiled_dir/traits/$trait"
-    if [[ -f "$trait_file" ]]; then
-      source "$trait_file" 2>/dev/null
-      _trash_methods_from_compiled "$trait" "$is_class"
-    fi
-  done
-
-  # Superclass chain
-  local super_var="__${compiled_name}__superclass"
-  local superclass="${!super_var:-}"
-  if [[ -n "$superclass" && "$superclass" != "nil" ]]; then
-    _trash_methods_recursive "$superclass" "$is_class" "$compiled_dir"
-  fi
+  local -A seen=()
+  _trash_selectors_recursive "$class_name"
 }
 
-_trash_methods_from_compiled() {
-  local compiled_name="$1"
-  local is_class="$2"
-
-  declare -F | awk '{print $3}' | grep "^__${compiled_name}__" | grep -v "__class__" | while read -r func; do
-    local method="${func#__${compiled_name}__}"
-    echo "${method//_/:}"
-  done
-
-  if [[ "$is_class" -eq 1 ]]; then
-    declare -F | awk '{print $3}' | grep "^__${compiled_name}__class__" | while read -r func; do
-      local method="${func#__${compiled_name}__class__}"
-      echo "${method//_/:}"
-    done
-  fi
-}
-
-_trash_methods_recursive() {
-  local class_name="$1"
-  local is_class="$2"
-  local compiled_dir="$3"
-  local compiled_name="${class_name//::/__}"
-  local compiled_file="$compiled_dir/$compiled_name"
-
-  [[ ! -f "$compiled_file" ]] && return
-
-  source "$compiled_file" 2>/dev/null
-  _trash_methods_from_compiled "$compiled_name" "$is_class"
-
-  local super_var="__${compiled_name}__superclass"
-  local superclass="${!super_var:-}"
-  if [[ -n "$superclass" && "$superclass" != "nil" ]]; then
-    _trash_methods_recursive "$superclass" "$is_class" "$compiled_dir"
-  fi
-}
-
-_class_from_instance_id() {
-  local instance_id="$1"
-  local data
-  data=$(_env_get "$instance_id" 2>/dev/null)
-  if [[ -n "$data" ]]; then
-    echo "$data" | jq -r '.class // empty' 2>/dev/null
-    return
-  fi
-  local prefix="${instance_id%%_[A-F0-9-]*}"
-  echo "${prefix^}"
+_trash_selectors_recursive() {
+  local class_name="$1" records parent
+  [[ -n "$class_name" && "$class_name" != nil && -z "${seen[$class_name]:-}" ]] || return 0
+  seen[$class_name]=1
+  records=$(@ Trash symbolRecordsForClass: "$class_name") || return
+  printf '%s\n' "$records" | jq -r '
+    if .kind == "instance_method" or .kind == "class_method" then .selector
+    elif .kind == "instance_variable" or .kind == "class_variable" then
+      .variable as $v | ($v, ($v + ":"), ("get" + ($v[0:1] | ascii_upcase) + $v[1:]),
+        ("set" + ($v[0:1] | ascii_upcase) + $v[1:] + ":"))
+    else empty end'
+  while IFS= read -r parent; do
+    _trash_selectors_recursive "$parent"
+  done < <(printf '%s\n' "$records" | jq -r 'select(.kind == "class" or .kind == "trait") | (.superclass // ""), .traits[]?')
 }
 
 _common_prefix() {
@@ -166,6 +100,8 @@ _trash_repl_complete() {
   local line="$READLINE_LINE"
   local point="$READLINE_POINT"
   local before="${line:0:$point}"
+  local leading=""
+  if [[ "$before" == "@ "* ]]; then leading="@ "; before=${before#"@ "}; fi
 
   # Tokenise what's before the cursor
   local -a words
@@ -186,13 +122,13 @@ _trash_repl_complete() {
     mapfile -t candidates < <(_trash_receivers_list "$cur" | sort -u)
   else
     local receiver="${words[0]}"
-    mapfile -t candidates < <(_trash_methods_list "$receiver" | grep "^${cur}" | sort -u)
+    mapfile -t candidates < <(_trash_methods_list "$receiver" | while IFS= read -r method; do [[ "$method" == "$cur"* ]] && printf '%s\n' "$method"; done | sort -u)
   fi
 
   local n=${#candidates[@]}
   [[ $n -eq 0 ]] && return
 
-  local prefix="${before%"$cur"}"
+  local prefix="${leading}${before%"$cur"}"
 
   if [[ $n -eq 1 ]]; then
     local new="${candidates[0]} "

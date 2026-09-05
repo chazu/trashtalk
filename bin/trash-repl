@@ -27,12 +27,28 @@ export TRASH_DEBUG=0
 source "$TRASHTALK_DIR/lib/trash.bash" || exit 1
 if [[ -t 0 && -t 2 ]]; then export TRASHTALK_INTERACTIVE=1; fi
 
+# Readline runs in this shell, so completion can see live object variables.
+# Noninteractive input keeps its exact message/output protocol.
+repl_interactive=false
+if [[ -t 0 && -t 1 ]]; then
+    repl_interactive=true
+    source "$TRASHTALK_DIR/lib/trash-completion.bash"
+    set -o emacs
+    repl_history_file="${TRASHTALK_HISTORY_FILE:-$HOME/.trash_history}"
+    history -r "$repl_history_file" 2>/dev/null || true
+    bind -x '"\C-i":_trash_repl_complete'
+fi
+
 echo "Trashtalk REPL"
 echo "Type 'help' for commands, 'exit' to quit"
 echo ""
 
-while read -rp "@ " cmd; do
+while { if $repl_interactive; then read -erp "@ " cmd; else read -r cmd; fi; }; do
     [[ -z "$cmd" ]] && continue
+    if $repl_interactive; then
+        history -s -- "$cmd"
+        history -a "$repl_history_file"
+    fi
 
     cmd="${cmd#@ }"
     cmd="${cmd#@}"

@@ -18,9 +18,9 @@ COMPILED_DIR := $(TRASH_DIR)/.compiled
 LIB_DIR := lib
 TESTS_DIR := tests
 
-# AST cache lives under TRASHTALK_DIR (default ~/.trashtalk), separate from the
-# repo's .compiled output, so `clean` must remove it explicitly.
-TRASHTALK_DIR ?= $(HOME)/.trashtalk
+# AST cache follows TRASHTALK_DIR, which may be overridden independently of
+# the repo's .compiled output, so `clean` must remove it explicitly.
+TRASHTALK_DIR ?= $(CURDIR)
 AST_CACHE_DIR := $(TRASHTALK_DIR)/trash/.compiled/.astcache
 
 # Tools
@@ -29,7 +29,7 @@ JQ_COMPILER := $(LIB_DIR)/jq-compiler/driver.bash
 # Platform detection (for parallel jobs)
 UNAME := $(shell uname)
 ifeq ($(UNAME),Darwin)
-    NPROCS := $(shell sysctl -n hw.ncpu)
+    NPROCS := $(shell sysctl -n hw.ncpu 2>/dev/null || echo 4)
 else
     NPROCS := $(shell nproc 2>/dev/null || echo 4)
 endif
@@ -42,7 +42,7 @@ NAMESPACE_SOURCES := $(filter-out $(wildcard $(TRASH_DIR)/traits/*.trash) $(wild
                       $(wildcard $(TRASH_DIR)/*/*.trash))
 ALL_SOURCES := $(SOURCES) $(TRAIT_SOURCES) $(USER_SOURCES) $(NAMESPACE_SOURCES)
 
-.PHONY: all bash test test-serial test-verbose clean help info single watch doctor bench
+.PHONY: all bash test test-serial test-compiler verify test-verbose clean help info single watch doctor bench
 
 # =============================================================================
 # Main Targets
@@ -95,15 +95,7 @@ endif
 		echo "Error: $$srcfile not found"; \
 		exit 1; \
 	fi; \
-	outname=$$(echo "$$classarg" | sed 's/\//__/g'); \
-	outfile="$(COMPILED_DIR)/$$outname"; \
-	echo "Compiling $$srcfile..."; \
-	if $(JQ_COMPILER) compile "$$srcfile" > "$$outfile"; then \
-		echo "  ✓ $$outfile"; \
-	else \
-		echo "  ✗ Compilation failed"; \
-		exit 1; \
-	fi
+	$(LIB_DIR)/compile-bash.sh "$$srcfile" $(COMPILED_DIR) $(JQ_COMPILER) $(TRASH_DIR)
 
 # =============================================================================
 # Testing
@@ -117,13 +109,18 @@ test-serial: bash
 	@echo ""
 	@bash $(LIB_DIR)/run-tests.sh $(TESTS_DIR) --serial
 
+test-compiler: bash
+	@bash $(LIB_DIR)/run-tests.sh $(LIB_DIR)/jq-compiler/tests
+
+verify: test test-compiler
+
 test-verbose: bash
 	@echo "Running tests (verbose)..."
 	@for test in $(TESTS_DIR)/test_*.bash; do \
 		if [[ -f "$$test" ]]; then \
 			echo ""; \
 			echo "=== $$(basename $$test) ==="; \
-			bash -x "$$test"; \
+			TRASH_TEST_TRACE=1 bash $(LIB_DIR)/test-isolated.bash "$$test"; \
 		fi; \
 	done
 
@@ -183,7 +180,9 @@ help:
 	@echo "  make single CLASS=Tools/Jq"
 	@echo ""
 	@echo "Testing:"
-	@echo "  make test         Run all tests"
+	@echo "  make verify       Build and run both isolated test suites"
+	@echo "  make test         Run isolated runtime tests in parallel"
+	@echo "  make test-compiler Run isolated compiler tests in parallel"
 	@echo "  make test-verbose Run tests with bash -x"
 	@echo ""
 	@echo "Other:"

@@ -101,94 +101,46 @@ Array subclass: Object
   # Usage: @ myArray do: [:each | @ Console print: each]
   method: do: aBlock [
     pragma: direct
-    | i len |
-    len := items arrayLength.
-    i := 0.
-    [i < len] whileTrue: [
-      @ aBlock valueWith: (items arrayAt: i).
-      i := i + 1
-    ]
+    items arrayEach: [:element | @ aBlock valueWith: element]
   ]
 
-  # Map each element through a block, returning new array
-  # Usage: doubled := @ myArray collect: [:x | x * 2]
   method: collect: aBlock [
-    | i len newItems result newArray |
-    len := items arrayLength.
-    newItems := '[]'.
-    i := 0.
-    [i < len] whileTrue: [
-      result := @ aBlock valueWith: (items arrayAt: i).
-      newItems := newItems arrayPush: result.
-      i := i + 1
-    ].
+    | newItems newArray |
+    newItems := items arrayCollect: aBlock.
     newArray := @ Array new.
     @ newArray setItems: newItems.
     ^ newArray
   ]
 
-  # Select elements where block returns true (non-empty string)
-  # Usage: evens := @ myArray select: [:x | x % 2 == 0]
   method: select: aBlock [
-    | i len newItems element result newArray |
-    len := items arrayLength.
-    newItems := '[]'.
-    i := 0.
-    [i < len] whileTrue: [
-      element := items arrayAt: i.
-      result := @ aBlock valueWith: element.
-      result notEmpty ifTrue: [
-        newItems := newItems arrayPush: element
-      ].
-      i := i + 1
-    ].
+    | newItems newArray |
+    newItems := items arraySelect: aBlock.
     newArray := @ Array new.
     @ newArray setItems: newItems.
     ^ newArray
   ]
 
-  # Find first element where block returns true
-  # Usage: found := @ myArray detect: [:x | x > 5]
-  # Returns empty string if no match found
   method: detect: aBlock [
-    | i len element result |
-    len := items arrayLength.
-    i := 0.
-    [i < len] whileTrue: [
-      element := items arrayAt: i.
+    | result |
+    items arrayEach: [:element |
       result := @ aBlock valueWith: element.
-      (result notEmpty) ifTrue: [^ element].
-      i := i + 1
+      result notEmpty ifTrue: [^ element]
     ].
     ^ ''
   ]
 
-  # Find first element where block returns true, with default
-  # Usage: found := @ myArray detect: [:x | x > 5] ifNone: ['not found']
   method: detect: aBlock ifNone: defaultBlock [
-    | i len element result |
-    len := items arrayLength.
-    i := 0.
-    [i < len] whileTrue: [
-      element := items arrayAt: i.
+    | result |
+    items arrayEach: [:element |
       result := @ aBlock valueWith: element.
-      (result notEmpty) ifTrue: [^ element].
-      i := i + 1
+      result notEmpty ifTrue: [^ element]
     ].
     ^ @ defaultBlock value
   ]
 
-  # Reduce array to single value using block
-  # Usage: sum := @ myArray inject: 0 into: [:acc :each | acc + each]
   method: inject: initial into: aBlock [
-    | i len acc element |
-    len := items arrayLength.
+    | acc |
     acc := initial.
-    i := 0.
-    [i < len] whileTrue: [
-      element := items arrayAt: i.
-      acc := @ aBlock valueWith: acc and: element.
-      i := i + 1
-    ].
+    items arrayEach: [:element | acc := @ aBlock valueWith: acc and: element].
     ^ acc
   ]

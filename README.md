@@ -767,6 +767,21 @@ Multiple processes can run the scheduler — honker's leader election ensures ea
 allowed=$(@ Honker rateLimit: 'api-call' limit: 100 window: 60)
 ```
 
+## Development loop
+
+Run `bin/trash` for the REPL. It uses Bash Readline for editing, Up/Down history,
+and Tab completion of classes, live object variables, and methods; no rlwrap
+filter is required. History defaults to `~/.trash_history`; override it with
+`TRASHTALK_HISTORY_FILE`. `bin/trash --help` shows examples, and piped message
+input works without terminal setup.
+
+`make` skips unchanged compiled classes and rebuilds parent/trait dependencies
+before their dependents. `make single CLASS=Counter` uses the same build cache.
+Run `make verify` to build and check both runtime and compiler suites in isolated
+parallel test checkouts. See [performance](docs/performance.md) for controls and
+[JSON values](docs/json-values.md) for typed reads, bulk field binding, and
+collection traversal primitives.
+
 ## Dependencies
 
 Vendored in `lib/vendor/`:

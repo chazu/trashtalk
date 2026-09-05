@@ -84,16 +84,12 @@ Dictionary subclass: Object
   # Create dictionary from pairs
   # Usage: @ dict withPairs: 'name:Alice age:30'
   method: withPairs: pairs [
-    | pairsArray i len pair key value unused |
+    | pairsArray key value unused |
     pairsArray := @ String splitToArray: pairs on: ' '.
-    len := pairsArray arrayLength.
-    i := 0.
-    [i < len] whileTrue: [
-      pair := pairsArray arrayAt: i.
+    pairsArray arrayEach: [:pair |
       key := @ String before: ':' in: pair.
       value := @ String after: ':' in: pair.
-      unused := @ self at: key put: value.
-      i := i + 1
+      unused := @ self at: key put: value
     ].
     ^ self
   ]
@@ -102,97 +98,39 @@ Dictionary subclass: Object
   # Usage: @ dict do: [:key :value | @ Console print: key , ' = ' , value]
   method: do: aBlock [
     pragma: direct
-    | keysArray i len key value |
-    keysArray := items objectKeys.
-    len := keysArray arrayLength.
-    i := 0.
-    [i < len] whileTrue: [
-      key := keysArray arrayAt: i.
-      value := items objectAt: key.
-      @ aBlock valueWith: key and: value.
-      i := i + 1
-    ]
+    items objectEach: [:key :value | @ aBlock valueWith: key and: value]
   ]
 
-  # Iterate over keys only
-  # Usage: @ dict keysDo: [:key | @ Console print: 'Key: ' , key]
   method: keysDo: aBlock [
-    | keysArray i len key |
-    keysArray := items objectKeys.
-    len := keysArray arrayLength.
-    i := 0.
-    [i < len] whileTrue: [
-      key := keysArray arrayAt: i.
-      @ aBlock valueWith: key.
-      i := i + 1
-    ]
+    items objectKeysEach: [:key | @ aBlock valueWith: key]
   ]
 
-  # Iterate over values only
-  # Usage: @ dict valuesDo: [:value | @ Console print: 'Value: ' , value]
   method: valuesDo: aBlock [
-    | valuesArray i len value |
-    valuesArray := items objectValues.
-    len := valuesArray arrayLength.
-    i := 0.
-    [i < len] whileTrue: [
-      value := valuesArray arrayAt: i.
-      @ aBlock valueWith: value.
-      i := i + 1
-    ]
+    items objectValuesEach: [:value | @ aBlock valueWith: value]
   ]
 
-  # Map values through a block, returning new dictionary with same keys
-  # Usage: doubled := @ dict collect: [:v | v * 2]
   method: collect: aBlock [
-    | keysArray i len key value result newDict |
-    keysArray := items objectKeys.
-    len := keysArray arrayLength.
+    | newItems newDict |
+    newItems := items objectCollect: aBlock.
     newDict := @ Dictionary new.
-    i := 0.
-    [i < len] whileTrue: [
-      key := keysArray arrayAt: i.
-      value := items objectAt: key.
-      result := @ aBlock valueWith: value.
-      @ newDict at: key put: result.
-      i := i + 1
-    ].
+    @ newDict setItems: newItems.
     ^ newDict
   ]
 
-  # Select key-value pairs where block returns true
-  # Usage: evens := @ dict select: [:k :v | (v % 2) == 0]
   method: select: aBlock [
-    | keysArray i len key value result newDict |
-    keysArray := items objectKeys.
-    len := keysArray arrayLength.
+    | newItems newDict |
+    newItems := items objectSelect: aBlock.
     newDict := @ Dictionary new.
-    i := 0.
-    [i < len] whileTrue: [
-      key := keysArray arrayAt: i.
-      value := items objectAt: key.
-      result := @ aBlock valueWith: key and: value.
-      result notEmpty ifTrue: [
-        @ newDict at: key put: value
-      ].
-      i := i + 1
-    ].
+    @ newDict setItems: newItems.
     ^ newDict
   ]
 
   # Merge another dictionary into this one (modifies self)
   # Usage: @ dict merge: otherDict
   method: merge: other [
-    | otherKeys i len key value |
-    otherKeys := (@ other getItems) objectKeys.
-    len := otherKeys arrayLength.
-    i := 0.
-    [i < len] whileTrue: [
-      key := otherKeys arrayAt: i.
-      value := @ other at: key.
-      @ self at: key put: value.
-      i := i + 1
-    ].
+    | otherItems |
+    otherItems := @ other getItems.
+    otherItems objectEach: [:key :value | @ self at: key put: value].
     ^ self
   ]
 

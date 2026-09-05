@@ -95,7 +95,8 @@ are wall-clock measurements, not guarantees about every host.
 
 ### Measured locally, 2026-09-05
 
-The completed implementation produced these warm medians over five samples:
+The earlier runtime and JSON-construction changes produced these warm medians
+over five samples, before the read/traversal and build-cache work below:
 
 | Public operation | Before | After |
 | --- | ---: | ---: |
@@ -115,3 +116,49 @@ was removed; this table does not measure interactive rendering or model latency.
 Run runtime checks with `make test-serial` and compiler checks with
 `bash lib/run-tests.sh lib/jq-compiler/tests --serial`. Regression tests check
 operation counts and output semantics instead of fragile timing assertions.
+
+## Incremental builds and verification
+
+`make` and `make single CLASS=Counter` reuse validated compiled output when its
+source, compiler, parent/trait dependencies, and output digest still match.
+Receipts live in `.compiled/.buildcache/` (and the corresponding trait directory).
+Parents and traits are built before dependents, including on a clean checkout.
+Changing source while preserving its mtime still invalidates the receipt.
+Invalid source or missing/cyclic dependencies fails the build; the previous
+artifact remains installed. Output installation is atomic.
+
+`make verify` builds and runs both runtime and compiler suites. `make test` runs
+runtime tests; `make test-compiler` runs compiler tests. Both run in parallel with
+a separate disposable checkout, database, compiler cache, and session per test.
+Direct `bash tests/test_foo.bash` invocations use the same isolation. User
+`.trashrc` is skipped in tests, and HOME is unchanged.
+
+Use `TRASH_TEST_JOBS=4` to bound parallelism, `TRASH_TEST_TIMEOUT=180` to change
+the per-file timeout, `TRASH_TEST_KEEP=1` to retain disposable checkouts for
+debugging, and `TRASH_TEST_TRACE=1` for Bash traces. The runner's result summary
+and exit status include failures and timeouts from either suite.
+
+The [JSON read/traversal primitives](json-values.md) make extraction and iteration
+process counts explicit. Diagnostic conversion uses one decoder and one
+serializer. Array mapping with a constant class callback uses 13 jq processes
+for both one and 25 elements, including runtime persistence; callback work
+itself remains additional.
+
+Two consecutive warm `make bash` runs on 2026-09-05 took 3.63 and 3.80 seconds,
+with zero classes recompiled. The cache regression separately counts codegen
+invocations and checks parent, trait, compiler, and damaged-output invalidation.
+
+Comparing the methods from `b590370` with the new methods in the same isolated
+runtime gave these medians over five alternating samples on 2026-09-05:
+
+| Public operation | Previous method | New method |
+| --- | ---: | ---: |
+| Array map, 25 values, identity callback | 243.07 ms | 99.05 ms |
+| Dictionary map, 25 values, identity callback | 607.31 ms | 111.41 ms |
+| Browser records, ten Counter instances | 233.66 ms | 159.71 ms |
+
+The comparison checked identical stored collection values and browser records.
+The previous Dictionary map also printed intermediate values; its final stdout
+line supplied the result ID for that check. The new method returns only the
+result ID. These comparisons measure traversal and serialization; callbacks
+that invoke processes or mutate persisted state still pay for that work.

@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
+# Standalone invocations use the same isolated checkout as the suite runner.
+if [[ "${TRASHTALK_TEST_ISOLATED:-}" != 1 ]]; then
+    exec bash "$(dirname "${BASH_SOURCE[0]}")/../lib/test-isolated.bash" "${BASH_SOURCE[0]}" "$@"
+fi
 
 # Integration test for new instance_vars model
 
 TRASHTALK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # Clean slate
-rm -f "$TRASHTALK_DIR/instances.db"
-rm -f ~/.trashtalk/instances.db
+rm -f "$SQLITE_JSON_DB"
+
 
 source "$TRASHTALK_DIR/lib/trash.bash"
 
@@ -132,7 +136,7 @@ echo "5. Data Persistence Check"
 # ==========================================
 
 echo "  Checking raw database..."
-raw=$(sqlite3 ~/.trashtalk/instances.db "SELECT data FROM instances WHERE id='$counter';")
+raw=$(sqlite3 "$SQLITE_JSON_DB" "SELECT data FROM instances WHERE id='$counter';")
 [[ "$raw" == *'"class":"Counter"'* ]] && pass "Raw data has class" || fail "Raw data missing class"
 [[ "$raw" == *'"_vars"'* ]] && pass "Raw data has _vars" || fail "Raw data missing _vars"
 [[ "$raw" == *'"value"'* ]] && pass "Raw data has value field" || fail "Raw data missing value"

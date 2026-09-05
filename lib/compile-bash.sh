@@ -23,20 +23,7 @@ outfile="$COMPILED_DIR/$outname"
 
 mkdir -p "$(dirname "$outfile")"
 
-# Compile to a temp file first, then atomically move into place. Redirecting
-# straight to "$outfile" truncates it before the compiler runs, so a failure
-# would leave a partial/empty compiled file behind that could be sourced later.
-stderr_file=$(mktemp)
-tmp_outfile=$(mktemp "$outfile.XXXXXX")
-if "$JQ_COMPILER" compile "$src" > "$tmp_outfile" 2>"$stderr_file"; then
-    mv -f "$tmp_outfile" "$outfile"
-    echo "  ✓ $outname"
-else
-    echo "  ✗ $outname (compilation failed)"
-    if [[ -s "$stderr_file" ]]; then
-        cat "$stderr_file" >&2
-    fi
-    rm -f "$stderr_file" "$tmp_outfile"
-    exit 1
-fi
-rm -f "$stderr_file"
+# The compiler owns dependency ordering, output validation, and atomic install.
+export TRASHTALK_DIR="$(cd "$TRASH_DIR/.." && pwd)"
+export TRASHTALK_COMPILED_DIR="$(cd "$COMPILED_DIR" && pwd)"
+exec "$JQ_COMPILER" compile-cached "$src" "$outfile"

@@ -185,8 +185,18 @@ String subclass: Object
     echo "$2" | jq -r ".$1 // empty"
   ]
 
+  classMethod: jsonAt: path from: data [ ^ data jsonAt: path ]
+
+  classMethod: jsonTextAt: path from: data [ ^ data jsonTextAt: path ]
+
+  classMethod: jsonHas: path in: data [ ^ data jsonHas: path ]
+
+  classMethod: jsonAt: path from: data ifAbsent: fallback [
+    ^ data jsonAt: path ifAbsent: fallback
+  ]
+
   rawClassMethod: isJson: jsonString [
-    if printf '%s' "$1" | jq -e . >/dev/null 2>&1; then
+    if printf '%s' "$1" | jq -se 'length == 1' >/dev/null 2>&1; then
       echo 'true'
     else
       echo 'false'

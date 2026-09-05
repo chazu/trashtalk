@@ -134,7 +134,7 @@ def expr_is_json_array_keyword:
   $tok != null and $tok.type == "KEYWORD" and
   ($tok.value == "arrayPush:" or $tok.value == "arrayPushJson:" or
    $tok.value == "arrayAt:" or $tok.value == "arrayAt:put:" or
-   $tok.value == "arrayRemoveAt:");
+   $tok.value == "arrayRemoveAt:" or $tok.value == "arrayCollect:" or $tok.value == "arraySelect:");
 
 # Object primitives that take arguments (keyword methods)
 def expr_is_json_object_keyword:
@@ -142,7 +142,9 @@ def expr_is_json_object_keyword:
   $tok != null and $tok.type == "KEYWORD" and
   ($tok.value == "objectAt:" or $tok.value == "objectAt:put:" or
    $tok.value == "objectAt:putJson:" or $tok.value == "objectHasKey:" or
-   $tok.value == "objectRemoveKey:" or $tok.value == "jsonPath:");
+   $tok.value == "objectRemoveKey:" or $tok.value == "jsonPath:" or
+   $tok.value == "jsonAt:" or $tok.value == "jsonTextAt:" or $tok.value == "jsonHas:" or
+   $tok.value == "objectCollect:" or $tok.value == "objectSelect:");
 
 # Unary JSON primitives (no arguments)
 def expr_is_json_unary:
@@ -627,6 +629,24 @@ def expr_parse_expr(min_bp):
           }
         }
         | infix_loop
+      elif (.state | expr_peek_type) == "KEYWORD" and
+           ((.state | expr_peek.value) == "jsonUnpack:" or
+            (.state | expr_peek.value) == "arrayEach:" or (.state | expr_peek.value) == "objectEach:" or
+            (.state | expr_peek.value) == "objectKeysEach:" or (.state | expr_peek.value) == "objectValuesEach:") then
+        .result as $receiver | (.state | expr_peek) as $token |
+        (.state | expr_advance | expr_skip_ws) as $start |
+        (if $token.value == "jsonUnpack:" then
+          ($start | expr_parse_expr(0)) as $paths |
+          ($paths.state | expr_skip_ws) as $after |
+          if ($after | expr_peek.value) != "into:" then error("jsonUnpack: requires into: [block]")
+          else {state:($after | expr_advance | expr_skip_ws),paths:$paths.result} end
+        else {state:$start,paths:null} end) as $args |
+        if ($args.state | expr_peek_type) != "LBRACKET" then error("JSON traversal requires an inline block")
+        else ($args.state | expr_parse_block) as $block |
+          {state:$block.state,result:{type:"json_traversal",operation:($token.value | rtrimstr(":")),
+            receiver:$receiver,paths:$args.paths,block:$block.result,
+            site:"\($token.line)_\($token.col)"}} | infix_loop
+        end
       elif (.state | expr_is_json_unary) then
         # Unary JSON primitives: arr arrayLength, arr arrayFirst, etc.
         .result as $receiver |
@@ -651,12 +671,16 @@ def expr_parse_expr(min_bp):
         # Determine operation name from keyword
         ($keyword | rtrimstr(":")) as $op_base |
         # Check for compound keywords like arrayAt:put: or objectAt:put: or objectAt:putJson:
-        if $keyword == "arrayAt:" or $keyword == "objectAt:" then
+        if $keyword == "arrayAt:" or $keyword == "objectAt:" or $keyword == "jsonAt:" or $keyword == "jsonTextAt:" then
           # Parse first argument
           (.state | expr_parse_expr(0)) as $first_arg |
           $first_arg.state | expr_skip_ws |
           # Check for put: or putJson: continuation
-          if expr_peek_type == "KEYWORD" and expr_peek.value == "put:" then
+          if expr_peek_type == "KEYWORD" and expr_peek.value == "ifAbsent:" and $keyword == "jsonAt:" then
+            expr_advance | expr_skip_ws | (. | expr_parse_expr(0)) as $default |
+            {state:$default.state,result:{type:"json_primitive",operation:"jsonAtDefault",
+              receiver:$receiver,args:[$first_arg.result,$default.result]}} | infix_loop
+          elif expr_peek_type == "KEYWORD" and expr_peek.value == "put:" then
             expr_advance | expr_skip_ws |
             (. | expr_parse_expr(0)) as $second_arg |
             {
@@ -1133,7 +1157,7 @@ def expr_gen($locals; $ivars; $cvars):
       "@ \($recv) \(.selector // "")\($args)"
     ) | join("; "))
   elif .type == "assignment" and .value.type == "json_primitive" and
-       (.value.operation == "asJson" or .value.operation == "jsonValue") then
+       (.value.operation | IN("asJson", "jsonValue", "jsonAt", "jsonTextAt", "jsonHas", "jsonAtDefault", "arrayCollect", "arraySelect", "objectCollect", "objectSelect")) then
     (.value | expr_gen($locals; $ivars; $cvars)) as $code |
     if expr_is_ivar(.target; $ivars) and (expr_is_local(.target; $locals) | not) then
       "local __json_value__; __json_value__=\"\($code)\" || return; _ivar_set \(.target) \"$__json_value__\""
@@ -1201,7 +1225,7 @@ def expr_gen($locals; $ivars; $cvars):
   elif .type == "return" then
     if .value == null then "return"
     elif .value.type == "json_primitive" and
-         (.value.operation == "asJson" or .value.operation == "jsonValue") then
+         (.value.operation | IN("asJson", "jsonValue", "jsonAt", "jsonTextAt", "jsonHas", "jsonAtDefault", "arrayCollect", "arraySelect", "objectCollect", "objectSelect")) then
       # Emit the serializer directly so malformed typed input retains its status.
       (.value | expr_gen($locals; $ivars; $cvars)) as $code |
       "\($code[2:-1]); return"
@@ -1697,6 +1721,50 @@ def expr_gen($locals; $ivars; $cvars):
       end;
     json_plan(.receiver; .operation == "jsonValue"; 0) as $plan |
     "$(jq -cn \($plan.args | join(" ")) \($plan.filter | @sh))"
+  elif .type == "json_traversal" then
+    def arg_code:
+      if .type == "string" or .type == "symbol" then .value | @sh
+      elif .type == "message_send" then "\"$(\(expr_gen($locals; $ivars; $cvars)))\""
+      else "\"\(expr_gen($locals; $ivars; $cvars))\"" end;
+    (.receiver | arg_code) as $receiver |
+    (.block.params // []) as $params |
+    if any($params[]; startswith("__tj_") or startswith("__json_")) then error("reserved JSON binding name") else . end |
+    ($locals + $params) as $bound |
+    ({tokens:.block.tokens,pos:0} | expr_parse_stmts) as $body |
+    ([$body.body[] | expr_gen($bound; $ivars; $cvars)] | join("; ")) as $code |
+    if .operation == "jsonUnpack" then
+      def constant:
+        if .type == "array_literal" then .elements | map(constant)
+        elif .type == "string" or .type == "symbol" then .value
+        elif .type == "number" then .value | tonumber
+        else error("jsonUnpack: requires literal field paths") end;
+      (.paths | constant) as $paths |
+      if ($paths | type) != "array" or ($paths | length) != ($params | length) or ($params | length) == 0
+      then error("jsonUnpack: field/binding count mismatch")
+      else "local \($params | join(" ")); _trash_json_unpack \($receiver) \($paths | tojson | @sh) \($params | join(" ")) || return; \($code)" end
+    else
+      (if .operation == "objectEach" then 2 else 1 end) as $stride |
+      if ($params | length) != $stride then error("incorrect JSON traversal block arity") else
+        "__json_values_\(.site)" as $values | "__json_i_\(.site)" as $index |
+        ({objectEach:"object",arrayEach:"array",objectKeysEach:"keys",objectValuesEach:"values"}[.operation]) as $kind |
+        ([range(0;$stride) as $i | "\($params[$i])=\"${\($values)[\($index)+\($i)]}\""] | join("; ")) as $bindings |
+        "local -a \($values)=(); local \($index) \($params | join(" ")); _trash_json_decode \($values) \($receiver) \($kind) || return; for ((\($index)=0; \($index)<${#\($values)[@]}; \($index)+=\($stride))); do \($bindings); \($code); done" end
+    end
+  elif .type == "json_primitive" and
+       (.operation | IN("jsonAt", "jsonTextAt", "jsonHas", "jsonAtDefault", "arrayCollect", "arraySelect", "objectCollect", "objectSelect")) then
+    def arg_code:
+      if .type == "string" or .type == "symbol" then .value | @sh
+      elif .type == "message_send" then "\"$(\(expr_gen($locals; $ivars; $cvars)))\""
+      else "\"\(expr_gen($locals; $ivars; $cvars))\"" end;
+    (.receiver | arg_code) as $receiver | (.args | map(arg_code)) as $args |
+    if (.operation | startswith("array") or startswith("object")) then
+      (if (.operation | startswith("array")) then "array" else "object" end) as $kind |
+      (if (.operation | endswith("Select")) then "true" else "false" end) as $select |
+      "$(_trash_json_collect \($receiver) \($args[0]) \($kind) \($select))"
+    else
+      ({jsonAt:"get",jsonTextAt:"text",jsonHas:"has",jsonAtDefault:"default"}[.operation]) as $mode |
+      "$(_trash_json_get \($mode) \($receiver) \($args | join(" ")))"
+    end
   elif .type == "json_primitive" then
     # JSON primitive operations - generate jq pipelines
     (.receiver | expr_gen($locals; $ivars; $cvars)) as $recv |
@@ -2024,7 +2092,7 @@ def expr_gen_stmts($locals; $ivars; $cvars):
       .lines += ["  local \(($stmt.names // []) | join(" "))"] |
       .locals += ($stmt.names // [])
     elif $stmt.type == "assignment" and $stmt.value.type == "json_primitive" and
-         ($stmt.value.operation == "asJson" or $stmt.value.operation == "jsonValue") then
+         ($stmt.value.operation | IN("asJson", "jsonValue", "jsonAt", "jsonTextAt", "jsonHas", "jsonAtDefault", "arrayCollect", "arraySelect", "objectCollect", "objectSelect")) then
       .lines += ["  \($stmt | expr_gen($current_locals; $ivars; $cvars))"]
     elif $stmt.type == "assignment" then
       # If target is a local variable, use regular assignment
@@ -2146,7 +2214,9 @@ def should_use_expr_parser:
     # JSON primitive keywords
     def is_json_primitive_keyword: . as $v |
       ["arrayPush:", "arrayPushJson:", "arrayAt:", "arrayRemoveAt:",
-       "objectAt:", "objectHasKey:", "objectRemoveKey:", "jsonPath:"] | index($v) != null;
+       "objectAt:", "objectHasKey:", "objectRemoveKey:", "jsonPath:",
+       "jsonAt:", "jsonTextAt:", "jsonHas:", "jsonUnpack:", "arrayEach:", "objectEach:", "objectKeysEach:", "objectValuesEach:",
+       "arrayCollect:", "arraySelect:", "objectCollect:", "objectSelect:"] | index($v) != null;
     # JSON primitive unary identifiers
     def is_json_primitive_unary: . as $v |
       ["arrayLength", "arrayFirst", "arrayLast", "arrayIsEmpty",
@@ -2350,6 +2420,7 @@ def generateMetadata:
   ["Object", "Tool", "TestCase"] as $globalClasses |
   (if $parentName == null or $parentName == "" then ""
    elif ($parentName | contains("::")) then $parentName
+   elif .parentPackage then "\(.parentPackage)::\($parentName)"
    elif ($globalClasses | index($parentName)) then $parentName
    elif .package != null then "\(.package)::\($parentName)"
    else $parentName end) as $qualifiedParent |
@@ -2619,7 +2690,7 @@ def transformMethodBody($className; $isRaw):
       gsub("\\( "; "(") |              # Remove space after (
       gsub("> /"; ">/") |              # Remove space after > before path
       gsub("< (?<c>[^<])"; "<\(.c)") |  # Remove space after < unless followed by < (process substitution)
-      gsub("(?<a>[a-zA-Z0-9_]) = (?<c>[0-9\"'$])"; "\(.a)=\(.c)") |  # Fix assignments: var = "val" → var="val"
+      gsub("(?<a>[a-zA-Z0-9_]) = (?<c>[0-9\"'$(])"; "\(.a)=\(.c)") |  # Fix assignments: var = "val" → var="val"
       gsub("(?<a>[a-zA-Z0-9_]) =(?<c>[\"'$])"; "\(.a)=\(.c)") |  # Fix assignments: var ="val" → var="val"
       gsub("(?<a>[a-zA-Z0-9_])= (?<c>true|false|yes|no)(?<d>[ \n;)$])"; "\(.a)=\(.c)\(.d)") |  # Fix bool: var= true → var=true
       gsub("(?<a>[a-zA-Z0-9_]) = (?<c>true|false|yes|no)(?<d>[ \n;)$])"; "\(.a)=\(.c)\(.d)") |  # Fix bool: var = true → var=true

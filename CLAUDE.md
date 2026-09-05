@@ -47,10 +47,12 @@ The jq-compiler is a three-stage pipeline:
 ## Build Commands
 
 ```bash
-make              # Compile all classes to bash (uses AST cache for ~50x faster warm rebuilds)
+make              # Build changed classes; validate and reuse unchanged output
 make bash         # Same as above
 make single CLASS=Counter  # Compile single class
-make test         # Run all compiler tests in parallel with per-test timeouts
+make verify       # Build and run both isolated suites in parallel
+make test         # Run isolated runtime tests in parallel
+make test-compiler # Run isolated compiler tests in parallel
 make test-serial  # Run tests sequentially
 make test-verbose # Run tests with bash -x tracing
 make clean        # Remove build artifacts
@@ -60,16 +62,16 @@ make bench        # Build and measure public messages with isolated object state
 ## Testing
 
 ```bash
-make test         # Run all tests, show pass/fail summary
+make verify       # Build and run both suites, show pass/fail summaries
 make test-verbose # Run tests with bash -x tracing
 ```
 
 Compiler test files are in `lib/jq-compiler/tests/test_*.bash`.
 
-### Known Pre-Existing Test Issues
-
-- `test_codegen`, `test_integration`, `test_parser`: may timeout (>15s) on some machines
-- ~~`test_to_do`: 4 failures in `to:do:` range iteration codegen~~ - **FIXED**: `<start> to: <end> do: [:i | ...]` now compiles to a `for` loop. Detection only fires when `do: [block]` follows, so keyword selectors containing `to:` (e.g. `copyFrom:to:`) are unaffected.
+Tests run in separate disposable checkouts with isolated databases and caches,
+including standalone test invocations. `TRASH_TEST_JOBS` and
+`TRASH_TEST_TIMEOUT` control parallelism and per-file timeouts. See
+`docs/performance.md` for retaining a failed checkout or enabling traces.
 
 ## Runtime Usage
 
@@ -140,10 +142,18 @@ Dynamic leaves are strings unless marked `jsonValue`; literal numbers,
 booleans, nulls, and nested collections retain JSON types. Invalid typed input
 fails the method. See `docs/performance.md` for output contracts and benchmarks.
 
-**JSON extraction** (use String primitive):
+**JSON reads** (preserve types and distinguish absent fields):
 ```smalltalk
-value := @ String jsonPath: 'session.id' from: jsonResponse.
+value := jsonResponse jsonAt: 'session.id'.
+present := jsonResponse jsonHas: 'session.id'.
+jsonResponse jsonUnpack: #('status' 'message') into: [:status :message |
+  @ Console print: message
+]
 ```
+
+Use `jsonTextAt:` for decoded text, and `jsonAt:ifAbsent:` for an encoded default
+only when absent. Legacy `String jsonPath:from:` remains available. See
+`docs/json-values.md` for paths, bulk binding, and one-pass collection traversal.
 
 **Handler/closure pattern** (for callbacks):
 ```smalltalk

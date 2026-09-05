@@ -746,6 +746,15 @@ tokenize() {
                     local c="${input:i:1}"
                     local next="${input:$((i+1)):1}"
 
+                    # Escaped quotes/dollars belong to this token; they must
+                    # not close the string or open a command substitution.
+                    if [[ "$c" == '\' && -n "$next" ]]; then
+                        dstr+="$c$next"
+                        ((i += 2))
+                        ((col += 2))
+                        continue
+                    fi
+
                     # Check for subshell start: $(
                     if [[ "$c" == '$' && "$next" == '(' ]]; then
                         dstr+='$('

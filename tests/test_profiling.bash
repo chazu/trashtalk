@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Standalone invocations use the same isolated checkout as the suite runner.
+if [[ "${TRASHTALK_TEST_ISOLATED:-}" != 1 ]]; then
+    exec bash "$(dirname "${BASH_SOURCE[0]}")/../lib/test-isolated.bash" "${BASH_SOURCE[0]}" "$@"
+fi
 # test_profiling.bash - Tests for the profiling system
 #
 # Tests TRASH_PROFILE environment variable and bin/trash-profile-analyze tool

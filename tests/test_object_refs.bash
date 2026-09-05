@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Standalone invocations use the same isolated checkout as the suite runner.
+if [[ "${TRASHTALK_TEST_ISOLATED:-}" != 1 ]]; then
+    exec bash "$(dirname "${BASH_SOURCE[0]}")/../lib/test-isolated.bash" "${BASH_SOURCE[0]}" "$@"
+fi
 # Tests for object reference helpers (_ivar_ref, _ivar_set_ref, etc.)
 
 cd "$(dirname "$0")/.."

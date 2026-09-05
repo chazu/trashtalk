@@ -1,4 +1,8 @@
 #!/opt/homebrew/bin/bash
+# Standalone invocations use the same isolated checkout as the suite runner.
+if [[ "${TRASHTALK_TEST_ISOLATED:-}" != 1 ]]; then
+    exec bash "$(dirname "${BASH_SOURCE[0]}")/../lib/test-isolated.bash" "${BASH_SOURCE[0]}" "$@"
+fi
 
 # Tests for Persistable trait methods: count, findAll, find
 # and Object instance methods: inspect, delete
@@ -6,8 +10,8 @@
 TRASHTALK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # Clean slate
-rm -f "$TRASHTALK_DIR/instances.db"
-rm -f ~/.trashtalk/instances.db
+rm -f "$SQLITE_JSON_DB"
+
 
 source "$TRASHTALK_DIR/lib/trash.bash"
 

@@ -943,11 +943,9 @@ EOF
   ]
 
   method: diagnosticsFromCompileResult: result [
-    | message line phase |
-    message := @ String jsonPath: 'message' from: result.
-    line := @ String jsonPath: 'line' from: result.
-    phase := @ String jsonPath: 'phase' from: result.
-    ^ @ self annotationsFor: message line: line phase: phase
+    result jsonUnpack: #('message' 'line' 'phase') into: [:message :line :phase |
+      ^ @ self annotationsFor: message line: line phase: phase
+    ]
   ]
 
   method: diagnosticsFromTestResult: result [
@@ -1015,18 +1013,13 @@ EOF
   # Build persisted-object candidates in the DSL. Only Store and Runtime own
   # the database boundary; the browser sees ordinary versioned records.
   method: instanceRecordsFor: className [
-    | snapshots idArray records source i count instanceId rawData data shortId label detail record |
+    | snapshots records source data shortId label detail record |
     snapshots := @ Runtime dataForClass: className.
-    idArray := snapshots objectKeys.
     records := ''.
     source := @ self sourceFileFor: className.
     source isEmpty ifTrue: [^ ''].
-    i := 0.
-    count := idArray arrayLength.
-    [i < count] whileTrue: [
-      instanceId := idArray arrayAt: i.
+    snapshots objectEach: [:instanceId :rawData |
       instanceId notEmpty ifTrue: [
-        rawData := snapshots objectAt: instanceId.
         data := @ String jsonInstanceView: rawData.
         shortId := @ String suffix: instanceId length: '8'.
         label := className , ' ' , shortId.
@@ -1036,8 +1029,7 @@ EOF
                     object_id: instanceId data: (data jsonValue)} asJson.
         records := records , record , '
 '
-      ].
-      i := i + 1
+      ]
     ].
     ^ records
   ]

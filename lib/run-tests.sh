@@ -3,13 +3,15 @@
 # Parallel test runner for Trashtalk
 # ==============================================================================
 # Runs test files in parallel with per-test timeouts.
-# Each test gets its own temp directory to avoid SQLite conflicts.
+# Each test gets its own disposable checkout, database, cache, and session.
 #
 # Usage:
 #   ./lib/run-tests.sh [tests_dir] [--serial] [--timeout SECS]
 # ==============================================================================
 
 set -euo pipefail
+export LC_ALL=C
+RUNNER_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 TESTS_DIR="${1:-tests}"
 PARALLEL=true
@@ -30,10 +32,12 @@ done
 
 # Platform detection for parallel jobs
 if [[ "$(uname)" == "Darwin" ]]; then
-    NPROCS=$(sysctl -n hw.ncpu)
+    NPROCS=$(sysctl -n hw.ncpu 2>/dev/null || echo 4)
 else
     NPROCS=$(nproc 2>/dev/null || echo 4)
 fi
+NPROCS=${TRASH_TEST_JOBS:-$NPROCS}
+[[ "$NPROCS" =~ ^[1-9][0-9]*$ ]] || { echo 'TRASH_TEST_JOBS must be positive' >&2; exit 2; }
 
 # Collect test files
 test_files=()
@@ -61,7 +65,7 @@ run_one_test() {
 
     # Run with timeout, capture output
     local output exit_code=0
-    output=$(timeout "$TIMEOUT" bash "$test_file" 2>&1) || exit_code=$?
+    output=$(timeout "$TIMEOUT" bash "$RUNNER_DIR/test-isolated.bash" "$test_file" 2>&1) || exit_code=$?
 
     if [[ $exit_code -eq 124 ]]; then
         echo "TIMEOUT" > "$result_file"
@@ -80,7 +84,7 @@ run_one_test() {
 }
 
 export -f run_one_test
-export RESULTS_DIR TIMEOUT
+export RESULTS_DIR TIMEOUT RUNNER_DIR
 
 if $PARALLEL; then
     echo "(parallel: $NPROCS jobs, timeout: ${TIMEOUT}s per test)"
@@ -99,13 +103,14 @@ echo ""
 echo "================================"
 passed=0; failed=0; timedout=0
 failed_names=()
-for result in "$RESULTS_DIR"/*; do
-    [[ -f "$result" ]] || continue
-    status=$(cat "$result")
+for test_file in "${test_files[@]}"; do
+    result="$RESULTS_DIR/$(basename "$test_file")"
+    if [[ -f "$result" ]]; then status=$(cat "$result"); else status=MISSING; fi
     case "$status" in
         PASS) ((passed++)) || true ;;
         FAIL) ((failed++)) || true; failed_names+=("$(basename "$result")") ;;
         TIMEOUT) ((timedout++)) || true; failed_names+=("$(basename "$result") (timeout)") ;;
+        *) ((failed++)) || true; failed_names+=("$(basename "$result") (missing or invalid result)") ;;
     esac
 done
 

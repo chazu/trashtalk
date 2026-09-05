@@ -1,40 +1,5 @@
 #!/usr/bin/env bash
-# Trashtalk REPL launcher
-
+# Readline, history, and completion live in the REPL's Bash process.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TRASHTALK_DIR="$(dirname "$SCRIPT_DIR")"
-export TRASHTALK_DIR
-
-FILTER="$TRASHTALK_DIR/lib/rlwrap-completion.pl"
-
-# rlwrap gives line editing, history and completion, but it's optional. If it
-# isn't installed, fall back to the plain REPL rather than dying with a bare
-# "rlwrap: command not found".
-if ! command -v rlwrap >/dev/null 2>&1; then
-    echo "Note: rlwrap not found; starting REPL without line editing/history." >&2
-    echo "      Install rlwrap for a better experience." >&2
-    exec "$SCRIPT_DIR/trash-repl"
-fi
-
-# Respect explicit configuration and search only installation-relative paths.
-# Homebrew exposes share/ through its prefix; scanning every installed package
-# here used to cost several seconds on each launch.
-if [[ -z "${RLWRAP_FILTERDIR:-}" ]]; then
-    rlwrap_bin=$(command -v rlwrap)
-    rlwrap_prefix="${rlwrap_bin%/bin/*}"
-    for filter_dir in "$rlwrap_prefix/share/rlwrap/filters" /usr/share/rlwrap/filters; do
-        if [[ -r "$filter_dir/RlwrapFilter.pm" ]]; then
-            RLWRAP_FILTERDIR="$filter_dir"
-            break
-        fi
-    done
-fi
-export RLWRAP_FILTERDIR
-
-exec rlwrap \
-    --history-filename "$HOME/.trash_history" \
-    --history-no-dupes 2 \
-    --break-chars $'precisely: \t' \
-    --case-insensitive \
-    -z "$FILTER" \
-    "$SCRIPT_DIR/trash-repl"
+export TRASHTALK_DIR="$(dirname "$SCRIPT_DIR")"
+exec "$SCRIPT_DIR/trash-repl" "$@"

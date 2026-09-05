@@ -81,19 +81,18 @@ Codex subclass: Tool
   ]
 
   classMethod: normalizeCaptured: capture [
-    | exitCode stdout stderr outcome content normalized result |
-    exitCode := @ String jsonPath: 'exit_code' from: capture.
-    stdout := @ String jsonPath: 'stdout' from: capture.
-    stderr := @ String jsonPath: 'stderr' from: capture.
-    outcome := 'process_error'.
-    content := @ String trim: stdout.
-    (exitCode = '0') ifTrue: [
-      outcome := 'success'.
-      content isEmpty ifTrue: [outcome := 'invalid_output']
-    ].
-    normalized := #{content: content} asJson.
-    result := #{schema_version: 1 backend: 'codex' outcome: outcome
-                exit_code: (exitCode jsonValue) stdout: stdout stderr: stderr
-                result: (normalized jsonValue)} asJson.
-    ^ result
+    | outcome content normalized result |
+    capture jsonUnpack: #('exit_code' 'stdout' 'stderr') into: [:exitCode :stdout :stderr |
+      outcome := 'process_error'.
+      content := @ String trim: stdout.
+      (exitCode = '0') ifTrue: [
+        outcome := 'success'.
+        content isEmpty ifTrue: [outcome := 'invalid_output']
+      ].
+      normalized := #{content: content} asJson.
+      result := #{schema_version: 1 backend: 'codex' outcome: outcome
+                  exit_code: (exitCode jsonValue) stdout: stdout stderr: stderr
+                  result: (normalized jsonValue)} asJson.
+      ^ result
+    ]
   ]

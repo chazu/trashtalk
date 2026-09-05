@@ -79,7 +79,7 @@ _compiler_version() {
         _COMPILER_VERSION=$(cat "$PARSER" "$CODEGEN" \
             "$SCRIPT_DIR/expr-parser.jq" "$SCRIPT_DIR/expr-codegen.jq" \
             "$SCRIPT_DIR/ir.jq" "$SCRIPT_DIR"/grammar/*.jq \
-            "$TOKENIZER" "${BASH_SOURCE[0]}" 2>/dev/null \
+            "$TOKENIZER" "$SCRIPT_DIR/build-cache.bash" "${BASH_SOURCE[0]}" 2>/dev/null \
             | shasum -a 256 2>/dev/null | cut -d' ' -f1 | cut -c1-16)
     fi
     echo "$_COMPILER_VERSION"
@@ -188,7 +188,7 @@ get_compiled_path() {
     # Convert Yutani::Widget to Yutani__Widget
     local file_name="${class_name//::/__}"
 
-    echo "$trashtalk_dir/trash/.compiled/$file_name"
+    echo "${TRASHTALK_COMPILED_DIR:-$trashtalk_dir/trash/.compiled}/$file_name"
 }
 
 # Extract instance variable names from a compiled class file
@@ -279,6 +279,16 @@ collect_inherited_ivars() {
     fi
 }
 
+# Match generateMetadata's namespace rule before resolving inherited state.
+_resolved_parent() {
+    jq -r '.parent as $p |
+      if $p == null or $p == "" then ""
+      elif ($p | contains("::")) then $p
+      elif .parentPackage then .parentPackage + "::" + $p
+      elif (["Object","Tool","TestCase"] | index($p)) then $p
+      elif .package then .package + "::" + $p else $p end'
+}
+
 # ------------------------------------------------------------------------------
 # Commands
 # ------------------------------------------------------------------------------
@@ -313,7 +323,8 @@ _parse_single_file() {
         # Validate the cached entry; a truncated/corrupt cache (e.g. an
         # interrupted write) must not be fed into codegen. If invalid, fall
         # through and re-parse, overwriting the bad entry below.
-        if jq -e . "$cache_file" >/dev/null 2>&1; then
+        if jq -e --arg strict "${TRASHTALK_STRICT:-}" \
+            'type == "object" and ($strict == "" or ((.warnings // []) | length) == 0)' "$cache_file" >/dev/null 2>&1; then
             cat "$cache_file"
             return 0
         fi
@@ -560,7 +571,7 @@ cmd_compile() {
 
     # Collect inherited instance variables from parent classes
     local parent_class inherited_ivars
-    parent_class=$(echo "$ast" | jq -r '.class.parent // empty')
+    parent_class=$(echo "$ast" | jq -c '.class' | _resolved_parent)
     if [[ -n "$parent_class" ]]; then
         inherited_ivars=$(collect_inherited_ivars "$parent_class")
     else
@@ -704,6 +715,15 @@ main() {
             cmd_compile "$source_file" "$output_file" "$check_syntax"
             ;;
 
+        compile-cached)
+            [[ $# == 2 ]] || error 'Usage: compile-cached <source> <output>'
+            cmd_compile_cached "$1" "$2"
+            ;;
+
+        fingerprint)
+            _compiler_version
+            ;;
+
         -h|--help|help)
             usage
             ;;
@@ -714,4 +734,5 @@ main() {
     esac
 }
 
+source "$SCRIPT_DIR/build-cache.bash"
 main "$@"

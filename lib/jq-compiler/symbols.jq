@@ -21,6 +21,14 @@ def method_owner_label($class; $selector):
   else "\($class)>>\($selector)"
   end;
 
+def resolved_parent:
+  .parent as $p |
+  if $p == null or $p == "" then ""
+  elif ($p | contains("::")) then $p
+  elif .parentPackage then .parentPackage + "::" + $p
+  elif (["Object", "Tool", "TestCase"] | index($p)) then $p
+  elif .package then .package + "::" + $p else $p end;
+
 (.path // $path) as $source_path |
 (.ast // .class // .) as $class |
 ($class | qualified_name) as $qualified |
@@ -34,7 +42,9 @@ def method_owner_label($class; $selector):
     label: $qualified,
     kind: (if $class.isTrait then "trait" else "class" end),
     detail: ($class.parent // ""),
-    class_name: $qualified
+    class_name: $qualified,
+    superclass: ($class | resolved_parent),
+    traits: ($class.traits // [])
   },
   ($class.instanceVars[]? |
     {

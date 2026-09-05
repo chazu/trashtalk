@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
+# Standalone invocations use the same isolated checkout as the suite runner.
+if [[ "${TRASHTALK_TEST_ISOLATED:-}" != 1 ]]; then
+    exec bash "$(dirname "${BASH_SOURCE[0]}")/../lib/test-isolated.bash" "${BASH_SOURCE[0]}" "$@"
+fi
 # Test FIFO class - TDD
 
-cd ~/.trashtalk
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
 source lib/trash.bash
 
 TESTS_RUN=0

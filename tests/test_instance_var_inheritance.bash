@@ -1,4 +1,8 @@
 #!/opt/homebrew/bin/bash
+# Standalone invocations use the same isolated checkout as the suite runner.
+if [[ "${TRASHTALK_TEST_ISOLATED:-}" != 1 ]]; then
+    exec bash "$(dirname "${BASH_SOURCE[0]}")/../lib/test-isolated.bash" "${BASH_SOURCE[0]}" "$@"
+fi
 
 # Test instance variable inheritance with modern .trash syntax
 # Usage: bash tests/test_instance_var_inheritance.bash
@@ -37,8 +41,8 @@ cleanup_test_classes() {
 cleanup_test_classes
 
 # Clean database
-rm -f "$PROJECT_DIR/instances.db"
-rm -f ~/.trashtalk/instances.db
+rm -f "$SQLITE_JSON_DB"
+
 
 # Source trash system
 source "$PROJECT_DIR/lib/trash.bash" 2>/dev/null

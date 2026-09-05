@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Standalone invocations use the same isolated checkout as the suite runner.
+if [[ "${TRASHTALK_TEST_ISOLATED:-}" != 1 ]]; then
+    exec bash "$(dirname "${BASH_SOURCE[0]}")/../lib/test-isolated.bash" "${BASH_SOURCE[0]}" "$@"
+fi
 # Tests for source hash embedding in compiled classes
 # Note: Source code embedding (__source function) was removed to reduce compiled file size.
 # Only sourceHash is now embedded for cache invalidation.
