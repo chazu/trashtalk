@@ -1,0 +1,95 @@
+{
+  "probe": "successful constant send with and without caller errexit",
+  "cleanup_trap": "_env_cleanup_on_exit || true",
+  "B_guard_failure_trace": [
+    "+ (( _CALL_DEPTH++ ))",
+    "+ _env_cleanup_on_exit",
+    "+ [[ 1 == 1 ]]"
+  ],
+  "results": [
+    {
+      "mode": "C",
+      "errexit": false,
+      "status": 0,
+      "stdout": "before\nafter:plain result\n",
+      "stderr": ""
+    },
+    {
+      "mode": "C_native",
+      "errexit": false,
+      "status": 0,
+      "stdout": "before\nafter:plain result\n",
+      "stderr": ""
+    },
+    {
+      "mode": "A_all",
+      "errexit": false,
+      "status": 0,
+      "stdout": "before\nafter:plain result\n",
+      "stderr": ""
+    },
+    {
+      "mode": "A_guard",
+      "errexit": false,
+      "status": 0,
+      "stdout": "before\nafter:plain result\n",
+      "stderr": ""
+    },
+    {
+      "mode": "B_naive",
+      "errexit": false,
+      "status": 0,
+      "stdout": "before\nafter:plain result\n",
+      "stderr": ""
+    },
+    {
+      "mode": "B_guard",
+      "errexit": false,
+      "status": 0,
+      "stdout": "before\nafter:plain result\n",
+      "stderr": ""
+    },
+    {
+      "mode": "C",
+      "errexit": true,
+      "status": 0,
+      "stdout": "before\nafter:plain result\n",
+      "stderr": ""
+    },
+    {
+      "mode": "C_native",
+      "errexit": true,
+      "status": 0,
+      "stdout": "before\nafter:plain result\n",
+      "stderr": ""
+    },
+    {
+      "mode": "A_all",
+      "errexit": true,
+      "status": 0,
+      "stdout": "before\nafter:plain result\n",
+      "stderr": ""
+    },
+    {
+      "mode": "A_guard",
+      "errexit": true,
+      "status": 0,
+      "stdout": "before\nafter:plain result\n",
+      "stderr": ""
+    },
+    {
+      "mode": "B_naive",
+      "errexit": true,
+      "status": 1,
+      "stdout": "before\n",
+      "stderr": ""
+    },
+    {
+      "mode": "B_guard",
+      "errexit": true,
+      "status": 1,
+      "stdout": "before\n",
+      "stderr": ""
+    }
+  ]
+}

@@ -1,0 +1,862 @@
+{
+  "metadata": {
+    "date_utc": "2026-09-06T16:40:36Z",
+    "commit": "8c05160c93468b5012979d1c427e140efb332699",
+    "bash": "GNU bash, version 5.3.15(1)-release (aarch64-apple-darwin23.6.0)",
+    "jq": "jq-1.8.1",
+    "platform": "Darwin arm64",
+    "load_start": [
+      6.80859375,
+      7.85595703125,
+      7.43505859375
+    ],
+    "samples": 24,
+    "comparison_baseline": "C_native",
+    "experiment_hashes": {
+      "run.py": "8f3214d5bad380bccde6090a71b1a9480773c741b25ab0a5345c04d42196e236",
+      "harness.bash": "db0b97cc88cc54829ddc6d4df4c8acda00d9b1d2adb680f6b3b7769597879446",
+      "Probe.trash": "012ccd16295630213da3079aa3da63bf9318684783ad6d84bbe9b3b6a879aa64",
+      "runtime.bash": "4cd4387183670398373cdd8c7057553eb619d31d10df02a2fd7147ba0e5832f9"
+    },
+    "lowering": {
+      "C": {
+        "trash/.compiled/Kube__Node": 1,
+        "trash/.compiled/Tools__Netcat": 17,
+        "trash/.compiled/TestCase": 16,
+        "trash/.compiled/Kube__Service": 1,
+        "trash/.compiled/AgentSession": 16,
+        "trash/.compiled/ResultProbe": 2,
+        "trash/.compiled/Tools__Inpage": 2,
+        "trash/.compiled/Kube__Pod": 1,
+        "trash/.compiled/Array": 4,
+        "trash/.compiled/Kube__Snapshot": 7,
+        "trash/.compiled/TestCounter": 10,
+        "trash/.compiled/Tools__Indiff": 1,
+        "trash/.compiled/SourceProposal": 45,
+        "trash/.compiled/Tools__Tmux": 7,
+        "trash/.compiled/ClaudeAgent": 5,
+        "trash/.compiled/Agent": 24,
+        "trash/.compiled/Trash": 73,
+        "trash/.compiled/Protocol": 1,
+        "trash/.compiled/CodexAgent": 2,
+        "trash/.compiled/AxeAgent": 12,
+        "trash/.compiled/Time": 2,
+        "trash/.compiled/Kube__Resource": 1,
+        "trash/.compiled/Tools__Ininspect": 1,
+        "trash/.compiled/Tools__Codex": 15,
+        "trash/.compiled/Json": 23,
+        "trash/.compiled/HttpServer": 1,
+        "trash/.compiled/Object": 8,
+        "trash/.compiled/ObjectEditProposal": 8,
+        "trash/.compiled/Dictionary": 6,
+        "trash/.compiled/Kube__Diff": 8,
+        "trash/.compiled/Tools__Axe": 11,
+        "trash/.compiled/Tools__Inpick": 1,
+        "trash/.compiled/Counter": 1,
+        "trash/.compiled/Kube__Cluster": 6,
+        "trash/.compiled/GrpcClient": 2,
+        "trash/.compiled/Tools__Jq": 4,
+        "trash/.compiled/Tools__Inmacs": 1,
+        "trash/.compiled/Tool": 18,
+        "trash/.compiled/Process": 10,
+        "trash/.compiled/Block": 1,
+        "trash/.compiled/Store": 1,
+        "trash/.compiled/Kube__Deployment": 2,
+        "lib/trash-json.bash": 5
+      },
+      "C_native": {},
+      "A_all": {
+        "trash/.compiled/Kube__Node": 1,
+        "trash/.compiled/Tools__Netcat": 17,
+        "trash/.compiled/TestCase": 16,
+        "trash/.compiled/Kube__Service": 1,
+        "trash/.compiled/AgentSession": 16,
+        "trash/.compiled/ResultProbe": 2,
+        "trash/.compiled/Tools__Inpage": 2,
+        "trash/.compiled/Kube__Pod": 1,
+        "trash/.compiled/Array": 4,
+        "trash/.compiled/Kube__Snapshot": 7,
+        "trash/.compiled/TestCounter": 10,
+        "trash/.compiled/Tools__Indiff": 1,
+        "trash/.compiled/SourceProposal": 45,
+        "trash/.compiled/Tools__Tmux": 7,
+        "trash/.compiled/ClaudeAgent": 5,
+        "trash/.compiled/Agent": 24,
+        "trash/.compiled/Trash": 73,
+        "trash/.compiled/Protocol": 1,
+        "trash/.compiled/CodexAgent": 2,
+        "trash/.compiled/AxeAgent": 12,
+        "trash/.compiled/Time": 2,
+        "trash/.compiled/Kube__Resource": 1,
+        "trash/.compiled/Tools__Ininspect": 1,
+        "trash/.compiled/Tools__Codex": 15,
+        "trash/.compiled/Json": 23,
+        "trash/.compiled/HttpServer": 1,
+        "trash/.compiled/Object": 8,
+        "trash/.compiled/ObjectEditProposal": 8,
+        "trash/.compiled/Dictionary": 6,
+        "trash/.compiled/Kube__Diff": 8,
+        "trash/.compiled/Tools__Axe": 11,
+        "trash/.compiled/Tools__Inpick": 1,
+        "trash/.compiled/Counter": 1,
+        "trash/.compiled/Kube__Cluster": 6,
+        "trash/.compiled/GrpcClient": 2,
+        "trash/.compiled/Tools__Jq": 4,
+        "trash/.compiled/Tools__Inmacs": 1,
+        "trash/.compiled/Tool": 18,
+        "trash/.compiled/Process": 10,
+        "trash/.compiled/Block": 1,
+        "trash/.compiled/Store": 1,
+        "trash/.compiled/Kube__Deployment": 2,
+        "lib/trash-json.bash": 5
+      },
+      "A_guard": {
+        "trash/.compiled/Kube__Node": 1,
+        "trash/.compiled/Tools__Netcat": 17,
+        "trash/.compiled/TestCase": 16,
+        "trash/.compiled/Kube__Service": 1,
+        "trash/.compiled/AgentSession": 16,
+        "trash/.compiled/ResultProbe": 2,
+        "trash/.compiled/Tools__Inpage": 2,
+        "trash/.compiled/Kube__Pod": 1,
+        "trash/.compiled/Array": 4,
+        "trash/.compiled/Kube__Snapshot": 7,
+        "trash/.compiled/TestCounter": 10,
+        "trash/.compiled/Tools__Indiff": 1,
+        "trash/.compiled/SourceProposal": 45,
+        "trash/.compiled/Tools__Tmux": 7,
+        "trash/.compiled/ClaudeAgent": 5,
+        "trash/.compiled/Agent": 24,
+        "trash/.compiled/Trash": 73,
+        "trash/.compiled/Protocol": 1,
+        "trash/.compiled/CodexAgent": 2,
+        "trash/.compiled/AxeAgent": 12,
+        "trash/.compiled/Time": 2,
+        "trash/.compiled/Kube__Resource": 1,
+        "trash/.compiled/Tools__Ininspect": 1,
+        "trash/.compiled/Tools__Codex": 15,
+        "trash/.compiled/Json": 23,
+        "trash/.compiled/HttpServer": 1,
+        "trash/.compiled/Object": 8,
+        "trash/.compiled/ObjectEditProposal": 8,
+        "trash/.compiled/Dictionary": 6,
+        "trash/.compiled/Kube__Diff": 8,
+        "trash/.compiled/Tools__Axe": 11,
+        "trash/.compiled/Tools__Inpick": 1,
+        "trash/.compiled/Counter": 1,
+        "trash/.compiled/Kube__Cluster": 6,
+        "trash/.compiled/GrpcClient": 2,
+        "trash/.compiled/Tools__Jq": 4,
+        "trash/.compiled/Tools__Inmacs": 1,
+        "trash/.compiled/Tool": 18,
+        "trash/.compiled/Process": 10,
+        "trash/.compiled/Block": 1,
+        "trash/.compiled/Store": 1,
+        "trash/.compiled/Kube__Deployment": 2,
+        "lib/trash-json.bash": 5
+      },
+      "B_naive": {
+        "trash/.compiled/Kube__Node": 1,
+        "trash/.compiled/Tools__Netcat": 17,
+        "trash/.compiled/TestCase": 16,
+        "trash/.compiled/Kube__Service": 1,
+        "trash/.compiled/AgentSession": 16,
+        "trash/.compiled/ResultProbe": 2,
+        "trash/.compiled/Tools__Inpage": 2,
+        "trash/.compiled/Kube__Pod": 1,
+        "trash/.compiled/Array": 4,
+        "trash/.compiled/Kube__Snapshot": 7,
+        "trash/.compiled/TestCounter": 10,
+        "trash/.compiled/Tools__Indiff": 1,
+        "trash/.compiled/SourceProposal": 45,
+        "trash/.compiled/Tools__Tmux": 7,
+        "trash/.compiled/ClaudeAgent": 5,
+        "trash/.compiled/Agent": 24,
+        "trash/.compiled/Trash": 73,
+        "trash/.compiled/Protocol": 1,
+        "trash/.compiled/CodexAgent": 2,
+        "trash/.compiled/AxeAgent": 12,
+        "trash/.compiled/Time": 2,
+        "trash/.compiled/Kube__Resource": 1,
+        "trash/.compiled/Tools__Ininspect": 1,
+        "trash/.compiled/Tools__Codex": 15,
+        "trash/.compiled/Json": 23,
+        "trash/.compiled/HttpServer": 1,
+        "trash/.compiled/Object": 8,
+        "trash/.compiled/ObjectEditProposal": 8,
+        "trash/.compiled/Dictionary": 6,
+        "trash/.compiled/Kube__Diff": 8,
+        "trash/.compiled/Tools__Axe": 11,
+        "trash/.compiled/Tools__Inpick": 1,
+        "trash/.compiled/Counter": 1,
+        "trash/.compiled/Kube__Cluster": 6,
+        "trash/.compiled/GrpcClient": 2,
+        "trash/.compiled/Tools__Jq": 4,
+        "trash/.compiled/Tools__Inmacs": 1,
+        "trash/.compiled/Tool": 18,
+        "trash/.compiled/Process": 10,
+        "trash/.compiled/Block": 1,
+        "trash/.compiled/Store": 1,
+        "trash/.compiled/Kube__Deployment": 2,
+        "lib/trash-json.bash": 5
+      },
+      "B_guard": {
+        "trash/.compiled/Kube__Node": 1,
+        "trash/.compiled/Tools__Netcat": 17,
+        "trash/.compiled/TestCase": 16,
+        "trash/.compiled/Kube__Service": 1,
+        "trash/.compiled/AgentSession": 16,
+        "trash/.compiled/ResultProbe": 2,
+        "trash/.compiled/Tools__Inpage": 2,
+        "trash/.compiled/Kube__Pod": 1,
+        "trash/.compiled/Array": 4,
+        "trash/.compiled/Kube__Snapshot": 7,
+        "trash/.compiled/TestCounter": 10,
+        "trash/.compiled/Tools__Indiff": 1,
+        "trash/.compiled/SourceProposal": 45,
+        "trash/.compiled/Tools__Tmux": 7,
+        "trash/.compiled/ClaudeAgent": 5,
+        "trash/.compiled/Agent": 24,
+        "trash/.compiled/Trash": 73,
+        "trash/.compiled/Protocol": 1,
+        "trash/.compiled/CodexAgent": 2,
+        "trash/.compiled/AxeAgent": 12,
+        "trash/.compiled/Time": 2,
+        "trash/.compiled/Kube__Resource": 1,
+        "trash/.compiled/Tools__Ininspect": 1,
+        "trash/.compiled/Tools__Codex": 15,
+        "trash/.compiled/Json": 23,
+        "trash/.compiled/HttpServer": 1,
+        "trash/.compiled/Object": 8,
+        "trash/.compiled/ObjectEditProposal": 8,
+        "trash/.compiled/Dictionary": 6,
+        "trash/.compiled/Kube__Diff": 8,
+        "trash/.compiled/Tools__Axe": 11,
+        "trash/.compiled/Tools__Inpick": 1,
+        "trash/.compiled/Counter": 1,
+        "trash/.compiled/Kube__Cluster": 6,
+        "trash/.compiled/GrpcClient": 2,
+        "trash/.compiled/Tools__Jq": 4,
+        "trash/.compiled/Tools__Inmacs": 1,
+        "trash/.compiled/Tool": 18,
+        "trash/.compiled/Process": 10,
+        "trash/.compiled/Block": 1,
+        "trash/.compiled/Store": 1,
+        "trash/.compiled/Kube__Deployment": 2,
+        "lib/trash-json.bash": 5
+      }
+    },
+    "load_end": [
+      5.5966796875,
+      7.10498046875,
+      7.19970703125
+    ]
+  },
+  "semantics": {
+    "cases": 53,
+    "differences": {
+      "C": [],
+      "C_native": [],
+      "A_all": [
+        {
+          "artifact": "nesting.state",
+          "baseline": "0\u00003\u0000seed\u0000original\u0000/private<experiment>/<mode>/repo\u0000huB\u0000\u00000\u00000\u00000\u0000\u0000\u0000",
+          "actual": "0\u00002\u0000seed\u0000original\u0000/private<experiment>/<mode>/repo\u0000huB\u0000\u00000\u00000\u00000\u0000\u0000\u0000"
+        },
+        {
+          "artifact": "optionText.state",
+          "baseline": "0\u0000\u0000seed\u0000original\u0000/private<experiment>/<mode>/repo\u0000huB\u0000\u00000\u00000\u00000\u0000\u0000\u0000",
+          "actual": "0\u0000-n\u0000seed\u0000original\u0000/private<experiment>/<mode>/repo\u0000huB\u0000\u00000\u00000\u00000\u0000\u0000\u0000"
+        },
+        {
+          "artifact": "xpg_raw.state",
+          "baseline": "0\u0000first\nsecond\u0000seed\u0000original\u0000/private<experiment>/<mode>/repo\u0000huB\u0000\u00000\u00000\u00000\u0000\u0000\u0000",
+          "actual": "0\u0000first\\nsecond\u0000seed\u0000original\u0000/private<experiment>/<mode>/repo\u0000huB\u0000\u00000\u00000\u00000\u0000\u0000\u0000"
+        }
+      ],
+      "A_guard": [],
+      "B_naive": [],
+      "B_guard": []
+    },
+    "send_depths": {
+      "C": [
+        2
+      ],
+      "C_native": [
+        2
+      ],
+      "A_all": [
+        1
+      ],
+      "A_guard": [
+        1
+      ],
+      "B_naive": [
+        0
+      ],
+      "B_guard": [
+        0
+      ]
+    },
+    "class_map_callback_depths": {
+      "C": [
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5
+      ],
+      "C_native": [
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5
+      ],
+      "A_all": [
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3
+      ],
+      "A_guard": [
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4
+      ],
+      "B_naive": [
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3
+      ],
+      "B_guard": [
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3
+      ]
+    }
+  },
+  "summary": {
+    "constant": {
+      "C": {
+        "median_ms": 1.558325,
+        "p95_batch_mean_ms": 2.0227,
+        "median_paired_improvement_percent": 1.4971739820649743,
+        "paired_bootstrap_95_percent": [
+          -2.2315822168309767,
+          3.7002865051230884
+        ]
+      },
+      "C_native": {
+        "median_ms": 1.5871875,
+        "p95_batch_mean_ms": 2.17415,
+        "median_paired_improvement_percent": 0.0,
+        "paired_bootstrap_95_percent": [
+          0.0,
+          0.0
+        ]
+      },
+      "A_all": {
+        "median_ms": 1.2057375000000001,
+        "p95_batch_mean_ms": 1.56165,
+        "median_paired_improvement_percent": 24.45736392706908,
+        "paired_bootstrap_95_percent": [
+          22.199324879578235,
+          26.072680551369697
+        ]
+      },
+      "A_guard": {
+        "median_ms": 1.2370625,
+        "p95_batch_mean_ms": 1.6242750000000001,
+        "median_paired_improvement_percent": 21.420634610366292,
+        "paired_bootstrap_95_percent": [
+          19.566548101579944,
+          22.84596219084754
+        ]
+      },
+      "B_naive": {
+        "median_ms": 0.43398749999999997,
+        "p95_batch_mean_ms": 0.471275,
+        "median_paired_improvement_percent": 72.81000709507596,
+        "paired_bootstrap_95_percent": [
+          72.202734157296,
+          73.88774405286094
+        ]
+      },
+      "B_guard": {
+        "median_ms": 0.4285625,
+        "p95_batch_mean_ms": 0.49782499999999996,
+        "median_paired_improvement_percent": 72.83149856704146,
+        "paired_bootstrap_95_percent": [
+          72.11680039705517,
+          74.31623991779395
+        ]
+      }
+    },
+    "getter": {
+      "C": {
+        "median_ms": 6.7826249999999995,
+        "p95_batch_mean_ms": 8.088375,
+        "median_paired_improvement_percent": 1.0730768088879599,
+        "paired_bootstrap_95_percent": [
+          -6.256664828093397,
+          4.2783714824538706
+        ]
+      },
+      "C_native": {
+        "median_ms": 6.8213124999999994,
+        "p95_batch_mean_ms": 10.742375,
+        "median_paired_improvement_percent": 0.0,
+        "paired_bootstrap_95_percent": [
+          0.0,
+          0.0
+        ]
+      },
+      "A_all": {
+        "median_ms": 6.395375,
+        "p95_batch_mean_ms": 9.8795,
+        "median_paired_improvement_percent": 6.3328935299265705,
+        "paired_bootstrap_95_percent": [
+          3.0053365789720137,
+          9.16321383597827
+        ]
+      },
+      "A_guard": {
+        "median_ms": 6.31975,
+        "p95_batch_mean_ms": 8.7265,
+        "median_paired_improvement_percent": 8.298277337379114,
+        "paired_bootstrap_95_percent": [
+          4.053645064881022,
+          10.900257529542834
+        ]
+      },
+      "B_naive": {
+        "median_ms": 5.67375,
+        "p95_batch_mean_ms": 9.6385,
+        "median_paired_improvement_percent": 16.570273750262487,
+        "paired_bootstrap_95_percent": [
+          14.321909330032495,
+          18.663357234785813
+        ]
+      },
+      "B_guard": {
+        "median_ms": 5.6874375,
+        "p95_batch_mean_ms": 8.050875,
+        "median_paired_improvement_percent": 14.8407360212607,
+        "paired_bootstrap_95_percent": [
+          12.715009520121335,
+          18.03989430985077
+        ]
+      }
+    },
+    "arithmetic": {
+      "C": {
+        "median_ms": 7.404249999999999,
+        "p95_batch_mean_ms": 8.483625,
+        "median_paired_improvement_percent": 0.1632543867819736,
+        "paired_bootstrap_95_percent": [
+          -1.0738492826147452,
+          3.865708401146459
+        ]
+      },
+      "C_native": {
+        "median_ms": 7.766125000000001,
+        "p95_batch_mean_ms": 9.96225,
+        "median_paired_improvement_percent": 0.0,
+        "paired_bootstrap_95_percent": [
+          0.0,
+          0.0
+        ]
+      },
+      "A_all": {
+        "median_ms": 7.5581875,
+        "p95_batch_mean_ms": 9.4505,
+        "median_paired_improvement_percent": 3.27975312079639,
+        "paired_bootstrap_95_percent": [
+          -1.9003395441733373,
+          6.655713576697295
+        ]
+      },
+      "A_guard": {
+        "median_ms": 7.6120625,
+        "p95_batch_mean_ms": 9.959875,
+        "median_paired_improvement_percent": 4.607733174290743,
+        "paired_bootstrap_95_percent": [
+          -8.046636085626911,
+          6.629620977384997
+        ]
+      },
+      "B_naive": {
+        "median_ms": 7.0011875,
+        "p95_batch_mean_ms": 9.31725,
+        "median_paired_improvement_percent": 8.970535840724626,
+        "paired_bootstrap_95_percent": [
+          5.551931330472106,
+          12.754728272063794
+        ]
+      },
+      "B_guard": {
+        "median_ms": 6.738250000000001,
+        "p95_batch_mean_ms": 9.38425,
+        "median_paired_improvement_percent": 8.665001182540898,
+        "paired_bootstrap_95_percent": [
+          5.51139561057963,
+          13.48770344508908
+        ]
+      }
+    },
+    "nested": {
+      "C": {
+        "median_ms": 4.973233333333333,
+        "p95_batch_mean_ms": 7.185466666666667,
+        "median_paired_improvement_percent": -0.5365889841152685,
+        "paired_bootstrap_95_percent": [
+          -1.8503710562125537,
+          2.30788993843609
+        ]
+      },
+      "C_native": {
+        "median_ms": 5.0262,
+        "p95_batch_mean_ms": 6.958,
+        "median_paired_improvement_percent": 0.0,
+        "paired_bootstrap_95_percent": [
+          0.0,
+          0.0
+        ]
+      },
+      "A_all": {
+        "median_ms": 3.6929666666666665,
+        "p95_batch_mean_ms": 4.351933333333333,
+        "median_paired_improvement_percent": 23.45425771774876,
+        "paired_bootstrap_95_percent": [
+          22.464268664892472,
+          25.95366726975974
+        ]
+      },
+      "A_guard": {
+        "median_ms": 4.306699999999999,
+        "p95_batch_mean_ms": 5.401866666666667,
+        "median_paired_improvement_percent": 11.621104887977252,
+        "paired_bootstrap_95_percent": [
+          10.461044831230346,
+          14.55557486963277
+        ]
+      },
+      "B_naive": {
+        "median_ms": 3.7454,
+        "p95_batch_mean_ms": 4.7548,
+        "median_paired_improvement_percent": 23.263806173501713,
+        "paired_bootstrap_95_percent": [
+          22.103268462038532,
+          26.688925103011517
+        ]
+      },
+      "B_guard": {
+        "median_ms": 3.709766666666667,
+        "p95_batch_mean_ms": 4.567399999999999,
+        "median_paired_improvement_percent": 26.546901208511617,
+        "paired_bootstrap_95_percent": [
+          24.507584627793822,
+          27.749954407081628
+        ]
+      }
+    },
+    "class_map": {
+      "C": {
+        "median_ms": 91.826,
+        "p95_batch_mean_ms": 128.059,
+        "median_paired_improvement_percent": -1.5499264778361486,
+        "paired_bootstrap_95_percent": [
+          -5.152565197398666,
+          3.97239898453315
+        ]
+      },
+      "C_native": {
+        "median_ms": 90.0995,
+        "p95_batch_mean_ms": 127.074,
+        "median_paired_improvement_percent": 0.0,
+        "paired_bootstrap_95_percent": [
+          0.0,
+          0.0
+        ]
+      },
+      "A_all": {
+        "median_ms": 82.458,
+        "p95_batch_mean_ms": 161.311,
+        "median_paired_improvement_percent": 9.712231159385889,
+        "paired_bootstrap_95_percent": [
+          4.463301488149918,
+          11.911940383412025
+        ]
+      },
+      "A_guard": {
+        "median_ms": 87.21799999999999,
+        "p95_batch_mean_ms": 153.139,
+        "median_paired_improvement_percent": 6.942373031154126,
+        "paired_bootstrap_95_percent": [
+          -5.120330158120787,
+          10.971746150330086
+        ]
+      },
+      "B_naive": {
+        "median_ms": 81.6265,
+        "p95_batch_mean_ms": 107.427,
+        "median_paired_improvement_percent": 11.263367703196561,
+        "paired_bootstrap_95_percent": [
+          8.747143899608815,
+          15.510490700940549
+        ]
+      },
+      "B_guard": {
+        "median_ms": 74.8885,
+        "p95_batch_mean_ms": 98.841,
+        "median_paired_improvement_percent": 18.712190202506292,
+        "paired_bootstrap_95_percent": [
+          13.462245085430819,
+          22.126103860368268
+        ]
+      }
+    },
+    "block_map": {
+      "C": {
+        "median_ms": 303.473,
+        "p95_batch_mean_ms": 480.358,
+        "median_paired_improvement_percent": -4.533954562768116,
+        "paired_bootstrap_95_percent": [
+          -10.554759622487229,
+          -2.4715244081376366
+        ]
+      },
+      "C_native": {
+        "median_ms": 295.116,
+        "p95_batch_mean_ms": 370.906,
+        "median_paired_improvement_percent": 0.0,
+        "paired_bootstrap_95_percent": [
+          0.0,
+          0.0
+        ]
+      },
+      "A_all": {
+        "median_ms": 291.795,
+        "p95_batch_mean_ms": 433.391,
+        "median_paired_improvement_percent": 0.2841175349035664,
+        "paired_bootstrap_95_percent": [
+          -2.5389230109984133,
+          1.2732737004961645
+        ]
+      },
+      "A_guard": {
+        "median_ms": 294.776,
+        "p95_batch_mean_ms": 443.131,
+        "median_paired_improvement_percent": -2.44060672784256,
+        "paired_bootstrap_95_percent": [
+          -9.0955659924617,
+          2.13370732073514
+        ]
+      },
+      "B_naive": {
+        "median_ms": 421.6535,
+        "p95_batch_mean_ms": 702.896,
+        "median_paired_improvement_percent": -43.01012681066186,
+        "paired_bootstrap_95_percent": [
+          -49.33443142134061,
+          -40.842988604396105
+        ]
+      },
+      "B_guard": {
+        "median_ms": 314.09450000000004,
+        "p95_batch_mean_ms": 440.417,
+        "median_paired_improvement_percent": -4.4444610498946355,
+        "paired_bootstrap_95_percent": [
+          -7.5968196564463355,
+          -2.200002881470704
+        ]
+      }
+    },
+    "browser": {
+      "C": {
+        "median_ms": 149.081,
+        "p95_batch_mean_ms": 195.225,
+        "median_paired_improvement_percent": -1.5498009640123498,
+        "paired_bootstrap_95_percent": [
+          -4.450154762600015,
+          0.5027242800117168
+        ]
+      },
+      "C_native": {
+        "median_ms": 147.311,
+        "p95_batch_mean_ms": 160.23,
+        "median_paired_improvement_percent": 0.0,
+        "paired_bootstrap_95_percent": [
+          0.0,
+          0.0
+        ]
+      },
+      "A_all": {
+        "median_ms": 145.066,
+        "p95_batch_mean_ms": 212.81,
+        "median_paired_improvement_percent": 0.6020205287013152,
+        "paired_bootstrap_95_percent": [
+          -2.4786594588906903,
+          2.205929104384062
+        ]
+      },
+      "A_guard": {
+        "median_ms": 144.1535,
+        "p95_batch_mean_ms": 200.18,
+        "median_paired_improvement_percent": 0.9686843251917303,
+        "paired_bootstrap_95_percent": [
+          -4.877541953882986,
+          2.270023449802972
+        ]
+      },
+      "B_naive": {
+        "median_ms": 159.07999999999998,
+        "p95_batch_mean_ms": 360.16,
+        "median_paired_improvement_percent": -8.135195064624453,
+        "paired_bootstrap_95_percent": [
+          -14.72148629620485,
+          -2.788804654695536
+        ]
+      },
+      "B_guard": {
+        "median_ms": 153.4855,
+        "p95_batch_mean_ms": 280.642,
+        "median_paired_improvement_percent": -3.075644849824034,
+        "paired_bootstrap_95_percent": [
+          -7.030414696962553,
+          -1.2880280674772946
+        ]
+      }
+    }
+  },
+  "samples_file": "2026-09-06-run2.samples.csv",
+  "samples_sha256": "2070623353fa06da1c2c773b445095079f5fcda23f35ffab8a32af60766baf7f"
+}

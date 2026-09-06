@@ -1,0 +1,666 @@
+{
+  "metadata": {
+    "date_utc": "2026-09-06T16:44:02Z",
+    "commit": "8c05160c93468b5012979d1c427e140efb332699",
+    "bash": "GNU bash, version 5.3.15(1)-release (aarch64-apple-darwin23.6.0)",
+    "jq": "jq-1.8.1",
+    "platform": "Darwin arm64",
+    "load_start": [
+      5.1162109375,
+      6.59912109375,
+      6.9970703125
+    ],
+    "samples": 24,
+    "comparison_baseline": "C_native",
+    "experiment_hashes": {
+      "run.py": "8f3214d5bad380bccde6090a71b1a9480773c741b25ab0a5345c04d42196e236",
+      "harness.bash": "db0b97cc88cc54829ddc6d4df4c8acda00d9b1d2adb680f6b3b7769597879446",
+      "Probe.trash": "012ccd16295630213da3079aa3da63bf9318684783ad6d84bbe9b3b6a879aa64",
+      "runtime.bash": "4cd4387183670398373cdd8c7057553eb619d31d10df02a2fd7147ba0e5832f9"
+    },
+    "lowering": {
+      "C": {
+        "trash/.compiled/Kube__Node": 1,
+        "trash/.compiled/Tools__Netcat": 17,
+        "trash/.compiled/TestCase": 16,
+        "trash/.compiled/Kube__Service": 1,
+        "trash/.compiled/AgentSession": 16,
+        "trash/.compiled/ResultProbe": 2,
+        "trash/.compiled/Tools__Inpage": 2,
+        "trash/.compiled/Kube__Pod": 1,
+        "trash/.compiled/Array": 4,
+        "trash/.compiled/Kube__Snapshot": 7,
+        "trash/.compiled/TestCounter": 10,
+        "trash/.compiled/Tools__Indiff": 1,
+        "trash/.compiled/SourceProposal": 45,
+        "trash/.compiled/Tools__Tmux": 7,
+        "trash/.compiled/ClaudeAgent": 5,
+        "trash/.compiled/Agent": 24,
+        "trash/.compiled/Trash": 73,
+        "trash/.compiled/Protocol": 1,
+        "trash/.compiled/CodexAgent": 2,
+        "trash/.compiled/AxeAgent": 12,
+        "trash/.compiled/Time": 2,
+        "trash/.compiled/Kube__Resource": 1,
+        "trash/.compiled/Tools__Ininspect": 1,
+        "trash/.compiled/Tools__Codex": 15,
+        "trash/.compiled/Json": 23,
+        "trash/.compiled/HttpServer": 1,
+        "trash/.compiled/Object": 8,
+        "trash/.compiled/ObjectEditProposal": 8,
+        "trash/.compiled/Dictionary": 6,
+        "trash/.compiled/Kube__Diff": 8,
+        "trash/.compiled/Tools__Axe": 11,
+        "trash/.compiled/Tools__Inpick": 1,
+        "trash/.compiled/Counter": 1,
+        "trash/.compiled/Kube__Cluster": 6,
+        "trash/.compiled/GrpcClient": 2,
+        "trash/.compiled/Tools__Jq": 4,
+        "trash/.compiled/Tools__Inmacs": 1,
+        "trash/.compiled/Tool": 18,
+        "trash/.compiled/Process": 10,
+        "trash/.compiled/Block": 1,
+        "trash/.compiled/Store": 1,
+        "trash/.compiled/Kube__Deployment": 2,
+        "lib/trash-json.bash": 5
+      },
+      "C_native": {},
+      "A_all": {
+        "trash/.compiled/Kube__Node": 1,
+        "trash/.compiled/Tools__Netcat": 17,
+        "trash/.compiled/TestCase": 16,
+        "trash/.compiled/Kube__Service": 1,
+        "trash/.compiled/AgentSession": 16,
+        "trash/.compiled/ResultProbe": 2,
+        "trash/.compiled/Tools__Inpage": 2,
+        "trash/.compiled/Kube__Pod": 1,
+        "trash/.compiled/Array": 4,
+        "trash/.compiled/Kube__Snapshot": 7,
+        "trash/.compiled/TestCounter": 10,
+        "trash/.compiled/Tools__Indiff": 1,
+        "trash/.compiled/SourceProposal": 45,
+        "trash/.compiled/Tools__Tmux": 7,
+        "trash/.compiled/ClaudeAgent": 5,
+        "trash/.compiled/Agent": 24,
+        "trash/.compiled/Trash": 73,
+        "trash/.compiled/Protocol": 1,
+        "trash/.compiled/CodexAgent": 2,
+        "trash/.compiled/AxeAgent": 12,
+        "trash/.compiled/Time": 2,
+        "trash/.compiled/Kube__Resource": 1,
+        "trash/.compiled/Tools__Ininspect": 1,
+        "trash/.compiled/Tools__Codex": 15,
+        "trash/.compiled/Json": 23,
+        "trash/.compiled/HttpServer": 1,
+        "trash/.compiled/Object": 8,
+        "trash/.compiled/ObjectEditProposal": 8,
+        "trash/.compiled/Dictionary": 6,
+        "trash/.compiled/Kube__Diff": 8,
+        "trash/.compiled/Tools__Axe": 11,
+        "trash/.compiled/Tools__Inpick": 1,
+        "trash/.compiled/Counter": 1,
+        "trash/.compiled/Kube__Cluster": 6,
+        "trash/.compiled/GrpcClient": 2,
+        "trash/.compiled/Tools__Jq": 4,
+        "trash/.compiled/Tools__Inmacs": 1,
+        "trash/.compiled/Tool": 18,
+        "trash/.compiled/Process": 10,
+        "trash/.compiled/Block": 1,
+        "trash/.compiled/Store": 1,
+        "trash/.compiled/Kube__Deployment": 2,
+        "lib/trash-json.bash": 5
+      },
+      "A_guard": {
+        "trash/.compiled/Kube__Node": 1,
+        "trash/.compiled/Tools__Netcat": 17,
+        "trash/.compiled/TestCase": 16,
+        "trash/.compiled/Kube__Service": 1,
+        "trash/.compiled/AgentSession": 16,
+        "trash/.compiled/ResultProbe": 2,
+        "trash/.compiled/Tools__Inpage": 2,
+        "trash/.compiled/Kube__Pod": 1,
+        "trash/.compiled/Array": 4,
+        "trash/.compiled/Kube__Snapshot": 7,
+        "trash/.compiled/TestCounter": 10,
+        "trash/.compiled/Tools__Indiff": 1,
+        "trash/.compiled/SourceProposal": 45,
+        "trash/.compiled/Tools__Tmux": 7,
+        "trash/.compiled/ClaudeAgent": 5,
+        "trash/.compiled/Agent": 24,
+        "trash/.compiled/Trash": 73,
+        "trash/.compiled/Protocol": 1,
+        "trash/.compiled/CodexAgent": 2,
+        "trash/.compiled/AxeAgent": 12,
+        "trash/.compiled/Time": 2,
+        "trash/.compiled/Kube__Resource": 1,
+        "trash/.compiled/Tools__Ininspect": 1,
+        "trash/.compiled/Tools__Codex": 15,
+        "trash/.compiled/Json": 23,
+        "trash/.compiled/HttpServer": 1,
+        "trash/.compiled/Object": 8,
+        "trash/.compiled/ObjectEditProposal": 8,
+        "trash/.compiled/Dictionary": 6,
+        "trash/.compiled/Kube__Diff": 8,
+        "trash/.compiled/Tools__Axe": 11,
+        "trash/.compiled/Tools__Inpick": 1,
+        "trash/.compiled/Counter": 1,
+        "trash/.compiled/Kube__Cluster": 6,
+        "trash/.compiled/GrpcClient": 2,
+        "trash/.compiled/Tools__Jq": 4,
+        "trash/.compiled/Tools__Inmacs": 1,
+        "trash/.compiled/Tool": 18,
+        "trash/.compiled/Process": 10,
+        "trash/.compiled/Block": 1,
+        "trash/.compiled/Store": 1,
+        "trash/.compiled/Kube__Deployment": 2,
+        "lib/trash-json.bash": 5
+      },
+      "B_naive": {
+        "trash/.compiled/Kube__Node": 1,
+        "trash/.compiled/Tools__Netcat": 17,
+        "trash/.compiled/TestCase": 16,
+        "trash/.compiled/Kube__Service": 1,
+        "trash/.compiled/AgentSession": 16,
+        "trash/.compiled/ResultProbe": 2,
+        "trash/.compiled/Tools__Inpage": 2,
+        "trash/.compiled/Kube__Pod": 1,
+        "trash/.compiled/Array": 4,
+        "trash/.compiled/Kube__Snapshot": 7,
+        "trash/.compiled/TestCounter": 10,
+        "trash/.compiled/Tools__Indiff": 1,
+        "trash/.compiled/SourceProposal": 45,
+        "trash/.compiled/Tools__Tmux": 7,
+        "trash/.compiled/ClaudeAgent": 5,
+        "trash/.compiled/Agent": 24,
+        "trash/.compiled/Trash": 73,
+        "trash/.compiled/Protocol": 1,
+        "trash/.compiled/CodexAgent": 2,
+        "trash/.compiled/AxeAgent": 12,
+        "trash/.compiled/Time": 2,
+        "trash/.compiled/Kube__Resource": 1,
+        "trash/.compiled/Tools__Ininspect": 1,
+        "trash/.compiled/Tools__Codex": 15,
+        "trash/.compiled/Json": 23,
+        "trash/.compiled/HttpServer": 1,
+        "trash/.compiled/Object": 8,
+        "trash/.compiled/ObjectEditProposal": 8,
+        "trash/.compiled/Dictionary": 6,
+        "trash/.compiled/Kube__Diff": 8,
+        "trash/.compiled/Tools__Axe": 11,
+        "trash/.compiled/Tools__Inpick": 1,
+        "trash/.compiled/Counter": 1,
+        "trash/.compiled/Kube__Cluster": 6,
+        "trash/.compiled/GrpcClient": 2,
+        "trash/.compiled/Tools__Jq": 4,
+        "trash/.compiled/Tools__Inmacs": 1,
+        "trash/.compiled/Tool": 18,
+        "trash/.compiled/Process": 10,
+        "trash/.compiled/Block": 1,
+        "trash/.compiled/Store": 1,
+        "trash/.compiled/Kube__Deployment": 2,
+        "lib/trash-json.bash": 5
+      },
+      "B_guard": {
+        "trash/.compiled/Kube__Node": 1,
+        "trash/.compiled/Tools__Netcat": 17,
+        "trash/.compiled/TestCase": 16,
+        "trash/.compiled/Kube__Service": 1,
+        "trash/.compiled/AgentSession": 16,
+        "trash/.compiled/ResultProbe": 2,
+        "trash/.compiled/Tools__Inpage": 2,
+        "trash/.compiled/Kube__Pod": 1,
+        "trash/.compiled/Array": 4,
+        "trash/.compiled/Kube__Snapshot": 7,
+        "trash/.compiled/TestCounter": 10,
+        "trash/.compiled/Tools__Indiff": 1,
+        "trash/.compiled/SourceProposal": 45,
+        "trash/.compiled/Tools__Tmux": 7,
+        "trash/.compiled/ClaudeAgent": 5,
+        "trash/.compiled/Agent": 24,
+        "trash/.compiled/Trash": 73,
+        "trash/.compiled/Protocol": 1,
+        "trash/.compiled/CodexAgent": 2,
+        "trash/.compiled/AxeAgent": 12,
+        "trash/.compiled/Time": 2,
+        "trash/.compiled/Kube__Resource": 1,
+        "trash/.compiled/Tools__Ininspect": 1,
+        "trash/.compiled/Tools__Codex": 15,
+        "trash/.compiled/Json": 23,
+        "trash/.compiled/HttpServer": 1,
+        "trash/.compiled/Object": 8,
+        "trash/.compiled/ObjectEditProposal": 8,
+        "trash/.compiled/Dictionary": 6,
+        "trash/.compiled/Kube__Diff": 8,
+        "trash/.compiled/Tools__Axe": 11,
+        "trash/.compiled/Tools__Inpick": 1,
+        "trash/.compiled/Counter": 1,
+        "trash/.compiled/Kube__Cluster": 6,
+        "trash/.compiled/GrpcClient": 2,
+        "trash/.compiled/Tools__Jq": 4,
+        "trash/.compiled/Tools__Inmacs": 1,
+        "trash/.compiled/Tool": 18,
+        "trash/.compiled/Process": 10,
+        "trash/.compiled/Block": 1,
+        "trash/.compiled/Store": 1,
+        "trash/.compiled/Kube__Deployment": 2,
+        "lib/trash-json.bash": 5
+      }
+    }
+  },
+  "semantics": {
+    "cases": 53,
+    "differences": {
+      "C": [],
+      "C_native": [],
+      "A_all": [
+        {
+          "artifact": "nesting.state",
+          "baseline": "0\u00003\u0000seed\u0000original\u0000/private<experiment>/<mode>/repo\u0000huB\u0000\u00000\u00000\u00000\u0000\u0000\u0000",
+          "actual": "0\u00002\u0000seed\u0000original\u0000/private<experiment>/<mode>/repo\u0000huB\u0000\u00000\u00000\u00000\u0000\u0000\u0000"
+        },
+        {
+          "artifact": "optionText.state",
+          "baseline": "0\u0000\u0000seed\u0000original\u0000/private<experiment>/<mode>/repo\u0000huB\u0000\u00000\u00000\u00000\u0000\u0000\u0000",
+          "actual": "0\u0000-n\u0000seed\u0000original\u0000/private<experiment>/<mode>/repo\u0000huB\u0000\u00000\u00000\u00000\u0000\u0000\u0000"
+        },
+        {
+          "artifact": "xpg_raw.state",
+          "baseline": "0\u0000first\nsecond\u0000seed\u0000original\u0000/private<experiment>/<mode>/repo\u0000huB\u0000\u00000\u00000\u00000\u0000\u0000\u0000",
+          "actual": "0\u0000first\\nsecond\u0000seed\u0000original\u0000/private<experiment>/<mode>/repo\u0000huB\u0000\u00000\u00000\u00000\u0000\u0000\u0000"
+        }
+      ],
+      "A_guard": [],
+      "B_naive": [
+        {
+          "artifact": "intervening_write.session",
+          "baseline": "{\"class\":\"ResultProbe\",\"number\":\"1 / 0\",\"step\":3,\"_vars\":[\"number\",\"step\"]}\n",
+          "actual": "<caller exited before recording state>"
+        },
+        {
+          "artifact": "intervening_write.state",
+          "baseline": "1\u0000\u0000seed\u0000original\u0000/private<experiment>/<mode>/repo\u0000huB\u0000\u00000\u00000\u00000\u0000\u0000\u0000",
+          "actual": "<caller exited before recording state>"
+        },
+        {
+          "artifact": "intervening_write.stderr",
+          "baseline": "<experiment>/<mode>/repo/trash/.compiled/ResultProbe: line <n>: 1 / 0 + 0 : division by 0 (error token is \"0 + 0 \")\n",
+          "actual": "<experiment>/<mode>/support/capabilities.bash: line <n>: 1 / 0 + 0 : division by 0 (error token is \"0 + 0 \")\n"
+        },
+        {
+          "artifact": "intervening_write.store",
+          "baseline": "{\"class\":\"ResultProbe\",\"_vars\":[\"number\",\"step\"],\"number\":7,\"step\":3}\n",
+          "actual": "<caller exited before recording state>"
+        },
+        {
+          "artifact": "invalid_numeric.session",
+          "baseline": "{\"class\":\"ResultProbe\",\"number\":\"1 / 0\",\"step\":3,\"_vars\":[\"number\",\"step\"]}\n",
+          "actual": "<caller exited before recording state>"
+        },
+        {
+          "artifact": "invalid_numeric.state",
+          "baseline": "1\u0000\u0000seed\u0000original\u0000/private<experiment>/<mode>/repo\u0000huB\u0000\u00000\u00000\u00000\u0000\u0000\u0000",
+          "actual": "<caller exited before recording state>"
+        },
+        {
+          "artifact": "invalid_numeric.stderr",
+          "baseline": "<experiment>/<mode>/repo/trash/.compiled/ResultProbe: line <n>: 1 / 0 + 0 : division by 0 (error token is \"0 + 0 \")\n",
+          "actual": "<experiment>/<mode>/support/capabilities.bash: line <n>: 1 / 0 + 0 : division by 0 (error token is \"0 + 0 \")\n"
+        },
+        {
+          "artifact": "invalid_numeric.store",
+          "baseline": "{\"class\":\"ResultProbe\",\"_vars\":[\"number\",\"step\"],\"number\":7,\"step\":3}\n",
+          "actual": "<caller exited before recording state>"
+        },
+        {
+          "artifact": "invalid_octal.session",
+          "baseline": "{\"class\":\"ResultProbe\",\"number\":\"08\",\"step\":3,\"_vars\":[\"number\",\"step\"]}\n",
+          "actual": "<caller exited before recording state>"
+        },
+        {
+          "artifact": "invalid_octal.state",
+          "baseline": "1\u0000\u0000seed\u0000original\u0000/private<experiment>/<mode>/repo\u0000huB\u0000\u00000\u00000\u00000\u0000\u0000\u0000",
+          "actual": "<caller exited before recording state>"
+        },
+        {
+          "artifact": "invalid_octal.stderr",
+          "baseline": "<experiment>/<mode>/repo/trash/.compiled/ResultProbe: line <n>: 08: value too great for base (error token is \"08\")\n",
+          "actual": "<experiment>/<mode>/support/capabilities.bash: line <n>: 08: value too great for base (error token is \"08\")\n"
+        },
+        {
+          "artifact": "invalid_octal.store",
+          "baseline": "{\"class\":\"ResultProbe\",\"_vars\":[\"number\",\"step\"],\"number\":7,\"step\":3}\n",
+          "actual": "<caller exited before recording state>"
+        },
+        {
+          "artifact": "missing_argument.session",
+          "baseline": "{\"class\":\"ResultProbe\",\"number\":\"missing_fixture_name\",\"step\":3,\"_vars\":[\"number\",\"step\"]}\n",
+          "actual": "<caller exited before recording state>"
+        },
+        {
+          "artifact": "missing_argument.state",
+          "baseline": "1\u0000\u0000seed\u0000original\u0000/private<experiment>/<mode>/repo\u0000huB\u0000\u00000\u00000\u00000\u0000\u0000\u0000",
+          "actual": "<caller exited before recording state>"
+        },
+        {
+          "artifact": "missing_argument.stderr",
+          "baseline": "<experiment>/<mode>/repo/trash/.compiled/ResultProbe: line <n>: $1: unbound variable\n",
+          "actual": "<experiment>/<mode>/support/capabilities.bash: line <n>: $1: unbound variable\n"
+        },
+        {
+          "artifact": "missing_argument.store",
+          "baseline": "{\"class\":\"ResultProbe\",\"_vars\":[\"number\",\"step\"],\"number\":7,\"step\":3}\n",
+          "actual": "<caller exited before recording state>"
+        },
+        {
+          "artifact": "missing_numeric.session",
+          "baseline": "{\"class\":\"ResultProbe\",\"number\":\"missing_fixture_name\",\"step\":3,\"_vars\":[\"number\",\"step\"]}\n",
+          "actual": "<caller exited before recording state>"
+        },
+        {
+          "artifact": "missing_numeric.state",
+          "baseline": "1\u0000\u0000seed\u0000original\u0000/private<experiment>/<mode>/repo\u0000huB\u0000\u00000\u00000\u00000\u0000\u0000\u0000",
+          "actual": "<caller exited before recording state>"
+        },
+        {
+          "artifact": "missing_numeric.stderr",
+          "baseline": "<experiment>/<mode>/repo/trash/.compiled/ResultProbe: line <n>: missing_fixture_name: unbound variable\n",
+          "actual": "<experiment>/<mode>/support/capabilities.bash: line <n>: missing_fixture_name: unbound variable\n"
+        },
+        {
+          "artifact": "missing_numeric.store",
+          "baseline": "{\"class\":\"ResultProbe\",\"_vars\":[\"number\",\"step\"],\"number\":7,\"step\":3}\n",
+          "actual": "<caller exited before recording state>"
+        }
+      ],
+      "B_guard": [
+        {
+          "artifact": "intervening_write.session",
+          "baseline": "{\"class\":\"ResultProbe\",\"number\":\"1 / 0\",\"step\":3,\"_vars\":[\"number\",\"step\"]}\n",
+          "actual": "<caller exited before recording state>"
+        },
+        {
+          "artifact": "intervening_write.state",
+          "baseline": "1\u0000\u0000seed\u0000original\u0000/private<experiment>/<mode>/repo\u0000huB\u0000\u00000\u00000\u00000\u0000\u0000\u0000",
+          "actual": "<caller exited before recording state>"
+        },
+        {
+          "artifact": "intervening_write.stderr",
+          "baseline": "<experiment>/<mode>/repo/trash/.compiled/ResultProbe: line <n>: 1 / 0 + 0 : division by 0 (error token is \"0 + 0 \")\n",
+          "actual": "<experiment>/<mode>/support/capabilities.bash: line <n>: 1 / 0 + 0 : division by 0 (error token is \"0 + 0 \")\n"
+        },
+        {
+          "artifact": "intervening_write.store",
+          "baseline": "{\"class\":\"ResultProbe\",\"_vars\":[\"number\",\"step\"],\"number\":7,\"step\":3}\n",
+          "actual": "<caller exited before recording state>"
+        },
+        {
+          "artifact": "invalid_numeric.session",
+          "baseline": "{\"class\":\"ResultProbe\",\"number\":\"1 / 0\",\"step\":3,\"_vars\":[\"number\",\"step\"]}\n",
+          "actual": "<caller exited before recording state>"
+        },
+        {
+          "artifact": "invalid_numeric.state",
+          "baseline": "1\u0000\u0000seed\u0000original\u0000/private<experiment>/<mode>/repo\u0000huB\u0000\u00000\u00000\u00000\u0000\u0000\u0000",
+          "actual": "<caller exited before recording state>"
+        },
+        {
+          "artifact": "invalid_numeric.stderr",
+          "baseline": "<experiment>/<mode>/repo/trash/.compiled/ResultProbe: line <n>: 1 / 0 + 0 : division by 0 (error token is \"0 + 0 \")\n",
+          "actual": "<experiment>/<mode>/support/capabilities.bash: line <n>: 1 / 0 + 0 : division by 0 (error token is \"0 + 0 \")\n"
+        },
+        {
+          "artifact": "invalid_numeric.store",
+          "baseline": "{\"class\":\"ResultProbe\",\"_vars\":[\"number\",\"step\"],\"number\":7,\"step\":3}\n",
+          "actual": "<caller exited before recording state>"
+        },
+        {
+          "artifact": "invalid_octal.session",
+          "baseline": "{\"class\":\"ResultProbe\",\"number\":\"08\",\"step\":3,\"_vars\":[\"number\",\"step\"]}\n",
+          "actual": "<caller exited before recording state>"
+        },
+        {
+          "artifact": "invalid_octal.state",
+          "baseline": "1\u0000\u0000seed\u0000original\u0000/private<experiment>/<mode>/repo\u0000huB\u0000\u00000\u00000\u00000\u0000\u0000\u0000",
+          "actual": "<caller exited before recording state>"
+        },
+        {
+          "artifact": "invalid_octal.stderr",
+          "baseline": "<experiment>/<mode>/repo/trash/.compiled/ResultProbe: line <n>: 08: value too great for base (error token is \"08\")\n",
+          "actual": "<experiment>/<mode>/support/capabilities.bash: line <n>: 08: value too great for base (error token is \"08\")\n"
+        },
+        {
+          "artifact": "invalid_octal.store",
+          "baseline": "{\"class\":\"ResultProbe\",\"_vars\":[\"number\",\"step\"],\"number\":7,\"step\":3}\n",
+          "actual": "<caller exited before recording state>"
+        },
+        {
+          "artifact": "missing_argument.session",
+          "baseline": "{\"class\":\"ResultProbe\",\"number\":\"missing_fixture_name\",\"step\":3,\"_vars\":[\"number\",\"step\"]}\n",
+          "actual": "<caller exited before recording state>"
+        },
+        {
+          "artifact": "missing_argument.state",
+          "baseline": "1\u0000\u0000seed\u0000original\u0000/private<experiment>/<mode>/repo\u0000huB\u0000\u00000\u00000\u00000\u0000\u0000\u0000",
+          "actual": "<caller exited before recording state>"
+        },
+        {
+          "artifact": "missing_argument.stderr",
+          "baseline": "<experiment>/<mode>/repo/trash/.compiled/ResultProbe: line <n>: $1: unbound variable\n",
+          "actual": "<experiment>/<mode>/support/capabilities.bash: line <n>: $1: unbound variable\n"
+        },
+        {
+          "artifact": "missing_argument.store",
+          "baseline": "{\"class\":\"ResultProbe\",\"_vars\":[\"number\",\"step\"],\"number\":7,\"step\":3}\n",
+          "actual": "<caller exited before recording state>"
+        },
+        {
+          "artifact": "missing_numeric.session",
+          "baseline": "{\"class\":\"ResultProbe\",\"number\":\"missing_fixture_name\",\"step\":3,\"_vars\":[\"number\",\"step\"]}\n",
+          "actual": "<caller exited before recording state>"
+        },
+        {
+          "artifact": "missing_numeric.state",
+          "baseline": "1\u0000\u0000seed\u0000original\u0000/private<experiment>/<mode>/repo\u0000huB\u0000\u00000\u00000\u00000\u0000\u0000\u0000",
+          "actual": "<caller exited before recording state>"
+        },
+        {
+          "artifact": "missing_numeric.stderr",
+          "baseline": "<experiment>/<mode>/repo/trash/.compiled/ResultProbe: line <n>: missing_fixture_name: unbound variable\n",
+          "actual": "<experiment>/<mode>/support/capabilities.bash: line <n>: missing_fixture_name: unbound variable\n"
+        },
+        {
+          "artifact": "missing_numeric.store",
+          "baseline": "{\"class\":\"ResultProbe\",\"_vars\":[\"number\",\"step\"],\"number\":7,\"step\":3}\n",
+          "actual": "<caller exited before recording state>"
+        }
+      ]
+    },
+    "send_depths": {
+      "C": [
+        2
+      ],
+      "C_native": [
+        2
+      ],
+      "A_all": [
+        1
+      ],
+      "A_guard": [
+        1
+      ],
+      "B_naive": [
+        0
+      ],
+      "B_guard": [
+        0
+      ]
+    },
+    "class_map_callback_depths": {
+      "C": [
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5
+      ],
+      "C_native": [
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5
+      ],
+      "A_all": [
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3
+      ],
+      "A_guard": [
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4
+      ],
+      "B_naive": [
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3
+      ],
+      "B_guard": [
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3
+      ]
+    }
+  },
+  "samples": [],
+  "expected_failure": true,
+  "reproduce": "python3 experiments/result-passing/run.py --semantics-only --unchecked-b --output /tmp/unsafe-b.json"
+}
