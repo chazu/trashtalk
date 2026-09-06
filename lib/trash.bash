@@ -2233,12 +2233,6 @@ _trash_value_eligible() {
      ${#_BEFORE_ADVICE[@]} == 0 && ${#_AFTER_ADVICE[@]} == 0 &&
      $_ENSURE_DEPTH == 0 && $_HANDLER_DEPTH == 0 && -z ${TRASH_PROFILE:-} ]] || return 1
   [[ $- != *T* && $- != *E* && $- != *x* && $- != *v* ]] || return 1
-  shopt -q xpg_echo && return 1
-  shopt -q extdebug && return 1
-  shopt -qo posix && return 1
-  shopt -q inherit_errexit 2>/dev/null && return 1
-  _trash_log_enabled 3 && return 1
-
   local _SELECTOR="${2:-}"
   shift 2 || return 1
   local -a _ARGS=()
@@ -2259,15 +2253,23 @@ _trash_value_eligible() {
   ___cap_var="${___func_prefix}__valueMethods[$___key]"
   ___cap=${!___cap_var:-}
   [[ -n $___cap ]] || return 1
+  # Most sends have no capability. Reject those before checking execution modes.
+  # Read Bash's option lists directly instead of running several shopt builtins
+  # per callback. The names are absent on Bash versions lacking an option.
+  case ":$BASHOPTS:" in
+    *:xpg_echo:*|*:extdebug:*|*:inherit_errexit:*) return 1 ;;
+  esac
+  [[ :$SHELLOPTS: != *:posix:* ]] || return 1
+  _trash_log_enabled 3 && return 1
   for ___guard in $___cap; do
     ___index=${___guard#*:}
     case $___guard in
       argc:*) (( ${#_ARGS[@]} >= ___index )) || return 1; continue ;;
       a:*)
         ___value=${_ARGS[___index-1]}
-        while [[ $___value == *$'\n' ]]; do ___value=${___value%$'\n'}; done
-        # The public wrapper echoes the captured result a second time.
-        [[ ! $___value =~ ^-[neE]+$ ]] || return 1
+        # Detect option-only output after capture trims newlines, without a
+        # repeated string-copy loop for arguments with many trailing newlines.
+        [[ ! $___value =~ ^-[neE]+$'\n'*$ ]] || return 1
         continue ;;
       i:*) ___value=${_ARGS[___index-1]} ;;
       *) return 1 ;;

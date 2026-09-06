@@ -55,7 +55,65 @@ changes, dispatch, reloads, output/status, shell isolation and strict mode,
 followed by sequential off/on measurements of compiled assignments and callbacks. Historical prototype results below remain separate from
 those integration measurements. Option B is deferred.
 
+## Final integrated measurements, 2026-09-06
+
+**Decision: retain guarded A as an opt-in optimization, with C as the default.**
+The smaller guard was measured in two further independent 24-round runs: 672
+validated timed batches, with alternating off/on order and no concurrent tests
+or builds during timing. The compiler generated both variants; no prototype
+rewrites or dispatcher clones were used. Paired median improvements follow.
+
+| Workload | Run 1 | Run 2 |
+| --- | ---: | ---: |
+| Constant return | +13.8% | +17.0% |
+| Integer argument addition | +18.0% | +7.0% |
+| Nested simple sends | +7.0% | +8.9% |
+| Field getter (fallback) | -8.3% | +0.3% |
+| 25-item class-callback map | +17.4% | +5.3% |
+| 25-item Block map | +6.9% | +3.0% |
+| Ten browser records | -4.6% | -7.0% |
+
+Constant returns and argument arithmetic improved in both runs, with positive
+95% intervals. Nested sends also improved in both. Class-map medians exceeded
+the earlier 5% threshold twice, but uncertainty remains: the intervals were
+**2.8% to 24.0%** and **-2.4% to 9.0%**. The second run therefore does not
+independently confirm a positive mapping gain at that confidence level.
+
+There is no demonstrated getter, Block-map or browser benefit. Browser paired
+medians were **4.6% and 7.0% slower**, with intervals including zero in both final
+runs. That potential fallback cost, shared-host variability, and the mapping
+uncertainty argue against enabling this globally. Use the flag for workloads
+with eligible hot calls and measure the application; the implementation and
+correctness checks are complete, while default-on qualification remains open.
+The final runs compare each version with its own default control; they do not
+isolate the guard edit's causal contribution from changes in host load.
+
+[Final run 1](../experiments/result-passing/results/2026-09-06-final-run1.json)
+and [final run 2](../experiments/result-passing/results/2026-09-06-final-run2.json)
+include median/p95 batch means, paired-bootstrap intervals, source hashes, host
+load and checksummed raw CSV samples. P95 describes batch means, not individual
+request latency. The same runner reproduces the comparison; build setup may
+reuse copied content-addressed AST caches, and all runtime state is isolated.
+
+Enable in both compilation and a fresh execution session:
+
+```bash
+TRASHTALK_VALUE_SEND=1 make bash
+TRASHTALK_VALUE_SEND=1 bash --noprofile --norc
+source lib/trash.bash
+```
+
+`export TRASHTALK_VALUE_SEND=0` forces runtime fallback immediately.
+`TRASHTALK_VALUE_SEND=0 make bash` also restores default call sites. The checkout's
+compiled artifacts were restored to that default after validation.
+
 ## Initial integrated measurements, 2026-09-06
+
+These runs measured the first integration at `64cbc07`. They prompted a smaller
+guard: unsupported methods now return before option/log checks, shell options
+are read from Bash's option lists, and echo-sensitive argument detection avoids
+repeated copies of trailing-newline strings. Eligibility and fallback contracts
+are unchanged. The enabled 39-file runtime suite passed again after this change.
 
 Two independent 24-round runs exercised actual compiled assignment bodies and
 runtime callbacks, with 672 validated timed batches total. Paired median

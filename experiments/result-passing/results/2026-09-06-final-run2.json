@@ -1,0 +1,141 @@
+{
+  "kind": "integrated guarded A",
+  "rounds": 24,
+  "base_commit": "64cbc077135e7ad15d41e5908afaa610c87b5c35",
+  "bash": "GNU bash, version 5.3.15(1)-release (aarch64-apple-darwin23.6.0)",
+  "host": [
+    "Darwin",
+    "Nikaido.local",
+    "23.6.0",
+    "Darwin Kernel Version 23.6.0: Fri Jul  5 17:56:39 PDT 2024; root:xnu-10063.141.1~2/RELEASE_ARM64_T8122",
+    "arm64"
+  ],
+  "load_start": [
+    21.19189453125,
+    30.78955078125,
+    40.21826171875
+  ],
+  "source_sha256": {
+    "lib/trash.bash": "6c2967e68c41f63d85c1029d5895b4f778875fd048bfad085e419cd6c0563c2c",
+    "lib/trash-json.bash": "a7c72db3a491a155af28d52abe7ce8bf5ce3f6d572311dbd6a89960e03d40042",
+    "lib/jq-compiler/codegen.jq": "6966a1b0ba3abb542d658b41ad3c931b9defb04c5480e22510500e343678b61a",
+    "lib/jq-compiler/build-cache.bash": "45903d8542e7b9ec880a6b54b56e688e0df9048ac0657988a25ce52d4b884c16",
+    "lib/jq-compiler/build-plan.jq": "e2db6b359386c695751a98cecb7349b51b6b585a3c4cf21ad6dc0ab4118528ba",
+    "tests/fixtures/ResultProbe.trash": "c56fb3aea82ae54f1b574ba8681bbceae807b578b6c6fbcffb456b62dee2397c",
+    "experiments/result-passing/integrated.py": "94c15713046e288e8425d171bc41def0462d54163f82438152e5fa3de5365bf2"
+  },
+  "load_end": [
+    13.86181640625,
+    25.92626953125,
+    36.96630859375
+  ],
+  "results": {
+    "constant": {
+      "median_us": {
+        "off": 2252.8541666666665,
+        "on": 1817.2083333333335
+      },
+      "p95_batch_mean_us": {
+        "off": 3374.2083333333335,
+        "on": 2682.6666666666665
+      },
+      "paired_median_improvement_pct": 17.04433059173687,
+      "paired_bootstrap_95_pct": [
+        14.090675485442317,
+        21.10299723147293
+      ]
+    },
+    "nested": {
+      "median_us": {
+        "off": 7485.458333333333,
+        "on": 6475.958333333334
+      },
+      "p95_batch_mean_us": {
+        "off": 11631.083333333334,
+        "on": 9882.083333333334
+      },
+      "paired_median_improvement_pct": 8.931262811603204,
+      "paired_bootstrap_95_pct": [
+        6.245670245930039,
+        15.072399389566755
+      ]
+    },
+    "numeric": {
+      "median_us": {
+        "off": 2230.958333333333,
+        "on": 2030.2083333333335
+      },
+      "p95_batch_mean_us": {
+        "off": 3954.875,
+        "on": 3067.25
+      },
+      "paired_median_improvement_pct": 7.034841494344862,
+      "paired_bootstrap_95_pct": [
+        3.6992770601420792,
+        13.846736724560806
+      ]
+    },
+    "getter": {
+      "median_us": {
+        "off": 9652.5625,
+        "on": 10073.3125
+      },
+      "p95_batch_mean_us": {
+        "off": 13696.125,
+        "on": 14534.25
+      },
+      "paired_median_improvement_pct": 0.32256555572720874,
+      "paired_bootstrap_95_pct": [
+        -8.41964813821373,
+        4.525351798079071
+      ]
+    },
+    "class_map": {
+      "median_us": {
+        "off": 119291.0,
+        "on": 113815.0
+      },
+      "p95_batch_mean_us": {
+        "off": 176580.33333333334,
+        "on": 151290.66666666666
+      },
+      "paired_median_improvement_pct": 5.259149341322116,
+      "paired_bootstrap_95_pct": [
+        -2.442844922344926,
+        9.039946338609084
+      ]
+    },
+    "block_map": {
+      "median_us": {
+        "off": 438622.5,
+        "on": 433450.0
+      },
+      "p95_batch_mean_us": {
+        "off": 568131.6666666666,
+        "on": 523044.0
+      },
+      "paired_median_improvement_pct": 2.9620535458452872,
+      "paired_bootstrap_95_pct": [
+        -8.500508879963851,
+        11.234800670530465
+      ]
+    },
+    "browser": {
+      "median_us": {
+        "off": 206287.5,
+        "on": 223698.0
+      },
+      "p95_batch_mean_us": {
+        "off": 280293.0,
+        "on": 309113.0
+      },
+      "paired_median_improvement_pct": -7.003274417626033,
+      "paired_bootstrap_95_pct": [
+        -15.311483091661676,
+        2.9572535096741737
+      ]
+    }
+  },
+  "samples_file": "2026-09-06-final-run2.samples.csv",
+  "samples_sha256": "ae7da054affb4d48e5a7039536733a6e911849f1328f6128f057d191b4812345"
+}

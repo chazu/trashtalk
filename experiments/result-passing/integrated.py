@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import random
+import shutil
 import statistics
 import subprocess
 import tempfile
@@ -123,6 +124,11 @@ def main():
             for mode in ('off', 'on'):
                 repo = work/mode
                 copy_repo(ROOT, repo)
+                # Reuse content-addressed parse inputs, never writable shared
+                # state. The compiler still validates source/fingerprint keys.
+                cache = ROOT/'trash/.compiled/.astcache'
+                if cache.is_dir():
+                    shutil.copytree(cache, repo/'trash/.compiled/.astcache')
                 (repo/'trash/ResultProbe.trash').write_text((ROOT/'tests/fixtures/ResultProbe.trash').read_text()+FIXTURE)
                 env = dict(environment(repo, work, work/(mode+'-state')), TRASHTALK_VALUE_SEND=str(int(mode == 'on')))
                 print(f'Building {mode}', flush=True)
@@ -167,7 +173,7 @@ def main():
     args.output.parent.mkdir(parents=True, exist_ok=True)
     csv_path = args.output.with_suffix('.samples.csv')
     with csv_path.open('w') as stream:
-        writer = csv.DictWriter(stream, fieldnames=list(samples[0]))
+        writer = csv.DictWriter(stream, fieldnames=list(samples[0]), lineterminator="\n")
         writer.writeheader()
         writer.writerows(samples)
     report['samples_file'] = csv_path.name

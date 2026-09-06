@@ -67,7 +67,7 @@ compare() {
 for selector in constant safeEmpty nested assignedAdd assignedEmpty assignedRaw empty multiline optionText escapedText failSilent failOutput effects directEffects lastResult nesting exitAfterOutput ensureFailure throwFailure divideByZero callbacks dangerousLiteral; do
     compare ResultProbe "$selector"
 done
-for value in '' plain 'two words' 'foo:' ':' '-n' '-e' '-ne' $'-n\n' $'first\nsecond\n\n' 'first\nsecond' '"quoted"' '$(printf injected)'; do
+for value in '' plain 'two words' 'foo:' ':' '-n' '-e' '-ne' $'-n\n' $'-ne\n\n\n' $'first\nsecond\n\n' 'first\nsecond' '"quoted"' '$(printf injected)'; do
     compare ResultProbe valueWith: "$value"
 done
 compare ResultProbe valueWith:
@@ -110,7 +110,7 @@ assert_fallback() {
 ( set -E; assert_fallback; exit "$failed" ); check test "$?" = 0
 ( set -T; assert_fallback; exit "$failed" ); check test "$?" = 0
 ( set -o posix; assert_fallback; exit "$failed" ); check test "$?" = 0
-( shopt -s inherit_errexit; assert_fallback; exit "$failed" ); check test "$?" = 0
+( if shopt -s inherit_errexit 2>/dev/null; then assert_fallback; fi; exit "$failed" ); check test "$?" = 0
 ( _ENSURE_DEPTH=1; _ENSURE_STACK[0]=':'; assert_fallback; exit "$failed" ); check test "$?" = 0
 ( _HANDLER_DEPTH=1; _HANDLER_STACK[0]='NoError|:'; assert_fallback; exit "$failed" ); check test "$?" = 0
 ( _BEFORE_ADVICE=('Other:missing:unused'); assert_fallback; exit "$failed" ); check test "$?" = 0

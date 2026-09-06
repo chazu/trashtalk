@@ -12,7 +12,9 @@ python3 -B experiments/result-passing/integrated.py --rounds 24 --output /tmp/in
 It builds separate off/on disposable repositories, checks workload results,
 warms both workers, alternates variant order for each paired round, and records
 raw CSV samples, source hashes, median/p95 batch means and paired-bootstrap
-intervals. Workloads execute compiler-generated assignment bodies directly;
+intervals. Content-addressed AST caches are copied to reduce setup work; each
+compiler still validates its own source/fingerprint keys. No writable cache is
+shared, and compilation time is excluded from the measurements. Workloads execute compiler-generated assignment bodies directly;
 collection mapping still traverses the normal public dispatch surface. The
 arithmetic case adds two arguments; field reads are deliberately ineligible.
 Run sequentially with other builds/tests stopped.

@@ -137,5 +137,6 @@
     }
   },
   "samples_file": "2026-09-06-integrated-run1.samples.csv",
-  "samples_sha256": "ccb6d852a3046b97786c557b6bb18ab9bd28abacfd5f29f54114c414b2daddc3"
+  "samples_sha256": "f5544f4d1b1b80278247805cacd3f31e52d6a51b95a83f2f1a3d2a59680872ba",
+  "sample_serialization": "CSV rows unchanged; line endings normalized to LF after measurement"
 }
