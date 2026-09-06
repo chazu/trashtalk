@@ -73,6 +73,18 @@ including standalone test invocations. `TRASH_TEST_JOBS` and
 `TRASH_TEST_TIMEOUT` control parallelism and per-file timeouts. See
 `docs/performance.md` for retaining a failed checkout or enabling traces.
 
+Compiled classes carry JSON default templates. Object creation merges inherited
+templates in one serializer and retains immediate persistence. Each instance
+send decodes its scalar fields once; field reads reuse that decode only while
+the exact session data remains unchanged. Containers are read on demand. Block
+invocation decodes its metadata together
+and retains public getter dispatch when those getters are overridden.
+
+Builds validate source and artifact hashes in a batch, plan shared dependencies
+once, and run only changed classes in parallel. See `docs/performance.md` for
+the measured process counts. `docs/result-passing-design.md` describes a proposed
+future result ABI; that ABI is not implemented.
+
 ## Runtime Usage
 
 ```bash

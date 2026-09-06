@@ -75,3 +75,42 @@ printf 'Base subclass: Child\n' > "$base"
 if "$driver" compile-cached "$child" "$artifact" > /dev/null 2> "$CACHE_ROOT/cycle.err"; then exit 1; fi
 rg -q 'Cyclic build dependency' "$CACHE_ROOT/cycle.err"
 echo 'PASS: warm build skips codegen; parent, trait, compiler, corruption, failure, and cycle invalidation'
+
+# One graph for multiple roots: build a shared parent once, skip every worker
+# when warm, and keep hashing process count independent of node count.
+export TRASHTALK_DIR="$CACHE_ROOT/batch"
+export TRASHTALK_COMPILED_DIR="$TRASHTALK_DIR/trash/.compiled"
+mkdir -p "$TRASHTALK_DIR/trash"
+printf 'Shared subclass: Object\n  instanceVars: added:42\n' > "$TRASHTALK_DIR/trash/Shared.trash"
+roots=()
+for n in 1 2 3 4; do
+    printf 'Leaf%s subclass: Shared\n  method: read [ ^ added ]\n' "$n" > "$TRASHTALK_DIR/trash/Leaf$n.trash"
+    roots+=("$TRASHTALK_DIR/trash/Leaf$n.trash")
+done
+before=$(wc -l < "$CACHE_CALLS")
+"$driver" compile-many "$TRASHTALK_COMPILED_DIR" 3 "${roots[@]}" > "$CACHE_ROOT/batch-cold"
+test "$(($(wc -l < "$CACHE_CALLS") - before))" = 5
+source "$TRASHTALK_COMPILED_DIR/Leaf4"
+test "$(__Leaf4__read)" = 42
+export CACHE_SHA=$(command -v shasum) CACHE_HASH_CALLS="$CACHE_ROOT/hash-calls"
+cat > "$CACHE_ROOT/bin/shasum" <<'SHA'
+#!/usr/bin/env bash
+printf 'hash\n' >> "$CACHE_HASH_CALLS"
+exec "$CACHE_SHA" "$@"
+SHA
+chmod +x "$CACHE_ROOT/bin/shasum"
+before=$(wc -l < "$CACHE_CALLS")
+"$driver" compile-many "$TRASHTALK_COMPILED_DIR" 3 "${roots[@]}" > "$CACHE_ROOT/batch-warm"
+test "$(wc -l < "$CACHE_CALLS")" = "$before"
+test "$(wc -l < "$CACHE_HASH_CALLS")" -le 3
+rg -q '5 artifacts unchanged' "$CACHE_ROOT/batch-warm"
+# Preserve mtimes to ensure a content edit invalidates every dependent.
+cp -p "$TRASHTALK_DIR/trash/Shared.trash" "$CACHE_ROOT/shared-time"
+printf 'Shared subclass: Object\n  instanceVars: added:99\n' > "$TRASHTALK_DIR/trash/Shared.trash"
+touch -r "$CACHE_ROOT/shared-time" "$TRASHTALK_DIR/trash/Shared.trash"
+"$driver" compile-many "$TRASHTALK_COMPILED_DIR" 3 "${roots[@]}" > "$CACHE_ROOT/batch-changed"
+test "$(($(wc -l < "$CACHE_CALLS") - before))" = 5
+# Corrupt metadata outside the requested closure does not block a single build.
+printf 'not a class\n' > "$TRASHTALK_DIR/trash/Unrelated.trash"
+"$driver" compile-cached "${roots[0]}" "$TRASHTALK_COMPILED_DIR/Leaf1" > "$CACHE_ROOT/batch-scoped"
+echo 'PASS: batch roots share dependency work; warm hash count stays constant'

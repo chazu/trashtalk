@@ -41,11 +41,11 @@ check test ! -e "$TEST_TMP/db.calls"
 eval "$original_db_get"
 
 counter=$(@ Counter new)
-original_class_lookup=$(declare -f _get_instance_class)
-eval "${original_class_lookup/_get_instance_class ()/_test_class_lookup ()}"
-_get_instance_class() {
-    printf '%s\n' "$1" >>"$TEST_TMP/class.calls"
-    _test_class_lookup "$@"
+original_state_decode=$(declare -f _trash_json_decode)
+eval "${original_state_decode/_trash_json_decode ()/_test_state_decode ()}"
+_trash_json_decode() {
+    [[ "$3" != state ]] || printf 'state\n' >>"$TEST_TMP/class.calls"
+    _test_state_decode "$@"
 }
 @ "$counter" increment >"$TEST_TMP/increment"
 check test "$(<"$TEST_TMP/increment")" = 1

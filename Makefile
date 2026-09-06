@@ -65,8 +65,7 @@ doctor: bash
 
 bash: $(COMPILED_DIR) $(COMPILED_DIR)/traits
 	@echo "Compiling to bash ($(NPROCS) parallel jobs)..."
-	@printf '%s\n' $(ALL_SOURCES) | xargs -P$(NPROCS) -I{} \
-		$(LIB_DIR)/compile-bash.sh {} $(COMPILED_DIR) $(JQ_COMPILER) $(TRASH_DIR)
+	@TRASHTALK_DIR="$(CURDIR)" bash $(JQ_COMPILER) compile-many $(COMPILED_DIR) $(NPROCS) $(ALL_SOURCES)
 	@echo "✓ Compilation complete"
 
 # =============================================================================

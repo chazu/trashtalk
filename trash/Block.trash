@@ -15,98 +15,21 @@ Block subclass: Object
     echo "$id"
   ]
 
-  # Execute block with no arguments
+  # Binding dynamic Bash names and evaluating compiled block code are a shell
+  # boundary. The shared primitive decodes the current block state once.
   rawMethod: value [
     pragma: direct
-    local code params captured
-    code=$(@ "$_RECEIVER" code)
-    params=$(@ "$_RECEIVER" params)
-    captured=$(@ "$_RECEIVER" captured)
-
-    # Restore captured variables
-    local _saved_RECEIVER="$_RECEIVER"
-    if [[ -n "$captured" && "$captured" != "null" ]]; then
-      local cap_receiver
-      cap_receiver=$(echo "$captured" | jq -r '._RECEIVER // empty')
-      [[ -n "$cap_receiver" ]] && _RECEIVER="$cap_receiver"
-    fi
-
-    # Execute the code
-    eval "$code"
-    local result=$?
-
-    # Restore context
-    _RECEIVER="$_saved_RECEIVER"
-    return $result
+    _trash_block_invoke
   ]
 
-  # Execute block with one argument
-  # Note: Named valueWith: to avoid collision with value (0-arg version)
   rawMethod: valueWith: arg [
     pragma: direct
-    local code params captured arg1="$1"
-    code=$(@ "$_RECEIVER" code)
-    params=$(@ "$_RECEIVER" params)
-    captured=$(@ "$_RECEIVER" captured)
-
-    # Get parameter name
-    local param1
-    param1=$(echo "$params" | jq -r '.[0] // empty')
-
-    # Restore captured variables
-    local _saved_RECEIVER="$_RECEIVER"
-    if [[ -n "$captured" && "$captured" != "null" ]]; then
-      local cap_receiver
-      cap_receiver=$(echo "$captured" | jq -r '._RECEIVER // empty')
-      [[ -n "$cap_receiver" ]] && _RECEIVER="$cap_receiver"
-    fi
-
-    # Bind parameter and execute
-    # Must use declare then eval - single eval causes premature expansion of $code
-    if [[ -n "$param1" ]]; then
-      declare "$param1=$arg1"
-      eval "$code"
-    else
-      eval "$code"
-    fi
-    local result=$?
-
-    # Restore context
-    _RECEIVER="$_saved_RECEIVER"
-    return $result
+    _trash_block_invoke "$1"
   ]
 
-  # Execute block with two arguments
   rawMethod: valueWith: a and: b [
     pragma: direct
-    local code params captured arg1="$1" arg2="$2"
-    code=$(@ "$_RECEIVER" code)
-    params=$(@ "$_RECEIVER" params)
-    captured=$(@ "$_RECEIVER" captured)
-
-    # Get parameter names
-    local param1 param2
-    param1=$(echo "$params" | jq -r '.[0] // empty')
-    param2=$(echo "$params" | jq -r '.[1] // empty')
-
-    # Restore captured variables
-    local _saved_RECEIVER="$_RECEIVER"
-    if [[ -n "$captured" && "$captured" != "null" ]]; then
-      local cap_receiver
-      cap_receiver=$(echo "$captured" | jq -r '._RECEIVER // empty')
-      [[ -n "$cap_receiver" ]] && _RECEIVER="$cap_receiver"
-    fi
-
-    # Bind parameters and execute
-    # Must use declare then eval - single eval causes premature expansion of $code
-    [[ -n "$param1" ]] && declare "$param1=$arg1"
-    [[ -n "$param2" ]] && declare "$param2=$arg2"
-    eval "$code"
-    local result=$?
-
-    # Restore context
-    _RECEIVER="$_saved_RECEIVER"
-    return $result
+    _trash_block_invoke "$1" "$2"
   ]
 
   # Return number of parameters

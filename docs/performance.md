@@ -140,11 +140,13 @@ and exit status include failures and timeouts from either suite.
 
 The [JSON read/traversal primitives](json-values.md) make extraction and iteration
 process counts explicit. Diagnostic conversion uses one decoder and one
-serializer. Array mapping with a constant class callback uses 13 jq processes
-for both one and 25 elements, including runtime persistence; callback work
-itself remains additional.
+serializer. The earlier mapping implementation used 13 jq processes for both
+one and 25 elements with a constant class callback, including persistence.
+The state/initialization changes below reduce that fixed overhead further;
+callback work itself remains additional.
 
-Two consecutive warm `make bash` runs on 2026-09-05 took 3.63 and 3.80 seconds,
+Before the shared build planner, two consecutive warm `make bash` runs on
+2026-09-05 took 3.63 and 3.80 seconds,
 with zero classes recompiled. The cache regression separately counts codegen
 invocations and checks parent, trait, compiler, and damaged-output invalidation.
 
@@ -162,3 +164,54 @@ The previous Dictionary map also printed intermediate values; its final stdout
 line supplied the result ID for that check. The new method returns only the
 result ID. These comparisons measure traversal and serialization; callbacks
 that invoke processes or mutate persisted state still pay for that work.
+
+## Shared state, defaults, and build planning
+
+Instance resolution now decodes scalar fields in one jq invocation. `_ivar` can use
+the decoded value only when the current session file exactly matches that
+snapshot. An intervening nested send, raw write, or sibling-subshell write makes
+the read use current data. This preserves the legacy field output, including
+empty strings versus null/false, and does not defer writes until method return.
+Arrays and objects keep their on-demand field reads: eagerly rendering a
+10,000-element collection during receiver resolution added about 28 ms in a
+local decoder probe, even when the method did not use that field. A regression
+checks that the decoded Bash state stays small for such an object.
+
+The compiler emits each class's JSON default template and field names. Creation
+merges templates with child defaults taking precedence, serializes the complete
+record once, and persists it immediately. Accessor naming uses Bash builtins,
+eliminating its former per-field `tr` processes. Older or handwritten artifacts use the
+legacy initializer. A failed persistent write still removes the uncommitted
+session object.
+
+Block execution loads code, parameters, and captured receiver together. It binds
+parameters and evaluates the compiled Bash body through one shared shell
+primitive. Metadata getter overrides retain public dispatch. The body can still
+return early, fail, mutate caller locals under direct execution, and use its
+captured receiver.
+
+Deterministic runtime regressions verify these jq process counts:
+
+| Public operation | Previous | Current |
+| --- | ---: | ---: |
+| Counter getter | 2 | 1 |
+| Counter increment | 4 | 2 |
+| One-argument Block invocation | 9 | 2 |
+| Create a 40-field object | 45 | 2 |
+
+`compile-many` now hashes the source/artifact inventory in one batch, reads
+receipts together, and plans each shared parent/trait once. It schedules changed
+nodes in parallel by dependency level. Receipts use version 2 and record final
+dependency hashes. `compile-cached` and `make single` use the same coordinator
+with one requested root. Invalid unrelated source outside that root's dependency
+closure is not parsed. Builds reject cycles, missing dependencies, duplicate
+outputs, changed inputs during compilation, and corrupt artifacts/receipts.
+Warm graph validation uses a constant number of hash processes; a regression
+checks that a shared parent is compiled only once for multiple roots.
+Two warm `make bash` runs on 2026-09-05 validated all 64 artifacts in 0.298 and
+0.244 seconds with no recompilation. These are local observations; the earlier
+3.63/3.80-second runs were taken at a different time and host load.
+
+The next result-transport optimization is discussed separately in
+[Result passing for compiled methods](result-passing-design.md). The current
+public `@`, stdout, status, and `pragma: direct` result conventions remain.

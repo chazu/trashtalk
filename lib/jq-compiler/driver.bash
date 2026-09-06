@@ -79,7 +79,7 @@ _compiler_version() {
         _COMPILER_VERSION=$(cat "$PARSER" "$CODEGEN" \
             "$SCRIPT_DIR/expr-parser.jq" "$SCRIPT_DIR/expr-codegen.jq" \
             "$SCRIPT_DIR/ir.jq" "$SCRIPT_DIR"/grammar/*.jq \
-            "$TOKENIZER" "$SCRIPT_DIR/build-cache.bash" "${BASH_SOURCE[0]}" 2>/dev/null \
+            "$TOKENIZER" "$SCRIPT_DIR/build-cache.bash" "$SCRIPT_DIR/build-plan.jq" "${BASH_SOURCE[0]}" 2>/dev/null \
             | shasum -a 256 2>/dev/null | cut -d' ' -f1 | cut -c1-16)
     fi
     echo "$_COMPILER_VERSION"
@@ -719,6 +719,14 @@ main() {
             [[ $# == 2 ]] || error 'Usage: compile-cached <source> <output>'
             cmd_compile_cached "$1" "$2"
             ;;
+
+        compile-many)
+            [[ $# -ge 3 ]] || error 'Usage: compile-many <output-dir> <jobs> <sources...>'
+            cmd_compile_many "$@"
+            ;;
+
+        build-metadata) cmd_build_metadata "$@" ;;
+        build-worker) cmd_build_worker "$@" ;;
 
         fingerprint)
             _compiler_version

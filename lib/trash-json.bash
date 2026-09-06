@@ -30,6 +30,43 @@ _trash_json_unpack() {
     done
 }
 
+# Block bodies are Bash code emitted by the compiler. Name binding and eval
+# belong here; collection traversal continues to use public message sends.
+_trash_block_invoke() {
+    local __tb_data __tb_name __tb_i
+    local -a __tb_parts=()
+    if [[ "$_CLASS" == Block && -n "${__Block__declaredMethods:-}" &&
+          "$__Block__declaredMethods" != *' code '* &&
+          "$__Block__declaredMethods" != *' params '* &&
+          "$__Block__declaredMethods" != *' captured '* ]]; then
+        _ensure_loaded "$_RECEIVER" || return
+        __tb_data=$(_env_get "$_RECEIVER")
+        _trash_json_decode __tb_parts "$__tb_data" block || return
+    else
+        # Subclasses may override the metadata getters. Preserve that dispatch.
+        local __tb_code __tb_params __tb_captured
+        __tb_code=$(@ "$_RECEIVER" code) || return
+        __tb_params=$(@ "$_RECEIVER" params) || return
+        __tb_captured=$(@ "$_RECEIVER" captured) || return
+        __tb_data=$(jq -cn --arg code "$__tb_code" --argjson params "${__tb_params:-null}" \
+            --argjson captured "${__tb_captured:-null}" '{code:$code,params:$params,captured:$captured}') || return
+        _trash_json_decode __tb_parts "$__tb_data" block || return
+    fi
+    # Dynamic locals restore the receiver when eval returns, including an
+    # explicit return or failure inside the block body.
+    local _RECEIVER="${__tb_parts[1]:-$_RECEIVER}"
+    for ((__tb_i=0; __tb_i<$#; __tb_i++)); do
+        __tb_name=${__tb_parts[__tb_i+2]:-}
+        [[ -n "$__tb_name" ]] || continue
+        [[ "$__tb_name" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ && "$__tb_name" != __tb_* ]] || {
+            echo "Invalid block parameter: $__tb_name" >&2; return 2;
+        }
+        local "$__tb_name"
+        printf -v "$__tb_name" '%s' "${@:__tb_i+1:1}"
+    done
+    eval "${__tb_parts[0]}"
+}
+
 # Callback invocation belongs at this primitive boundary. The collection
 # classes choose the operation in DSL and install the final value only once.
 _trash_json_collect() {

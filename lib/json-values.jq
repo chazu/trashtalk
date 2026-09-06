@@ -48,4 +48,16 @@ if length != 1 then error("expected exactly one JSON document") else .[0] end
     if type != "object" then error("expected an object") else keys | map(text_value) | @sh end
   elif $operation == "values" then
     if type != "object" then error("expected an object") else [.[] | legacy_text] | @sh end
+  elif $operation == "state" then
+    if type != "object" then error("expected instance state")
+    else [(.class | legacy_text), (to_entries[]
+      | select(.key | contains("\u0000") | not)
+      # Leave containers to the ordinary field reader. Eager pretty-printing
+      # copies potentially large collections even when a send never reads them.
+      | select(.value | type != "array" and type != "object")
+      | select(.value | if type == "string" then contains("\u0000") | not else true end)
+      | .key, (.value | if . == null or . == false then "" else legacy_text + "\n" end))] | @sh end
+  elif $operation == "block" then
+    [(.code | legacy_text), (.captured._RECEIVER | legacy_text),
+     (.params[0] | legacy_text), (.params[1] | legacy_text)] | @sh
   else error("unknown JSON operation") end

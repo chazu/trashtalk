@@ -2375,6 +2375,17 @@ def timestamp:
 def varsToString:
   [.[] | .name + (if .default then ":\(.default.value | gsub("\""; "\\\""))" else "" end)] | join(" ");
 
+# Preserve the runtime's existing default coercion, including quoted numeric
+# strings and empty-string defaults (which historically mean null).
+def instanceDefaults:
+  def value:
+    (.default.value // "") as $v |
+    if $v == "" then null
+    elif ($v | test("^-?[0-9]+(\\.[0-9]+)?$")) then $v | tonumber
+    elif $v == "true" then true elif $v == "false" then false
+    elif $v == "[]" then [] elif $v == "{}" then {} else $v end;
+  {vars:[.instanceVars[]?.name], values:([.instanceVars[]? | {key:.name,value:value}] | from_entries)};
+
 # Get the fully qualified class name (Package::ClassName or just ClassName)
 # Input: class AST with .package and .name
 def qualifiedName:
@@ -2431,6 +2442,9 @@ def generateMetadata:
   else
     "\($prefix)__superclass=\"\($qualifiedParent)\"",
     "\($prefix)__instanceVars=\"\(.instanceVars | varsToString)\"",
+    "\($prefix)__instanceDefaults=\(instanceDefaults | tojson | @sh)",
+    "\($prefix)__instanceNames=\([.instanceVars[]?.name] | join(" ") | @sh)",
+    "\($prefix)__declaredMethods=\(" " + ([.methods[]?.selector, .aliases[]?.aliasName] | join(" ")) + " " | @sh)",
     "\($prefix)__classInstanceVars=\"\(.classInstanceVars | varsToString)\"",
     "\($prefix)__traits=\"\(.traits | join(" "))\"",
     "\($prefix)__sourceHash=\"\(.sourceHash // "")\"",

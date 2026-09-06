@@ -976,11 +976,10 @@ function _generate_accessor {
   local class_name="$2"
 
   # Capitalize first letter for method names
-  local capitalized
-  capitalized="$(echo "${var:0:1}" | tr '[:lower:]' '[:upper:]')${var:1}"
+  local capitalized="${var^}"
 
   # Compute function name prefix (handles namespaced classes)
-  local prefix="$(_to_func_prefix "$class_name")__"
+  local prefix="__${class_name//::/__}__"
 
   # Generate getter: __ClassName__getFoo()
   eval "${prefix}get${capitalized}() {
@@ -1026,6 +1025,40 @@ function _generate_accessor {
 # Usage: _create_instance <class_name> <instance_id>
 # class_name can be qualified (MyApp::Counter) or unqualified (Counter)
 function _create_instance {
+  local class_name="$1" instance_id="$2" current="$1" defaults_var vars_var super_var spec data created_at
+  local -a templates=()
+  local -A visited=()
+  while [[ -n "$current" && "$current" != nil ]]; do
+    [[ -z "${visited[$current]:-}" ]] || { echo "Cyclic class hierarchy: $current" >&2; return 1; }
+    visited[$current]=1
+    _ensure_class_sourced "$current" || return
+    defaults_var="__${current//::/__}__instanceDefaults"
+    if [[ -z "${!defaults_var:-}" ]]; then
+      # Handwritten/older artifacts retain the existing initialization path.
+      _create_instance_legacy "$class_name" "$instance_id"
+      return
+    fi
+    templates+=("${!defaults_var}")
+    vars_var="__${current//::/__}__instanceNames"
+    for spec in ${!vars_var:-}; do _generate_accessor "${spec%%:*}" "$class_name"; done
+    super_var="__${current//::/__}__superclass"
+    current=${!super_var:-}
+    [[ "$current" != Object ]] || break
+  done
+  created_at=${EPOCHSECONDS:-$(date +%s)}
+  data=$(printf '%s\n' "${templates[@]}" | jq -cs --arg class "$class_name" --arg created "$created_at" '
+    reduce .[] as $schema ({vars:[],values:{}};
+      .vars += [$schema.vars[] as $key | select(.vars | index($key) | not) | $key]
+      | .values = ($schema.values + .values))
+    | {class:$class,created_at:$created,_vars:.vars} + .values') || return
+  _env_set "$instance_id" "$data" || return
+  if ! _env_persist "$instance_id"; then
+    _env_delete "$instance_id" 2>/dev/null
+    return 1
+  fi
+}
+
+function _create_instance_legacy {
   local class_name="$1"
   local instance_id="$2"
   local created_at
@@ -1172,11 +1205,23 @@ function _is_instance {
 # other identifiers (including custom Store IDs) retain lazy Store lookup.
 # Results are caller-local variables, never a cross-subshell object cache.
 _resolve_receiver() {
-  _receiver_class="" _receiver_instance=""
+  _receiver_class="" _receiver_instance="" _receiver_data=""
+  _receiver_values=()
   if [[ ! -f "$_ENV_DIR/$1" && -f "$TRASHDIR/.compiled/${1//::/__}" ]]; then
     _receiver_class="$1"
   else
-    _receiver_class=$(_get_instance_class "$1")
+    _receiver_data=$(_env_get "$1")
+    [[ -n "$_receiver_data" ]] || _receiver_data=$(db_get "$1" 2>/dev/null)
+    if [[ -n "$_receiver_data" ]]; then
+      local -a __rs_values=()
+      local __rs_i
+      _trash_json_decode __rs_values "$_receiver_data" state || return
+      _receiver_class=${__rs_values[0]}
+      for ((__rs_i=1; __rs_i<${#__rs_values[@]}; __rs_i+=2)); do
+        [[ -n "${__rs_values[__rs_i]}" ]] || continue
+        _receiver_values["${__rs_values[__rs_i]}"]=${__rs_values[__rs_i+1]}
+      done
+    fi
     if [[ -n "$_receiver_class" ]]; then
       _receiver_instance="$1"
     else
@@ -1343,6 +1388,12 @@ function _ivar {
   # Auto-load from Store if not in memory
   _ensure_loaded "$_RECEIVER"
   data=$(_env_get "$_RECEIVER")
+  # Reuse this send's decode only while the exact state still matches. Nested
+  # sends, raw methods and sibling subshells can change the session file.
+  if [[ "${_receiver_instance:-}" == "$_RECEIVER" && -n "$data" && "$data" == "${_receiver_data:-}" && -n "${_receiver_values[$var]+set}" ]]; then
+    printf '%s' "${_receiver_values[$var]}"
+    return 0
+  fi
   [[ -n "$data" ]] && echo "$data" | jq -r ".$var // empty"
 }
 
@@ -1828,8 +1879,9 @@ function send {
     class_name="$_receiver_class"
     _INSTANCE="$_receiver_instance"
   else
-    local _receiver_class _receiver_instance
-    _resolve_receiver "$_RECEIVER"
+    local _receiver_class _receiver_instance _receiver_data
+    local -A _receiver_values=()
+    _resolve_receiver "$_RECEIVER" || return
     class_name="$_receiver_class"
     _INSTANCE="$_receiver_instance"
   fi
@@ -2163,8 +2215,9 @@ function @ {
   _reject_path_receiver "$1" || return 1
 
   local ___receiver="$1" ___class
-  local _receiver_class _receiver_instance _resolved_for="$1"
-  _resolve_receiver "$___receiver"
+  local _receiver_class _receiver_instance _receiver_data _resolved_for="$1"
+  local -A _receiver_values=()
+  _resolve_receiver "$___receiver" || return
   ___class="$_receiver_class"
   _ensure_class_sourced "$___class"
 
