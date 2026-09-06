@@ -36,3 +36,4 @@ lib/jq-compiler/tests/*
 !lib/jq-compiler/build-plan.jq
 !lib/jq-compiler/tests/test_json_reads.bash
 !lib/jq-compiler/tests/test_build_cache.bash
+!lib/jq-compiler/tests/test_value_send.bash

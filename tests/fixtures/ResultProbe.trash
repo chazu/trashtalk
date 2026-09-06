@@ -1,0 +1,85 @@
+# Raw fixtures deliberately expose the Bash boundaries under investigation.
+# Ordinary computation and workflow fixtures use the DSL.
+ResultProbe subclass: Object
+  instanceVars: number:7 step:3
+  classMethod: constant [ ^ 'plain result' ]
+  classMethod: valueWith: value [ ^ value ]
+  method: getNumber [ ^ number + 0 ]
+  method: arithmetic [ ^ number + step ]
+  classMethod: nested [
+    | first second |
+    first := @ ResultProbe constant.
+    second := @ ResultProbe valueWith: first.
+    ^ second
+  ]
+  method: writeThenRead [
+    @ self number: 11.
+    ^ @ self getNumber
+  ]
+  method: cascade [
+    @ self number: 13; step: 2.
+    ^ @ self arithmetic
+  ]
+  classMethod: handledFailure [
+    try: [ @ ResultProbe failSilent ] catch: [ ^ 'caught' ]
+  ]
+  rawClassMethod: empty [ printf '' ]
+  rawClassMethod: multiline [ printf 'first\nsecond\n\n' ]
+  rawClassMethod: optionText [ printf '%s' '-n' ]
+  rawClassMethod: escapedText [ printf '%s' 'first\nsecond' ]
+  rawClassMethod: failSilent [ return 7 ]
+  rawClassMethod: failOutput [ printf partial; return 7 ]
+  rawClassMethod: effects [
+    EXP_LOCAL=changed
+    cd "$TMPDIR"
+    set -f
+    trap 'printf trapped >&2' USR1
+    printf done
+  ]
+  rawClassMethod: directEffects [
+    pragma: direct
+    EXP_LOCAL=changed
+    printf direct
+  ]
+  rawClassMethod: lastResult [ printf '%s' "$__" ]
+  rawClassMethod: nesting [ printf '%s' "$BASH_SUBSHELL" ]
+  rawClassMethod: exitAfterOutput [ printf beforeExit; exit 9 ]
+  rawClassMethod: ensureFailure [
+    _ENSURE_STACK[_ENSURE_DEPTH]='printf ensured'
+    ((_ENSURE_DEPTH++))
+    printf partial
+    return 7
+  ]
+  rawClassMethod: throwFailure [
+    _throw FixtureError fixture
+    return 1
+  ]
+  rawClassMethod: divideByZero [ printf '%s' "$((1 / 0))" ]
+  classMethod: callbacks [
+    | value |
+    value := 'before'.
+    #(one two) arrayEach: [:item | value := item].
+    ^ value
+  ]
+  classMethod: add: left to: right [ ^ left + right ]
+  classMethod: product: left by: right [ ^ left * right ]
+  classMethod: dangerousLiteral [ ^ '$BASH_SUBSHELL' ]
+  classMethod: safeEmpty [ ^ '' ]
+  classMethod: assignedAdd [
+    | result |
+    result := @ ResultProbe add: 4 to: 7.
+    ^ result
+  ]
+  classMethod: assignedEmpty [
+    | result |
+    result := @ ResultProbe safeEmpty.
+    ^ result
+  ]
+  classMethod: assignedRaw [
+    | result |
+    result := @ ResultProbe optionText.
+    ^ result
+  ]
+  rawClassMethod: assignedLegacyShell [
+    local result=$(@ ResultProbe constant); printf '%s' "$result"
+  ]

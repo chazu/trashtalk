@@ -212,6 +212,26 @@ Two warm `make bash` runs on 2026-09-05 validated all 64 artifacts in 0.298 and
 0.244 seconds with no recompilation. These are local observations; the earlier
 3.63/3.80-second runs were taken at a different time and host load.
 
-The next result-transport optimization is discussed separately in
-[Result passing for compiled methods](result-passing-design.md). The current
-public `@`, stdout, status, and `pragma: direct` result conventions remain.
+## Optional value-send capture optimization
+
+`TRASHTALK_VALUE_SEND=1` enables guarded Option A for compiler-generated assigned
+sends and collection callbacks. It removes one capture for safe literal returns,
+argument identity returns, and simple integer arithmetic. Field reads, raw
+methods, hooks and unsupported execution modes keep the existing path.
+
+```bash
+TRASHTALK_VALUE_SEND=1 make bash
+TRASHTALK_VALUE_SEND=1 bash --noprofile --norc
+source lib/trash.bash
+```
+
+Use a fresh Bash session after rebuilding to load the new compiled classes.
+`export TRASHTALK_VALUE_SEND=0` immediately disables the optimization at runtime;
+`TRASHTALK_VALUE_SEND=0 make bash` also restores default compiled call sites.
+Changing the build setting invalidates receipts automatically. Existing compiled
+artifacts remain usable with the new runtime; enabled artifacts need that runtime.
+
+The public `@`, stdout, status, last-result and `pragma: direct` conventions
+remain. See [Result passing for compiled methods](result-passing-design.md) for
+measurements, the exact eligibility subset and the raw-integration invalidation
+contract. Option B's new result ABI remains deferred.

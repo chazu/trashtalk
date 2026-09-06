@@ -1,11 +1,11 @@
 # Result passing for compiled Trashtalk methods
 
-Status: experimental evaluation and recommendation for a production change.
-The production result ABI is unchanged. Design date: 2026-09-05; evaluation: 2026-09-06.
+Status: guarded Option A implemented, disabled by default; integration evaluation below.
+The public result ABI is unchanged. Design date: 2026-09-05; evaluation: 2026-09-06.
 
 ## Recommendation
 
-Proceed with a **guarded Option A** as the next production slice: remove the
+**Guarded Option A is implemented as an opt-in optimization:** remove the
 redundant inner capture for proven simple value sends, while retaining the outer
 subshell and public `@` behavior. The experiments below support that bounded
 change; they do not support an unrestricted removal of the capture.
@@ -21,11 +21,74 @@ The four preceding improvements already reduce Block decoding, object
 initialization, instance reads, and build validation. This proposal targets the
 remaining cost of transporting a method result between Bash functions.
 
+## Implementation scope
+
+`TRASHTALK_VALUE_SEND=1` opts compilation and runtime collection callbacks into
+guarded A. Compiled assignments retain their outer command substitution and
+use a private entry point sharing receiver preparation with `@`. Setting the
+runtime flag to `0` forces fallback even for opted-in artifacts. The build
+receipt records the compilation setting so toggling it rebuilds affected code.
+Public terminal sends and explicit Bash `$(@ ...)` expressions retain their
+current behavior. Old compiled artifacts work with the new runtime; opted-in
+artifacts require the new runtime.
+
+Eligibility comes from the parsed DSL body: one return of a safe literal, an
+argument, or addition/subtraction/multiplication over integer literals and
+arguments. Field reads remain captured: a type check of the receiver snapshot
+cannot prove the value is still numeric when the field helper reads it.
+Raw methods, direct pragmas, aliases, class variables, nested sends, and arbitrary
+shell expressions receive no capability. Arguments are checked at runtime;
+echo-sensitive values fall back. Only own methods selected
+by normal class/instance precedence qualify; inherited and trait dispatch fall
+back. Advice, profiling, active exception frames, tracing and special shell
+execution modes also fall back.
+
+Capabilities belong to a compiled class generation. Sourcing a new artifact
+resets them, clearing a class cache invalidates them, and legacy accessor
+generation invalidates the getter/setter it replaces. External raw Bash code
+that replaces compiled functions must first call
+`_trash_invalidate_value_methods ClassName`; arbitrary shell monkey-patching is
+outside this optimization's contract. No selector-wide promise survives reload.
+
+Integration validation covers compiler/runtime regressions for lowering, mode
+changes, dispatch, reloads, output/status, shell isolation and strict mode,
+followed by sequential off/on measurements of compiled assignments and callbacks. Historical prototype results below remain separate from
+those integration measurements. Option B is deferred.
+
+## Initial integrated measurements, 2026-09-06
+
+Two independent 24-round runs exercised actual compiled assignment bodies and
+runtime callbacks, with 672 validated timed batches total. Paired median
+improvements follow; negative numbers mean slower execution.
+
+| Workload | Run 1 | Run 2 |
+| --- | ---: | ---: |
+| Constant return | +22.4% | +21.6% |
+| Integer argument addition | +19.8% | +17.5% |
+| Nested simple sends | +6.3% | +3.1% |
+| Field getter (fallback) | -2.2% | -1.1% |
+| 25-item class-callback map | -1.2% | +3.5% |
+| 25-item Block map | +6.0% | -3.8% |
+| Ten browser records | -2.7% | -8.4% |
+
+Constant and integer-return gains repeated with positive confidence intervals.
+The integrated class-map gain did not meet the earlier repeated 5% application
+gate: its intervals included zero in both runs. Browser fallback was 8.4% slower
+in the second run (95% interval: 3.7% to 14.9% slower), although that regression
+did not repeat in run 1. These measurements support the narrow opt-in capability;
+they do not qualify a default-on rollout or reproduce the prototype's map gain.
+
+The shared host was busy and batch tails were broad. These are paired batch
+measurements, not individual-request tail latency. Detailed medians, p95 batch
+means, intervals, host load, source hashes and raw CSV checksums are preserved in
+[run 1](../experiments/result-passing/results/2026-09-06-integrated-run1.json) and
+[run 2](../experiments/result-passing/results/2026-09-06-integrated-run2.json).
+
 ## Experimental results, 2026-09-06
 
-**Decision: implement guarded A as a small, disabled-by-default compiler/runtime
-change next. Retain C as the production behavior until that integration passes
-its checks. Do not promote unrestricted A or the current B prototype.**
+**Experimental decision: implement guarded A as a small, disabled-by-default
+compiler/runtime change. That integration is described above. Do not promote
+unrestricted A or the current B prototype.**
 
 The experiments ran against `8c05160` on Darwin arm64 with Bash 5.3.15. All
 prototype changes were confined to disposable repository copies. The regular
@@ -150,8 +213,9 @@ This was a bounded prototype, not an effect checker or production compiler
 pass. It does not qualify arbitrary raw methods, arbitrary replacement of Bash
 functions outside compilation/reload, every shell option combination, or a
 mixed-version rollout. In particular, B's known `set -e` failure remains in the
-experiment as evidence. A production A implementation still needs AST-based
-lowering, authoritative capability invalidation, and normal-suite regressions.
+experiment as evidence. The integrated A implementation now supplies AST-based
+lowering, managed capability invalidation, and normal-suite regressions within
+the narrower eligibility contract above.
 
 ## The current path
 
@@ -226,13 +290,13 @@ validated compiler-owned names and explicit frame ownership. See
 Add a private runtime entry point used only inside a compiler-generated capture:
 
 ```bash
-# Proposed shape, not an implemented API:
-answer="$(_trash_value_send "$counter" getValue)"
+# Emitted for an opted-in DSL assignment:
+answer="$(_trash_value_send ResultProbe constant)"
 ```
 
-`_trash_value_send` would share the public wrapper's receiver preparation and
-method-mode checks, then run the normal dispatcher without capturing its output
-again. The surrounding substitution still captures stdout and supplies the
+`_trash_value_send` shares the public wrapper's receiver preparation and
+method-mode checks, then runs the normal dispatcher without capturing its output
+again when the selected method qualifies. The surrounding substitution still captures stdout and supplies the
 isolation boundary.
 
 This is not simply replacing `@` with `send`. In particular:
@@ -247,9 +311,8 @@ This is not simply replacing `@` with `send`. In particular:
 - `exit`, traps, `BASHPID`, shell options, and cleanup can observe a changed
   subshell boundary even when ordinary text results match.
 
-The first experiment should therefore allow only a small, explicitly supported
-set of compiled methods and fall back for everything else. It should not become
-a user-visible DSL syntax or an alternative public dispatcher.
+The implementation allows only the small parsed subset specified above and
+falls back for everything else. It adds no DSL syntax or public dispatcher.
 
 **Potential benefit:** remove one result-transport subshell per eligible assigned
 send. **Limit:** one outer capture remains, and external commands or JSON work
@@ -320,74 +383,36 @@ its compatibility adapters erase the benefit.
 These counts cover transport of one ordinary assigned send, not all subprocesses
 within its implementation.
 
-## Production work still required
+## Integration validation and remaining decisions
 
-### 1. Promote and extend the differential fixtures
+The default build passed `LC_ALL=C TRASHTALK_VALUE_SEND=0 make verify`: 39 runtime
+and 43 compiler test files. The enabled build passed
+`LC_ALL=C TRASHTALK_VALUE_SEND=1 make test`: all 39 runtime files. The dedicated
+compiler regression builds both modes, checks assignment lowering and capability
+exclusions, verifies duplicate definitions/aliases, and toggles build receipts
+in both directions. The dedicated runtime regression compares stdout, stderr,
+status, caller locals/options/directory/traps, last result, runtime stack/error
+state, session JSON and persisted JSON.
 
-The experiment runner now compares 53 cases. Before shipping a compiler pass,
-move those contracts into the normal regression suites and extend coverage to
-the complete supported method subset. Compare
-stdout bytes, stderr bytes, status, `__`, session files, persisted state, caller
-locals, working directory, shell options, and relevant traps. Include:
+Coverage includes option-like and multiline results, failures and early exits,
+nested sends, field mutations, direct callbacks, inherited/trait/overridden
+methods, a deterministic intervening field write, exception frames, profiling,
+strict mode, legacy metadata, reload and accessor replacement. Dispatch tracing
+checks two versus one captures for eligible assignments and five versus four
+for every class callback in a collection map. Private helper stack-frame names
+are implementation details; public language results are the compatibility target.
 
-- Empty, multiline, trailing-newline, quoted, and option-looking text results.
-- Successful results, silent failures, and failures after output.
-- Nested sends, cascades, inherited/trait methods, overrides, and class reload.
-- Field writes before and after callbacks; callbacks with captured receivers.
-- `pragma: direct`, direct caller-variable mutation, raw shell effects, and early
-  returns; unsupported cases must reliably use the old path.
-- Ensure handlers, advice, exceptions, and profiling on both paths.
-
-Use new fixtures to check actual semantics, not just emitted Bash text.
-
-### 2. Implement guarded A behind a disabled compiler flag
-
-Use AST-based assignment lowering and shared runtime receiver preparation; do
-not ship the experiment's textual rewrite or duplicated dispatcher definitions.
-Emit capabilities for the exact resolved method, invalidate them on reload and
-accessor replacement, and retain fallback for old artifacts and unsupported
-methods. Start with the proven constant/identity/numeric-return subset. Keep
-public terminal sends and direct methods on their existing paths.
-
-### 3. Recheck the integrated compiler on representative applications
-
-The local experiment used isolated state and alternating runs on a shared host.
-Repeat the comparison after the compiler implementation, ideally on an idle
-host and with actual applications in addition to synthetic cases. Measure constant
-sends, assigned getters, arithmetic methods, a realistic Block map, and browser
-records. Report medians and tail latency alongside process counts. Exclude model
-and network latency from the compiler/runtime comparison.
-
-The existing profiler is unsuitable for precise sub-millisecond attribution: its
-clock shells out, and its report still includes retired native-runtime advice.
-Use the lightweight benchmark clock or repair profiling before making detailed
-attribution claims. Runtime/compiler correctness still requires `make verify`.
-
-### 4. Decide whether a larger ABI is justified
-
-Promote Option A only after behavioral equivalence and a repeatable improvement
-in representative workflows. Keep the flag as a rollback during initial use.
-Proceed to Option B only if remaining capture costs dominate useful workloads
-and its eligibility rule remains understandable. Do not expose result slots in
-user DSL code to compensate for an incomplete internal design.
-
-## Decisions still open for production
-
-- Which real applications spend enough time in eligible methods to benefit?
-- Which methods can safely opt in without changing shell or output behavior?
-- Should a future language explicitly distinguish returned values from printed
-  output, or should that remain an internal optimization with conservative fallback?
-- How long should mixed compiler/runtime artifacts remain supported during a
-  future ABI transition?
-
-The next concrete action is a small compiler/runtime implementation of guarded
-A, with the measured contracts in the normal suites. Keep the general result ABI
-separate; its future justification should come from larger application gains.
+The feature remains opt-in. Broader field-read eligibility requires validation
+at the actual read without changing observable state or erasing the saving.
+Arbitrary raw Bash function replacement requires explicit capability invalidation.
+A future result-destination ABI still needs the strict-shell and output contracts
+resolved. Representative user applications, beyond the mapping and browser
+workloads measured here, should determine whether either scope should expand.
 
 ## Code pointers
 
 - `lib/trash.bash`: `@`, `send`, `_send_cleanup`, receiver resolution, and profiling.
 - `lib/jq-compiler/codegen.jq`: assignment/return lowering and message expressions.
 - `trash/Block.trash` and `lib/trash-json.bash`: direct callback execution.
-- `tests/test_runtime_fast_path.bash`, `tests/test_pragma_direct.bash`, and compiler
-  block/exception tests: existing contracts to extend.
+- `tests/test_value_send.bash` and `lib/jq-compiler/tests/test_value_send.bash`: integrated regressions.
+- `experiments/result-passing/integrated.py`: reproducible compiled off/on measurements.

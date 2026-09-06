@@ -36,7 +36,7 @@ else
     ($node.old.version == 2 and $node.old.source == $node.source and $node.old.compiler == $compiler
       and $node.old.source_hash == $node.hash and $node.output_hash != null
       and $node.old.output_hash == $node.output_hash and $node.old.dependencies == $inputs
-      and $node.old.strict == $strict and $node.old.lenient == $lenient) as $valid |
+      and $node.old.value_send == $value_send and $node.old.strict == $strict and $node.old.lenient == $lenient) as $valid |
     . as $done |
     .[($i|tostring)] = ($node + {dependencies:$inputs,
       dirty:(($valid|not) or any($deps[]; $done[.].dirty)),

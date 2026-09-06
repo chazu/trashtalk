@@ -1,4 +1,28 @@
-# Result transport experiment
+# Result transport experiments
+
+## Integrated implementation
+
+The current compiler/runtime comparison uses actual compilation settings, with
+no generated dispatcher clones or textual rewrites:
+
+```bash
+python3 -B experiments/result-passing/integrated.py --rounds 24 --output /tmp/integrated.json
+```
+
+It builds separate off/on disposable repositories, checks workload results,
+warms both workers, alternates variant order for each paired round, and records
+raw CSV samples, source hashes, median/p95 batch means and paired-bootstrap
+intervals. Workloads execute compiler-generated assignment bodies directly;
+collection mapping still traverses the normal public dispatch surface. The
+arithmetic case adds two arguments; field reads are deliberately ineligible.
+Run sequentially with other builds/tests stopped.
+
+## Historical prototypes
+
+The saved prototype reports below describe base commit `8c05160`; reproduce
+those results from checkout `bc7416a` (which contains the harness and unchanged
+runtime), with `TRASHTALK_VALUE_SEND` unset. Their textual dispatcher cloning is
+specific to that historical runtime. Use `integrated.py` for the current code.
 
 This is an opt-in, disposable experiment, not a production result ABI. The
 runner copies the repository, compiles DSL fixtures, and changes only the

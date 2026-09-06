@@ -791,6 +791,7 @@ export -f _ensure_class_sourced
 # Usage: _clear_class_cache ClassName
 function _clear_class_cache {
   local class_name="$1"
+  _trash_invalidate_value_methods "$class_name"
   unset "_SOURCED_COMPILED_CLASSES[\"$class_name\"]"
 }
 export -f _clear_class_cache
@@ -798,6 +799,10 @@ export -f _clear_class_cache
 # Clear all class caches (for full reload or memory cleanup)
 # Usage: _clear_all_class_caches
 function _clear_all_class_caches {
+  local _value_class
+  for _value_class in "${!_SOURCED_COMPILED_CLASSES[@]}"; do
+    _trash_invalidate_value_methods "$_value_class"
+  done
   _SOURCED_COMPILED_CLASSES=()
 }
 export -f _clear_all_class_caches
@@ -980,6 +985,9 @@ function _generate_accessor {
 
   # Compute function name prefix (handles namespaced classes)
   local prefix="__${class_name//::/__}__"
+
+  # Legacy generation replaces compiled functions, so their capabilities expire.
+  unset "${prefix}valueMethods[get${capitalized}]" "${prefix}valueMethods[set${capitalized}]"
 
   # Generate getter: __ClassName__getFoo()
   eval "${prefix}get${capitalized}() {
@@ -1787,6 +1795,43 @@ method_missing() {
 # Track which compiled classes have been sourced to avoid re-sourcing
 declare -A _SOURCED_COMPILED_CLASSES
 
+# Sets caller-local _SELECTOR and _ARGS; used by dispatch and value eligibility.
+_trash_parse_selector() {
+  _ARGS=("$@")
+  if [[ "$_SELECTOR" == *: ]]; then
+    _ARGS=()
+    # First keyword (already have it)
+    _SELECTOR="${_SELECTOR%:}"  # Remove trailing colon
+
+    # Process remaining arguments: strict keyword-value alternation
+    # After each keyword, the next argument is ALWAYS a value (even if it looks like a keyword)
+    # This handles cases like: @ String endsWith: 'foo:' suffix: ':'
+    # where 'foo:' is a value, not a keyword
+    local expecting_value=1  # After first keyword, expect a value
+    while [[ $# -gt 0 ]]; do
+      if [[ $expecting_value -eq 1 ]]; then
+        # This is a value - add to args regardless of pattern
+        _ARGS+=("$1")
+        shift
+        expecting_value=0  # Next could be a keyword
+      elif [[ "$1" =~ ^[a-zA-Z_][a-zA-Z0-9_]*:$ ]]; then
+        # This looks like a keyword - append to selector
+        local keyword="${1%:}"  # Remove trailing colon
+        _SELECTOR="${_SELECTOR}_${keyword}"
+        shift
+        expecting_value=1  # After keyword, expect value
+      else
+        # Not a keyword pattern, treat as value
+        _ARGS+=("$1")
+        shift
+      fi
+    done
+    # Append trailing underscore to distinguish keyword methods from unary
+    # e.g., skip: -> skip_, at:put: -> at_put_
+    _SELECTOR="${_SELECTOR}_"
+  fi
+}
+
 function send {
   _trash_log_enabled 4 && _trash_log 4 TRACE "Send: $*"
 
@@ -1828,39 +1873,8 @@ function send {
   # Handle Smalltalk keyword syntax: @ obj method: arg1 key2: arg2
   # Converts to: selector=method_key2, args=(arg1, arg2)
   local -a _ARGS=()
-  if [[ "$_SELECTOR" == *: ]]; then
-    # First keyword (already have it)
-    _SELECTOR="${_SELECTOR%:}"  # Remove trailing colon
-
-    # Process remaining arguments: strict keyword-value alternation
-    # After each keyword, the next argument is ALWAYS a value (even if it looks like a keyword)
-    # This handles cases like: @ String endsWith: 'foo:' suffix: ':'
-    # where 'foo:' is a value, not a keyword
-    local expecting_value=1  # After first keyword, expect a value
-    while [[ $# -gt 0 ]]; do
-      if [[ $expecting_value -eq 1 ]]; then
-        # This is a value - add to args regardless of pattern
-        _ARGS+=("$1")
-        shift
-        expecting_value=0  # Next could be a keyword
-      elif [[ "$1" =~ ^[a-zA-Z_][a-zA-Z0-9_]*:$ ]]; then
-        # This looks like a keyword - append to selector
-        local keyword="${1%:}"  # Remove trailing colon
-        _SELECTOR="${_SELECTOR}_${keyword}"
-        shift
-        expecting_value=1  # After keyword, expect value
-      else
-        # Not a keyword pattern, treat as value
-        _ARGS+=("$1")
-        shift
-      fi
-    done
-    # Append trailing underscore to distinguish keyword methods from unary
-    # e.g., skip: -> skip_, at:put: -> at_put_
-    _SELECTOR="${_SELECTOR}_"
-    # Replace positional params with extracted args
-    set -- "${_ARGS[@]}"
-  fi
+  _trash_parse_selector "$@"
+  set -- "${_ARGS[@]}"
   _trash_log_enabled 4 && _trash_log 4 TRACE "Parsed selector: $_SELECTOR, args: $*"
 
   local class_file
@@ -2202,9 +2216,71 @@ function receiver_path {
 # Access via $__ in REPL context (double underscore, since $_ is bash special)
 declare __=""
 
+# Result-capture optimization is private to compiled value contexts. Public @
+# remains the shared preparation/fallback path, with no duplicate receiver read.
+_trash_value_send() {
+  local _trash_value_context=1
+  @ "$@"
+}
+
+# Raw integrations replacing compiled Bash functions must invalidate first.
+_trash_invalidate_value_methods() {
+  unset "__${1//::/__}__valueMethods"
+}
+
+_trash_value_eligible() {
+  [[ ${TRASHTALK_VALUE_SEND:-0} == 1 &&
+     ${#_BEFORE_ADVICE[@]} == 0 && ${#_AFTER_ADVICE[@]} == 0 &&
+     $_ENSURE_DEPTH == 0 && $_HANDLER_DEPTH == 0 && -z ${TRASH_PROFILE:-} ]] || return 1
+  [[ $- != *T* && $- != *E* && $- != *x* && $- != *v* ]] || return 1
+  shopt -q xpg_echo && return 1
+  shopt -q extdebug && return 1
+  shopt -qo posix && return 1
+  shopt -q inherit_errexit 2>/dev/null && return 1
+  _trash_log_enabled 3 && return 1
+
+  local _SELECTOR="${2:-}"
+  shift 2 || return 1
+  local -a _ARGS=()
+  _trash_parse_selector "$@"
+  # Own functions only. Trait/inheritance/missing-method paths stay captured.
+  [[ $_SELECTOR =~ ^[a-zA-Z][a-zA-Z0-9_]*$ ]] || return 1
+  local ___key="$_SELECTOR" ___cap_var ___cap ___guard ___value ___index
+  if [[ -z $_receiver_instance ]] && declare -F "${___func_prefix}__class__$_SELECTOR" >/dev/null; then
+    ___key="class__$_SELECTOR"
+  elif declare -F "${___func_prefix}__$_SELECTOR" >/dev/null; then
+    :
+  elif declare -F "${___func_prefix}__class__$_SELECTOR" >/dev/null; then
+    ___key="class__$_SELECTOR"
+  else
+    return 1
+  fi
+  declare -p "${___func_prefix}__valueMethods" >/dev/null 2>&1 || return 1
+  ___cap_var="${___func_prefix}__valueMethods[$___key]"
+  ___cap=${!___cap_var:-}
+  [[ -n $___cap ]] || return 1
+  for ___guard in $___cap; do
+    ___index=${___guard#*:}
+    case $___guard in
+      argc:*) (( ${#_ARGS[@]} >= ___index )) || return 1; continue ;;
+      a:*)
+        ___value=${_ARGS[___index-1]}
+        while [[ $___value == *$'\n' ]]; do ___value=${___value%$'\n'}; done
+        # The public wrapper echoes the captured result a second time.
+        [[ ! $___value =~ ^-[neE]+$ ]] || return 1
+        continue ;;
+      i:*) ___value=${_ARGS[___index-1]} ;;
+      *) return 1 ;;
+    esac
+    [[ $___value =~ ^-?(0|[1-9][0-9]*)$ && ${#___value} -le 18 ]] || return 1
+  done
+  return 0
+}
+
 # Invoke trash - Send a message
 # Captures output in $__ for REPL chaining: @ Counter new -> @ $__ increment
 function @ {
+  local ___want_value=${_trash_value_context:-0} _trash_value_context=0
   if [ $# == 1 ]; then
     is_a Object
   fi
@@ -2276,6 +2352,11 @@ function @ {
         return $?
       fi
     fi
+  fi
+
+  if [[ $___want_value == 1 ]] && _trash_value_eligible "$@"; then
+    send "$@"
+    return $?
   fi
 
   # Capture output and store in $__

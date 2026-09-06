@@ -71,7 +71,8 @@ _trash_block_invoke() {
 # classes choose the operation in DSL and install the final value only once.
 _trash_json_collect() {
     local __tj_data="$1" __tj_block="$2" __tj_kind="$3" __tj_select="${4:-false}"
-    local __tj_i __tj_key __tj_value __tj_result
+    local __tj_i __tj_key __tj_value __tj_result __tj_send=@
+    [[ ${TRASHTALK_VALUE_SEND:-0} != 1 ]] || __tj_send=_trash_value_send
     local -a __tj_values=() __tj_results=()
     _trash_json_decode __tj_values "$__tj_data" "$__tj_kind" || return
     for ((__tj_i=0; __tj_i<${#__tj_values[@]}; __tj_i++)); do
@@ -80,9 +81,9 @@ _trash_json_collect() {
         fi
         __tj_value=${__tj_values[__tj_i]}
         if [[ "$__tj_kind" == object && "$__tj_select" == true ]]; then
-            __tj_result=$(@ "$__tj_block" valueWith: "$__tj_key" and: "$__tj_value")
+            __tj_result=$("$__tj_send" "$__tj_block" valueWith: "$__tj_key" and: "$__tj_value")
         else
-            __tj_result=$(@ "$__tj_block" valueWith: "$__tj_value")
+            __tj_result=$("$__tj_send" "$__tj_block" valueWith: "$__tj_value")
         fi
         # Legacy select: predicates accept nonempty output; preserve that
         # contract, including callbacks whose false branch exits nonzero.

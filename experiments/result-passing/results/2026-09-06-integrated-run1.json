@@ -1,0 +1,141 @@
+{
+  "kind": "integrated guarded A",
+  "rounds": 24,
+  "base_commit": "bc7416a18f85ec087abb2dda6d9da86977a60cac",
+  "bash": "GNU bash, version 5.3.15(1)-release (aarch64-apple-darwin23.6.0)",
+  "host": [
+    "Darwin",
+    "Nikaido.local",
+    "23.6.0",
+    "Darwin Kernel Version 23.6.0: Fri Jul  5 17:56:39 PDT 2024; root:xnu-10063.141.1~2/RELEASE_ARM64_T8122",
+    "arm64"
+  ],
+  "load_start": [
+    27.29833984375,
+    41.77587890625,
+    28.5693359375
+  ],
+  "source_sha256": {
+    "lib/trash.bash": "5d1c3f1748a201630831a374d589b639cd97ddc5b8af28611819be0ac41fd66f",
+    "lib/trash-json.bash": "a7c72db3a491a155af28d52abe7ce8bf5ce3f6d572311dbd6a89960e03d40042",
+    "lib/jq-compiler/codegen.jq": "6966a1b0ba3abb542d658b41ad3c931b9defb04c5480e22510500e343678b61a",
+    "lib/jq-compiler/build-cache.bash": "45903d8542e7b9ec880a6b54b56e688e0df9048ac0657988a25ce52d4b884c16",
+    "lib/jq-compiler/build-plan.jq": "e2db6b359386c695751a98cecb7349b51b6b585a3c4cf21ad6dc0ab4118528ba",
+    "tests/fixtures/ResultProbe.trash": "c56fb3aea82ae54f1b574ba8681bbceae807b578b6c6fbcffb456b62dee2397c",
+    "experiments/result-passing/integrated.py": "c3b1ef06822f78f5bf0ece37e83908cb971955f94dc88c2c8a927efd12d53f0b"
+  },
+  "load_end": [
+    25.55908203125,
+    66.7880859375,
+    52.70703125
+  ],
+  "results": {
+    "constant": {
+      "median_us": {
+        "off": 2749.5416666666665,
+        "on": 2118.520833333333
+      },
+      "p95_batch_mean_us": {
+        "off": 4798.541666666667,
+        "on": 3512.5
+      },
+      "paired_median_improvement_pct": 22.42785628036811,
+      "paired_bootstrap_95_pct": [
+        15.836779031466808,
+        27.472060871632866
+      ]
+    },
+    "nested": {
+      "median_us": {
+        "off": 7693.416666666667,
+        "on": 6912.958333333334
+      },
+      "p95_batch_mean_us": {
+        "off": 12414.083333333334,
+        "on": 11622.166666666666
+      },
+      "paired_median_improvement_pct": 6.3439745965323375,
+      "paired_bootstrap_95_pct": [
+        2.7820170418415304,
+        15.782737570562446
+      ]
+    },
+    "numeric": {
+      "median_us": {
+        "off": 2849.479166666667,
+        "on": 2442.4375
+      },
+      "p95_batch_mean_us": {
+        "off": 5710.583333333333,
+        "on": 4705.875
+      },
+      "paired_median_improvement_pct": 19.780530568587412,
+      "paired_bootstrap_95_pct": [
+        15.218657105206711,
+        24.279966635591972
+      ]
+    },
+    "getter": {
+      "median_us": {
+        "off": 10976.0625,
+        "on": 11064.875
+      },
+      "p95_batch_mean_us": {
+        "off": 21431.5,
+        "on": 22416.5
+      },
+      "paired_median_improvement_pct": -2.216948902837438,
+      "paired_bootstrap_95_pct": [
+        -10.411604172118583,
+        5.881867933667948
+      ]
+    },
+    "class_map": {
+      "median_us": {
+        "off": 140313.5,
+        "on": 137852.5
+      },
+      "p95_batch_mean_us": {
+        "off": 308210.0,
+        "on": 254695.33333333334
+      },
+      "paired_median_improvement_pct": -1.2105305494598892,
+      "paired_bootstrap_95_pct": [
+        -9.429977983086083,
+        10.97510497814798
+      ]
+    },
+    "block_map": {
+      "median_us": {
+        "off": 527983.3333333334,
+        "on": 511472.8333333333
+      },
+      "p95_batch_mean_us": {
+        "off": 805855.3333333334,
+        "on": 733102.0
+      },
+      "paired_median_improvement_pct": 6.000023082625935,
+      "paired_bootstrap_95_pct": [
+        -7.524367739470444,
+        11.623113946144843
+      ]
+    },
+    "browser": {
+      "median_us": {
+        "off": 267849.0,
+        "on": 257916.5
+      },
+      "p95_batch_mean_us": {
+        "off": 372553.0,
+        "on": 364623.0
+      },
+      "paired_median_improvement_pct": -2.7328059360621566,
+      "paired_bootstrap_95_pct": [
+        -10.705351359037692,
+        2.9614578328452597
+      ]
+    }
+  },
+  "samples_file": "2026-09-06-integrated-run1.samples.csv",
+  "samples_sha256": "ccb6d852a3046b97786c557b6bb18ab9bd28abacfd5f29f54114c414b2daddc3"
+}

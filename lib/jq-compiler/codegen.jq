@@ -1144,7 +1144,7 @@ def expr_gen($locals; $ivars; $cvars):
       # Unary method: just the selector
       .selector // ""
     end) as $msg |
-    "@ \($quoted_recv) \($msg)"
+    (if .valueCapture then "_trash_value_send" else "@" end) + " \($quoted_recv) \($msg)"
   elif .type == "cascade" then
     # Cascade: send multiple messages to same receiver
     # In expression context, we capture receiver and return last result
@@ -1176,7 +1176,7 @@ def expr_gen($locals; $ivars; $cvars):
     (.value.type == "binary" and (.value.op == "+" or .value.op == "-" or .value.op == "*" or .value.op == "/" or .value.op == "%")) as $is_arithmetic |
     # Also check for unary minus (negation)
     (.value.type == "unary" and .value.op == "-") as $is_unary_arith |
-    (.value | expr_gen($locals; $ivars; $cvars)) as $val_code |
+    (.value | if .type == "message_send" and env.TRASHTALK_VALUE_SEND == "1" then .valueCapture=true else . end | expr_gen($locals; $ivars; $cvars)) as $val_code |
     # For message sends, wrap in $() for command substitution
     (if $is_message then "$(\($val_code))" else $val_code end) as $final_val |
     if expr_is_local(.target; $locals) then
@@ -2109,7 +2109,7 @@ def expr_gen_stmts($locals; $ivars; $cvars):
       ($stmt.value.type == "binary" and ($stmt.value.op == "+" or $stmt.value.op == "-" or $stmt.value.op == "*" or $stmt.value.op == "/" or $stmt.value.op == "%")) as $is_arithmetic |
       # Also check for unary minus (negation)
       ($stmt.value.type == "unary" and $stmt.value.op == "-") as $is_unary_arith |
-      ($stmt.value | expr_gen($current_locals; $ivars; $cvars)) as $val_code |
+      ($stmt.value | if .type == "message_send" and env.TRASHTALK_VALUE_SEND == "1" then .valueCapture=true else . end | expr_gen($current_locals; $ivars; $cvars)) as $val_code |
       ($stmt.value | expr_gen_json($current_locals; $ivars; $cvars)) as $json_code |
       # For message sends, wrap in $() for command substitution
       (if $is_message then "$(\($val_code))" else $val_code end) as $msg_code |
@@ -2920,6 +2920,45 @@ def transformMethodBody($className; $isRaw):
 # ------------------------------------------------------------------------------
 
 # $funcPrefix is the bash function prefix (e.g., "__MyApp__Counter" or "__Counter")
+# Capabilities describe parsed, single-return DSL bodies, never emitted shell text.
+# Runtime validates dynamic inputs before removing the inner result capture.
+def valueSendGuards($args; $ivars):
+  def integer: test("^-?(0|[1-9][0-9]*)$") and length <= 18;
+  def literal: test("^[a-zA-Z0-9 .,!?/:_]*$");
+  def numeric:
+    if .type == "number" and (.value | integer) then []
+    elif .type == "identifier" then
+      .name as $name | ($args | index($name)) as $arg |
+      if $arg != null then ["i:\($arg + 1)"]
+      else null end
+    elif .type == "binary" and (.op | IN("+", "-", "*")) then
+      (.left | numeric) as $l | (.right | numeric) as $r |
+      if $l != null and $r != null then $l+$r else null end
+    elif .type == "unary" and .op == "-" then .operand | numeric
+    else null end;
+  if .type == "string" and (.value | literal) then []
+  elif .type == "dstring" and (.value[1:-1] | literal) then []
+  elif .type == "identifier" then
+    .name as $name | ($args | index($name)) as $arg |
+    if $arg != null then ["a:\($arg + 1)"] else numeric end
+  else numeric end;
+
+def valueSendCapability($ivars):
+  (.args // []) as $args |
+  if env.TRASHTALK_VALUE_SEND != "1" or .raw or
+     ((.pragmas // []) | length) > 0 or
+     (all($args[]; test("^[a-z][a-zA-Z0-9_]*$")) | not) or
+     (($args | unique | length) != ($args | length)) or
+     (.body.tokens == null)
+  then null
+  else
+    (try ({tokens:.body.tokens,pos:0} | expr_parse_stmts) catch null) as $ast |
+    if ($ast.body | length) == 1 and $ast.body[0].type == "return" then
+      ($ast.body[0].value | valueSendGuards($args; $ivars)) as $guards |
+      if $guards != null then (["argc:\($args | length)"] + ($guards | unique) | join(" ")) else null end
+    else null end
+  end;
+
 def generateMethod($funcPrefix; $ivars; $cvars):
   # Build function name
   (if .kind == "class" then
@@ -2975,6 +3014,8 @@ def generateMethod($funcPrefix; $ivars; $cvars):
     "  _throw \"NotImplemented\" \"Method \(.selector) requires native Procyon runtime\"\n  return 1"
   else $body end) as $finalBody |
 
+  (valueSendCapability($ivars)) as $valueCapability |
+
   # Emit pragma markers if present (may be multiple)
   (if ($pragmaMarkers | length) > 0 then $pragmaMarkers[] else empty end),
   # Combine into function
@@ -2982,6 +3023,11 @@ def generateMethod($funcPrefix; $ivars; $cvars):
   (if $argBindings != "" then $argBindings else empty end),
   $finalBody,
   "}",
+  (if $valueCapability != null then
+    "\($funcPrefix)__valueMethods[\($funcName | ltrimstr($funcPrefix + "__") | @sh)]=\($valueCapability | @sh)"
+  elif env.TRASHTALK_VALUE_SEND == "1" then
+    "unset \"\($funcPrefix)__valueMethods[\($funcName | ltrimstr($funcPrefix + "__"))]\""
+  else empty end),
   "";
 
 # ------------------------------------------------------------------------------
@@ -2991,6 +3037,9 @@ def generateMethod($funcPrefix; $ivars; $cvars):
 def generateAlias($funcPrefix):
   # Generate wrapper functions for both instance and class methods
   # Input: {type: "alias", aliasName: "size", originalMethod: "count"}
+  (if env.TRASHTALK_VALUE_SEND == "1" then
+    "unset \"\($funcPrefix)__valueMethods[\(.aliasName)]\" \"\($funcPrefix)__valueMethods[class__\(.aliasName)]\""
+  else empty end),
   # Instance method alias
   "\($funcPrefix)__\(.aliasName)() {",
   "  \($funcPrefix)__\(.originalMethod) \"$@\"",
@@ -3052,6 +3101,7 @@ def generate:
   (
     generateHeader,
     generateMetadata,
+    "declare -gA \($funcPrefix)__valueMethods=()",
     generateClassVarsInit,
     generateAccessors,
     generateRequires,

@@ -58,7 +58,7 @@ _build_inventory() {
 
 _build_plan() {
     jq --arg mode "$1" --arg compiler "$_COMPILER_VERSION" \
-        --arg strict "${TRASHTALK_STRICT:-}" --arg lenient "${TRASHTALK_LENIENT:-}" \
+        --arg value_send "${TRASHTALK_VALUE_SEND:-0}" --arg strict "${TRASHTALK_STRICT:-}" --arg lenient "${TRASHTALK_LENIENT:-}" \
         -f "$SCRIPT_DIR/build-plan.jq" "$build_work/inventory.json"
 }
 
@@ -160,10 +160,10 @@ cmd_compile_many() (
     jq -e --slurpfile hashes "$build_work/hashes.json" 'all(.[]; .hash==$hashes[0][.source])' \
         "$build_work/plan.json" >/dev/null || error 'Source changed during build; retry'
     jq -rj --slurpfile hashes "$build_work/hashes.json" --arg compiler "$_COMPILER_VERSION" \
-        --arg strict "${TRASHTALK_STRICT:-}" --arg lenient "${TRASHTALK_LENIENT:-}" '
+        --arg value_send "${TRASHTALK_VALUE_SEND:-0}" --arg strict "${TRASHTALK_STRICT:-}" --arg lenient "${TRASHTALK_LENIENT:-}" '
       .[]|select(.dirty)|. as $node|.receipt,"\u0000",
       ({version:2,source:.source,source_hash:.hash,output_hash:$hashes[0][.output],
-        compiler:$compiler,strict:$strict,lenient:$lenient,metadata:.metadata,
+        compiler:$compiler,strict:$strict,lenient:$lenient,value_send:$value_send,metadata:.metadata,
         dependencies:(.dependencies|with_entries(.value.output_hash=$hashes[0][.value.output]))}|tojson),"\u0000"' \
         "$build_work/plan.json" > "$build_work/receipts.nul"
     while IFS= read -r -d '' receipt && IFS= read -r -d '' body; do

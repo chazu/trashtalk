@@ -82,8 +82,11 @@ and retains public getter dispatch when those getters are overridden.
 
 Builds validate source and artifact hashes in a batch, plan shared dependencies
 once, and run only changed classes in parallel. See `docs/performance.md` for
-the measured process counts. `docs/result-passing-design.md` describes a proposed
-future result ABI; that ABI is not implemented.
+the measured process counts. `TRASHTALK_VALUE_SEND=1` enables guarded removal of
+one capture in eligible compiled assignments and collection callbacks; it is off
+by default. Set it for both compilation and execution, and start a fresh runtime
+after rebuilding. Public `@` keeps its result conventions. See
+`docs/result-passing-design.md` for eligibility, reload/invalidation, and results.
 
 ## Runtime Usage
 

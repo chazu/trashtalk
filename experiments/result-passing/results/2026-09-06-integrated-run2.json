@@ -1,0 +1,141 @@
+{
+  "kind": "integrated guarded A",
+  "rounds": 24,
+  "base_commit": "bc7416a18f85ec087abb2dda6d9da86977a60cac",
+  "bash": "GNU bash, version 5.3.15(1)-release (aarch64-apple-darwin23.6.0)",
+  "host": [
+    "Darwin",
+    "Nikaido.local",
+    "23.6.0",
+    "Darwin Kernel Version 23.6.0: Fri Jul  5 17:56:39 PDT 2024; root:xnu-10063.141.1~2/RELEASE_ARM64_T8122",
+    "arm64"
+  ],
+  "load_start": [
+    16.2783203125,
+    59.24267578125,
+    50.58837890625
+  ],
+  "source_sha256": {
+    "lib/trash.bash": "5d1c3f1748a201630831a374d589b639cd97ddc5b8af28611819be0ac41fd66f",
+    "lib/trash-json.bash": "a7c72db3a491a155af28d52abe7ce8bf5ce3f6d572311dbd6a89960e03d40042",
+    "lib/jq-compiler/codegen.jq": "6966a1b0ba3abb542d658b41ad3c931b9defb04c5480e22510500e343678b61a",
+    "lib/jq-compiler/build-cache.bash": "45903d8542e7b9ec880a6b54b56e688e0df9048ac0657988a25ce52d4b884c16",
+    "lib/jq-compiler/build-plan.jq": "e2db6b359386c695751a98cecb7349b51b6b585a3c4cf21ad6dc0ab4118528ba",
+    "tests/fixtures/ResultProbe.trash": "c56fb3aea82ae54f1b574ba8681bbceae807b578b6c6fbcffb456b62dee2397c",
+    "experiments/result-passing/integrated.py": "c3b1ef06822f78f5bf0ece37e83908cb971955f94dc88c2c8a927efd12d53f0b"
+  },
+  "load_end": [
+    30.169921875,
+    50.86083984375,
+    50.63623046875
+  ],
+  "results": {
+    "constant": {
+      "median_us": {
+        "off": 2586.291666666667,
+        "on": 2052.291666666667
+      },
+      "p95_batch_mean_us": {
+        "off": 5695.583333333333,
+        "on": 3750.9166666666665
+      },
+      "paired_median_improvement_pct": 21.566375650395493,
+      "paired_bootstrap_95_pct": [
+        19.67019779855996,
+        24.46378512288937
+      ]
+    },
+    "nested": {
+      "median_us": {
+        "off": 6970.541666666666,
+        "on": 6667.791666666666
+      },
+      "p95_batch_mean_us": {
+        "off": 12589.333333333334,
+        "on": 12046.833333333334
+      },
+      "paired_median_improvement_pct": 3.0820019432169214,
+      "paired_bootstrap_95_pct": [
+        -3.4657362046076625,
+        5.557829694761417
+      ]
+    },
+    "numeric": {
+      "median_us": {
+        "off": 2574.708333333333,
+        "on": 2223.7291666666665
+      },
+      "p95_batch_mean_us": {
+        "off": 4691.208333333333,
+        "on": 3486.375
+      },
+      "paired_median_improvement_pct": 17.524480437516374,
+      "paired_bootstrap_95_pct": [
+        4.939619732785195,
+        28.98431995805548
+      ]
+    },
+    "getter": {
+      "median_us": {
+        "off": 10739.8125,
+        "on": 10414.625
+      },
+      "p95_batch_mean_us": {
+        "off": 18252.0,
+        "on": 17587.75
+      },
+      "paired_median_improvement_pct": -1.144142958138385,
+      "paired_bootstrap_95_pct": [
+        -7.461383276625215,
+        9.825783375832149
+      ]
+    },
+    "class_map": {
+      "median_us": {
+        "off": 132728.0,
+        "on": 135909.6666666667
+      },
+      "p95_batch_mean_us": {
+        "off": 231773.33333333334,
+        "on": 196232.66666666666
+      },
+      "paired_median_improvement_pct": 3.4793924361969495,
+      "paired_bootstrap_95_pct": [
+        -6.486729674169326,
+        14.024565285856434
+      ]
+    },
+    "block_map": {
+      "median_us": {
+        "off": 449007.3333333334,
+        "on": 502368.6666666666
+      },
+      "p95_batch_mean_us": {
+        "off": 750250.6666666666,
+        "on": 701176.3333333334
+      },
+      "paired_median_improvement_pct": -3.817397942232278,
+      "paired_bootstrap_95_pct": [
+        -13.7257586459205,
+        3.7132704491472497
+      ]
+    },
+    "browser": {
+      "median_us": {
+        "off": 238709.0,
+        "on": 249703.5
+      },
+      "p95_batch_mean_us": {
+        "off": 399127.0,
+        "on": 432125.0
+      },
+      "paired_median_improvement_pct": -8.396274441555086,
+      "paired_bootstrap_95_pct": [
+        -14.887429787103786,
+        -3.6758039975205192
+      ]
+    }
+  },
+  "samples_file": "2026-09-06-integrated-run2.samples.csv",
+  "samples_sha256": "6f14811a284656088b12dbfd428a299b985de9ce25f7aed9a307083c4114f9b9"
+}
