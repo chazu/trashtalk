@@ -140,6 +140,11 @@ String subclass: Object
     echo "${str%%$delim*}"
   ]
 
+  # First line of a multi-line string (replaces ${str%%$'\n'*})
+  rawClassMethod: firstLine: str [
+    printf '%s\n' "${str%%$'\n'*}"
+  ]
+
   # Get part after delimiter (replaces ${str#*delim})
   rawClassMethod: after: delim in: str [
     echo "${str#*$delim}"

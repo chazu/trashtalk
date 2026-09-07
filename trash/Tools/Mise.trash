@@ -1,0 +1,385 @@
+# Tools::Mise - Exact-argv wrapper for mise, the dev tool / env / task manager
+# (mise.jdx.dev). mise pins tool versions per project, exports project
+# environment variables, and runs project tasks from mise.toml.
+#
+# Every invocation is an exact argv vector and every core method returns the
+# versioned tool result envelope defined by Tool:
+#   {schema_version, tool: "mise", command, outcome, exit_code, stdout, stderr}
+#
+# Outcomes: success | command_error | task_error | process_error | missing_tool
+#
+# Methods ending in inDirectory: pass `mise -C <dir>` so another project can be
+# addressed without changing the caller's working directory ('' = current).
+#
+# Usage:
+#   @ Tools::Mise list                                  # installed tools, JSON
+#   @ Tools::Mise current: 'node'                       # e.g. 22.4.1
+#   @ Tools::Mise install: 'node@22'                    # result envelope
+#   @ Tools::Mise exec: 'node@22' argv: '["node","-v"]' # result envelope
+#   @ Tools::Mise runTask: 'build'                      # result envelope
+#   @ Tools::Mise tasks                                 # task list, JSON
+#   @ Tools::Mise env                                   # project env, JSON
+#   @ Tools::Mise envValue: 'DATABASE_URL'
+package: Tools
+
+Mise subclass: Tool
+
+  classMethod: name [ ^ 'mise' ]
+
+  classMethod: installCommand [ ^ 'curl https://mise.run | sh' ]
+
+  # mise prints "<version> <platform> (<hash> <date>)"; keep the version token.
+  classMethod: version [
+    | available argv result stdout line |
+    available := @ self isInstalled.
+    (available ~= 'true') ifTrue: [^ 'not installed'].
+    argv := @ self baseArgv.
+    argv := argv arrayPush: '--version'.
+    result := @ self resultForArgv: argv command: 'version' failureOutcome: 'process_error'.
+    stdout := @ self stdoutOf: result.
+    line := @ String firstLine: stdout.
+    ^ @ String before: ' ' in: line
+  ]
+
+  # ---------------------------------------------------------------------------
+  # argv builders
+  # ---------------------------------------------------------------------------
+
+  # subcommand is one word or a JSON array such as '["tasks","ls"]'.
+  classMethod: argvFor: subcommand inDirectory: directory [
+    | argv |
+    argv := @ self baseArgv.
+    directory notEmpty ifTrue: [
+      argv := argv arrayPush: '-C'.
+      argv := argv arrayPush: directory
+    ].
+    argv := @ self argv: argv appendEach: subcommand.
+    ^ argv
+  ]
+
+  classMethod: argvFor: subcommand [
+    ^ @ self argvFor: subcommand inDirectory: ''
+  ]
+
+  # ---------------------------------------------------------------------------
+  # Tool versions
+  # ---------------------------------------------------------------------------
+
+  # `mise ls --json`: installed tools, optionally filtered to one tool.
+  classMethod: listResult: tool inDirectory: directory [
+    | available argv |
+    available := @ self isInstalled.
+    (available ~= 'true') ifTrue: [^ @ self missingToolResult: 'ls'].
+    argv := @ self argvFor: 'ls' inDirectory: directory.
+    argv := argv arrayPush: '--json'.
+    tool notEmpty ifTrue: [argv := argv arrayPush: tool].
+    ^ @ self resultForArgv: argv command: 'ls' failureOutcome: 'process_error'
+  ]
+
+  classMethod: list [
+    | result |
+    result := @ self listResult: '' inDirectory: ''.
+    ^ @ self stdoutOf: result
+  ]
+
+  classMethod: list: tool [
+    | result |
+    result := @ self listResult: tool inDirectory: ''.
+    ^ @ self stdoutOf: result
+  ]
+
+  classMethod: listInDirectory: directory [
+    | result |
+    result := @ self listResult: '' inDirectory: directory.
+    ^ @ self stdoutOf: result
+  ]
+
+  # Active version of a tool for the current project ('' when none).
+  classMethod: current: tool [
+    ^ @ self current: tool inDirectory: ''
+  ]
+
+  classMethod: current: tool inDirectory: directory [
+    | available argv result stdout |
+    available := @ self isInstalled.
+    (available ~= 'true') ifTrue: [^ ''].
+    argv := @ self argvFor: 'current' inDirectory: directory.
+    argv := argv arrayPush: tool.
+    result := @ self resultForArgv: argv command: 'current' failureOutcome: 'process_error'.
+    stdout := @ self stdoutOf: result.
+    ^ @ String trim: stdout
+  ]
+
+  # Latest available version of a tool from mise's registry.
+  classMethod: latest: tool [
+    | available argv result stdout |
+    available := @ self isInstalled.
+    (available ~= 'true') ifTrue: [^ ''].
+    argv := @ self argvFor: 'latest'.
+    argv := argv arrayPush: tool.
+    result := @ self resultForArgv: argv command: 'latest' failureOutcome: 'process_error'.
+    stdout := @ self stdoutOf: result.
+    ^ @ String trim: stdout
+  ]
+
+  # Path of a binary as mise would resolve it for the current project.
+  classMethod: which: binary [
+    ^ @ self which: binary inDirectory: ''
+  ]
+
+  classMethod: which: binary inDirectory: directory [
+    | available argv result stdout |
+    available := @ self isInstalled.
+    (available ~= 'true') ifTrue: [^ ''].
+    argv := @ self argvFor: 'which' inDirectory: directory.
+    argv := argv arrayPush: binary.
+    result := @ self resultForArgv: argv command: 'which' failureOutcome: 'process_error'.
+    stdout := @ self stdoutOf: result.
+    ^ @ String trim: stdout
+  ]
+
+  # Install one tool spec such as 'node@22' (or a JSON array of specs).
+  classMethod: install: toolSpecs [
+    ^ @ self install: toolSpecs inDirectory: ''
+  ]
+
+  classMethod: install: toolSpecs inDirectory: directory [
+    | available argv |
+    available := @ self isInstalled.
+    (available ~= 'true') ifTrue: [^ @ self missingToolResult: 'install'].
+    argv := @ self argvFor: 'install' inDirectory: directory.
+    argv := argv arrayPush: '--yes'.
+    argv := @ self argv: argv appendEach: toolSpecs.
+    ^ @ self resultForArgv: argv command: 'install' failureOutcome: 'process_error'
+  ]
+
+  # Install everything the project's mise.toml / .tool-versions pins.
+  classMethod: installAll [
+    ^ @ self install: '' inDirectory: ''
+  ]
+
+  classMethod: installAllInDirectory: directory [
+    ^ @ self install: '' inDirectory: directory
+  ]
+
+  # Pin tool specs in the project config (installing them if needed).
+  classMethod: use: toolSpecs [
+    ^ @ self use: toolSpecs global: 'false' inDirectory: ''
+  ]
+
+  classMethod: use: toolSpecs inDirectory: directory [
+    ^ @ self use: toolSpecs global: 'false' inDirectory: directory
+  ]
+
+  # Pin tool specs in the user's global mise config.
+  classMethod: useGlobal: toolSpecs [
+    ^ @ self use: toolSpecs global: 'true' inDirectory: ''
+  ]
+
+  classMethod: use: toolSpecs global: global inDirectory: directory [
+    | available argv |
+    available := @ self isInstalled.
+    (available ~= 'true') ifTrue: [^ @ self missingToolResult: 'use'].
+    argv := @ self argvFor: 'use' inDirectory: directory.
+    argv := argv arrayPush: '--yes'.
+    (global = 'true') ifTrue: [argv := argv arrayPush: '--global'].
+    argv := @ self argv: argv appendEach: toolSpecs.
+    ^ @ self resultForArgv: argv command: 'use' failureOutcome: 'process_error'
+  ]
+
+  classMethod: uninstall: toolSpecs [
+    | available argv |
+    available := @ self isInstalled.
+    (available ~= 'true') ifTrue: [^ @ self missingToolResult: 'uninstall'].
+    argv := @ self argvFor: 'uninstall'.
+    argv := @ self argv: argv appendEach: toolSpecs.
+    ^ @ self resultForArgv: argv command: 'uninstall' failureOutcome: 'process_error'
+  ]
+
+  # ---------------------------------------------------------------------------
+  # Exec: run a command with tools resolved by mise
+  # ---------------------------------------------------------------------------
+
+  # toolSpecs: '' (project config), 'node@22', or a JSON array of specs.
+  # argvJson: the exact command vector, e.g. '["node","-v"]'.
+  # The child's exit status is preserved; non-zero becomes command_error.
+  classMethod: exec: toolSpecs argv: argvJson [
+    ^ @ self exec: toolSpecs argv: argvJson inDirectory: ''
+  ]
+
+  classMethod: exec: toolSpecs argv: argvJson inDirectory: directory [
+    | available argv |
+    available := @ self isInstalled.
+    (available ~= 'true') ifTrue: [^ @ self missingToolResult: 'exec'].
+    argv := @ self argvFor: 'exec' inDirectory: directory.
+    argv := @ self argv: argv appendEach: toolSpecs.
+    argv := argv arrayPush: '--'.
+    argv := @ self argv: argv appendEach: argvJson.
+    ^ @ self resultForArgv: argv command: 'exec' failureOutcome: 'command_error'
+  ]
+
+  # Run a command vector with the project's configured tools.
+  classMethod: execArgv: argvJson [
+    ^ @ self exec: '' argv: argvJson inDirectory: ''
+  ]
+
+  classMethod: execArgv: argvJson inDirectory: directory [
+    ^ @ self exec: '' argv: argvJson inDirectory: directory
+  ]
+
+  # Run one shell snippet with tools resolved by mise (bash -c).
+  classMethod: exec: toolSpecs shell: script [
+    | argv |
+    argv := #('bash' '-c' script) asJson.
+    ^ @ self exec: toolSpecs argv: argv inDirectory: ''
+  ]
+
+  # ---------------------------------------------------------------------------
+  # Tasks (mise.toml [tasks])
+  # ---------------------------------------------------------------------------
+
+  classMethod: tasksResult: directory [
+    | available argv |
+    available := @ self isInstalled.
+    (available ~= 'true') ifTrue: [^ @ self missingToolResult: 'tasks'].
+    argv := @ self argvFor: '["tasks","ls"]' inDirectory: directory.
+    argv := argv arrayPush: '--json'.
+    ^ @ self resultForArgv: argv command: 'tasks' failureOutcome: 'process_error'
+  ]
+
+  # Task list as JSON.
+  classMethod: tasks [
+    | result |
+    result := @ self tasksResult: ''.
+    ^ @ self stdoutOf: result
+  ]
+
+  classMethod: tasksInDirectory: directory [
+    | result |
+    result := @ self tasksResult: directory.
+    ^ @ self stdoutOf: result
+  ]
+
+  # Run a named task. The task's exit status is preserved; non-zero becomes
+  # task_error. args is '' or a JSON array passed after the task name.
+  classMethod: runTask: task [
+    ^ @ self runTask: task args: '' inDirectory: ''
+  ]
+
+  classMethod: runTask: task args: args [
+    ^ @ self runTask: task args: args inDirectory: ''
+  ]
+
+  classMethod: runTask: task inDirectory: directory [
+    ^ @ self runTask: task args: '' inDirectory: directory
+  ]
+
+  classMethod: runTask: task args: args inDirectory: directory [
+    | available argv |
+    available := @ self isInstalled.
+    (available ~= 'true') ifTrue: [^ @ self missingToolResult: 'run'].
+    argv := @ self argvFor: 'run' inDirectory: directory.
+    argv := argv arrayPush: task.
+    argv := @ self argv: argv appendEach: args.
+    ^ @ self resultForArgv: argv command: 'run' failureOutcome: 'task_error'
+  ]
+
+  # ---------------------------------------------------------------------------
+  # Environment
+  # ---------------------------------------------------------------------------
+
+  classMethod: envResult: directory [
+    | available argv |
+    available := @ self isInstalled.
+    (available ~= 'true') ifTrue: [^ @ self missingToolResult: 'env'].
+    argv := @ self argvFor: 'env' inDirectory: directory.
+    argv := argv arrayPush: '--json'.
+    ^ @ self resultForArgv: argv command: 'env' failureOutcome: 'process_error'
+  ]
+
+  # Project environment (tool PATH entries plus [env] entries) as a JSON object.
+  classMethod: env [
+    | result |
+    result := @ self envResult: ''.
+    ^ @ self stdoutOf: result
+  ]
+
+  classMethod: envInDirectory: directory [
+    | result |
+    result := @ self envResult: directory.
+    ^ @ self stdoutOf: result
+  ]
+
+  # One variable from the project environment ('' when absent).
+  classMethod: envValue: variable [
+    ^ @ self envValue: variable inDirectory: ''
+  ]
+
+  classMethod: envValue: variable inDirectory: directory [
+    | env present |
+    env := @ self envInDirectory: directory.
+    env isEmpty ifTrue: [^ ''].
+    present := env jsonHas: variable.
+    (present = 'true') ifTrue: [^ env jsonTextAt: variable].
+    ^ ''
+  ]
+
+  # Shell-specific activation script, e.g. envFor: 'bash' -> export lines.
+  classMethod: envFor: shell [
+    | available argv result |
+    available := @ self isInstalled.
+    (available ~= 'true') ifTrue: [^ ''].
+    argv := @ self argvFor: 'env'.
+    argv := argv arrayPush: '--shell'.
+    argv := argv arrayPush: shell.
+    result := @ self resultForArgv: argv command: 'env' failureOutcome: 'process_error'.
+    ^ @ self stdoutOf: result
+  ]
+
+  # ---------------------------------------------------------------------------
+  # Configuration and diagnostics
+  # ---------------------------------------------------------------------------
+
+  # Config files mise loads for the current project, as JSON.
+  classMethod: config [
+    ^ @ self configInDirectory: ''
+  ]
+
+  classMethod: configInDirectory: directory [
+    | available argv result |
+    available := @ self isInstalled.
+    (available ~= 'true') ifTrue: [^ ''].
+    argv := @ self argvFor: '["config","ls"]' inDirectory: directory.
+    argv := argv arrayPush: '--json'.
+    result := @ self resultForArgv: argv command: 'config' failureOutcome: 'process_error'.
+    ^ @ self stdoutOf: result
+  ]
+
+  # Effective mise settings as JSON.
+  classMethod: settings [
+    | available argv result |
+    available := @ self isInstalled.
+    (available ~= 'true') ifTrue: [^ ''].
+    argv := @ self argvFor: 'settings'.
+    argv := argv arrayPush: '--json'.
+    result := @ self resultForArgv: argv command: 'settings' failureOutcome: 'process_error'.
+    ^ @ self stdoutOf: result
+  ]
+
+  # Mark a config file as trusted so its [env] and tasks are honored.
+  classMethod: trust: path [
+    | available argv |
+    available := @ self isInstalled.
+    (available ~= 'true') ifTrue: [^ @ self missingToolResult: 'trust'].
+    argv := @ self argvFor: 'trust'.
+    argv := argv arrayPush: path.
+    ^ @ self resultForArgv: argv command: 'trust' failureOutcome: 'process_error'
+  ]
+
+  classMethod: doctor [
+    | available argv |
+    available := @ self isInstalled.
+    (available ~= 'true') ifTrue: [^ @ self missingToolResult: 'doctor'].
+    argv := @ self argvFor: 'doctor'.
+    ^ @ self resultForArgv: argv command: 'doctor' failureOutcome: 'process_error'
+  ]

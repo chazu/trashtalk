@@ -1,0 +1,254 @@
+# Tools::Cue - Exact-argv wrapper for the CUE data language CLI (cuelang.org).
+#
+# CUE validates, unifies, and exports configuration. Every invocation here is
+# an exact argv vector (no shell quoting) and every core method returns the
+# versioned tool result envelope defined by Tool:
+#   {schema_version, tool: "cue", command, outcome, exit_code, stdout, stderr}
+#
+# Outcomes: success | validation_error | evaluation_error | process_error |
+#           missing_tool
+#
+# File arguments accept one path or a JSON array of paths:
+#   @ Tools::Cue vet: 'schema.cue'
+#   @ Tools::Cue vet: '["schema.cue","values.cue"]'
+#
+# Usage:
+#   @ Tools::Cue isValid: 'schema.cue' json: '{"port": 80}'   # "true" / "false"
+#   @ Tools::Cue export: 'config.cue'                         # JSON on stdout
+#   @ Tools::Cue export: 'config.cue' as: 'yaml'
+#   @ Tools::Cue unify: 'schema.cue' json: '{"name":"x"}'    # data + defaults
+#   @ Tools::Cue convert: yamlText from: 'yaml' to: 'json'
+#
+# cue exits 1 for both usage and constraint errors, so vet failures are
+# reported as validation_error and everything else as evaluation_error.
+package: Tools
+
+Cue subclass: Tool
+
+  classMethod: name [ ^ 'cue' ]
+
+  classMethod: installCommand [ ^ 'go install cuelang.org/go/cmd/cue@latest' ]
+
+  # cue reports its version through a subcommand; the first line is the summary.
+  classMethod: version [
+    | available argv result stdout |
+    available := @ self isInstalled.
+    (available ~= 'true') ifTrue: [^ 'not installed'].
+    argv := @ self baseArgv.
+    argv := argv arrayPush: 'version'.
+    result := @ self resultForArgv: argv command: 'version' failureOutcome: 'process_error'.
+    stdout := @ self stdoutOf: result.
+    ^ @ String firstLine: stdout
+  ]
+
+  # ---------------------------------------------------------------------------
+  # argv builders
+  # ---------------------------------------------------------------------------
+
+  classMethod: argvFor: subcommand files: files [
+    | argv |
+    argv := @ self baseArgv.
+    argv := argv arrayPush: subcommand.
+    argv := @ self argv: argv appendEach: files.
+    ^ argv
+  ]
+
+  # `cue <cmd> files... <format>: -` reads stdin as data in the named format.
+  classMethod: argvFor: subcommand files: files stdinFormat: format [
+    | argv qualifier |
+    argv := @ self argvFor: subcommand files: files.
+    qualifier := format , ':'.
+    argv := argv arrayPush: qualifier.
+    argv := argv arrayPush: '-'.
+    ^ argv
+  ]
+
+  # ---------------------------------------------------------------------------
+  # Validation
+  # ---------------------------------------------------------------------------
+
+  # Validate files against each other. Constraint failures become
+  # validation_error with cue's diagnostics in stderr.
+  classMethod: vet: files [
+    ^ @ self vet: files concrete: 'false'
+  ]
+
+  # concrete = 'true' adds -c: every value must be fully specified.
+  classMethod: vet: files concrete: concrete [
+    | available argv |
+    available := @ self isInstalled.
+    (available ~= 'true') ifTrue: [^ @ self missingToolResult: 'vet'].
+    argv := @ self argvFor: 'vet' files: files.
+    (concrete = 'true') ifTrue: [argv := argv arrayPush: '-c'].
+    ^ @ self resultForArgv: argv command: 'vet' failureOutcome: 'validation_error'
+  ]
+
+  # Validate a JSON document against schema files.
+  classMethod: vet: files json: json [
+    ^ @ self vet: files data: json format: 'json'
+  ]
+
+  # Validate a YAML document against schema files.
+  classMethod: vet: files yaml: yaml [
+    ^ @ self vet: files data: yaml format: 'yaml'
+  ]
+
+  classMethod: vet: files data: data format: format [
+    | available argv |
+    available := @ self isInstalled.
+    (available ~= 'true') ifTrue: [^ @ self missingToolResult: 'vet'].
+    argv := @ self argvFor: 'vet' files: files stdinFormat: format.
+    ^ @ self resultForArgv: argv input: data command: 'vet' failureOutcome: 'validation_error'
+  ]
+
+  classMethod: isValid: files [
+    | result |
+    result := @ self vet: files.
+    ^ @ self succeeded: result
+  ]
+
+  classMethod: isValid: files json: json [
+    | result |
+    result := @ self vet: files json: json.
+    ^ @ self succeeded: result
+  ]
+
+  classMethod: isValid: files yaml: yaml [
+    | result |
+    result := @ self vet: files yaml: yaml.
+    ^ @ self succeeded: result
+  ]
+
+  # ---------------------------------------------------------------------------
+  # Export (concrete data out)
+  # ---------------------------------------------------------------------------
+
+  # format: json | yaml | text | cue ('' keeps cue's default, JSON)
+  # expression: a CUE path to export instead of the whole document ('' for all)
+  classMethod: exportResult: files as: format expression: expression [
+    | available argv |
+    available := @ self isInstalled.
+    (available ~= 'true') ifTrue: [^ @ self missingToolResult: 'export'].
+    argv := @ self argvFor: 'export' files: files.
+    format notEmpty ifTrue: [
+      argv := argv arrayPush: '--out'.
+      argv := argv arrayPush: format
+    ].
+    expression notEmpty ifTrue: [
+      argv := argv arrayPush: '-e'.
+      argv := argv arrayPush: expression
+    ].
+    ^ @ self resultForArgv: argv command: 'export' failureOutcome: 'evaluation_error'
+  ]
+
+  classMethod: exportResult: files [
+    ^ @ self exportResult: files as: 'json' expression: ''
+  ]
+
+  classMethod: export: files [
+    | result |
+    result := @ self exportResult: files as: 'json' expression: ''.
+    ^ @ self stdoutOf: result
+  ]
+
+  classMethod: export: files as: format [
+    | result |
+    result := @ self exportResult: files as: format expression: ''.
+    ^ @ self stdoutOf: result
+  ]
+
+  classMethod: export: files expression: expression [
+    | result |
+    result := @ self exportResult: files as: 'json' expression: expression.
+    ^ @ self stdoutOf: result
+  ]
+
+  # Unify schema files with a JSON document and export the concrete result.
+  # This is how CUE fills defaults and rejects invalid input in one step.
+  classMethod: unifyResult: files json: json [
+    | available argv |
+    available := @ self isInstalled.
+    (available ~= 'true') ifTrue: [^ @ self missingToolResult: 'export'].
+    argv := @ self argvFor: 'export' files: files stdinFormat: 'json'.
+    argv := argv arrayPush: '--out'.
+    argv := argv arrayPush: 'json'.
+    ^ @ self resultForArgv: argv input: json command: 'export' failureOutcome: 'validation_error'
+  ]
+
+  classMethod: unify: files json: json [
+    | result |
+    result := @ self unifyResult: files json: json.
+    ^ @ self stdoutOf: result
+  ]
+
+  # Convert a document between data formats (json, yaml, cue, text).
+  classMethod: convertResult: data from: format to: outFormat [
+    | available argv |
+    available := @ self isInstalled.
+    (available ~= 'true') ifTrue: [^ @ self missingToolResult: 'export'].
+    argv := @ self argvFor: 'export' files: '' stdinFormat: format.
+    argv := argv arrayPush: '--out'.
+    argv := argv arrayPush: outFormat.
+    ^ @ self resultForArgv: argv input: data command: 'export' failureOutcome: 'evaluation_error'
+  ]
+
+  classMethod: convert: data from: format to: outFormat [
+    | result |
+    result := @ self convertResult: data from: format to: outFormat.
+    ^ @ self stdoutOf: result
+  ]
+
+  # ---------------------------------------------------------------------------
+  # Evaluation (CUE syntax out, constraints retained)
+  # ---------------------------------------------------------------------------
+
+  classMethod: evalResult: files expression: expression [
+    | available argv |
+    available := @ self isInstalled.
+    (available ~= 'true') ifTrue: [^ @ self missingToolResult: 'eval'].
+    argv := @ self argvFor: 'eval' files: files.
+    expression notEmpty ifTrue: [
+      argv := argv arrayPush: '-e'.
+      argv := argv arrayPush: expression
+    ].
+    ^ @ self resultForArgv: argv command: 'eval' failureOutcome: 'evaluation_error'
+  ]
+
+  classMethod: eval: files [
+    | result |
+    result := @ self evalResult: files expression: ''.
+    ^ @ self stdoutOf: result
+  ]
+
+  classMethod: eval: files expression: expression [
+    | result |
+    result := @ self evalResult: files expression: expression.
+    ^ @ self stdoutOf: result
+  ]
+
+  # cue def: the schema/definition view of files.
+  classMethod: defResult: files [
+    | available argv |
+    available := @ self isInstalled.
+    (available ~= 'true') ifTrue: [^ @ self missingToolResult: 'def'].
+    argv := @ self argvFor: 'def' files: files.
+    ^ @ self resultForArgv: argv command: 'def' failureOutcome: 'evaluation_error'
+  ]
+
+  classMethod: def: files [
+    | result |
+    result := @ self defResult: files.
+    ^ @ self stdoutOf: result
+  ]
+
+  # ---------------------------------------------------------------------------
+  # Formatting (rewrites files in place)
+  # ---------------------------------------------------------------------------
+
+  classMethod: fmt: files [
+    | available argv |
+    available := @ self isInstalled.
+    (available ~= 'true') ifTrue: [^ @ self missingToolResult: 'fmt'].
+    argv := @ self argvFor: 'fmt' files: files.
+    ^ @ self resultForArgv: argv command: 'fmt' failureOutcome: 'process_error'
+  ]

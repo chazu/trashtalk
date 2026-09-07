@@ -275,3 +275,100 @@ Tool subclass: Object
     checkCmd="command -v ${commandName}"
     @ Shell succeeds: "$checkCmd"
   ]
+
+  # ---------------------------------------------------------------------------
+  # Typed result helpers for exact-argv wrappers (see Tools::Cue, Tools::Mise).
+  # A tool result is a versioned JSON envelope:
+  #   {schema_version, tool, command, outcome, exit_code, stdout, stderr}
+  # outcome is 'success' for exit 0, 'missing_tool' for exit 127, and the
+  # wrapper-supplied failureOutcome for any other status.
+  # ---------------------------------------------------------------------------
+
+  # Base argv: the resolved executable path as a one-element JSON array.
+  classMethod: baseArgv [
+    | toolPath argv |
+    toolPath := @ self path.
+    argv := #(toolPath) asJson.
+    ^ argv
+  ]
+
+  # Append values to a JSON argv. `values` is either a JSON array, whose
+  # elements are appended one by one, or a plain string appended as one entry.
+  # An empty string appends nothing.
+  classMethod: argv: argv appendEach: values [
+    | isArray isJson |
+    values isEmpty ifTrue: [^ argv].
+    isArray := @ String startsWith: values prefix: '['.
+    (isArray = 'true') ifTrue: [
+      isJson := @ String isJson: values.
+      (isJson = 'true') ifTrue: [
+        values arrayEach: [:entry | argv := argv arrayPush: entry].
+        ^ argv
+      ]
+    ].
+    ^ argv arrayPush: values
+  ]
+
+  # Result for a tool that is not on PATH. Never installs anything.
+  classMethod: missingToolResult: command [
+    | toolName installHint guidance result |
+    toolName := @ self name.
+    installHint := @ self installCommand.
+    guidance := toolName , ' is not installed.'.
+    installHint notEmpty ifTrue: [
+      guidance := guidance , ' Install it with: '.
+      guidance := guidance , installHint
+    ].
+    result := #{schema_version: 1 tool: toolName command: command outcome: 'missing_tool'
+                exit_code: 127 stdout: '' stderr: guidance} asJson.
+    ^ result
+  ]
+
+  # Normalize a captureArgvJson: envelope into a tool result.
+  classMethod: resultFrom: capture command: command failureOutcome: failureOutcome [
+    | toolName outcome result |
+    toolName := @ self name.
+    capture jsonUnpack: #('exit_code' 'stdout' 'stderr') into: [:exitCode :stdout :stderr |
+      outcome := failureOutcome.
+      (exitCode = '0') ifTrue: [outcome := 'success'].
+      (exitCode = '127') ifTrue: [outcome := 'missing_tool'].
+      result := #{schema_version: 1 tool: toolName command: command outcome: outcome
+                  exit_code: (exitCode jsonValue) stdout: stdout stderr: stderr} asJson.
+      ^ result
+    ]
+  ]
+
+  # Run exact argv and return a normalized tool result.
+  classMethod: resultForArgv: argv command: command failureOutcome: failureOutcome [
+    | capture |
+    capture := @ self captureArgvJson: argv.
+    ^ @ self resultFrom: capture command: command failureOutcome: failureOutcome
+  ]
+
+  classMethod: resultForArgv: argv input: input command: command failureOutcome: failureOutcome [
+    | capture |
+    capture := @ self captureArgvJson: argv input: input.
+    ^ @ self resultFrom: capture command: command failureOutcome: failureOutcome
+  ]
+
+  # Convenience projection: stdout of a successful result. On failure the
+  # diagnostic goes to Console error and the projection is empty.
+  classMethod: stdoutOf: result [
+    | outcome stdout stderr |
+    outcome := result jsonTextAt: 'outcome'.
+    (outcome = 'success') ifTrue: [
+      stdout := result jsonTextAt: 'stdout'.
+      ^ stdout
+    ].
+    stderr := result jsonTextAt: 'stderr'.
+    stderr notEmpty ifTrue: [@ Console error: stderr].
+    ^ ''
+  ]
+
+  # 'true' when a result succeeded, 'false' otherwise.
+  classMethod: succeeded: result [
+    | outcome |
+    outcome := result jsonTextAt: 'outcome'.
+    (outcome = 'success') ifTrue: [^ 'true'].
+    ^ 'false'
+  ]
