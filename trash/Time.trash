@@ -18,11 +18,17 @@ Time subclass: Object
     date +%s
   ]
 
-  # Get current time in milliseconds (approximate from seconds)
+  # Get current time in milliseconds
   # Usage: ms := @ Time nowMillis
-  # Note: Returns seconds * 1000 for portability
+  # Note: Real millisecond precision on Bash 5+ (EPOCHREALTIME); older shells
+  # fall back to seconds * 1000 for portability
   rawClassMethod: nowMillis [
-    echo "$(( $(date +%s) * 1000 ))"
+    local rt="${EPOCHREALTIME:-}"
+    if [[ -n "$rt" ]]; then
+      echo "$(( ${rt%%.*} * 1000 + 10#${rt##*.} / 1000 ))"
+    else
+      echo "$(( $(date +%s) * 1000 ))"
+    fi
   ]
 
   # Get current time formatted

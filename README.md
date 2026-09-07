@@ -610,6 +610,8 @@ RECOMMENDATIONS
 | `Actor` | Mailbox-style actors with background dispatch and at-least-once delivery |
 | `Stream` | Cross-process durable streams with consumer offset tracking |
 | `Scheduler` | Cron-based periodic tasks with leader election |
+| `Inbox` | Durable named inboxes for messages between agents, humans, and processes |
+| `Message` | A persisted message: sender, recipient, kind, status, thread |
 
 ### Traits
 
@@ -766,6 +768,58 @@ Multiple processes can run the scheduler — honker's leader election ensures ea
 
 allowed=$(@ Honker rateLimit: 'api-call' limit: 100 window: 60)
 ```
+
+## Inboxes
+
+An `Inbox` is a durable, named mailbox that agents, humans, and deterministic
+processes all share the same way. Messages are ordinary `Persistable` objects,
+so they survive process exit and can be listed, read, replied to, and archived
+from any trashtalk process using the same Store. Inboxes are created on first
+use; names may contain letters, digits, `_ . : -`.
+
+```bash
+# An agent (or cron job) reports to a human
+@ Inbox send: 'all 71 tests pass' to: 'chazu' from: 'maki:abc123' subject: 'done' kind: 'result'
+@ Inbox alert: 'disk 95%' to: 'chazu' from: 'cron'
+
+# An agent asks a question and waits for the answer to land in its own inbox
+q=$(@ Inbox ask: 'ok to force-push?' to: 'chazu' from: 'maki:abc123')
+
+# The human reads and replies from the REPL
+inbox=$(@ Inbox named: 'chazu')
+@ $inbox list                     # unread messages, one line each
+@ $inbox show: $q                 # full message; marks it read
+@ $q reply: 'yes'                 # lands in maki:abc123's inbox, same thread
+
+# The agent finds the answer
+@ $(@ Inbox named: 'maki:abc123') unread
+@ $(@ Inbox named: 'maki:abc123') thread: $q      # question + reply, oldest first
+```
+
+Queries return instance ids, one per line: `unread`, `unreadCount`,
+`questions` (unread, kind `question`), `messages` / `messages: n` (recent,
+non-archived, newest first), `thread: id`. Bulk actions: `readAll`, and per
+message `markRead` / `archive`. Kinds are free-form; `note`, `question`,
+`alert`, and `result` are the conventions the helpers use.
+
+### Wakeups
+
+Delivery transports live outside the core. With the honker extension, an
+inbox can run a `Block` for every future delivery; the block receives the
+message as JSON. Put whatever reaches you there: `mosquitto_pub`, `tmux
+send-keys`, a desktop notifier, or a message send into another Trashtalk
+object.
+
+```bash
+handler=$(@ Block params: '["payload"]' \
+  code: 'mosquitto_pub -t "inbox/$(jq -r .to <<<"$payload")" -m "$(jq -r .body <<<"$payload")"' \
+  captured: '{}')
+@ $inbox onMessage: $handler      # background listener; returns its pid
+@ $inbox stopListening
+```
+
+Without honker, `send`/`read`/`reply` work unchanged; `onMessage:` warns and
+returns an empty pid. `@ Inbox help` and `@ Message help` list every message.
 
 ## Development loop
 

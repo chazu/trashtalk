@@ -1,0 +1,129 @@
+# Message - A durable message addressed to an Inbox
+# Messages are plain Persistable objects: agents, humans, and deterministic
+# processes all exchange the same shape. Delivery, listing, and wakeups live
+# on Inbox; Message only knows its own fields and how to reply.
+#
+# Instance variables:
+#   to        - inbox name this message was delivered to
+#   from      - sender name (free-form: 'chazu', 'maki:abc123', 'cron')
+#   subject   - one-line summary (may be empty)
+#   body      - full text
+#   kind      - note | question | alert | result (free-form, conventional)
+#   status    - unread | read | archived
+#   thread    - thread id (own id for a fresh message, inherited by replies)
+#   replyTo   - id of the message this one answers, or empty
+#   created   - ISO timestamp set on delivery
+#   sentAt    - epoch millis set on delivery (ordering key)
+#   readAt    - ISO timestamp set by markRead
+#
+# Usage:
+#   msg=$(@ Message to: 'chazu' from: 'maki' subject: 'done' body: 'tests pass' kind: 'result')
+#   @ $msg summary
+#   @ $msg show
+#   @ $msg reply: 'thanks'          # lands in the sender's inbox, same thread
+#   @ $msg markRead
+#   @ $msg archive
+Message subclass: Object
+  include: Persistable
+  instanceVars: to:'' from:'' subject:'' body:'' kind:'note' status:'unread'
+                thread:'' replyTo:'' created:'' sentAt:0 readAt:''
+
+  # Build an undelivered message. Inbox deliver: stamps to/created/sentAt/thread.
+  classMethod: to: recipient from: sender subject: subj body: text kind: aKind [
+    | msg |
+    msg := @ Message new.
+    @ msg to: recipient.
+    @ msg from: sender.
+    @ msg subject: subj.
+    @ msg body: text.
+    @ msg kind: aKind.
+    ^ msg
+  ]
+
+  classMethod: to: recipient from: sender subject: subj body: text [
+    ^ @ Message to: recipient from: sender subject: subj body: text kind: 'note'
+  ]
+
+  method: isUnread [
+    (status = 'unread') ifTrue: [^ 'true'].
+    ^ 'false'
+  ]
+
+  method: markRead [
+    | now |
+    now := @ Time nowISO.
+    status := 'read'.
+    readAt := now.
+    @ self save
+  ]
+
+  method: archive [
+    status := 'archived'.
+    @ self save
+  ]
+
+  # Reply to the sender. The reply keeps this message's thread and points
+  # replyTo at this message, so an agent that asked a question can find
+  # the answer with `@ inbox thread: questionId`.
+  method: reply: text [
+    | msg inbox |
+    msg := @ Message to: from from: to subject: subject body: text kind: 'note'.
+    @ msg thread: thread.
+    @ msg replyTo: self.
+    inbox := @ Inbox named: from.
+    ^ @ inbox deliver: msg
+  ]
+
+  # One-line rendering for inbox listings
+  method: summary [
+    | label marker |
+    label := subject.
+    (label isEmpty) ifTrue: [label := body].
+    marker := ' '.
+    (status = 'unread') ifTrue: [marker := '*'].
+    ^ marker , ' ' , self , '  [' , kind , '] ' , from , ' -> ' , to , ': ' , label
+  ]
+
+  # Full rendering
+  method: show [
+    | line |
+    line := 'Id:      ' , self.
+    @ Console print: line.
+    line := 'From:    ' , from.
+    @ Console print: line.
+    line := 'To:      ' , to.
+    @ Console print: line.
+    line := 'Subject: ' , subject.
+    @ Console print: line.
+    line := 'Kind: ' , kind , '  Status: ' , status , '  Sent: ' , created.
+    @ Console print: line.
+    (thread notEmpty) ifTrue: [
+      line := 'Thread:  ' , thread.
+      @ Console print: line
+    ].
+    (replyTo notEmpty) ifTrue: [
+      line := 'ReplyTo: ' , replyTo.
+      @ Console print: line
+    ].
+    @ Console print: ''.
+    @ Console print: body
+  ]
+
+  rawClassMethod: help [
+    echo "=== Message - Durable message addressed to an Inbox ==="
+    echo ""
+    echo "Build (undelivered):"
+    echo "  msg=\$(@ Message to: 'chazu' from: 'maki' subject: 'done' body: 'tests pass' kind: 'result')"
+    echo ""
+    echo "Inspect:"
+    echo "  @ \$msg summary        # one line"
+    echo "  @ \$msg show           # full"
+    echo "  @ \$msg isUnread"
+    echo ""
+    echo "Act:"
+    echo "  @ \$msg markRead"
+    echo "  @ \$msg archive"
+    echo "  @ \$msg reply: 'thanks'   # to sender, same thread"
+    echo ""
+    echo "Kinds (conventional): note | question | alert | result"
+  ]

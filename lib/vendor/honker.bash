@@ -65,11 +65,15 @@ honker_listen() {
         last_id="${last_id:-0}"
         while true; do
             local rows
-            rows=$(_db_sql "SELECT id || char(31) || payload FROM _honker_notifications WHERE channel = '$channel' AND id > $last_id ORDER BY id;")
+            # '|' is a safe separator: id is numeric, so the first '|' is
+            # always ours even when the payload contains one. A control
+            # char (char(31)) is not safe: sqlite3 >= 3.5x escapes control
+            # characters in output by default, breaking the split.
+            rows=$(_db_sql "SELECT id || '|' || payload FROM _honker_notifications WHERE channel = '$channel' AND id > $last_id ORDER BY id;")
             if [[ -n "$rows" ]]; then
                 while IFS= read -r row; do
-                    local id="${row%%$'\x1f'*}"
-                    local payload="${row#*$'\x1f'}"
+                    local id="${row%%|*}"
+                    local payload="${row#*|}"
                     "$callback" "$payload"
                     last_id="$id"
                 done <<<"$rows"

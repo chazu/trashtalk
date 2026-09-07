@@ -1,0 +1,7 @@
+[bash]
+allow = [
+    "maki *",
+    "head *",
+    "echo *",
+    "grep *",
+]

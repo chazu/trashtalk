@@ -1,0 +1,275 @@
+# Inbox - Durable, queryable message inbox for agents, humans, and processes
+# An inbox is addressed by a free-form name and created on first use. Messages
+# are Persistable Message objects, so they survive process exit and can be
+# listed, read, replied to, and archived from any trashtalk process sharing
+# the Store. Honker pub/sub is used only as a wakeup signal: `onMessage:`
+# runs a Block for each delivery, and that Block is where transports live
+# (mosquitto_pub, tmux send-keys, maki session notify, ...). Everything except
+# `onMessage:` works without the honker extension.
+#
+# Usage:
+#   @ Inbox send: 'tests pass' to: 'chazu' from: 'maki' subject: 'done' kind: 'result'
+#   @ Inbox ask: 'ok to force-push?' to: 'chazu' from: 'maki'
+#
+#   inbox=$(@ Inbox named: 'chazu')
+#   @ $inbox list                 # unread, one line each
+#   @ $inbox show: $msgId         # full message, marks it read
+#   @ $inbox unreadCount
+#   @ $inbox questions            # unread messages of kind 'question'
+#   @ $inbox thread: $msgId       # every message in that thread, oldest first
+#   @ $msgId reply: 'yes'         # lands in the sender's inbox
+#
+#   handler=$(@ Block params: '["payload"]' code: 'mosquitto_pub -t inbox -m "$payload"' captured: '{}')
+#   @ $inbox onMessage: $handler  # background listener (needs honker)
+#   @ $inbox stopListening
+Inbox subclass: Object
+  include: Persistable
+  include: Observable
+  instanceVars: name:'' listenerPids:''
+
+  # Find or create the inbox with this name. The same instance id backs every
+  # call, which keeps the Observable topic (<id>.message) stable across
+  # processes. Raw: name validation needs a regex, and the name is then
+  # interpolated into SQL, so it must be constrained here.
+  rawClassMethod: named: inboxName [
+    local name="$1" esc existing id allowed stripped
+    allowed='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.:-'
+    stripped="${name//[$allowed]/}"
+    if [[ -z "$name" || -n "$stripped" || "${name:0:1}" == "." || "${name:0:1}" == "-" ]]; then
+      _throw "InboxError" "Invalid inbox name '$name' (allowed: letters, digits, _ . : -)"
+      return 1
+    fi
+    esc=$(_db_escape "$name")
+    existing=$(@ Store findByClass: Inbox where: "json_extract(data, '\$.name') = '$esc'" orderBy: 'created_at ASC' limit: 1)
+    if [[ -n "$existing" ]]; then
+      echo "$existing"
+      return
+    fi
+    @ Inbox ensureSchema
+    id=$(@ Inbox new)
+    @ "$id" name: "$name"
+    @ "$id" save
+    echo "$id"
+  ]
+
+  # Virtual columns + indexes for the Message fields inboxes query on.
+  # Best-effort and idempotent; queries below work without them.
+  classMethod: ensureSchema [
+    @ Store ensureIndex: 'msg_to' path: '$.to'.
+    @ Store ensureIndex: 'msg_status' path: '$.status'.
+    @ Store ensureIndex: 'msg_thread' path: '$.thread'
+  ]
+
+  # Names of every known inbox
+  classMethod: names [
+    | ids names n |
+    ids := @ Inbox findAll.
+    names := @ String splitToArray: ids on: '
+'.
+    names arrayEach: [:id |
+      n := @ id name.
+      @ Console print: n
+    ]
+  ]
+
+  # ------------------------------------------------------------------
+  # Sending
+  # ------------------------------------------------------------------
+
+  classMethod: send: text to: recipient from: sender subject: subj kind: aKind [
+    | msg inbox |
+    msg := @ Message to: recipient from: sender subject: subj body: text kind: aKind.
+    inbox := @ Inbox named: recipient.
+    ^ @ inbox deliver: msg
+  ]
+
+  classMethod: send: text to: recipient from: sender subject: subj [
+    ^ @ Inbox send: text to: recipient from: sender subject: subj kind: 'note'
+  ]
+
+  classMethod: send: text to: recipient from: sender [
+    ^ @ Inbox send: text to: recipient from: sender subject: '' kind: 'note'
+  ]
+
+  # A question expects a reply: the recipient answers with `@ msg reply:`.
+  classMethod: ask: text to: recipient from: sender [
+    ^ @ Inbox send: text to: recipient from: sender subject: '' kind: 'question'
+  ]
+
+  classMethod: alert: text to: recipient from: sender [
+    ^ @ Inbox send: text to: recipient from: sender subject: '' kind: 'alert'
+  ]
+
+  # Stamp, persist, and signal. Returns the message id.
+  method: deliver: message [
+    | now millis existingThread payload available |
+    now := @ Time nowISO.
+    millis := @ Time nowMillis.
+    @ message to: name.
+    @ message created: now.
+    @ message sentAt: millis.
+    existingThread := @ message thread.
+    (existingThread isEmpty) ifTrue: [@ message thread: message].
+    @ message save.
+    available := @ Honker isAvailable.
+    (available = 'true') ifTrue: [
+      payload := @ message asJson.
+      @ self emit: 'message' payload: payload
+    ].
+    ^ message
+  ]
+
+  # ------------------------------------------------------------------
+  # Queries (ids, one per line)
+  # ------------------------------------------------------------------
+
+  # SQL predicate scoping a Message query to this inbox. `name` is validated
+  # by named:, so interpolating it is safe.
+  method: scope: extra [
+    | inboxName where |
+    inboxName := name.
+    where := "json_extract(data, '$.to') = '${inboxName}'${extra}".
+    ^ where
+  ]
+
+  method: unread [
+    | where |
+    where := @ self scope: " AND json_extract(data, '$.status') = 'unread'".
+    ^ @ Store findByClass: 'Message' where: where orderBy: "json_extract(data, '$.sentAt') ASC, rowid ASC" limit: 1000
+  ]
+
+  method: unreadCount [
+    | ids arr |
+    ids := @ self unread.
+    arr := @ String splitToArray: ids on: '
+'.
+    ^ arr arrayLength
+  ]
+
+  method: questions [
+    | where |
+    where := @ self scope: " AND json_extract(data, '$.status') = 'unread' AND json_extract(data, '$.kind') = 'question'".
+    ^ @ Store findByClass: 'Message' where: where orderBy: "json_extract(data, '$.sentAt') ASC, rowid ASC" limit: 1000
+  ]
+
+  # Recent non-archived messages, newest first
+  method: messages: limit [
+    | where |
+    where := @ self scope: " AND json_extract(data, '$.status') != 'archived'".
+    ^ @ Store findByClass: 'Message' where: where orderBy: "json_extract(data, '$.sentAt') DESC, rowid DESC" limit: limit
+  ]
+
+  method: messages [
+    ^ @ self messages: 50
+  ]
+
+  # Every message in a thread, across inboxes, oldest first
+  method: thread: threadId [
+    | where |
+    where := "json_extract(data, '$.thread') = '" , threadId , "'".
+    ^ @ Store findByClass: 'Message' where: where orderBy: "json_extract(data, '$.sentAt') ASC, rowid ASC" limit: 1000
+  ]
+
+  # ------------------------------------------------------------------
+  # Human-facing
+  # ------------------------------------------------------------------
+
+  # Print unread messages, one line each
+  method: list [
+    | ids arr count header line |
+    ids := @ self unread.
+    arr := @ String splitToArray: ids on: '
+'.
+    count := arr arrayLength.
+    (count = 0) ifTrue: [
+      header := 'Inbox ' , name , ': no unread messages'.
+      @ Console print: header.
+      ^ self
+    ].
+    header := 'Inbox ' , name , ' (' , count , ' unread):'.
+    @ Console print: header.
+    arr arrayEach: [:id |
+      line := @ id summary.
+      @ Console print: line
+    ]
+  ]
+
+  # Print one message in full and mark it read
+  method: show: messageId [
+    @ messageId markRead.
+    @ messageId show
+  ]
+
+  method: readAll [
+    | ids arr |
+    ids := @ self unread.
+    arr := @ String splitToArray: ids on: '
+'.
+    arr arrayEach: [:id | @ id markRead]
+  ]
+
+  # ------------------------------------------------------------------
+  # Wakeups (honker)
+  # ------------------------------------------------------------------
+
+  # Run handler (a Block taking the message JSON) for every future delivery.
+  # Returns the listener pid, or '' when honker is unavailable.
+  method: onMessage: handler [
+    | available pid pids |
+    available := @ Honker isAvailable.
+    (available = 'true') ifFalse: [
+      @ Console error: 'Inbox onMessage: requires the honker extension; messages are still stored'.
+      ^ ''
+    ].
+    pid := @ self on: 'message' do: handler.
+    pids := listenerPids.
+    (pids isEmpty) ifTrue: [listenerPids := pid] ifFalse: [listenerPids := pids , ' ' , pid].
+    @ self save.
+    ^ pid
+  ]
+
+  method: stopListening [
+    | pids |
+    pids := @ String splitToArray: listenerPids on: ' '.
+    pids arrayEach: [:pid | @ Honker unlisten: pid].
+    listenerPids := ''.
+    @ self save
+  ]
+
+  method: isListening [
+    ^ listenerPids notEmpty
+  ]
+
+  # Stop listeners and delete the inbox record. Messages are kept.
+  method: destroy [
+    @ self stopListening.
+    @ self delete
+  ]
+
+  rawClassMethod: help [
+    echo "=== Inbox - Messages between agents, humans, and processes ==="
+    echo ""
+    echo "Send:"
+    echo "  @ Inbox send: 'tests pass' to: 'chazu' from: 'maki'"
+    echo "  @ Inbox send: 'body' to: 'chazu' from: 'maki' subject: 'done' kind: 'result'"
+    echo "  @ Inbox ask: 'ok to force-push?' to: 'chazu' from: 'maki'   # kind: question"
+    echo "  @ Inbox alert: 'disk 95%' to: 'chazu' from: 'cron'          # kind: alert"
+    echo ""
+    echo "Read:"
+    echo "  inbox=\$(@ Inbox named: 'chazu')"
+    echo "  @ \$inbox list               # unread, one line each"
+    echo "  @ \$inbox show: \$msgId       # full message, marks read"
+    echo "  @ \$inbox unread | unreadCount | questions | messages | messages: 10"
+    echo "  @ \$inbox thread: \$msgId     # whole thread, oldest first"
+    echo "  @ \$inbox readAll"
+    echo "  @ \$msgId reply: 'yes'       # to sender, same thread"
+    echo ""
+    echo "Wakeups (needs honker):"
+    echo "  handler=\$(@ Block params: '[\"payload\"]' code: 'echo \"\$payload\"' captured: '{}')"
+    echo "  @ \$inbox onMessage: \$handler"
+    echo "  @ \$inbox stopListening"
+    echo ""
+    echo "Other:"
+    echo "  @ Inbox names"
+    echo "  @ Message help"
+  ]

@@ -2315,11 +2315,24 @@ function @ {
     local ___func_prefix="__${___class//::/__}"
     # Reconstruct full selector from all keyword arguments (ending with :)
     # e.g., "Env" "set:" "x" "to:" "y" -> "set:to:"
+    # Uses the same strict keyword/value alternation as _trash_parse_selector:
+    # the argument after a keyword is always a value, so a value that happens
+    # to end in ':' (e.g. @ Console print: "Inbox (2 unread):") is not mistaken
+    # for a keyword.
     local ___full_selector=""
-    local ___i ___arg
-    for ((___i=2; ___i<=$#; ___i++)); do
+    local ___i ___arg ___expect_value=0
+    if [[ "$___selector" == *: ]]; then
+      ___full_selector="$___selector"
+      ___expect_value=1
+    fi
+    for ((___i=3; ___i<=$#; ___i++)); do
       ___arg="${!___i}"
-      [[ "$___arg" == *: ]] && ___full_selector+="$___arg"
+      if (( ___expect_value )); then
+        ___expect_value=0
+      elif [[ "$___arg" =~ ^[a-zA-Z_][a-zA-Z0-9_]*:$ ]]; then
+        ___full_selector+="$___arg"
+        ___expect_value=1
+      fi
     done
     # For unary methods (no colons), use the selector directly
     if [[ -z "$___full_selector" ]]; then
