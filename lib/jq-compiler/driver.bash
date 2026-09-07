@@ -455,8 +455,10 @@ cmd_parse_many() {
     _compiler_version >/dev/null
     for source_file in "$@"; do
         ast=$(_parse_single_file "$source_file")
-        jq -cn --arg path "$source_file" --argjson ast "$ast" \
-            '{schema_version:1,path:$path,ast:$ast}'
+        # --slurpfile over process substitution: a large class AST as one argv
+        # string exceeds Linux's per-argument limit ("Argument list too long").
+        jq -cn --arg path "$source_file" --slurpfile ast <(printf '%s' "$ast") \
+            '{schema_version:1,path:$path,ast:$ast[0]}'
     done
 }
 
