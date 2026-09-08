@@ -240,7 +240,7 @@ Inbox subclass: Object
       [[ -n "$msg" ]] || break
       @ "$msg" markRead >/dev/null
       while true; do
-        action=$(@ "$_RECEIVER" pickActionFor: "$msg")
+        action=$(@ "$_RECEIVER" pickActionFor: "$msg" in: "$preview_dir")
         case "$action" in
           reply) @ "$_RECEIVER" composeReplyTo: "$msg" >/dev/null; break ;;
           view) @ "$_RECEIVER" readThreadOf: "$msg" ;;
@@ -307,19 +307,20 @@ Inbox subclass: Object
     fi
   ]
 
-  # Second picker: what to do with the selected message. Prints reply, view,
-  # archive, or back.
-  rawMethod: pickActionFor: messageId [
-    local msg="$1" records result outcome title from
+  # Second picker: what to do with the selected message. Every record points
+  # at the message's preview file so inpick keeps showing it. Prints reply,
+  # view, archive, or back.
+  rawMethod: pickActionFor: messageId in: previewDir [
+    local msg="$1" dir="$2" records result outcome title from
     from=$(@ "$msg" from)
-    records=$(jq -cn '
-      {schema_version:1,id:"reply",label:"Reply in this thread",kind:"action",detail:"compose in inmacs; Ctrl-X Ctrl-S saves and sends"},
-      {schema_version:1,id:"view",label:"View the whole thread",kind:"action",detail:"inpage; leave with Ctrl-X Ctrl-C"},
-      {schema_version:1,id:"archive",label:"Archive",kind:"action",detail:"hide it from the inbox"},
-      {schema_version:1,id:"back",label:"Back to inbox",kind:"action",detail:""}')
+    records=$(jq -cn --arg path "$msg.txt" '
+      {schema_version:1,id:"reply",path:$path,line:1,column:1,label:"Reply in this thread",kind:"action",detail:"compose in inmacs; Ctrl-X Ctrl-S saves and sends"},
+      {schema_version:1,id:"view",path:$path,line:1,column:1,label:"View the whole thread",kind:"action",detail:"inpage; leave with Ctrl-X Ctrl-C"},
+      {schema_version:1,id:"archive",path:$path,line:1,column:1,label:"Archive",kind:"action",detail:"hide it from the inbox"},
+      {schema_version:1,id:"back",path:$path,line:1,column:1,label:"Back to inbox",kind:"action",detail:""}')
     title="From $from"
     if [[ "$(@ Tools::Inpick isInstalled)" == true ]]; then
-      result=$(@ Tools::Inpick selectRecords: "$records" root: "." query: "" title: "$title")
+      result=$(@ Tools::Inpick selectRecords: "$records" root: "$dir" query: "" title: "$title")
     else
       result=$(@ Tools::Inpick fallbackSelectRecords: "$records" query: "" title: "$title")
     fi

@@ -125,6 +125,8 @@ assert_contains "action picker offered view" '"id":"view"' "$(cat "$CAPTURE_RECO
 assert_eq "selected message marked read" "read" "$(@ $q1 status)"
 assert_contains "pager showed the question body" "ok to force-push?" "$(cat "$CAPTURE_PAGER_TEXT")"
 assert_contains "action picker offered reply" '"id":"reply"' "$(cat "$CAPTURE_RECORDS")"
+assert_eq "every picker record carries path, line, and column" "0" "$(jq -c 'select((.path|type) != "string" or (.line|type) != "number" or (.column|type) != "number")' "$CAPTURE_RECORDS" | grep -c .)"
+assert_eq "action records preview the selected message" "$q1.txt" "$(jq -r 'select(.id == "reply") | .path' "$CAPTURE_RECORDS" | head -1)"
 assert_eq "pickers ran: list, action, action after view, list again" "4" "$(grep -c 'From alice\|Inbox tester' "$CAPTURE_PICKER_ARGV")"
 assert_contains "editor opened with an output path" "-o" "$(cat "$CAPTURE_EDITOR_ARGV")"
 assert_contains "editor title names the sender" "Reply to alice" "$(cat "$CAPTURE_EDITOR_ARGV")"
