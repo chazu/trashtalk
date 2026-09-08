@@ -176,8 +176,8 @@ AgentWorker subclass: Object
     local run_id="$1" err="$2" session role limit d st attempts owner
     session=$(@ "$run_id" session)
     role=$(@ "$session" role)
-    limit=$(@ "$role" retryLimit)
-    if [[ -z "$limit" ]] || ! [ "$limit" -ge 0 ] 2>/dev/null; then limit=2; fi
+    limit=$(@ "$role" retryLimit | tr -cd '0123456789')
+    [[ -n "$limit" ]] || limit=2
     @ "$run_id" finishWith: failed outcome: "" error: "$err" >/dev/null
     for d in $(@ AgentDelivery offeredFor: "$run_id"); do
       st=$(@ "$d" state)
