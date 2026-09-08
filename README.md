@@ -394,18 +394,57 @@ ok 2 - custom step works
 # All 2 tests passed
 ```
 
-## One-shot agent questions
+## Gusgus: the assistant behind `@@`
 
-`@@` sends one explicit, read-only request through the selected external agent
-harness. Axe is the default; the official Codex CLI is also supported.
-The request includes the question, current working directory, previous command
-status, and `$__` when it is set. The final answer opens in `inpage` when
-available and is also printed into shell scrollback.
+`@@` talks to Gusgus, a persistent low-power assistant with one conversation
+per workspace (the git repository root, or the directory itself outside a
+repository). It sends your message and returns immediately; Gusgus works in a
+detached Codex process and answers into your inbox, in the same thread as
+your question. Replying to that message continues the same conversation.
 
 ```bash
 false
 __='the command produced this output'
-@@ 'why did that fail?'
+@@ 'why did that fail?'                 # prints the message id and returns
+
+inbox=$(@ Inbox named: "$USER")
+@ $inbox list                            # Gusgus's reply appears here
+@ $inbox show: $msg
+@ $msg reply: 'and how do I fix it?'     # resumes the same conversation
+@ $inbox thread: $msg                    # the whole exchange, oldest first
+
+@@ --fresh 'unrelated question'          # close this workspace's session, start another
+@@ --one-shot 'question'                 # stateless one-shot path (below)
+@@ --dry-run 'question'                  # show the one-shot context, no model call
+@ Gusgus help
+```
+
+Each `@@` becomes an `AgentDelivery` on the workspace's `AgentSession`; the
+`AgentWorker` launches one `codex exec` process per delivery (resuming the
+stored conversation after the first), sandboxed to the workspace plus the
+Trashtalk store. Inside that process the agent reports back with
+`trash-send AgentRun result:` and `settle:`, authenticated by a run token in
+its environment. A message sent while Gusgus is busy waits for the next
+process. Nothing runs in the background between deliveries; `@@` and inbox
+replies drive the worker, and `@ AgentWorker tick` reconciles any session by
+hand. Configure with `TRASHTALK_CODEX_MODEL` (default `gpt-5.4-mini`),
+`TRASHTALK_USER` (your inbox name, default `$USER`), and
+`TRASHTALK_GUSGUS_PROFILE` (`assistant-low-power`, or `shell` to drive the
+loop with a script in `TRASHTALK_SHELL_DRIVER` for testing). The design is in
+`docs/headless-agent-sessions-design.md`.
+
+## One-shot agent questions
+
+`@@ --one-shot` sends one explicit, read-only request through the selected
+external agent harness with no memory. Axe is the default; the official Codex
+CLI is also supported. The request includes the question, current working
+directory, previous command status, and `$__` when it is set. The final answer
+opens in `inpage` when available and is also printed into shell scrollback.
+
+```bash
+false
+__='the command produced this output'
+@@ --one-shot 'why did that fail?'
 
 # Inspect the selected backend's exact context without making an LLM call.
 @@ --dry-run 'what context would you receive?'
@@ -612,6 +651,13 @@ RECOMMENDATIONS
 | `Scheduler` | Cron-based periodic tasks with leader election |
 | `Inbox` | Durable named inboxes for messages between agents, humans, and processes |
 | `Message` | A persisted message: sender, recipient, kind, status, thread |
+| `Gusgus` | The persistent assistant behind `@@`: one session per workspace |
+| `AgentSession` | Durable agent conversation bound to an identity, archetype, role, and workspace |
+| `AgentIdentity`, `AgentArchetype`, `AgentRole` | Who an agent is, what it is for, and what it may do |
+| `AgentRun`, `AgentDelivery` | One harness process, and the durable input batch it was offered |
+| `AgentWorker` | Foreground dispatch and reconciliation: claim, launch, settle |
+| `CodexDriver`, `ShellDriver` | Session drivers: `codex exec` with resume, or a shell script for tests |
+| `TmuxSession` | Legacy tmux-backed session metadata for interactive CLIs |
 
 ### Traits
 

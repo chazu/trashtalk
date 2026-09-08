@@ -516,6 +516,8 @@ Operations:
   the adapter confirms it; lifecycle termination alone is not proof of exit.
 - `skip:note:` marks a failed delivery `skipped` so the cursor can advance.
   Human-only; the note is required and recorded in the event.
+- `requeue:` returns a failed or uncertain delivery to `pending` with its
+  attempt count reset, for use after fixing whatever made it fail. Human-only.
 - `dismiss` belongs only to a human view.
 
 A blocking question marks the affected delivery `blocked`, not every delivery
@@ -1237,8 +1239,9 @@ available.
   consolidation has a baseline; do not start the consolidation.
 - Done: `trash-send` works inside the Codex `workspace-write` sandbox with
   `~/.trashtalk` as a writable root; maki's containment flags are recorded
-  in the harness table. Remaining: confirm `exec resume` honors
-  `-c sandbox_mode` the same way `exec --sandbox` does.
+  in the harness table. `exec resume` with `-c sandbox_mode` resumed a real
+  Gusgus conversation and the agent settled through `trash-send` from inside
+  it. Note that `exec resume` rejects exec-only flags such as `--color`.
 - Specify the minimal durable-subscription trait and declarative filters.
 
 ### Phase 1a: durable headless development slice

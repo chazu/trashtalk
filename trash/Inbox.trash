@@ -100,9 +100,11 @@ Inbox subclass: Object
     ^ @ Inbox send: text to: recipient from: sender subject: '' kind: 'alert'
   ]
 
-  # Stamp, persist, and signal. Returns the message id.
+  # Stamp, persist, and signal. Returns the message id. Inboxes named
+  # `session:<id>` or `agent:<handle>` belong to agent sessions: the message
+  # also becomes an AgentDelivery and the worker ticks that session.
   method: deliver: message [
-    | now millis existingThread payload available |
+    | now millis existingThread payload available routed |
     now := @ Time nowISO.
     millis := @ Time nowMillis.
     @ message to: name.
@@ -115,6 +117,10 @@ Inbox subclass: Object
     (available = 'true') ifTrue: [
       payload := @ message asJson.
       @ self emit: 'message' payload: payload
+    ].
+    routed := @ AgentWorker handlesInbox: name.
+    (routed = 'true') ifTrue: [
+      @ AgentWorker deliverMessage: message toInbox: name
     ].
     ^ message
   ]

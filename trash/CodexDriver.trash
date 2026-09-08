@@ -1,0 +1,88 @@
+# CodexDriver - Session driver for the Codex CLI.
+# One detached `codex exec` process per delivery batch; continuity through
+# `codex exec resume <thread_id>` in a fresh process. The seatbelt sandbox is
+# workspace-write with the Trashtalk store added as a writable root, so the
+# agent can run trash-send but touch nothing else outside the workspace.
+#
+# Verified behavior (codex-cli 0.153.4): the thread id is on the first output
+# line as thread.started.thread_id; `exec resume` does not take --sandbox, so
+# the sandbox is set through -c; the prompt is read from stdin via '-'.
+CodexDriver subclass: AgentDriver
+
+  classMethod: capabilities [
+    ^ '{"schema_version":1,"headless":true,"resume":true,"live_input":false,"sandbox":true}'
+  ]
+
+  # Never let API keys reach the child; subscription auth is used.
+  classMethod: envUnsets [
+    ^ '["-u","CODEX_API_KEY","-u","OPENAI_API_KEY"]'
+  ]
+
+  rawClassMethod: model [
+    printf '%s\n' "${TRASHTALK_CODEX_MODEL:-gpt-5.4-mini}"
+  ]
+
+  rawClassMethod: codexPath [
+    local path
+    path=$(command -v codex) || { _throw "DriverError" "codex is not installed"; return 1; }
+    printf '%s\n' "$path"
+  ]
+
+  # Flags shared by launch and resume. The prompt arrives on stdin ('-').
+  # `exec resume` accepts only --json, --skip-git-repo-check, and the global
+  # -c/-o options, so nothing exec-specific (such as --color) may appear here.
+  rawClassMethod: tailArgv: runId [
+    local run_id="$1" run_dir model tdir
+    run_dir=$(@ "$_RECEIVER" runDirFor: "$run_id")
+    mkdir -p "$run_dir"
+    model=$(@ "$_RECEIVER" model)
+    tdir="${TRASHTALK_DIR:-$HOME/.trashtalk}"
+    jq -cn --arg model "$model" --arg tdir "$tdir" --arg out "$run_dir/last.txt" '
+      ["--json", "--skip-git-repo-check",
+       "-c", "sandbox_mode=\"workspace-write\"",
+       "-c", ("sandbox_workspace_write.writable_roots=[\"" + $tdir + "\"]"),
+       "-c", ("model=\"" + $model + "\""),
+       "-o", $out, "-"]'
+  ]
+
+  rawClassMethod: launch: promptFile run: runId token: token [
+    local prompt_file="$1" run_id="$2" token="$3" codex session workspace tail argv
+    codex=$(@ "$_RECEIVER" codexPath) || return 1
+    session=$(@ "$run_id" session)
+    workspace=$(@ "$session" workspace)
+    tail=$(@ "$_RECEIVER" tailArgv: "$run_id")
+    argv=$(jq -cn --arg codex "$codex" --arg ws "$workspace" --argjson tail "$tail" \
+      '[$codex, "exec", "-C", $ws] + $tail')
+    @ "$_RECEIVER" launchArgv: "$argv" promptFile: "$prompt_file" run: "$run_id" token: "$token" ref: ""
+  ]
+
+  rawClassMethod: resume: ref promptFile: promptFile run: runId token: token [
+    local ref="$1" prompt_file="$2" run_id="$3" token="$4" codex tail argv
+    codex=$(@ "$_RECEIVER" codexPath) || return 1
+    tail=$(@ "$_RECEIVER" tailArgv: "$run_id")
+    argv=$(jq -cn --arg codex "$codex" --arg ref "$ref" --argjson tail "$tail" \
+      '[$codex, "exec", "resume", $ref] + $tail')
+    @ "$_RECEIVER" launchArgv: "$argv" promptFile: "$prompt_file" run: "$run_id" token: "$token" ref: "$ref"
+  ]
+
+  # thread.started carries the thread id on the first output line; fall back to
+  # the reference recorded at resume time.
+  rawClassMethod: conversationRefFor: runId [
+    local log ref=""
+    log=$(@ "$1" outputLog)
+    if [[ -n "$log" && -f "$log" ]]; then
+      ref=$(jq -r 'select(.type == "thread.started") | .thread_id // empty' "$log" 2>/dev/null | head -n 1)
+    fi
+    if [[ -z "$ref" ]]; then ref=$(@ "$1" externalConversationRef); fi
+    printf '%s\n' "$ref"
+  ]
+
+  rawClassMethod: resultSeenFor: runId [
+    local log
+    log=$(@ "$1" outputLog)
+    if [[ -n "$log" && -f "$log" ]] && jq -r 'select(.type == "turn.completed") | .type' "$log" 2>/dev/null | grep -q turn; then
+      echo true
+    else
+      echo false
+    fi
+  ]

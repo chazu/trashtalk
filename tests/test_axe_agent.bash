@@ -156,7 +156,7 @@ assert_true "dry run exposes only read-only tools" grep -Fq -- 'list_directory, 
 export FAKE_AXE_SCENARIO=success
 __=$'previous\noutput'
 false
-@@ 'what happened?' > "$TEST_TMP/at-at-output.txt"
+@@ --one-shot 'what happened?' > "$TEST_TMP/at-at-output.txt"
 at_status=$?
 assert_eq "@@ returns Axe success status" '0' "$at_status"
 assert_eq "@@ captures previous command status" '1' "$(jq -r .last_status "$FAKE_AXE_STDIN")"
@@ -165,7 +165,7 @@ assert_eq "@@ presents final answer through inpage" $'answer line one\nanswer li
 assert_true "@@ leaves final answer in scrollback" grep -Fq -- 'answer line one' "$TEST_TMP/at-at-output.txt"
 
 export FAKE_AXE_SCENARIO=provider
-@@ 'network?' > "$TEST_TMP/provider-output.txt"
+@@ --one-shot 'network?' > "$TEST_TMP/provider-output.txt"
 at_status=$?
 assert_eq "@@ preserves provider failure status" '3' "$at_status"
 assert_true "@@ explains provider failure" grep -Fq -- 'Axe provider/network error (exit 3)' "$TEST_TMP/provider-output.txt"

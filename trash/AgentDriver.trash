@@ -1,0 +1,118 @@
+# AgentDriver - Base class for session drivers.
+# A driver launches one detached harness process per delivery batch, records
+# the process details on the AgentRun, and later parses the run's output into a
+# normalized outcome. Subclasses supply the argv (launch:/resume:), env unsets,
+# and how to find the conversation reference and completion marker in the log.
+#
+# Selector set (class methods):
+#   capabilities                                   JSON
+#   launch: promptFile run: runId token: token     prints pid
+#   resume: ref promptFile: f run: runId token: t  prints pid
+#   outcomeOf: runId                               JSON
+#   interrupt: runId                               'true' | 'false'
+AgentDriver subclass: Object
+
+  classMethod: capabilities [
+    ^ '{"schema_version":1,"headless":true,"resume":false,"live_input":false,"sandbox":false}'
+  ]
+
+  # Per-run scratch directory holding prompt, logs, pid, and exit files.
+  rawClassMethod: runDirFor: runId [
+    local base="${TRASHTALK_RUN_DIR:-${TRASHTALK_DIR:-$HOME/.trashtalk}/run}"
+    printf '%s/%s\n' "$base" "$1"
+  ]
+
+  # Extra `env` flags placed before the assignments (JSON array), e.g. -u VAR.
+  classMethod: envUnsets [
+    ^ '[]'
+  ]
+
+  # Launch argv (JSON array, without the env prefix) as a detached process whose
+  # environment carries the run token and TRASHTALK_DIR. Records process details
+  # on the run, moves it to running, and prints the wrapper pid.
+  rawClassMethod: launchArgv: argvJson promptFile: promptFile run: runId token: token ref: ref [
+    local argv_json="$1" prompt_file="$2" run_id="$3" token="$4" ref="$5"
+    local run_dir env_path unsets full_argv pid tdir
+    tdir="${TRASHTALK_DIR:-$HOME/.trashtalk}"
+    run_dir=$(@ "$_RECEIVER" runDirFor: "$run_id")
+    mkdir -p "$run_dir" || return 1
+    env_path=$(command -v env)
+    unsets=$(@ "$_RECEIVER" envUnsets)
+    full_argv=$(jq -cn --arg env "$env_path" --argjson unsets "$unsets" \
+      --arg tok "TRASHTALK_RUN_TOKEN=$token" --arg dir "TRASHTALK_DIR=$tdir" \
+      --argjson rest "$argv_json" '[$env] + $unsets + [$tok, $dir] + $rest')
+    # Record paths and move to running BEFORE launching: a fast agent can call
+    # trash-send before this method returns, and its token is only valid while
+    # the run is running.
+    @ "$run_id" pidFile: "$run_dir/pid"
+    @ "$run_id" exitFile: "$run_dir/exit"
+    @ "$run_id" outputLog: "$run_dir/stdout.log"
+    @ "$run_id" errorLog: "$run_dir/stderr.log"
+    @ "$run_id" promptFile: "$prompt_file"
+    @ "$run_id" lastMessageFile: "$run_dir/last.txt"
+    if [[ -n "$ref" ]]; then
+      @ "$run_id" externalConversationRef: "$ref"
+    fi
+    @ "$run_id" save
+    @ "$run_id" transitionTo: running >/dev/null || return 1
+    pid=$(@ Tool detachArgvJson: "$full_argv" stdinFile: "$prompt_file" dir: "$run_dir") || return 1
+    if [[ -z "$pid" ]]; then
+      _throw "DriverError" "detached launch returned no pid for run $run_id"
+      return 1
+    fi
+    @ "$run_id" processPid: "$pid"
+    @ "$run_id" save
+    printf '%s\n' "$pid"
+  ]
+
+  # Normalized view of a run's process outcome. Never infers success from exit
+  # alone; the worker combines this with delivery settlement.
+  rawClassMethod: outcomeOf: runId [
+    local run_id="$1" exit_file last_file exit_code="" exited=false last_msg="" ref seen
+    exit_file=$(@ "$run_id" exitFile)
+    last_file=$(@ "$run_id" lastMessageFile)
+    if [[ -n "$exit_file" && -f "$exit_file" ]]; then
+      exited=true
+      exit_code=$(tr -d '[:space:]' < "$exit_file")
+    fi
+    if [[ -n "$last_file" && -f "$last_file" ]]; then
+      last_msg=$(cat "$last_file")
+    fi
+    ref=$(@ "$_RECEIVER" conversationRefFor: "$run_id")
+    seen=$(@ "$_RECEIVER" resultSeenFor: "$run_id")
+    if [[ "$seen" != true ]]; then seen=false; fi
+    jq -cn --argjson exited "$exited" --arg code "$exit_code" --arg ref "$ref" \
+      --arg last "$last_msg" --argjson seen "$seen" '
+      {schema_version: 1,
+       exited: $exited,
+       exit_code: (if ($code | test("^[0-9]+$")) then ($code | tonumber) else null end),
+       conversation_ref: $ref,
+       last_message: $last,
+       result_seen: $seen}'
+  ]
+
+  # Default: the reference recorded at launch or resume.
+  rawClassMethod: conversationRefFor: runId [
+    @ "$1" externalConversationRef
+  ]
+
+  # Default: any recorded exit counts as a result marker.
+  rawClassMethod: resultSeenFor: runId [
+    local exit_file
+    exit_file=$(@ "$1" exitFile)
+    if [[ -n "$exit_file" && -f "$exit_file" ]]; then echo true; else echo false; fi
+  ]
+
+  # INT to the process group, then TERM if it is still alive after 5 seconds.
+  rawClassMethod: interrupt: runId [
+    local run_id="$1" pid alive
+    pid=$(@ "$run_id" processPid)
+    if [[ -z "$pid" || "$pid" == 0 ]]; then echo false; return 0; fi
+    @ Tool interruptPid: "$pid" signal: INT >/dev/null
+    sleep 5
+    alive=$(@ Tool isAlivePid: "$pid")
+    if [[ "$alive" == true ]]; then
+      @ Tool interruptPid: "$pid" signal: TERM >/dev/null
+    fi
+    echo true
+  ]

@@ -1,0 +1,276 @@
+# AgentWorker - Foreground dispatch and reconciliation for agent sessions.
+# No daemon: `@@` and Inbox deliver: call it directly, and an OS supervisor may
+# loop `tick` later. A tick reconciles the session's active run (if its process
+# has exited) and then claims pending deliveries into one new detached run.
+#
+#   @ AgentWorker tick                        # every open/paused session
+#   @ AgentWorker tickSession: $session       # one session
+#   @ AgentWorker deliverMessage: $msg toInbox: 'session:...'   # Inbox hook
+#
+# Environment:
+#   TRASHTALK_NO_AUTOTICK=1   deliveries are recorded but nothing is launched
+#   TRASHTALK_RUN_DIR         where per-run prompt/log/pid files live
+AgentWorker subclass: Object
+
+  rawClassMethod: driverFor: profile [
+    case "$1" in
+      shell) echo ShellDriver ;;
+      codex|"assistant-low-power"|"") echo CodexDriver ;;
+      *) _throw "WorkerError" "Unknown backend profile '$1'"; return 1 ;;
+    esac
+  ]
+
+  rawClassMethod: handlesInbox: inboxName [
+    local prefix="${1%%:*}"
+    if [[ "$prefix" == session || "$prefix" == agent ]]; then echo true; else echo false; fi
+  ]
+
+  rawClassMethod: ownerInboxFor: sessionId [
+    local identity owner
+    identity=$(@ "$1" identity)
+    owner=$(@ "$identity" owner)
+    if [[ -z "$owner" ]]; then owner="${TRASHTALK_USER:-$USER}"; fi
+    printf '%s\n' "$owner"
+  ]
+
+  rawClassMethod: sessionForInbox: inboxName [
+    local esc
+    esc=$(_db_escape "$1")
+    @ Store findByClass: AgentSession where: "json_extract(data, '\$.inbox') = '$esc'" orderBy: 'created_at DESC' limit: 1
+  ]
+
+  rawClassMethod: eligibleSessionsFor: identityId [
+    local esc
+    esc=$(_db_escape "$1")
+    @ Store findByClass: AgentSession where: "json_extract(data, '\$.identity') = '$esc' AND json_extract(data, '\$.lifecycleState') IN ('open','paused')" orderBy: 'created_at DESC' limit: 100
+  ]
+
+  # ------------------------------------------------------------------
+  # Inbound: a message landed in a session or identity inbox
+  # ------------------------------------------------------------------
+
+  # A reply to a session unblocks every delivery waiting on a question there.
+  rawClassMethod: blockedDeliveriesFor: sessionId [
+    local esc
+    esc=$(_db_escape "$1")
+    @ Store findByClass: AgentDelivery where: "json_extract(data, '\$.session') = '$esc' AND json_extract(data, '\$.state') = 'blocked'" orderBy: 'created_at ASC' limit: 100
+  ]
+
+  rawClassMethod: deliverMessage: messageId toInbox: inboxName [
+    local msg="$1" name="$2" prefix="${2%%:*}" session="" identity handle sessions count ids blocked
+    if [[ "$prefix" == session ]]; then
+      session=$(@ "$_RECEIVER" sessionForInbox: "$name")
+    elif [[ "$prefix" == agent ]]; then
+      handle="${name#agent:}"
+      identity=$(@ AgentIdentity findByHandle: "$handle")
+      [[ -n "$identity" ]] || return 0
+      sessions=$(@ "$_RECEIVER" eligibleSessionsFor: "$identity")
+      count=$(printf '%s' "$sessions" | grep -c .)
+      [[ "$count" -eq 1 ]] || return 0
+      session="$sessions"
+    fi
+    [[ -n "$session" ]] || return 0
+    ids=$(jq -cn --arg m "$msg" '[$m]')
+    @ AgentDelivery forSession: "$session" messages: "$ids" >/dev/null || return 1
+    for blocked in $(@ "$_RECEIVER" blockedDeliveriesFor: "$session"); do
+      @ "$blocked" transitionTo: pending >/dev/null
+    done
+    if [[ "${TRASHTALK_NO_AUTOTICK:-}" == 1 ]]; then return 0; fi
+    @ "$_RECEIVER" tickSession: "$session" >/dev/null
+    return 0
+  ]
+
+  # ------------------------------------------------------------------
+  # Ticks
+  # ------------------------------------------------------------------
+
+  rawClassMethod: tick [
+    local ids session state run
+    ids=$(@ AgentSession findAll)
+    for session in $ids; do
+      state=$(@ "$session" lifecycleState)
+      [[ "$state" == open || "$state" == paused ]] || continue
+      run=$(@ "$_RECEIVER" tickSession: "$session")
+      [[ -n "$run" ]] && printf '%s\n' "$run"
+    done
+    return 0
+  ]
+
+  # Reconcile the active run if any; then dispatch pending work. Prints the id
+  # of a newly started run, or nothing.
+  rawClassMethod: tickSession: sessionId [
+    local session="$1" run outcome
+    run=$(@ "$session" activeRun)
+    if [[ -n "$run" ]]; then
+      outcome=$(@ "$_RECEIVER" reconcileRun: "$run")
+      if [[ "$outcome" == running ]]; then
+        return 0
+      fi
+    fi
+    @ "$_RECEIVER" dispatchSession: "$session"
+  ]
+
+  # ------------------------------------------------------------------
+  # Reconciliation
+  # ------------------------------------------------------------------
+
+  # Prints the run's resulting state: running (still alive) or a terminal state.
+  rawClassMethod: reconcileRun: runId [
+    local run_id="$1" session profile driver outcome exited code seen ref alive
+    local d st has_offered=false has_blocked=false final owner
+    alive=$(@ "$run_id" isProcessAlive)
+    if [[ "$alive" == true ]]; then
+      @ "$run_id" markHeartbeat >/dev/null
+      echo running
+      return 0
+    fi
+    session=$(@ "$run_id" session)
+    profile=$(@ "$run_id" backendProfile)
+    driver=$(@ "$_RECEIVER" driverFor: "$profile") || return 1
+    outcome=$(@ "$driver" outcomeOf: "$run_id")
+    exited=$(jq -r '.exited' <<<"$outcome")
+    code=$(jq -r '.exit_code // "none"' <<<"$outcome")
+    seen=$(jq -r '.result_seen' <<<"$outcome")
+    ref=$(jq -r '.conversation_ref // ""' <<<"$outcome")
+    if [[ -n "$ref" ]]; then
+      @ "$run_id" externalConversationRef: "$ref"
+      @ "$run_id" save
+      @ "$session" lastConversationRef: "$ref"
+      @ "$session" save
+    fi
+    if [[ "$exited" != true ]]; then
+      @ "$_RECEIVER" failRun: "$run_id" error: "process vanished without an exit status"
+      echo failed
+      return 0
+    fi
+    if [[ "$code" != 0 || "$seen" != true ]]; then
+      @ "$_RECEIVER" failRun: "$run_id" error: "exit $code, result_seen=$seen"
+      echo failed
+      return 0
+    fi
+    for d in $(@ AgentDelivery offeredFor: "$run_id"); do
+      st=$(@ "$d" state)
+      if [[ "$st" == offered ]]; then
+        @ "$d" transitionTo: uncertain >/dev/null
+        has_offered=true
+      elif [[ "$st" == blocked ]]; then
+        has_blocked=true
+      fi
+    done
+    if [[ "$has_offered" == true ]]; then
+      final="unsettled"
+      owner=$(@ "$_RECEIVER" ownerInboxFor: "$session")
+      @ Inbox alert: "Run $run_id in session $session exited without settling every delivery; they are marked uncertain. Requeue or skip them on the session." to: "$owner" from: worker >/dev/null
+    elif [[ "$has_blocked" == true ]]; then
+      final="waiting_for_user"
+    else
+      final="succeeded"
+    fi
+    @ "$run_id" finishWith: "$final" outcome: "$outcome" error: "" >/dev/null
+    echo "$final"
+  ]
+
+  # Fail the run; offered deliveries fail and retry while attempts remain,
+  # otherwise the owner is alerted and the delivery stalls until skipped.
+  rawClassMethod: failRun: runId error: err [
+    local run_id="$1" err="$2" session role limit d st attempts owner
+    session=$(@ "$run_id" session)
+    role=$(@ "$session" role)
+    limit=$(@ "$role" retryLimit)
+    if [[ -z "$limit" ]] || ! [ "$limit" -ge 0 ] 2>/dev/null; then limit=2; fi
+    @ "$run_id" finishWith: failed outcome: "" error: "$err" >/dev/null
+    for d in $(@ AgentDelivery offeredFor: "$run_id"); do
+      st=$(@ "$d" state)
+      [[ "$st" == offered ]] || continue
+      @ "$d" lastError: "$err"
+      @ "$d" save
+      @ "$d" transitionTo: failed >/dev/null
+      attempts=$(@ "$d" attempts)
+      if [[ "$attempts" -lt "$limit" ]]; then
+        @ "$d" transitionTo: pending >/dev/null
+      else
+        owner=$(@ "$_RECEIVER" ownerInboxFor: "$session")
+        @ Inbox alert: "Delivery $d in session $session stalled after $attempts attempts: $err. Skip it with: @ $session skip: $d note: 'reason'" to: "$owner" from: worker >/dev/null
+      fi
+    done
+  ]
+
+  # ------------------------------------------------------------------
+  # Dispatch
+  # ------------------------------------------------------------------
+
+  # Claim every pending delivery into one new run and launch it. Prints the
+  # run id, or nothing when there was nothing to do.
+  rawClassMethod: dispatchSession: sessionId [
+    local session="$1" state pending profile driver run token d claimed="" run_dir prompt_file ref pid rc
+    state=$(@ "$session" lifecycleState)
+    [[ "$state" == open ]] || return 0
+    pending=$(@ "$session" pendingDeliveries)
+    [[ -n "$pending" ]] || return 0
+    profile=$(@ "$session" backendProfile)
+    driver=$(@ "$_RECEIVER" driverFor: "$profile") || return 1
+    { read -r run; read -r token; } < <(@ AgentRun startFor: "$session" profile: "$profile")
+    if [[ -z "$run" || -z "$token" ]]; then
+      _throw "WorkerError" "could not start a run for session $session"
+      return 1
+    fi
+    for d in $pending; do
+      if [[ "$(@ AgentDelivery claim: "$d" run: "$run")" == true ]]; then
+        claimed="$claimed $d"
+      fi
+    done
+    claimed="${claimed# }"
+    if [[ -z "$claimed" ]]; then
+      @ "$run" delete >/dev/null 2>&1
+      return 0
+    fi
+    run_dir=$(@ AgentDriver runDirFor: "$run")
+    mkdir -p "$run_dir" || return 1
+    prompt_file="$run_dir/prompt.txt"
+    @ "$_RECEIVER" writePrompt: "$prompt_file" run: "$run" session: "$session" deliveries: "$claimed"
+    ref=$(@ "$session" lastConversationRef)
+    if [[ -n "$ref" ]]; then
+      pid=$(@ "$driver" resume: "$ref" promptFile: "$prompt_file" run: "$run" token: "$token")
+    else
+      pid=$(@ "$driver" launch: "$prompt_file" run: "$run" token: "$token")
+    fi
+    rc=$?
+    if [[ $rc -ne 0 || -z "$pid" ]]; then
+      @ "$_RECEIVER" failRun: "$run" error: "launch failed"
+      return 1
+    fi
+    @ "$session" touch >/dev/null
+    printf '%s\n' "$run"
+  ]
+
+  # The prompt is a stable prefix (archetype instructions, then the fixed
+  # trash-send instructions) followed by the deliveries.
+  rawClassMethod: writePrompt: promptFile run: runId session: sessionId deliveries: ids [
+    local prompt_file="$1" run_id="$2" session="$3" ids="$4"
+    local archetype instructions workspace tdir ts d m from subject kind body
+    archetype=$(@ "$session" archetype)
+    instructions=$(@ "$archetype" instructions)
+    workspace=$(@ "$session" workspace)
+    tdir="${TRASHTALK_DIR:-$HOME/.trashtalk}"
+    ts="$tdir/bin/trash-send"
+    {
+      printf '%s\n\n' "$instructions"
+      printf 'You are run %s in session %s. Workspace: %s.\n' "$run_id" "$session" "$workspace"
+      printf 'Trashtalk lives at %s. Act by running shell commands with %s.\n' "$tdir" "$ts"
+      printf 'Reply to the user with:        %s AgentRun result: %s\n' "$ts" "'your answer'"
+      printf 'Ask a blocking question with:  %s AgentRun askUser: %s\n' "$ts" "'your question'"
+      printf 'When finished, settle each delivery: %s AgentRun settle: %s\n' "$ts" "'<deliveryId>'"
+      printf 'Always send result: before settling. The environment variable TRASHTALK_RUN_TOKEN identifies you; never print it.\n'
+      printf '\nDeliveries:\n'
+      for d in $ids; do
+        printf '%s\n' "--- delivery $d"
+        for m in $(@ "$d" messageIdList); do
+          from=$(@ "$m" from)
+          subject=$(@ "$m" subject)
+          kind=$(@ "$m" kind)
+          body=$(@ "$m" body)
+          printf 'From: %s\nSubject: %s\nKind: %s\n\n%s\n\n' "$from" "$subject" "$kind" "$body"
+        done
+      done
+    } > "$prompt_file"
+  ]

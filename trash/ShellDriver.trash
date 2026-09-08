@@ -1,0 +1,26 @@
+# ShellDriver - Development and test harness driver.
+# Runs $TRASHTALK_SHELL_DRIVER with `bash -c` in the session workspace, prompt
+# on stdin, run token in the environment. Lets the whole delivery loop run
+# without a model: the script can call trash-send AgentRun result:/settle:.
+# No conversation continuity; resume: simply launches again.
+ShellDriver subclass: AgentDriver
+
+  rawClassMethod: launch: promptFile run: runId token: token [
+    local prompt_file="$1" run_id="$2" token="$3" script session workspace argv bash_path
+    script="${TRASHTALK_SHELL_DRIVER:-}"
+    if [[ -z "$script" ]]; then
+      _throw "DriverError" "TRASHTALK_SHELL_DRIVER is not set"
+      return 1
+    fi
+    session=$(@ "$run_id" session)
+    workspace=$(@ "$session" workspace)
+    bash_path=$(command -v bash)
+    argv=$(jq -cn --arg bash "$bash_path" --arg body 'cd "$1" && eval "$2"' \
+      --arg ws "$workspace" --arg script "$script" \
+      '[$bash, "-c", $body, "shelldriver", $ws, $script]')
+    @ "$_RECEIVER" launchArgv: "$argv" promptFile: "$prompt_file" run: "$run_id" token: "$token" ref: "shell-$run_id"
+  ]
+
+  rawClassMethod: resume: ref promptFile: promptFile run: runId token: token [
+    @ "$_RECEIVER" launch: "$2" run: "$3" token: "$4"
+  ]

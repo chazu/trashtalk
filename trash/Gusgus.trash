@@ -1,0 +1,114 @@
+# Gusgus - The persistent low-power assistant behind @@.
+# One AgentSession per workspace (repository root or directory), identity
+# 'gusgus', archetype 'assistant', role 'assistant'. `@@ 'text'` sends a
+# message to the session and returns; Gusgus answers into the user's inbox in
+# the same thread, and replying to that message resumes the conversation.
+#
+# Environment:
+#   TRASHTALK_USER            owner inbox name (default: $USER)
+#   TRASHTALK_GUSGUS_PROFILE  backend profile (default: assistant-low-power -> Codex)
+#   TRASHTALK_CODEX_MODEL     model for the Codex driver (default: gpt-5.4-mini)
+Gusgus subclass: Object
+
+  rawClassMethod: owner [
+    printf '%s\n' "${TRASHTALK_USER:-$USER}"
+  ]
+
+  rawClassMethod: profile [
+    printf '%s\n' "${TRASHTALK_GUSGUS_PROFILE:-assistant-low-power}"
+  ]
+
+  rawClassMethod: instructions [
+    printf '%s' "You are Gusgus, a lightweight assistant for the person working in this workspace. Answer briefly and concretely. Read files in the workspace when a question needs it. You cannot see the user's terminal; everything you know about their situation is in the deliveries below. Each delivery ends with a [context] line giving the working directory and the exit status of their last command."
+  ]
+
+  rawClassMethod: archetype [
+    local text profile
+    text=$(@ "$_RECEIVER" instructions)
+    profile=$(@ "$_RECEIVER" profile)
+    @ AgentArchetype define: assistant revision: 1 instructions: "$text" profile: "$profile"
+  ]
+
+  rawClassMethod: role [
+    @ AgentRole define: assistant revision: 1 capabilities: '["inbox.read","message.send","question.ask","source.read","proposal.submit"]' workspacePolicy: '[]' runBudget: '{"turns":0,"usd":0,"retryLimit":2}'
+  ]
+
+  rawClassMethod: identity [
+    local id owner archetype role
+    id=$(@ AgentIdentity named: gusgus) || return 1
+    owner=$(@ "$id" owner)
+    if [[ -z "$owner" ]]; then
+      archetype=$(@ "$_RECEIVER" archetype)
+      role=$(@ "$_RECEIVER" role)
+      @ "$id" owner: "$(@ "$_RECEIVER" owner)"
+      @ "$id" displayName: Gusgus
+      @ "$id" defaultArchetype: "$archetype"
+      @ "$id" defaultRole: "$role"
+      @ "$id" save
+    fi
+    printf '%s\n' "$id"
+  ]
+
+  # The open (or paused) session for the workspace containing dir, created on
+  # first use.
+  rawClassMethod: sessionFor: dir [
+    local identity workspace existing archetype role profile
+    identity=$(@ "$_RECEIVER" identity) || return 1
+    workspace=$(@ AgentSession workspaceFor: "$1")
+    existing=$(@ AgentSession findFor: "$identity" workspace: "$workspace" | head -n 1)
+    if [[ -n "$existing" ]]; then
+      printf '%s\n' "$existing"
+      return 0
+    fi
+    archetype=$(@ "$_RECEIVER" archetype)
+    role=$(@ "$_RECEIVER" role)
+    profile=$(@ "$_RECEIVER" profile)
+    @ AgentSession openFor: "$identity" archetype: "$archetype" role: "$role" workspace: "$workspace" profile: "$profile"
+  ]
+
+  # Send a question to Gusgus and return immediately with the message id.
+  rawClassMethod: chat: text workingDirectory: dir status: status lastResult: lastResult [
+    local text="$1" dir="$2" status="$3" last="$4" session inbox owner body msg
+    session=$(@ "$_RECEIVER" sessionFor: "$dir") || return 1
+    inbox=$(@ "$session" inbox)
+    owner=$(@ "$_RECEIVER" owner)
+    body=$(printf '%s\n\n[context] working_directory=%s last_status=%s' "$text" "$dir" "$status")
+    if [[ -n "$last" ]]; then
+      body=$(printf '%s\n[last_result]\n%s' "$body" "${last:0:2000}")
+    fi
+    msg=$(@ Inbox send: "$body" to: "$inbox" from: "$owner" subject: "" kind: question) || return 1
+    printf '%s\n' "$msg"
+    printf "Gusgus will reply in inbox '%s' (thread %s)\n" "$owner" "$msg" >&2
+  ]
+
+  # Close the workspace's current session (if idle) and open a new one.
+  rawClassMethod: fresh: dir [
+    local identity workspace existing run
+    identity=$(@ "$_RECEIVER" identity) || return 1
+    workspace=$(@ AgentSession workspaceFor: "$1")
+    for existing in $(@ AgentSession findFor: "$identity" workspace: "$workspace"); do
+      run=$(@ "$existing" activeRun)
+      if [[ -n "$run" ]]; then
+        _throw "GusgusError" "Session $existing still has active run $run; interrupt it first"
+        return 1
+      fi
+      @ "$existing" close >/dev/null
+    done
+    @ "$_RECEIVER" sessionFor: "$1"
+  ]
+
+  rawClassMethod: help [
+    echo "=== Gusgus - persistent assistant behind @@ ==="
+    echo ""
+    echo "  @@ 'why did that fail?'      # send; reply lands in your inbox thread"
+    echo "  @@ --fresh 'new topic'       # close this workspace's session, start another"
+    echo "  @@ --one-shot 'question'     # stateless one-shot path (Axe/Codex)"
+    echo "  @@ --dry-run 'question'      # show the one-shot context without a model call"
+    echo ""
+    echo "  inbox=\$(@ Inbox named: \"\$USER\")"
+    echo "  @ \$inbox list                # Gusgus's replies"
+    echo "  @ \$msg reply: 'and then?'    # continues the same conversation"
+    echo ""
+    echo "  @ Gusgus sessionFor: \"\$PWD\"  # the session id for this workspace"
+    echo "  @ \$session summary"
+  ]

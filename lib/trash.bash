@@ -2390,16 +2390,20 @@ function @ {
   return $___exit_code
 }
 
-# @@ syntax - Chat with primary AI agent
-# Usage: @@ "your message here" or @@ --dry-run "inspect context"
+# @@ syntax - Talk to Gusgus, the persistent assistant for this workspace.
+# Usage: @@ "your message"          send; the reply lands in your inbox thread
+#        @@ --fresh "message"       close this workspace's session, start anew
+#        @@ --one-shot "message"    stateless one-shot backend (Axe/Codex)
+#        @@ --dry-run "message"     show the one-shot context, no model call
 function @@ {
   local previous_status=$?
   local previous_result="${__:-}"
-  local mode="run"
-  if [[ "${1:-}" == "--dry-run" ]]; then
-    mode="dry-run"
-    shift
-  fi
+  local mode="chat"
+  case "${1:-}" in
+    --dry-run) mode="dry-run"; shift ;;
+    --one-shot) mode="run"; shift ;;
+    --fresh) mode="fresh"; shift ;;
+  esac
 
   # Combine all arguments into a single message
   local message="$*"
@@ -2412,6 +2416,14 @@ function @@ {
 
   local working_directory="$PWD"
   local run_result answer exit_code
+  if [[ "$mode" == "chat" || "$mode" == "fresh" ]]; then
+    if [[ "$mode" == "fresh" ]]; then
+      @ Gusgus fresh: "$working_directory" >/dev/null || return 1
+    fi
+    @ Gusgus chat: "$message" workingDirectory: "$working_directory" \
+      status: "$previous_status" lastResult: "$previous_result"
+    return $?
+  fi
   if [[ "$mode" == "dry-run" ]]; then
     run_result=$(@ Agent dryRun: "$message" workingDirectory: "$working_directory" \
       status: "$previous_status" lastResult: "$previous_result")

@@ -166,7 +166,7 @@ assert_eq "selected backend receives question" 'selected?' "$(jq -r .question "$
 
 __='previous output'
 false
-@@ 'what happened?' > "$TEST_TMP/at-at-output.txt"
+@@ --one-shot 'what happened?' > "$TEST_TMP/at-at-output.txt"
 at_status=$?
 assert_eq "@@ returns Codex success status" '0' "$at_status"
 assert_eq "@@ captures previous status" '1' "$(jq -r .last_status "$FAKE_CODEX_STDIN")"
