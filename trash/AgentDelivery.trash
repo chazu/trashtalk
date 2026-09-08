@@ -1,0 +1,104 @@
+# AgentDelivery - A batch of inbound messages handed to one session
+# Deliveries are created when messages land in a session inbox and are
+# claimed by a run with an atomic compare-and-set (claim:run:). Idempotent
+# per (session, message ids) via deliveryKey.
+#
+# States: pending offered blocked processed uncertain failed skipped
+#
+# Usage:
+#   d=$(@ AgentDelivery forSession: $session messages: '["message_..."]')
+#   @ AgentDelivery claim: $d run: $run       # true once, then false
+#   @ $d transitionTo: processed
+AgentDelivery subclass: Object
+  include: Persistable
+  instanceVars: session:'' run:'' messageIds:'[]' deliveryKey:'' state:'pending' attempts:0
+                lastError:'' note:'' created:''
+
+  # Common transition rule: check the table, set, save, echo the new state.
+  rawMethod: transitionTo: newState [
+    local to="$1" from allowed
+    from=$(_ivar state)
+    allowed=" pending:offered offered:processed offered:blocked offered:uncertain offered:pending offered:failed blocked:processed blocked:pending failed:pending failed:skipped uncertain:pending uncertain:processed uncertain:skipped "
+    if [[ "$allowed" != *" $from:$to "* ]]; then
+      _throw "TransitionError" "AgentDelivery $_RECEIVER: $from -> $to rejected"
+      return 1
+    fi
+    _ivar_set state "$to"
+    @ "$_RECEIVER" save
+    echo "$to"
+  ]
+
+  # Create (or return the existing) delivery for these message ids.
+  rawClassMethod: forSession: sessionId messages: idsJson [
+    local sid="$1" ids="$2" key existing id now hash
+    if ! printf '%s' "$ids" | jq -e 'type == "array"' >/dev/null 2>&1; then
+      _throw "AgentDeliveryError" "messages: must be a JSON array of message ids"
+      return 1
+    fi
+    ids=$(printf '%s' "$ids" | jq -c .)
+    hash=$(printf '%s' "$ids" | shasum -a 256 | cut -d' ' -f1)
+    key="$sid:${hash:0:16}"
+    existing=$(@ AgentDelivery forKey: "$key")
+    if [[ -n "$existing" ]]; then
+      echo "$existing"
+      return
+    fi
+    now=$(@ Time nowISO)
+    id=$(@ AgentDelivery new)
+    @ "$id" session: "$sid"
+    @ "$id" messageIds: "$ids"
+    @ "$id" deliveryKey: "$key"
+    @ "$id" created: "$now"
+    @ "$id" save
+    echo "$id"
+  ]
+
+  # Pending deliveries for a session, oldest first
+  rawClassMethod: pendingFor: sessionId [
+    local esc
+    esc=$(_db_escape "$1")
+    @ Store findByClass: AgentDelivery where: "json_extract(data, '\$.session') = '$esc' AND json_extract(data, '\$.state') = 'pending'" orderBy: "json_extract(data, '\$.created') ASC, rowid ASC" limit: 1000
+  ]
+
+  # Deliveries a run is currently holding (offered or blocked), oldest first
+  rawClassMethod: offeredFor: runId [
+    local esc
+    esc=$(_db_escape "$1")
+    @ Store findByClass: AgentDelivery where: "json_extract(data, '\$.run') = '$esc' AND json_extract(data, '\$.state') IN ('offered', 'blocked')" orderBy: "json_extract(data, '\$.created') ASC, rowid ASC" limit: 1000
+  ]
+
+  rawClassMethod: forKey: key [
+    local esc
+    esc=$(_db_escape "$1")
+    @ Store findByClass: AgentDelivery where: "json_extract(data, '\$.deliveryKey') = '$esc'" orderBy: 'created_at ASC' limit: 1
+  ]
+
+  # Atomic claim: pending -> offered for runId, attempts+1, in one SQL
+  # statement guarded by the current state. Prints true when the row changed.
+  rawClassMethod: claim: deliveryId run: runId [
+    local id="$1" erun eid changed
+    erun=$(_db_escape "$2")
+    eid=$(_db_escape "$id")
+    changed=$(_db_sql "UPDATE instances SET data = json_set(data, '\$.state', 'offered', '\$.run', '$erun', '\$.attempts', json_extract(data, '\$.attempts') + 1) WHERE id = '$eid' AND json_extract(data, '\$.state') = 'pending'; SELECT changes();")
+    if [[ "$changed" == "1" ]]; then
+      @ "$id" reload >/dev/null 2>&1 || true
+      echo "true"
+    else
+      echo "false"
+    fi
+  ]
+
+  # Message ids, one per line
+  rawMethod: messageIdList [
+    local ids
+    ids=$(_ivar messageIds)
+    [[ -n "$ids" && "$ids" != "null" ]] || ids='[]'
+    printf '%s' "$ids" | jq -r 'if type == "string" then (fromjson? // []) else . end | .[]'
+  ]
+
+  rawMethod: senderOfFirstMessage [
+    local first
+    first=$(@ "$_RECEIVER" messageIdList | head -n 1)
+    [[ -n "$first" ]] || return 0
+    @ "$first" from
+  ]

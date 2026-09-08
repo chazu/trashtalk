@@ -1,0 +1,270 @@
+# AgentRun - One backend execution on behalf of a session
+# A run is started by the worker (startFor:profile:), which hands the child
+# process a capability token `<runId>:<secret>` in TRASHTALK_RUN_TOKEN. Only
+# the sha256 of the secret is stored. The agent-facing class methods
+# (settle:, result:, send:to:, askUser:, inbox) all resolve the run from that
+# token via `current` and derive the sender from it; they never trust a
+# caller-supplied sender.
+#
+# States: starting running recovering succeeded waiting_for_user unsettled
+#         failed interrupted
+#
+# Usage (worker):
+#   read -r run token < <(@ AgentRun startFor: $session profile: shell)
+#   @ $run transitionTo: running
+# Usage (agent, with TRASHTALK_RUN_TOKEN exported):
+#   @ AgentRun result: 'done'
+#   @ AgentRun settle: $delivery
+AgentRun subclass: Object
+  include: Persistable
+  instanceVars: session:'' state:'starting' archetypeRevision:'' roleRevision:''
+                backendProfile:'' externalConversationRef:'' ownerGeneration:0 workerId:''
+                capabilityTokenHash:'' processPid:0 pidFile:'' exitFile:'' outputLog:''
+                errorLog:'' promptFile:'' lastMessageFile:'' priorRun:'' started:''
+                heartbeatAt:'' finished:'' outcome:'' error:''
+
+  # Common transition rule over state.
+  rawMethod: transitionTo: newState [
+    local to="$1" from allowed
+    from=$(_ivar state)
+    allowed=" starting:running starting:failed running:recovering running:succeeded running:waiting_for_user running:unsettled running:failed running:interrupted recovering:running recovering:failed recovering:unsettled recovering:succeeded recovering:waiting_for_user recovering:interrupted "
+    if [[ "$allowed" != *" $from:$to "* ]]; then
+      _throw "TransitionError" "AgentRun $_RECEIVER: $from -> $to rejected"
+      return 1
+    fi
+    _ivar_set state "$to"
+    @ "$_RECEIVER" save
+    echo "$to"
+  ]
+
+  # Create a run for a session and mint its token. Prints two lines: the run
+  # id, then `<runId>:<secret>`. The secret is never stored.
+  rawClassMethod: startFor: sessionId profile: p [
+    local sid="$1" profile="$2" run secret hash now
+    now=$(@ Time nowISO)
+    run=$(@ AgentRun new)
+    @ "$run" session: "$sid"
+    @ "$run" state: starting
+    @ "$run" archetypeRevision: "$(@ "$sid" archetypeRevision)"
+    @ "$run" roleRevision: "$(@ "$sid" roleRevision)"
+    @ "$run" backendProfile: "$profile"
+    @ "$run" started: "$now"
+    secret=$(uuidgen | tr -d '-' | tr 'A-Z' 'a-z')
+    hash=$(printf '%s' "$secret" | shasum -a 256 | cut -d' ' -f1)
+    @ "$run" capabilityTokenHash: "$hash"
+    @ "$run" save
+    echo "$run"
+    echo "$run:$secret"
+  ]
+
+  rawMethod: finishWith: state outcome: o error: e [
+    local now
+    @ "$_RECEIVER" transitionTo: "$1" >/dev/null || return 1
+    now=$(@ Time nowISO)
+    _ivar_set outcome "$2"
+    _ivar_set error "$3"
+    _ivar_set finished "$now"
+    @ "$_RECEIVER" save
+    echo "$1"
+  ]
+
+  method: markHeartbeat [
+    | now |
+    now := @ Time nowISO.
+    heartbeatAt := now.
+    @ self save
+  ]
+
+  rawMethod: isProcessAlive [
+    local pid
+    pid=$(_ivar processPid)
+    if [[ "$pid" =~ ^[0-9]+$ && "$pid" -gt 0 ]] && kill -0 "$pid" 2>/dev/null; then
+      echo "true"
+    else
+      echo "false"
+    fi
+  ]
+
+  # Resolve the calling agent's run from TRASHTALK_RUN_TOKEN. Prints the run
+  # id; throws RunTokenError when the token is missing, wrong, or the run or
+  # its session is no longer live. Never prints the secret.
+  rawClassMethod: current [
+    local token="${TRASHTALK_RUN_TOKEN:-}" runId secret hash stored state sid life data cls
+    if [[ -z "$token" || "${token#*:}" == "$token" ]]; then
+      _throw "RunTokenError" "TRASHTALK_RUN_TOKEN is missing or malformed"
+      return 1
+    fi
+    runId="${token%%:*}"
+    secret="${token#*:}"
+    data=$(db_get "$runId" 2>/dev/null)
+    cls=""
+    [[ -n "$data" ]] && cls=$(printf '%s' "$data" | jq -r '.class // empty')
+    if [[ "$cls" != "AgentRun" ]]; then
+      _throw "RunTokenError" "Unknown run '$runId'"
+      return 1
+    fi
+    stored=$(@ "$runId" capabilityTokenHash)
+    hash=$(printf '%s' "$secret" | shasum -a 256 | cut -d' ' -f1)
+    if [[ -z "$stored" || "$hash" != "$stored" ]]; then
+      _throw "RunTokenError" "Run token rejected for '$runId'"
+      return 1
+    fi
+    state=$(@ "$runId" state)
+    if [[ "$state" != "running" && "$state" != "recovering" ]]; then
+      _throw "RunTokenError" "Run '$runId' is $state, not running"
+      return 1
+    fi
+    sid=$(@ "$runId" session)
+    life=""
+    [[ -n "$sid" ]] && life=$(@ "$sid" lifecycleState)
+    if [[ -z "$life" || "$life" == "terminated" ]]; then
+      _throw "RunTokenError" "Session for run '$runId' is terminated"
+      return 1
+    fi
+    echo "$runId"
+  ]
+
+  # Inbox name of the identity owner behind a run (env TRASHTALK_USER / $USER
+  # when the identity has no owner).
+  rawClassMethod: ownerInboxFor: runId [
+    local sid identity owner
+    sid=$(@ "$1" session)
+    identity=""
+    [[ -n "$sid" ]] && identity=$(@ "$sid" identity)
+    owner=""
+    [[ -n "$identity" ]] && owner=$(@ "$identity" owner)
+    [[ -n "$owner" ]] || owner="${TRASHTALK_USER:-${USER:-user}}"
+    echo "$owner"
+  ]
+
+  # ------------------------------------------------------------------
+  # Agent-facing (require TRASHTALK_RUN_TOKEN)
+  # ------------------------------------------------------------------
+
+  rawClassMethod: settle: deliveryId [
+    @ AgentRun settle: "$1" note: ''
+  ]
+
+  rawClassMethod: settle: deliveryId note: text [
+    local d="$1" note="$2" run drun state
+    run=$(@ AgentRun current) || {
+      _throw "RunTokenError" "AgentRun settle: requires a valid TRASHTALK_RUN_TOKEN"
+      return 1
+    }
+    drun=$(@ "$d" run 2>/dev/null)
+    if [[ -z "$drun" || "$drun" != "$run" ]]; then
+      _throw "RunError" "Delivery $d is not offered to run $run"
+      return 1
+    fi
+    state=$(@ "$d" state)
+    if [[ "$state" != "offered" && "$state" != "blocked" ]]; then
+      _throw "RunError" "Delivery $d is $state; only offered or blocked deliveries can be settled"
+      return 1
+    fi
+    [[ -n "$note" ]] && @ "$d" note: "$note"
+    @ "$d" transitionTo: processed >/dev/null || return 1
+    echo "processed"
+  ]
+
+  # Reply in-thread to every delivery this run holds; prints the message ids.
+  # Without a held delivery the result goes to the identity owner's inbox.
+  rawClassMethod: result: body [
+    local body="$1" run sid sender deliveries d first to subj thread msg inbox owner
+    run=$(@ AgentRun current) || {
+      _throw "RunTokenError" "AgentRun result: requires a valid TRASHTALK_RUN_TOKEN"
+      return 1
+    }
+    sid=$(@ "$run" session)
+    sender="session:$sid"
+    deliveries=$(@ AgentDelivery offeredFor: "$run")
+    if [[ -z "$deliveries" ]]; then
+      owner=$(@ AgentRun ownerInboxFor: "$run")
+      @ Inbox send: "$body" to: "$owner" from: "$sender" subject: result kind: result
+      return
+    fi
+    local seen_threads=" "
+    for d in $deliveries; do
+      first=$(@ "$d" messageIdList | head -n 1)
+      [[ -n "$first" ]] || continue
+      to=$(@ "$first" from)
+      subj=$(@ "$first" subject)
+      thread=$(@ "$first" thread)
+      # One reply per conversation thread, not one per delivery.
+      case "$seen_threads" in
+        *" $thread "*) continue ;;
+      esac
+      seen_threads="$seen_threads$thread "
+      msg=$(@ Message to: "$to" from: "$sender" subject: "$subj" body: "$body" kind: result)
+      @ "$msg" thread: "$thread"
+      @ "$msg" replyTo: "$first"
+      inbox=$(@ Inbox named: "$to")
+      @ "$inbox" deliver: "$msg"
+    done
+  ]
+
+  rawClassMethod: send: body to: address [
+    local run sid
+    run=$(@ AgentRun current) || {
+      _throw "RunTokenError" "AgentRun send:to: requires a valid TRASHTALK_RUN_TOKEN"
+      return 1
+    }
+    sid=$(@ "$run" session)
+    @ Inbox send: "$1" to: "$2" from: "session:$sid" subject: '' kind: note
+  ]
+
+  # Deduplicated send: one message per (session, key).
+  rawClassMethod: send: body to: address key: k [
+    local run sid key esc efrom existing
+    run=$(@ AgentRun current) || {
+      _throw "RunTokenError" "AgentRun send:to:key: requires a valid TRASHTALK_RUN_TOKEN"
+      return 1
+    }
+    sid=$(@ "$run" session)
+    key="key:$3"
+    esc=$(_db_escape "$key")
+    efrom=$(_db_escape "session:$sid")
+    existing=$(@ Store findByClass: Message where: "json_extract(data, '\$.from') = '$efrom' AND json_extract(data, '\$.subject') = '$esc'" orderBy: 'created_at ASC' limit: 1)
+    if [[ -n "$existing" ]]; then
+      echo "$existing"
+      return
+    fi
+    @ Inbox send: "$1" to: "$2" from: "session:$sid" subject: "$key" kind: note
+  ]
+
+  # Ask the identity owner a blocking question; held deliveries become blocked.
+  rawClassMethod: askUser: question [
+    local run sid owner deliveries d first thread msg inbox id state
+    run=$(@ AgentRun current) || {
+      _throw "RunTokenError" "AgentRun askUser: requires a valid TRASHTALK_RUN_TOKEN"
+      return 1
+    }
+    sid=$(@ "$run" session)
+    owner=$(@ AgentRun ownerInboxFor: "$run")
+    deliveries=$(@ AgentDelivery offeredFor: "$run")
+    thread=""
+    for d in $deliveries; do
+      [[ -z "$thread" ]] || break
+      first=$(@ "$d" messageIdList | head -n 1)
+      [[ -n "$first" ]] && thread=$(@ "$first" thread)
+    done
+    msg=$(@ Message to: "$owner" from: "session:$sid" subject: question body: "$1" kind: question)
+    [[ -n "$thread" ]] && @ "$msg" thread: "$thread"
+    inbox=$(@ Inbox named: "$owner")
+    id=$(@ "$inbox" deliver: "$msg")
+    for d in $deliveries; do
+      state=$(@ "$d" state)
+      [[ "$state" == "offered" ]] && @ "$d" transitionTo: blocked >/dev/null
+    done
+    echo "$id"
+  ]
+
+  rawClassMethod: inbox [
+    local run sid ib
+    run=$(@ AgentRun current) || {
+      _throw "RunTokenError" "AgentRun inbox requires a valid TRASHTALK_RUN_TOKEN"
+      return 1
+    }
+    sid=$(@ "$run" session)
+    ib=$(@ "$sid" inboxObject)
+    @ "$ib" list
+  ]

@@ -1,0 +1,39 @@
+# AgentArchetype - Versioned instructions (what an agent is)
+# An archetype is identified by name + revision and is immutable once defined:
+# define: returns the existing record when one already exists.
+#
+# Usage:
+#   a=$(@ AgentArchetype define: 'assistant' revision: '1' instructions: 'Be helpful.' profile: 'assistant-low-power')
+#   @ $a instructionsHash
+AgentArchetype subclass: Object
+  include: Persistable
+  instanceVars: name:'' revision:'' instructions:'' instructionsHash:'' suggestedBackendProfile:''
+                supersedes:'' created:''
+
+  rawClassMethod: named: n revision: r [
+    local en er
+    en=$(_db_escape "$1")
+    er=$(_db_escape "$2")
+    @ Store findByClass: AgentArchetype where: "json_extract(data, '\$.name') = '$en' AND CAST(json_extract(data, '\$.revision') AS TEXT) = '$er'" orderBy: 'created_at ASC' limit: 1
+  ]
+
+  # Find-or-create. Raw: hashing the instructions needs a pipeline.
+  rawClassMethod: define: n revision: r instructions: text profile: p [
+    local name="$1" rev="$2" text="$3" profile="$4" existing id hash now
+    existing=$(@ AgentArchetype named: "$name" revision: "$rev")
+    if [[ -n "$existing" ]]; then
+      echo "$existing"
+      return
+    fi
+    hash=$(printf '%s' "$text" | shasum -a 256 | cut -d' ' -f1)
+    now=$(@ Time nowISO)
+    id=$(@ AgentArchetype new)
+    @ "$id" name: "$name"
+    @ "$id" revision: "$rev"
+    @ "$id" instructions: "$text"
+    @ "$id" instructionsHash: "$hash"
+    @ "$id" suggestedBackendProfile: "$profile"
+    @ "$id" created: "$now"
+    @ "$id" save
+    echo "$id"
+  ]

@@ -1,0 +1,63 @@
+# AgentRole - Versioned policy (what an agent may do)
+# Roles are identified by name + revision and immutable once defined.
+# Container ivars hold JSON: capabilities and workspacePolicy are arrays,
+# approvalPolicy/runBudget/messageBudget are objects.
+#
+# Usage:
+#   r=$(@ AgentRole define: 'assistant' revision: '1' capabilities: '["inbox.read"]' workspacePolicy: '[]' runBudget: '{"turns":0,"usd":0,"retryLimit":2}')
+#   @ $r allowsWorkspace: /path      # true when policy is [] or a prefix matches
+#   @ $r retryLimit
+AgentRole subclass: Object
+  include: Persistable
+  instanceVars: name:'' revision:'' capabilities:'[]' workspacePolicy:'[]' recipientPolicy:'[]'
+                approvalPolicy:'{}' runBudget:'{"turns":0,"usd":0,"retryLimit":2}'
+                messageBudget:'{"count":0,"usd":0}' supersedes:'' created:''
+
+  rawClassMethod: named: n revision: r [
+    local en er
+    en=$(_db_escape "$1")
+    er=$(_db_escape "$2")
+    @ Store findByClass: AgentRole where: "json_extract(data, '\$.name') = '$en' AND CAST(json_extract(data, '\$.revision') AS TEXT) = '$er'" orderBy: 'created_at ASC' limit: 1
+  ]
+
+  rawClassMethod: define: n revision: r capabilities: capsJson workspacePolicy: wpJson runBudget: rbJson [
+    local name="$1" rev="$2" caps="$3" wp="$4" rb="$5" existing id now
+    existing=$(@ AgentRole named: "$name" revision: "$rev")
+    if [[ -n "$existing" ]]; then
+      echo "$existing"
+      return
+    fi
+    for json in "$caps" "$wp" "$rb"; do
+      if ! printf '%s' "$json" | jq -e . >/dev/null 2>&1; then
+        _throw "AgentRoleError" "Invalid JSON policy: $json"
+        return 1
+      fi
+    done
+    now=$(@ Time nowISO)
+    id=$(@ AgentRole new)
+    @ "$id" name: "$name"
+    @ "$id" revision: "$rev"
+    @ "$id" capabilities: "$caps"
+    @ "$id" workspacePolicy: "$wp"
+    @ "$id" runBudget: "$rb"
+    @ "$id" created: "$now"
+    @ "$id" save
+    echo "$id"
+  ]
+
+  # Integer retry limit from runBudget (default 2). Tolerates a budget stored
+  # either as a JSON object or as its string encoding.
+  rawMethod: retryLimit [
+    local budget
+    budget=$(_ivar runBudget)
+    [[ -n "$budget" ]] || budget='{}'
+    printf '%s' "$budget" | jq -r 'if type == "string" then (fromjson? // {}) else . end | .retryLimit // 2'
+  ]
+
+  # 'true' when workspacePolicy is [] or any entry is a prefix of path.
+  rawMethod: allowsWorkspace: path [
+    local p="$1" policy
+    policy=$(_ivar workspacePolicy)
+    [[ -n "$policy" && "$policy" != "null" ]] || policy='[]'
+    printf '%s' "$policy" | jq -r --arg p "$p" 'if type == "string" then (fromjson? // []) else . end | if length == 0 then true else any(.[]; . as $e | $p | startswith($e)) end'
+  ]

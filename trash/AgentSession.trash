@@ -1,0 +1,194 @@
+# AgentSession - A durable conversation between an identity and a workspace
+# A session snapshots the archetype/role revisions it was opened with, owns an
+# inbox named `session:<id>`, and is the unit that deliveries and runs attach
+# to. Lifecycle: open <-> paused, open|paused -> closed -> open (reopen),
+# anything -> terminated.
+#
+# Usage:
+#   s=$(@ AgentSession openFor: $identity archetype: $arch role: $role workspace: /path profile: shell)
+#   @ $s summary
+#   @ $s pause / resume / close / reopen / terminate
+#   @ AgentSession findFor: $identity workspace: /path
+AgentSession subclass: Object
+  include: Persistable
+  instanceVars: identity:'' archetype:'' archetypeRevision:'' instructionsHash:'' role:''
+                roleRevision:'' backendProfile:'' executionPolicy:'single' workspace:''
+                lifecycleState:'open' inbox:'' lastConversationRef:'' parentSession:''
+                created:'' lastActivityAt:''
+
+  # Common transition rule over lifecycleState.
+  rawMethod: transitionTo: newState [
+    local to="$1" from allowed
+    from=$(_ivar lifecycleState)
+    allowed=" open:paused paused:open open:closed paused:closed closed:open open:terminated paused:terminated closed:terminated "
+    if [[ "$allowed" != *" $from:$to "* ]]; then
+      _throw "TransitionError" "AgentSession $_RECEIVER: $from -> $to rejected"
+      return 1
+    fi
+    _ivar_set lifecycleState "$to"
+    @ "$_RECEIVER" save
+    echo "$to"
+  ]
+
+  # Open a session, snapshotting the archetype and role revisions.
+  rawClassMethod: openFor: identityId archetype: archetypeId role: roleId workspace: path profile: profileName [
+    local identity="$1" archetype="$2" role="$3" ws="$4" profile="$5"
+    local allowed session now inboxName
+    allowed=$(@ "$role" allowsWorkspace: "$ws")
+    if [[ "$allowed" != "true" ]]; then
+      _throw "SessionError" "Role $role does not allow workspace $ws"
+      return 1
+    fi
+    now=$(@ Time nowISO)
+    session=$(@ AgentSession new)
+    inboxName="session:$session"
+    @ "$session" identity: "$identity"
+    @ "$session" archetype: "$archetype"
+    @ "$session" archetypeRevision: "$(@ "$archetype" revision)"
+    @ "$session" instructionsHash: "$(@ "$archetype" instructionsHash)"
+    @ "$session" role: "$role"
+    @ "$session" roleRevision: "$(@ "$role" revision)"
+    @ "$session" backendProfile: "$profile"
+    @ "$session" workspace: "$ws"
+    @ "$session" lifecycleState: open
+    @ "$session" inbox: "$inboxName"
+    @ "$session" created: "$now"
+    @ "$session" lastActivityAt: "$now"
+    @ "$session" save
+    @ Inbox named: "$inboxName" >/dev/null
+    echo "$session"
+  ]
+
+  # Open or paused sessions for identity + workspace, newest first
+  rawClassMethod: findFor: identityId workspace: path [
+    local eid ews
+    eid=$(_db_escape "$1")
+    ews=$(_db_escape "$2")
+    @ Store findByClass: AgentSession where: "json_extract(data, '\$.identity') = '$eid' AND json_extract(data, '\$.workspace') = '$ews' AND json_extract(data, '\$.lifecycleState') IN ('open', 'paused')" orderBy: "json_extract(data, '\$.created') DESC, rowid DESC" limit: 1000
+  ]
+
+  # Git toplevel when dir is inside a repo, otherwise the real path of dir
+  rawClassMethod: workspaceFor: dir [
+    local dir="$1" top revparse="rev-parse" toplevel="--show-toplevel"
+    if [[ ! -d "$dir" ]]; then
+      _throw "SessionError" "Not a directory: $dir"
+      return 1
+    fi
+    top=$(git -C "$dir" "$revparse" "$toplevel" 2>/dev/null)
+    if [[ -n "$top" ]]; then
+      echo "$top"
+      return
+    fi
+    (cd "$dir" && pwd -P)
+  ]
+
+  method: pause [
+    ^ @ self transitionTo: 'paused'
+  ]
+
+  method: resume [
+    ^ @ self transitionTo: 'open'
+  ]
+
+  method: close [
+    ^ @ self transitionTo: 'closed'
+  ]
+
+  method: reopen [
+    ^ @ self transitionTo: 'open'
+  ]
+
+  method: terminate [
+    ^ @ self transitionTo: 'terminated'
+  ]
+
+  method: touch [
+    | now |
+    now := @ Time nowISO.
+    lastActivityAt := now.
+    @ self save
+  ]
+
+  method: inboxObject [
+    ^ @ Inbox named: inbox
+  ]
+
+  method: pendingDeliveries [
+    ^ @ AgentDelivery pendingFor: self
+  ]
+
+  # Id of the run in starting|running|recovering for this session, or empty
+  rawMethod: activeRun [
+    local esc
+    esc=$(_db_escape "$_RECEIVER")
+    @ Store findByClass: AgentRun where: "json_extract(data, '\$.session') = '$esc' AND json_extract(data, '\$.state') IN ('starting', 'running', 'recovering')" orderBy: "json_extract(data, '\$.started') DESC, rowid DESC" limit: 1
+  ]
+
+  # Number of pending deliveries. Raw: counts lines without touching stdin.
+  rawMethod: pendingCount [
+    local ids
+    ids=$(@ AgentDelivery pendingFor: "$_RECEIVER")
+    if [[ -z "$ids" ]]; then
+      echo 0
+    else
+      printf '%s\n' "$ids" | wc -l | tr -d ' '
+    fi
+  ]
+
+  method: summary [
+    | handle run count |
+    handle := @ identity handle.
+    run := @ self activeRun.
+    (run isEmpty) ifTrue: [run := '-'].
+    count := @ self pendingCount.
+    ^ self , ' ' , handle , ' ' , lifecycleState , ' ws=' , workspace , ' pending=' , count , ' run=' , run
+  ]
+
+  # Human-only: put a failed or uncertain delivery back in the queue, e.g. after
+  # fixing whatever made it fail. The next tick claims it again.
+  rawMethod: requeue: deliveryId [
+    local d="$1" owner state
+    owner=$(@ "$d" session)
+    if [[ "$owner" != "$_RECEIVER" ]]; then
+      _throw "SessionError" "Delivery $d does not belong to session $_RECEIVER"
+      return 1
+    fi
+    state=$(@ "$d" state)
+    if [[ "$state" != "failed" && "$state" != "uncertain" ]]; then
+      _throw "SessionError" "Delivery $d is $state; only failed or uncertain deliveries can be requeued"
+      return 1
+    fi
+    @ "$d" attempts: 0
+    @ "$d" save
+    @ "$d" transitionTo: pending >/dev/null || return 1
+    echo "pending"
+  ]
+
+  # Human-only: give up on a failed or uncertain delivery with a reason.
+  rawMethod: skip: deliveryId note: text [
+    local d="$1" note="$2" state owner inboxName line
+    if [[ -z "$note" ]]; then
+      _throw "SessionError" "skip: requires a non-empty note"
+      return 1
+    fi
+    owner=$(@ "$d" session)
+    if [[ "$owner" != "$_RECEIVER" ]]; then
+      _throw "SessionError" "Delivery $d does not belong to session $_RECEIVER"
+      return 1
+    fi
+    state=$(@ "$d" state)
+    if [[ "$state" != "failed" && "$state" != "uncertain" ]]; then
+      _throw "SessionError" "Delivery $d is $state; only failed or uncertain deliveries can be skipped"
+      return 1
+    fi
+    @ "$d" lastError: "$note"
+    @ "$d" note: "$note"
+    @ "$d" transitionTo: skipped >/dev/null || return 1
+    # Record the skip where the human reads, not in the session inbox: a message
+    # to the session would become a new delivery.
+    inboxName=$(@ AgentWorker ownerInboxFor: "$_RECEIVER")
+    [[ -n "$inboxName" ]] || inboxName="${TRASHTALK_USER:-$USER}"
+    line="skipped $d in session $_RECEIVER: $note"
+    @ Inbox send: "$line" to: "$inboxName" from: worker subject: skipped kind: note >/dev/null
+    echo "skipped"
+  ]

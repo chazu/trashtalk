@@ -1,0 +1,48 @@
+# AgentIdentity - A named agent (who), independent of how it runs
+# Identities are found-or-created by handle. Each identity owns an inbox
+# named `agent:<handle>` where messages land when no session is targeted.
+#
+# Usage:
+#   id=$(@ AgentIdentity named: 'gusgus')
+#   @ $id owner: 'chazu'
+#   @ $id inboxObject
+AgentIdentity subclass: Object
+  include: Persistable
+  instanceVars: handle:'' displayName:'' owner:'' enabled:'true' defaultArchetype:''
+                defaultRole:'' inbox:'' created:''
+
+  # Find or create the identity with this handle. Raw: the handle is validated
+  # with the same character set as Inbox names and then interpolated into SQL.
+  rawClassMethod: named: handle [
+    local name="$1" esc existing id allowed stripped now
+    allowed='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.:-'
+    stripped="${name//[$allowed]/}"
+    if [[ -z "$name" || -n "$stripped" || "${name:0:1}" == "." || "${name:0:1}" == "-" ]]; then
+      _throw "AgentIdentityError" "Invalid handle '$name' (allowed: letters, digits, _ . : -)"
+      return 1
+    fi
+    existing=$(@ AgentIdentity findByHandle: "$name")
+    if [[ -n "$existing" ]]; then
+      echo "$existing"
+      return
+    fi
+    esc="agent:$name"
+    now=$(@ Time nowISO)
+    id=$(@ AgentIdentity new)
+    @ "$id" handle: "$name"
+    @ "$id" inbox: "$esc"
+    @ "$id" created: "$now"
+    @ "$id" save
+    @ Inbox named: "$esc" >/dev/null
+    echo "$id"
+  ]
+
+  rawClassMethod: findByHandle: handle [
+    local esc
+    esc=$(_db_escape "$1")
+    @ Store findByClass: AgentIdentity where: "json_extract(data, '\$.handle') = '$esc'" orderBy: 'created_at ASC' limit: 1
+  ]
+
+  method: inboxObject [
+    ^ @ Inbox named: inbox
+  ]
