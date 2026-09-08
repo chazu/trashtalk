@@ -226,7 +226,9 @@ Inbox subclass: Object
   ]
 
   # Interactive loop over inpick / inpage / inmacs (with fzf and $EDITOR
-  # fallbacks). Returns when the picker is cancelled. Prints the final outcome.
+  # fallbacks). Selecting a message marks it read and offers reply, view
+  # thread, archive, or back; viewing returns to the same menu. Returns when
+  # the message picker is cancelled. Prints the final outcome.
   rawMethod: browse [
     local preview_dir result outcome msg action
     preview_dir=$(mktemp -d "${TMPDIR:-/tmp}/trash-inbox.XXXXXX")
@@ -236,13 +238,16 @@ Inbox subclass: Object
       [[ "$outcome" == selected ]] || break
       msg=$(printf '%s' "$result" | jq -r '.selection.id // empty')
       [[ -n "$msg" ]] || break
-      @ "$_RECEIVER" readThreadOf: "$msg"
-      action=$(@ "$_RECEIVER" pickActionFor: "$msg")
-      case "$action" in
-        reply) @ "$_RECEIVER" composeReplyTo: "$msg" >/dev/null ;;
-        archive) @ "$msg" archive >/dev/null ;;
-        *) ;;
-      esac
+      @ "$msg" markRead >/dev/null
+      while true; do
+        action=$(@ "$_RECEIVER" pickActionFor: "$msg")
+        case "$action" in
+          reply) @ "$_RECEIVER" composeReplyTo: "$msg" >/dev/null; break ;;
+          view) @ "$_RECEIVER" readThreadOf: "$msg" ;;
+          archive) @ "$msg" archive >/dev/null; break ;;
+          *) break ;;
+        esac
+      done
     done
     rm -rf "$preview_dir"
     printf '%s\n' "$outcome"
@@ -288,13 +293,13 @@ Inbox subclass: Object
     fi
   ]
 
-  # Show the whole thread in inpage (or plain stdout) and mark the message read.
+  # Show the whole thread in inpage (or plain stdout). Leave inpage with
+  # Ctrl-X Ctrl-C; Ctrl-C interrupts the whole browse loop.
   rawMethod: readThreadOf: messageId [
     local msg="$1" thread text m rule
     thread=$(@ "$msg" thread)
     rule="----------------------------------------"
     text=$(for m in $(@ "$_RECEIVER" thread: "$thread"); do @ "$m" show; printf '\n%s\n\n' "$rule"; done)
-    @ "$msg" markRead >/dev/null
     if [[ "$(@ Tools::Inpage isInstalled)" == true ]]; then
       @ Tools::Inpage viewText: "$text" title: "Thread $thread" >/dev/null
     else
@@ -302,14 +307,17 @@ Inbox subclass: Object
     fi
   ]
 
-  # Second picker: what to do with the selected message. Prints reply, archive, or back.
+  # Second picker: what to do with the selected message. Prints reply, view,
+  # archive, or back.
   rawMethod: pickActionFor: messageId [
-    local msg="$1" records result outcome title
+    local msg="$1" records result outcome title from
+    from=$(@ "$msg" from)
     records=$(jq -cn '
-      {schema_version:1,id:"reply",label:"Reply in this thread",kind:"action",detail:"compose with inmacs"},
+      {schema_version:1,id:"reply",label:"Reply in this thread",kind:"action",detail:"compose in inmacs; Ctrl-X Ctrl-S saves and sends"},
+      {schema_version:1,id:"view",label:"View the whole thread",kind:"action",detail:"inpage; leave with Ctrl-X Ctrl-C"},
       {schema_version:1,id:"archive",label:"Archive",kind:"action",detail:"hide it from the inbox"},
       {schema_version:1,id:"back",label:"Back to inbox",kind:"action",detail:""}')
-    title="Message $msg"
+    title="From $from"
     if [[ "$(@ Tools::Inpick isInstalled)" == true ]]; then
       result=$(@ Tools::Inpick selectRecords: "$records" root: "." query: "" title: "$title")
     else

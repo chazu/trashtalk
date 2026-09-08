@@ -114,16 +114,18 @@ assert_contains "picker title names the inbox" "Inbox tester" "$(cat "$CAPTURE_P
 
 # ==========================================
 echo ""
-echo "2. selecting a message shows its thread and marks it read; reply sends into the thread"
+echo "2. selecting a message marks it read; view shows the thread; reply sends into the thread"
 # ==========================================
 
 : > "$CAPTURE_RECORDS"; : > "$CAPTURE_PICKER_ARGV"; : > "$CAPTURE_PAGER_TEXT"; : > "$CAPTURE_EDITOR_ARGV"
-printf '%s\n%s\n' "$q1" "reply" > "$PICK_QUEUE"
+printf '%s\n%s\n%s\n' "$q1" "view" "reply" > "$PICK_QUEUE"
 outcome=$(@ $inbox browse 2>/dev/null)
 assert_eq "loop ends when the queue runs out" "cancelled" "$outcome"
+assert_contains "action picker offered view" '"id":"view"' "$(cat "$CAPTURE_RECORDS")"
 assert_eq "selected message marked read" "read" "$(@ $q1 status)"
 assert_contains "pager showed the question body" "ok to force-push?" "$(cat "$CAPTURE_PAGER_TEXT")"
 assert_contains "action picker offered reply" '"id":"reply"' "$(cat "$CAPTURE_RECORDS")"
+assert_eq "pickers ran: list, action, action after view, list again" "4" "$(grep -c 'From alice\|Inbox tester' "$CAPTURE_PICKER_ARGV")"
 assert_contains "editor opened with an output path" "-o" "$(cat "$CAPTURE_EDITOR_ARGV")"
 assert_contains "editor title names the sender" "Reply to alice" "$(cat "$CAPTURE_EDITOR_ARGV")"
 alice=$(@ Inbox named: alice)
