@@ -132,6 +132,11 @@ String subclass: Object
     else
       read -ra parts <<< "$str"
     fi
+    # jo with no arguments reads stdin, which blocks when stdin is open.
+    if (( ${#parts[@]} == 0 )); then
+      echo '[]'
+      return
+    fi
     jo -a "${parts[@]}"
   ]
 

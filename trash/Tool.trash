@@ -253,6 +253,118 @@ Tool subclass: Object
     "${argv[@]}"
   ]
 
+  # Launch exact argv detached from the caller: its own session and process
+  # group, HUP ignored, no inherited stdio. A small bash wrapper records its
+  # own PID in pidFile, runs argv with the given stdio files, then records the
+  # child's exit status in exitFile. Prints the wrapper PID once pidFile
+  # appears (waits up to 2s). Signals sent to the group (-pid) reach the child;
+  # the wrapper traps INT/TERM so it can still record the status afterwards.
+  rawClassMethod: detachArgvJson: argvJson stdinFile: in stdoutFile: out stderrFile: err pidFile: pf exitFile: ef [
+    pragma: direct
+    local argv_json="$1" stdin_file="$2" stdout_file="$3" stderr_file="$4"
+    local pid_file="$5" exit_file="$6" wrapper tag="trash-detach" waited=0
+    local -a argv launcher
+
+    if ! printf '%s' "$argv_json" | jq -e '
+      type == "array" and length > 0 and
+      all(.[]; type == "string" and (contains("\u0000") | not))
+    ' >/dev/null; then
+      _throw "ToolError" "Invalid or empty argv JSON"
+      return 1
+    fi
+    if [[ -z "$stdout_file" || -z "$stderr_file" || -z "$pid_file" || -z "$exit_file" ]]; then
+      _throw "ToolError" "detachArgvJson: requires stdout, stderr, pid, and exit files"
+      return 1
+    fi
+    [[ -z "$stdin_file" ]] && stdin_file="/dev/null"
+    if [[ ! -r "$stdin_file" ]]; then
+      _throw "ToolError" "stdin file is not readable: $stdin_file"
+      return 1
+    fi
+
+    mapfile -d '' -t argv < <(
+      printf '%s' "$argv_json" | jq -jr '.[] | ., "\u0000"'
+    )
+
+    if command -v setsid >/dev/null 2>&1; then
+      launcher=(setsid)
+    else
+      # setsid(2) fails for a process group leader (which set -m makes us), so
+      # fork once more in that case, as setsid(1) itself does.
+      launcher=(perl -MPOSIX -e 'defined(POSIX::setsid()) or do { exit 0 if fork; POSIX::setsid() }; exec @ARGV')
+    fi
+
+    wrapper='trap "" HUP; trap ":" INT TERM; pf=$1; ef=$2; in=$3; out=$4; err=$5; shift 5; printf "%s\n" "$$" >"$pf.tmp" && mv -f "$pf.tmp" "$pf"; "$@" <"$in" >"$out" 2>"$err"; s=$?; printf "%s\n" "$s" >"$ef.tmp" && mv -f "$ef.tmp" "$ef"; exit "$s"'
+
+    rm -f "$pid_file" "$pid_file.tmp" "$exit_file" "$exit_file.tmp"
+
+    # set -m: the job gets its own process group and, unlike a plain
+    # non-interactive `&`, does not inherit SIGINT/SIGQUIT as ignored.
+    (
+      set -m
+      trap '' HUP
+      "${launcher[@]}" bash -c "$wrapper" "$tag" "$pid_file" "$exit_file" \
+        "$stdin_file" "$stdout_file" "$stderr_file" "${argv[@]}" \
+        </dev/null >/dev/null 2>&1 &
+      disown 2>/dev/null
+    )
+
+    while [[ ! -s "$pid_file" ]]; do
+      if (( waited >= 40 )); then
+        _throw "ToolError" "Detached process did not start"
+        return 1
+      fi
+      sleep 0.05
+      waited=$((waited + 1))
+    done
+    cat "$pid_file"
+  ]
+
+  # Detach into a run directory: stdout.log, stderr.log, pid, exit under runDir.
+  classMethod: detachArgvJson: argvJson stdinFile: stdinPath dir: runDir [
+    | out err pf ef pid |
+    @ File mkdir: runDir.
+    out := runDir , '/stdout.log'.
+    err := runDir , '/stderr.log'.
+    pf := runDir , '/pid'.
+    ef := runDir , '/exit'.
+    pid := @ self detachArgvJson: argvJson stdinFile: stdinPath stdoutFile: out stderrFile: err pidFile: pf exitFile: ef.
+    ^ pid
+  ]
+
+  # 'true' when the process exists (kill -0), 'false' otherwise.
+  rawClassMethod: isAlivePid: pid [
+    local pid="$1"
+    if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
+      echo "true"
+    else
+      echo "false"
+    fi
+  ]
+
+  # Send INT, TERM, or KILL to the whole process group led by pid.
+  rawClassMethod: interruptPid: pid signal: sig [
+    local pid="$1" sig="$2" group
+    case "$sig" in
+      INT|TERM|KILL) ;;
+      *)
+        _throw "ToolError" "Unsupported signal: $sig"
+        echo "false"
+        return 1
+        ;;
+    esac
+    if [[ ! "$pid" =~ ^[0-9]+$ ]]; then
+      echo "false"
+      return 1
+    fi
+    group="-$pid"
+    if kill "-$sig" "$group" 2>/dev/null; then
+      echo "true"
+    else
+      echo "false"
+    fi
+  ]
+
   # Run the tool asynchronously, returning a Future
   rawClassMethod: runAsync: args [
     local args="$1" toolName toolPath futureCmd
