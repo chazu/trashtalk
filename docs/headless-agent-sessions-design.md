@@ -865,7 +865,7 @@ through the run token in `TRASHTALK_RUN_TOKEN`:
 ```text
 trash-send AgentRun settle: <deliveryId>          # mark a delivery processed
 trash-send AgentRun settle: <deliveryId> note: <text>
-trash-send AgentRun result: <body>                # final result for this run
+trash-send AgentRun result: <body>                # reply in-thread to the delivery's sender
 trash-send AgentRun send: <body> to: <address>    # message a session, identity, or user
 trash-send AgentRun send: <body> to: <address> key: <idempotencyKey>
 trash-send AgentRun askUser: <question>           # blocking question; marks the delivery blocked
@@ -1103,18 +1103,37 @@ it. It becomes the entry point to a persistent assistant named Gusgus.
   it on first use. Sessions stay `open` indefinitely; `@@ --fresh` closes the
   current one and opens another.
 
-`@@ 'text'` persists a message from the user to that session with
-`expects_reply`, runs a foreground `AgentWorker tick` so no worker daemon is
-required, waits for the `result` message correlated to that delivery, and
-prints its body. If the harness is still working after a bounded wait, `@@`
-prints the message id and returns; the answer lands in the user's inbox.
-`@@ --async 'text'` returns immediately. `@@ --dry-run` still shows the
-assembled context, and `@@ --one-shot` keeps the current stateless path.
+`@@ 'text'` persists a message from the user to that session, runs a
+foreground `AgentWorker tick` so no worker daemon is required, prints the
+message id, and returns. It does not wait. Gusgus's answer arrives as an
+ordinary message in the user's inbox, in the same thread as the question,
+sent by the agent through `AgentRun result:` before it settles the delivery.
+The user reads and answers it with the existing inbox messages; Innards
+views come later.
 
-A second `@@` while Gusgus is working queues its message for the next
-process, which resumes the same conversation. The existing per-call context
-(working directory, last status, last result) is appended after the stable
-prefix as delivery context, so caching still applies across calls.
+```bash
+@@ 'why did the last build fail?'        # sends, launches Gusgus, returns
+inbox=$(@ Inbox named: 'chazu')
+@ $inbox list                             # Gusgus's reply appears here
+@ $inbox show: $msg
+@ $msg reply: 'try it with verbose on'    # lands in Gusgus's inbox, same thread
+@ $inbox thread: $msg                     # the whole exchange, oldest first
+```
+
+A reply addressed to an agent identity or session is itself a delivery:
+`Inbox deliver:` runs a foreground tick for the target session after saving
+the message, so answering Gusgus relaunches the conversation without a
+worker. A second message while Gusgus is working queues for the next
+process, which resumes the same conversation. Because settlement and the
+result message are both written by the agent, the answer lands in the inbox
+even if no tick runs afterwards; the worker's uncertain-on-exit fallback
+applies on the next tick, whenever that is.
+
+`@@ --dry-run` still shows the assembled context, `@@ --fresh` starts a new
+session, and `@@ --one-shot` keeps the current stateless path. The existing
+per-call context (working directory, last status, last result) is appended
+after the stable prefix as delivery context, so caching still applies across
+calls.
 
 Gusgus is the Phase 1a dogfood target alongside the test observer. It needs
 no event subscription, exercises resume on every call, and makes the
@@ -1240,16 +1259,18 @@ available.
   uncertain-on-exit fallback.
 - Add a foreground `AgentWorker tick` that reconciles a bounded batch; do
   not add another detached loop.
-- Add Gusgus: the identity, archetype, role, and profile records, plus the
-  `@@` routing, foreground tick, and wait-for-result path.
+- Add Gusgus: the identity, archetype, role, and profile records, the `@@`
+  send-and-tick path, and the tick-on-deliver hook so inbox replies relaunch
+  the session.
 
 Acceptance: a test.completed event wakes a test-observer archetype under a
 workspace-reader role. The agent settles the delivery and sends a durable
 result or question to the user through `trash-send` from inside the sandbox.
 A replayed wake does not create another logical send. A second delivery
-resumes the same Codex conversation in a new process. Two consecutive `@@`
-calls share one Gusgus conversation, and a second `@@` issued while it is
-working is answered by the next process.
+resumes the same Codex conversation in a new process. A `@@` question is
+answered by a message in the user's inbox in the same thread, an inbox
+reply to that message relaunches Gusgus with the conversation intact, and a
+second `@@` issued while it is working is answered by the next process.
 
 ### Phase 1b: initial usable session release
 
