@@ -17,8 +17,12 @@ if [[ -z "${BASH_VERSINFO:-}" || "${BASH_VERSINFO[0]}" -lt 4 ]]; then
     return 1 2>/dev/null || exit 1
 fi
 
-# Source dependencies quietly
-source "$SCRIPT_DIR/vendor/bsfl.sh" || { echo "Error: cannot load bsfl.sh" >&2; return 1; }
+# Source dependencies quietly. BSFL declares its colour variables readonly, so
+# sourcing it into a shell that already loaded the same version (a user's
+# .bash_profile, say) only produces "readonly variable" noise; skip it then.
+if [[ "${BSFL_VERSION:-}" != "0.1.0" ]] || ! declare -F msg_info >/dev/null 2>&1; then
+    source "$SCRIPT_DIR/vendor/bsfl.sh" || { echo "Error: cannot load bsfl.sh" >&2; return 1; }
+fi
 source "$SCRIPT_DIR/vendor/fun.sh" || { echo "Error: cannot load fun.sh" >&2; return 1; }
 source "$SCRIPT_DIR/vendor/sqlite-json.bash" || { echo "Error: cannot load sqlite-json.bash" >&2; return 1; }
 source "$SCRIPT_DIR/vendor/honker.bash" || { echo "Error: cannot load honker.bash" >&2; return 1; }
