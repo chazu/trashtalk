@@ -67,7 +67,7 @@ ClaudeAgent subclass: Agent
   # Send a message and optionally wait for response
   classMethod: sendMessage: message toSession: sessionName [
     | session response |
-    session := @ AgentSession findBySessionName: sessionName
+    session := @ TmuxSession findBySessionName: sessionName
     (session isEmpty) ifTrue: [
       _throw "AgentError" "Session not found: " sessionName
       ^ ""

@@ -1,4 +1,4 @@
-# AgentSession - Persistent metadata for agent conversation sessions
+# TmuxSession - Persistent metadata for agent conversation sessions
 # Tracks session state, hierarchy, and activity in SQLite
 # Maps to tmux sessions for active runtime state
 #
@@ -13,7 +13,7 @@
 #   context       - agent context/instructions
 #   messageCount  - number of messages in session
 #
-AgentSession subclass: Object
+TmuxSession subclass: Object
   include: Persistable
   instanceVars: sessionName:'' sessionType:primary agentType:'' spawnedBy:''
                 status:active created:'' lastActivity:'' context:''

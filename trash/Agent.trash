@@ -153,7 +153,7 @@ Agent subclass: Object
     # Check if session exists in tmux
     if @ Tools::Tmux sessionExists: "$sessionName"; then
       # Return existing session instance
-      session=$(@ AgentSession findBySessionName: "$sessionName")
+      session=$(@ TmuxSession findBySessionName: "$sessionName")
       if [[ -n "$session" ]]; then
         echo "$session"
         return
@@ -186,7 +186,7 @@ Agent subclass: Object
     @ Tools::Tmux createSession: "$sessionName" withCommand: "$toolCommand"
 
     # Create and store session metadata
-    session=$(@ AgentSession new)
+    session=$(@ TmuxSession new)
     @ $session setSessionName: "$sessionName"
     @ $session setAgentType: "$agentType"
     @ $session setSessionType: "$sessionType"
@@ -231,5 +231,5 @@ Agent subclass: Object
   rawClassMethod: listSessions [
     local agentType
     agentType=$(echo "$_RECEIVER" | tr '[:upper:]' '[:lower:]')
-    @ AgentSession findByAgentType: "$agentType"
+    @ TmuxSession findByAgentType: "$agentType"
   ]
