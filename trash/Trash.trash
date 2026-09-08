@@ -8,8 +8,8 @@ Trash subclass: Object
     echo "=== Trash System Information ==="
     echo "Version: 0.1.0"
     echo "Directory: $TRASHDIR"
-    echo "Objects: $(@ self listObjects | wc -l)"
-    echo "Traits: $(@ self listTraits | wc -l)"
+    echo "Objects: $(@ "$_RECEIVER" listObjects | wc -l)"
+    echo "Traits: $(@ "$_RECEIVER" listTraits | wc -l)"
     echo "Active Processes: $(@ Process listProcesses | wc -l)"
     echo "Database: $SQLITE_JSON_DB"
   ]
@@ -493,8 +493,8 @@ EOF
   # Show system statistics
   rawMethod: stats [
     echo "=== Trash System Statistics ==="
-    echo "Objects: $(@ self listObjects | wc -l)"
-    echo "Traits: $(@ self listTraits | wc -l)"
+    echo "Objects: $(@ "$_RECEIVER" listObjects | wc -l)"
+    echo "Traits: $(@ "$_RECEIVER" listTraits | wc -l)"
     echo "KV entries: $(kvlist 2>/dev/null | wc -l)"
     echo "Active processes: $(@ Process listProcesses 2>/dev/null | wc -l)"
     echo "Memory usage: $(du -sh "$TRASHDIR" | cut -f1)"
@@ -748,9 +748,9 @@ EOF
     echo "Size: $(wc -l < "$object_file") lines"
     echo "Modified: $(stat -f "%Sm" "$object_file" 2>/dev/null || stat -c "%y" "$object_file" 2>/dev/null)"
     echo ""
-    @ self hierarchyFor: "$object_name"
+    @ "$_RECEIVER" hierarchyFor: "$object_name"
     echo ""
-    @ self methodsFor: "$object_name"
+    @ "$_RECEIVER" methodsFor: "$object_name"
     echo ""
     traits=$(grep "^include" "$object_file" | awk '{print $2}')
     if [[ -n "$traits" ]]; then

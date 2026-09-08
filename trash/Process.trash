@@ -16,6 +16,11 @@ Process subclass: Object
     ^ id
   ]
 
+  # List running Process instances, one instance id per line
+  rawClassMethod: listProcesses [
+    @ Runtime dataForClass: Process | jq -r 'to_entries[] | select(.value.status == "running") | .key'
+  ]
+
   # Run the command in the foreground (blocking)
   # Captures stdout/stderr and exit code
   method: run [
