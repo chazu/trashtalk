@@ -19,7 +19,7 @@ CodexDriver subclass: AgentDriver
   ]
 
   rawClassMethod: model [
-    printf '%s\n' "${TRASHTALK_CODEX_MODEL:-gpt-5.4-mini}"
+    printf '%s\n' "${TRASHTALK_CODEX_MODEL:-gpt-5.6-terra}"
   ]
 
   rawClassMethod: codexPath [
@@ -42,6 +42,7 @@ CodexDriver subclass: AgentDriver
        "-c", "sandbox_mode=\"workspace-write\"",
        "-c", ("sandbox_workspace_write.writable_roots=[\"" + $tdir + "\"]"),
        "-c", ("model=\"" + $model + "\""),
+       "-c", "model_reasoning_effort=\"medium\"",
        "-o", $out, "-"]'
   ]
 

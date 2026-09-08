@@ -248,6 +248,56 @@ assert_eq "message survives inbox destroy" "keep me" "$(@ $smsg body)"
 
 # ==========================================
 echo ""
+echo "12. class unreadCount uses the current user's inbox"
+# ==========================================
+
+(
+    # Conflicting inboxes make a missing or incorrect owner resolution visible.
+    export TRASHTALK_USER=count-owner USER=count-fallback
+    one=$(@ Inbox send: 'first' to: count-owner from: test)
+    two=$(@ Inbox send: 'second' to: count-owner from: test)
+    @ Inbox send: 'fallback' to: count-fallback from: test >/dev/null
+    @ Inbox send: 'unrelated' to: count-other from: test >/dev/null
+    assert_eq "class count honors TRASHTALK_USER" "2" "$(@ Inbox unreadCount)"
+    @ "$one" markRead
+    assert_eq "class count excludes read messages" "1" "$(@ Inbox unreadCount)"
+    @ "$two" archive
+    assert_eq "class count excludes archived messages" "0" "$(@ Inbox unreadCount)"
+    unset TRASHTALK_USER
+    assert_eq "class count falls back to USER" "1" "$(@ Inbox unreadCount)"
+    export TRASHTALK_USER=''
+    assert_eq "empty TRASHTALK_USER falls back to USER" "1" "$(@ Inbox unreadCount)"
+    export TRASHTALK_USER=count-empty
+    assert_eq "class count returns zero for a new inbox" "0" "$(@ Inbox unreadCount)"
+    [[ $FAILED -eq 0 ]]
+) && pass "class unread count scenarios" || fail "class unread count scenarios" "all pass" "failure"
+
+echo ""
+echo "13. count measures visible messages, not stored inboxes"
+(
+    export TRASHTALK_USER=visible-count
+    target=$(@ Inbox named: visible-count)
+    @ Inbox send: 'unread' to: visible-count from: test >/dev/null
+    seen=$(@ Inbox send: 'read' to: visible-count from: test)
+    hidden=$(@ Inbox send: 'archived' to: visible-count from: test)
+    @ "$seen" markRead
+    @ "$hidden" archive
+    assert_eq "class count includes read and unread, excludes archived" "2" "$(@ Inbox count)"
+    assert_eq "instance count matches its visible messages" "2" "$(@ "$target" count)"
+    assert_eq "unread count remains separate" "1" "$(@ Inbox unreadCount)"
+    # Count must not inherit the message list's 50-row or browser's 200-row limit.
+    _db_sql "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<205)
+      INSERT INTO instances(id,data) SELECT 'message_count_fixture_' || i,
+      json_object('class','Message','to','bulk-count','status','unread','sentAt',i) FROM n;"
+    export TRASHTALK_USER=bulk-count
+    assert_eq "count is not limited by list pagination" "205" "$(@ Inbox count)"
+    export TRASHTALK_USER=visible-empty
+    assert_eq "empty inbox count is zero" "0" "$(@ Inbox count)"
+    [[ $FAILED -eq 0 ]]
+) && pass "visible message count scenarios" || fail "visible message count scenarios" "all pass" "failure"
+
+# ==========================================
+echo ""
 echo "=== Results ==="
 echo "  Passed: $PASSED"
 echo "  Failed: $FAILED"

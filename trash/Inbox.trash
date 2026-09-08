@@ -60,6 +60,23 @@ Inbox subclass: Object
     @ Store ensureIndex: 'msg_thread' path: '$.thread'
   ]
 
+  # Current user's inbox. Raw: reading the owner from the shell environment.
+  rawClassMethod: current [
+    @ Inbox named: "${TRASHTALK_USER:-$USER}"
+  ]
+
+  classMethod: unreadCount [
+    | inbox |
+    inbox := @ self current.
+    ^ @ inbox unreadCount
+  ]
+
+  classMethod: count [
+    | inbox |
+    inbox := @ self current.
+    ^ @ inbox count
+  ]
+
   # Names of every known inbox
   classMethod: names [
     | ids names n |
@@ -169,6 +186,15 @@ Inbox subclass: Object
     ^ @ self messages: 50
   ]
 
+  # All visible messages, including read messages, without a page limit.
+  method: count [
+    | ids arr |
+    ids := @ self messages: -1.
+    arr := @ String splitToArray: ids on: '
+'.
+    ^ arr arrayLength
+  ]
+
   # Every message in a thread, across inboxes, oldest first
   method: thread: threadId [
     | where |
@@ -219,10 +245,10 @@ Inbox subclass: Object
   # ------------------------------------------------------------------
 
   # Browse the current user's inbox.
-  rawClassMethod: browse [
-    local inbox
-    inbox=$(@ Inbox named: "${TRASHTALK_USER:-$USER}") || return 1
-    @ "$inbox" browse
+  classMethod: browse [
+    | inbox |
+    inbox := @ self current.
+    ^ @ inbox browse
   ]
 
   # Interactive loop over inpick / inpage / inmacs (with fzf and $EDITOR
@@ -238,6 +264,11 @@ Inbox subclass: Object
       [[ "$outcome" == selected ]] || break
       msg=$(printf '%s' "$result" | jq -r '.selection.id // empty')
       [[ -n "$msg" ]] || break
+      action=$(printf '%s' "$result" | jq -r '.action // empty')
+      if [[ "$action" == archive ]]; then
+        @ "$msg" archive >/dev/null
+        continue
+      fi
       @ "$msg" markRead >/dev/null
       while true; do
         action=$(@ "$_RECEIVER" pickActionFor: "$msg" in: "$preview_dir")
@@ -287,9 +318,9 @@ Inbox subclass: Object
     records=$(cat "$dir/records.jsonl")
     title="Inbox $name"
     if [[ "$(@ Tools::Inpick isInstalled)" == true ]]; then
-      @ Tools::Inpick selectRecords: "$records" root: "$dir" query: "" title: "$title"
+      @ Tools::Inpick selectRecords: "$records" root: "$dir" query: "" title: "$title" controlDAction: archive
     else
-      @ Tools::Inpick fallbackSelectRecords: "$records" query: "" title: "$title"
+      @ Tools::Inpick fallbackSelectRecords: "$records" query: "" title: "$title" controlDAction: archive
     fi
   ]
 
@@ -407,10 +438,12 @@ Inbox subclass: Object
     echo "  @ Inbox alert: 'disk 95%' to: 'chazu' from: 'cron'          # kind: alert"
     echo ""
     echo "Read:"
+    echo "  @ Inbox count               # non-archived messages in your inbox"
+    echo "  @ Inbox unreadCount         # unread in your current user's inbox"
     echo "  inbox=\$(@ Inbox named: 'chazu')"
     echo "  @ \$inbox list               # unread, one line each"
     echo "  @ \$inbox show: \$msgId       # full message, marks read"
-    echo "  @ \$inbox unread | unreadCount | questions | messages | messages: 10"
+    echo "  @ \$inbox count | unread | unreadCount | questions | messages | messages: 10"
     echo "  @ \$inbox thread: \$msgId     # whole thread, oldest first"
     echo "  @ \$inbox readAll"
     echo "  @ \$msgId reply: 'yes'       # to sender, same thread"
@@ -418,6 +451,7 @@ Inbox subclass: Object
     echo "Browse (Innards, with fzf/\$EDITOR fallbacks):"
     echo "  @ Inbox browse               # your inbox: pick, read thread, reply or archive"
     echo "  @ \$inbox browse"
+    echo "  Ctrl-D archives the highlighted message; Enter opens its actions."
     echo ""
     echo "Wakeups (needs honker):"
     echo "  handler=\$(@ Block params: '[\"payload\"]' code: 'echo \"\$payload\"' captured: '{}')"

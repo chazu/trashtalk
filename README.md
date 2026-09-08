@@ -420,11 +420,19 @@ inbox=$(@ Inbox named: "$USER")
 ```
 
 `@ Inbox browse` opens your inbox in Innards: `inpick` lists the messages
-with a rendered preview of each, selecting one shows the whole thread in
-`inpage`, and a second picker offers reply, archive, or back. Reply composes
+with a rendered preview of each. **Ctrl-D** archives the highlighted message
+and refreshes the inbox; archived messages remain available in their threads.
+**Enter** opens actions for reply, viewing the thread in `inpage`, archive,
+or back. Reply composes
 in `inmacs` and sends the saved text into the thread, which resumes Gusgus
 when the message came from a session. Without Innards the same loop falls
 back to `fzf` and `$EDITOR`.
+
+`@ Inbox count` returns the total non-archived messages for the same inbox
+(`TRASHTALK_USER`, falling back to `$USER`), including read messages.
+`@ Inbox unreadCount` counts only unread messages. Both counts also work on
+a specific inbox instance. Use `@ Store countByClass: Inbox` to count inbox
+records themselves.
 
 Each `@@` becomes an `AgentDelivery` on the workspace's `AgentSession`; the
 `AgentWorker` launches one `codex exec` process per delivery (resuming the
@@ -434,7 +442,8 @@ Trashtalk store. Inside that process the agent reports back with
 its environment. A message sent while Gusgus is busy waits for the next
 process. Nothing runs in the background between deliveries; `@@` and inbox
 replies drive the worker, and `@ AgentWorker tick` reconciles any session by
-hand. Configure with `TRASHTALK_CODEX_MODEL` (default `gpt-5.4-mini`),
+hand. Gusgus uses medium reasoning effort. Configure with
+`TRASHTALK_CODEX_MODEL` (default `gpt-5.6-terra`),
 `TRASHTALK_USER` (your inbox name, default `$USER`), and
 `TRASHTALK_GUSGUS_PROFILE` (`assistant-low-power`, or `shell` to drive the
 loop with a script in `TRASHTALK_SHELL_DRIVER` for testing). The design is in

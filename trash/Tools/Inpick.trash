@@ -8,6 +8,10 @@ Inpick subclass: Tool
   ]
 
   classMethod: selectRecords: records root: root query: query title: title [
+    ^ @ self selectRecords: records root: root query: query title: title controlDAction: ''
+  ]
+
+  classMethod: selectRecords: records root: root query: query title: title controlDAction: action [
     | argv toolPath |
     toolPath := @ self path.
     argv := #(toolPath '--result-json' '--root' root) asJson.
@@ -19,25 +23,41 @@ Inpick subclass: Tool
       argv := argv arrayPush: '--title'.
       argv := argv arrayPush: title
     ].
+    action notEmpty ifTrue: [
+      argv := argv arrayPush: '--ctrl-d-action'.
+      argv := argv arrayPush: action
+    ].
 
     ^ @ self runArgvJson: argv input: records
   ]
 
   # fzf/plain-terminal fallback is inherently a terminal process boundary.
   # Records stay encoded as JSON; fzf only chooses a presentation row.
-  rawClassMethod: fallbackSelectRecords: records query: query title: title [
+  classMethod: fallbackSelectRecords: records query: query title: title [
     pragma: direct
-    local records="$1" query="$2" title="$3" selected encoded selection status
+    ^ @ self fallbackSelectRecords: records query: query title: title controlDAction: ''
+  ]
+
+  rawClassMethod: fallbackSelectRecords: records query: query title: title controlDAction: action [
+    pragma: direct
+    local records="$1" query="$2" title="$3" action="$4" selected encoded selection status key="" chosen_action=""
+    local -a extra=()
+    [[ -z "$action" ]] || extra=('--expect=ctrl-d' "--header=Ctrl-D $action")
     if command -v fzf >/dev/null 2>&1; then
       selected=$(printf '%s\n' "$records" | jq -r \
         '[.label, .kind, (.detail // ""), (tojson | @base64)] | @tsv' | \
-        fzf --delimiter=$'\t' --with-nth=1,2,3 --query="$query" --prompt="${title:-browse}> ")
+        fzf --delimiter=$'\t' --with-nth=1,2,3 --query="$query" --prompt="${title:-browse}> " "${extra[@]}")
       status=$?
+      if [[ -n "$action" ]]; then
+        key="${selected%%$'\n'*}"
+        selected="${selected#*$'\n'}"
+        [[ "$key" != 'ctrl-d' ]] || chosen_action="$action"
+      fi
       if [[ $status -eq 0 && -n "$selected" ]]; then
         encoded="${selected##*$'\t'}"
         selection=$(jq -rn --arg encoded "$encoded" '$encoded | @base64d | fromjson')
-        jq -cn --argjson selection "$selection" \
-          '{schema_version:1,outcome:"selected",selection:$selection}'
+        jq -cn --argjson selection "$selection" --arg action "$chosen_action" \
+          '{schema_version:1,outcome:"selected",selection:$selection} + (if $action == "" then {} else {action:$action} end)'
         return 0
       fi
       jq -cn '{schema_version:1,outcome:"cancelled",selection:null}'

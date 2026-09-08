@@ -7,7 +7,8 @@
 # Environment:
 #   TRASHTALK_USER            owner inbox name (default: $USER)
 #   TRASHTALK_GUSGUS_PROFILE  backend profile (default: assistant-low-power -> Codex)
-#   TRASHTALK_CODEX_MODEL     model for the Codex driver (default: gpt-5.4-mini)
+#   TRASHTALK_CODEX_MODEL     model for the Codex driver (default: gpt-5.6-terra)
+# The Codex driver uses medium reasoning effort.
 Gusgus subclass: Object
 
   rawClassMethod: owner [

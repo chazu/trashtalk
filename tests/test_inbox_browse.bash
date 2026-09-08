@@ -33,6 +33,11 @@ if [[ -s "$PICK_QUEUE" ]]; then
     pick=$(head -n 1 "$PICK_QUEUE")
     tail -n +2 "$PICK_QUEUE" > "$PICK_QUEUE.next" && mv "$PICK_QUEUE.next" "$PICK_QUEUE"
 fi
+action=""
+if [[ "$pick" == archive:* ]]; then
+    action=archive
+    pick="${pick#archive:}"
+fi
 selection=""
 if [[ -n "$pick" ]]; then
     selection=$(printf '%s\n' "$records" | jq -c --arg id "$pick" 'select(.id == $id)' | head -1)
@@ -41,7 +46,8 @@ if [[ -z "$selection" ]]; then
     jq -cn '{schema_version:1,outcome:"cancelled",selection:null}'
     exit 130
 fi
-jq -cn --argjson selection "$selection" '{schema_version:1,outcome:"selected",selection:$selection}'
+jq -cn --argjson selection "$selection" --arg action "$action" \
+    '{schema_version:1,outcome:"selected",selection:$selection} + (if $action == "" then {} else {action:$action} end)'
 FAKE
 chmod +x "$FAKE_BIN/inpick"
 
@@ -165,6 +171,35 @@ echo "4. class-side browse uses the current user's inbox"
 : > "$CAPTURE_PICKER_ARGV"; : > "$PICK_QUEUE"
 TRASHTALK_USER=tester @ Inbox browse >/dev/null 2>&1
 assert_contains "class browse opened the user's inbox" "Inbox tester" "$(cat "$CAPTURE_PICKER_ARGV")"
+
+echo ""
+echo "5. Ctrl-D archives directly from the message list and preserves the thread"
+
+direct=$(@ Inbox send: 'hide this message' to: tester from: alice)
+: > "$CAPTURE_RECORDS"; : > "$CAPTURE_PICKER_ARGV"
+printf 'archive:%s\n' "$direct" > "$PICK_QUEUE"
+@ $inbox browse >/dev/null 2>&1
+assert_eq "direct archive persists" "archived" "$(@ $direct status)"
+assert_contains "list enables the archive key" $'--ctrl-d-action\narchive' "$(cat "$CAPTURE_PICKER_ARGV")"
+assert_eq "direct archive never opens the action menu" "0" "$(grep -c 'From alice' "$CAPTURE_PICKER_ARGV")"
+assert_eq "archived message only appears in the initial list" "1" "$(jq -r --arg id "$direct" 'select(.id == $id) | .id' "$CAPTURE_RECORDS" | grep -c .)"
+assert_eq "archive preserves the message in its thread" "$direct" "$(@ $inbox thread: "$direct")"
+assert_eq "archive does not mark an unread message read" "" "$(@ $direct readAt)"
+
+echo ""
+echo "6. fzf fallback returns the same archive action"
+cat > "$FAKE_BIN/fzf" <<'FAKE'
+#!/usr/bin/env bash
+printf '%s\n' "$@" > "$CAPTURE_PICKER_ARGV"
+printf 'ctrl-d\n'
+head -n 1
+FAKE
+chmod +x "$FAKE_BIN/fzf"
+record=$(jq -cn --arg id "$q1" '{schema_version:1,id:$id,path:"message.txt",line:1,column:1,label:"question",kind:"question"}')
+result=$(@ Tools::Inpick fallbackSelectRecords: "$record" query: '' title: Inbox controlDAction: archive)
+assert_eq "fallback reports archive" "archive" "$(printf '%s' "$result" | jq -r .action)"
+assert_eq "fallback preserves message identity" "$q1" "$(printf '%s' "$result" | jq -r .selection.id)"
+assert_contains "fallback binds Ctrl-D" '--expect=ctrl-d' "$(cat "$CAPTURE_PICKER_ARGV")"
 
 echo ""
 echo "=== Results: $PASSED passed, $FAILED failed ==="
