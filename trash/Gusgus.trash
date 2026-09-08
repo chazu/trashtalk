@@ -105,6 +105,7 @@ Gusgus subclass: Object
     echo "  @@ --one-shot 'question'     # stateless one-shot path (Axe/Codex)"
     echo "  @@ --dry-run 'question'      # show the one-shot context without a model call"
     echo ""
+    echo "  @ Inbox browse               # Innards UI: read replies, respond in-thread"
     echo "  inbox=\$(@ Inbox named: \"\$USER\")"
     echo "  @ \$inbox list                # Gusgus's replies"
     echo "  @ \$msg reply: 'and then?'    # continues the same conversation"

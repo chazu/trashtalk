@@ -215,6 +215,142 @@ Inbox subclass: Object
   ]
 
   # ------------------------------------------------------------------
+  # Innards UI: pick a message, read its thread, reply or archive
+  # ------------------------------------------------------------------
+
+  # Browse the current user's inbox.
+  rawClassMethod: browse [
+    local inbox
+    inbox=$(@ Inbox named: "${TRASHTALK_USER:-$USER}") || return 1
+    @ "$inbox" browse
+  ]
+
+  # Interactive loop over inpick / inpage / inmacs (with fzf and $EDITOR
+  # fallbacks). Returns when the picker is cancelled. Prints the final outcome.
+  rawMethod: browse [
+    local preview_dir result outcome msg action
+    preview_dir=$(mktemp -d "${TMPDIR:-/tmp}/trash-inbox.XXXXXX")
+    while true; do
+      result=$(@ "$_RECEIVER" pickMessageIn: "$preview_dir")
+      outcome=$(printf '%s' "$result" | jq -r '.outcome // "cancelled"')
+      [[ "$outcome" == selected ]] || break
+      msg=$(printf '%s' "$result" | jq -r '.selection.id // empty')
+      [[ -n "$msg" ]] || break
+      @ "$_RECEIVER" readThreadOf: "$msg"
+      action=$(@ "$_RECEIVER" pickActionFor: "$msg")
+      case "$action" in
+        reply) @ "$_RECEIVER" composeReplyTo: "$msg" >/dev/null ;;
+        archive) @ "$msg" archive >/dev/null ;;
+        *) ;;
+      esac
+    done
+    rm -rf "$preview_dir"
+    printf '%s\n' "$outcome"
+  ]
+
+  # One picker record per recent message, newest first, with a rendered
+  # preview file the picker can show beside the list.
+  rawMethod: pickMessageIn: previewDir [
+    local dir="$1" ids m kind from subject body status created marker preview label name title records
+    name=$(_ivar name)
+    : > "$dir/records.jsonl"
+    ids=$(@ "$_RECEIVER" messages: 200)
+    for m in $ids; do
+      kind=$(@ "$m" kind)
+      from=$(@ "$m" from)
+      subject=$(@ "$m" subject)
+      body=$(@ "$m" body)
+      status=$(@ "$m" status)
+      created=$(@ "$m" created)
+      marker=" "
+      [[ "$status" == unread ]] && marker="*"
+      preview="$subject"
+      [[ -n "$preview" ]] || preview=$(printf '%s\n' "$body" | head -n 1)
+      preview="${preview:0:72}"
+      @ "$m" show > "$dir/$m.txt" 2>/dev/null
+      label=$(printf '%s [%s] %s: %s' "$marker" "$kind" "$from" "$preview")
+      jq -cn --arg id "$m" --arg label "$label" --arg kind "$kind" \
+        --arg detail "$status  $created" --arg path "$m.txt" \
+        '{schema_version:1,id:$id,path:$path,line:1,column:1,label:$label,kind:$kind,detail:$detail}' \
+        >> "$dir/records.jsonl"
+    done
+    if [[ ! -s "$dir/records.jsonl" ]]; then
+      printf '%s\n' "Inbox $name is empty" >&2
+      jq -cn '{schema_version:1,outcome:"cancelled",selection:null}'
+      return 0
+    fi
+    records=$(cat "$dir/records.jsonl")
+    title="Inbox $name"
+    if [[ "$(@ Tools::Inpick isInstalled)" == true ]]; then
+      @ Tools::Inpick selectRecords: "$records" root: "$dir" query: "" title: "$title"
+    else
+      @ Tools::Inpick fallbackSelectRecords: "$records" query: "" title: "$title"
+    fi
+  ]
+
+  # Show the whole thread in inpage (or plain stdout) and mark the message read.
+  rawMethod: readThreadOf: messageId [
+    local msg="$1" thread text m rule
+    thread=$(@ "$msg" thread)
+    rule="----------------------------------------"
+    text=$(for m in $(@ "$_RECEIVER" thread: "$thread"); do @ "$m" show; printf '\n%s\n\n' "$rule"; done)
+    @ "$msg" markRead >/dev/null
+    if [[ "$(@ Tools::Inpage isInstalled)" == true ]]; then
+      @ Tools::Inpage viewText: "$text" title: "Thread $thread" >/dev/null
+    else
+      printf '%s\n' "$text"
+    fi
+  ]
+
+  # Second picker: what to do with the selected message. Prints reply, archive, or back.
+  rawMethod: pickActionFor: messageId [
+    local msg="$1" records result outcome title
+    records=$(jq -cn '
+      {schema_version:1,id:"reply",label:"Reply in this thread",kind:"action",detail:"compose with inmacs"},
+      {schema_version:1,id:"archive",label:"Archive",kind:"action",detail:"hide it from the inbox"},
+      {schema_version:1,id:"back",label:"Back to inbox",kind:"action",detail:""}')
+    title="Message $msg"
+    if [[ "$(@ Tools::Inpick isInstalled)" == true ]]; then
+      result=$(@ Tools::Inpick selectRecords: "$records" root: "." query: "" title: "$title")
+    else
+      result=$(@ Tools::Inpick fallbackSelectRecords: "$records" query: "" title: "$title")
+    fi
+    outcome=$(printf '%s' "$result" | jq -r '.outcome // "cancelled"')
+    if [[ "$outcome" != selected ]]; then echo back; return 0; fi
+    printf '%s' "$result" | jq -r '.selection.id // "back"'
+  ]
+
+  # Compose a reply in inmacs (or $EDITOR) and send it into the thread. Prints
+  # the new message id, or the editor outcome when nothing was sent.
+  rawMethod: composeReplyTo: messageId [
+    local msg="$1" draft result outcome text reply from
+    draft=$(mktemp "${TMPDIR:-/tmp}/trash-reply.XXXXXX")
+    from=$(@ "$msg" from)
+    if [[ "$(@ Tools::Inmacs isInstalled)" == true ]]; then
+      result=$(@ Tools::Inmacs composeInto: "$draft" title: "Reply to $from")
+      outcome=$(printf '%s' "$result" | jq -r '.outcome // "cancelled"')
+    else
+      @ Tools::Inmacs fallbackEditFile: "$draft" line: ""
+      outcome="saved"
+      [[ -s "$draft" ]] || outcome="cancelled"
+    fi
+    if [[ "$outcome" != saved ]]; then
+      rm -f "$draft"
+      printf '%s\n' "$outcome"
+      return 0
+    fi
+    text=$(cat "$draft")
+    rm -f "$draft"
+    if [[ -z "$(printf '%s' "$text" | tr -d '[:space:]')" ]]; then
+      echo "empty"
+      return 0
+    fi
+    reply=$(@ "$msg" reply: "$text") || return 1
+    printf '%s\n' "Reply sent to $from as $reply" >&2
+    printf '%s\n' "$reply"
+  ]
+
+  # ------------------------------------------------------------------
   # Wakeups (honker)
   # ------------------------------------------------------------------
 
@@ -269,6 +405,10 @@ Inbox subclass: Object
     echo "  @ \$inbox thread: \$msgId     # whole thread, oldest first"
     echo "  @ \$inbox readAll"
     echo "  @ \$msgId reply: 'yes'       # to sender, same thread"
+    echo ""
+    echo "Browse (Innards, with fzf/\$EDITOR fallbacks):"
+    echo "  @ Inbox browse               # your inbox: pick, read thread, reply or archive"
+    echo "  @ \$inbox browse"
     echo ""
     echo "Wakeups (needs honker):"
     echo "  handler=\$(@ Block params: '[\"payload\"]' code: 'echo \"\$payload\"' captured: '{}')"

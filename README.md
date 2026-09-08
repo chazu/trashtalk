@@ -419,6 +419,13 @@ inbox=$(@ Inbox named: "$USER")
 @ Gusgus help
 ```
 
+`@ Inbox browse` opens your inbox in Innards: `inpick` lists the messages
+with a rendered preview of each, selecting one shows the whole thread in
+`inpage`, and a second picker offers reply, archive, or back. Reply composes
+in `inmacs` and sends the saved text into the thread, which resumes Gusgus
+when the message came from a session. Without Innards the same loop falls
+back to `fzf` and `$EDITOR`.
+
 Each `@@` becomes an `AgentDelivery` on the workspace's `AgentSession`; the
 `AgentWorker` launches one `codex exec` process per delivery (resuming the
 stored conversation after the first), sandboxed to the workspace plus the

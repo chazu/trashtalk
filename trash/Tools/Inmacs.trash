@@ -24,6 +24,18 @@ Inmacs subclass: Tool
     ^ @ self runArgvJson: argv
   ]
 
+  # Compose free text from an empty buffer; saved content lands in outputPath.
+  classMethod: composeInto: outputPath title: title [
+    | argv toolPath |
+    toolPath := @ self path.
+    argv := #(toolPath '--stdin' '--result-json' '-o' outputPath '--syntax' 'markdown' '--tab-width' '2') asJson.
+    title notEmpty ifTrue: [
+      argv := argv arrayPush: '--title'.
+      argv := argv arrayPush: title
+    ].
+    ^ @ self runArgvJson: argv input: ''
+  ]
+
   # External editors do not implement the Innards result contract. This narrow
   # OS boundary keeps descriptor routing and editor-specific line arguments out
   # of Trash's edit workflow.
