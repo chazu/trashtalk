@@ -20,7 +20,8 @@ Trash subclass: Object
   ]
 
   # Diagnose the environment: bash, required tools, sqlite3 extension support,
-  # and whether classes have been compiled. Exits non-zero if any check fails.
+  # and whether classes have been compiled. Installs Maki when missing.
+  # Exits non-zero if any required check or the Maki installation fails.
   rawMethod: doctor [
     local ok=0 warn=0 bad=0
     local g='\033[0;32m' y='\033[0;33m' r='\033[0;31m' n='\033[0m'
@@ -66,15 +67,22 @@ Trash subclass: Object
       _d_warn "ininspect not found; objects retain textual inspect output"
     fi
 
-    # The selected @@ backend is optional. Installation and authentication stay
+    # Maki installation is automated; provider login remains interactive.
+    if @ Maki ensure >/dev/null; then
+      _d_ok "Maki found ($(@ Maki path)); $(@ Maki version)"
+    else
+      _d_bad "Maki installation/check failed; retry with: @ Maki install"
+    fi
+
+    # The selected one-shot backend is optional. Installation and authentication stay
     # explicit because they belong to the external harness.
     local agent_backend="${TRASHTALK_AGENT_BACKEND:-axe}" agent_auth
     case "$agent_backend" in
       codex|CodexAgent)
         if command -v codex >/dev/null 2>&1; then
-          _d_ok "Codex found ($(command -v codex)); @@ backend selected"
+          _d_ok "Codex found ($(command -v codex)); one-shot Agent backend selected"
           if agent_auth=$(codex login status 2>&1) && [[ "$agent_auth" == *ChatGPT* ]]; then
-            _d_ok "$agent_auth; subscription-backed @@ is available"
+            _d_ok "$agent_auth; subscription-backed one-shot Agent is available"
           else
             _d_warn "Codex is not authenticated with ChatGPT; run: codex login (${agent_auth:-status unavailable})"
           fi
@@ -84,13 +92,13 @@ Trash subclass: Object
         ;;
       axe|AxeAgent)
         if command -v axe >/dev/null 2>&1; then
-          _d_ok "Axe found ($(command -v axe)); @@ backend selected"
+          _d_ok "Axe found ($(command -v axe)); one-shot Agent backend selected"
         else
           _d_warn "Axe backend selected but axe is not installed (install explicitly with: go install github.com/jrswab/axe@latest)"
         fi
         ;;
       *)
-        _d_warn "Unknown TRASHTALK_AGENT_BACKEND '$agent_backend'; @@ falls back to AxeAgent"
+        _d_warn "Unknown TRASHTALK_AGENT_BACKEND '$agent_backend'; one-shot Agent falls back to AxeAgent"
         ;;
     esac
     if command -v indiff >/dev/null 2>&1 && command -v patch >/dev/null 2>&1; then

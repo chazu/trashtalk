@@ -6,6 +6,28 @@ longer-term plan.
 
 ## Daily use
 
+### Maki installation and login
+
+```bash
+@ Trash doctor                         # installs Maki if missing; checks its executable
+@ Maki version
+@ Maki loginToProvider: 'openai'         # interactive Maki provider login
+@ Maki authStatus
+```
+
+`Maki` is a `Tool` subclass. Installation uses the [official Maki installer](https://maki.sh/)
+and defaults to `~/.local/bin` (`MAKI_INSTALL_DIR` overrides the destination).
+The wrapper finds that directory even if it is not on PATH; add it to PATH
+to invoke `maki` directly. An existing working executable is kept as-is.
+Installation failures make doctor fail; doctor never starts a provider login.
+`@ Maki install` explicitly installs the latest release. Login inherits your
+terminal and returns Maki's exit status.
+
+This wrapper prepares the CLI. Gusgus still uses its configured Codex driver;
+Maki session execution needs a separate driver.
+
+### Sessions and inboxes
+
 ```bash
 @ AgentSession browse             # all sessions, grouped by their own identity/workspace
 session=$(@ Gusgus sessionFor: "$PWD")

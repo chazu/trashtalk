@@ -1,0 +1,97 @@
+# Maki - Tool wrapper for the stock Maki CLI.
+# Top-level name supports @ Maki loginToProvider: 'openai'. This is installation
+# and authentication support; session execution still belongs to AgentDriver.
+Maki subclass: Tool
+
+  classMethod: name [
+    ^ 'maki'
+  ]
+
+  # OS boundary: match the official installer's user-local destination.
+  rawClassMethod: installDirectory [
+    printf '%s\n' "${MAKI_INSTALL_DIR:-$HOME/.local/bin}"
+  ]
+
+  # Find user-local installs even before the user adds that directory to PATH.
+  rawClassMethod: path [
+    local executable directory
+    executable=$(command -v maki) && { printf '%s\n' "$executable"; return; }
+    directory=$(@ "$_RECEIVER" installDirectory)
+    [[ -x "$directory/maki" ]] && printf '%s\n' "$directory/maki"
+    return 0
+  ]
+
+  classMethod: installCommand [
+    ^ '@ Maki install'
+  ]
+
+  # Download and run the official installer in a disposable directory. Raw:
+  # filesystem cleanup, process exit propagation, and installer environment.
+  rawClassMethod: install [
+    (
+      local directory scratch
+      directory=$(@ "$_RECEIVER" installDirectory) || exit 1
+      mkdir -p "$directory" && [[ -w "$directory" ]] || {
+        _throw 'InstallError' "Maki install directory is not writable: $directory"
+        exit 1
+      }
+      scratch=$(mktemp -d "${TMPDIR:-/tmp}/trash-maki-install.XXXXXX") || exit 1
+      trap 'rm -rf "$scratch"' EXIT
+      curl -fsSL '--connect-timeout' 15 '--max-time' 120 'https://maki.sh/install.sh' -o "$scratch/install.sh" || exit 1
+      sh -n "$scratch/install.sh" || exit 1
+      MAKI_INSTALL_DIR="$directory" sh "$scratch/install.sh" >&2 || exit 1
+      [[ -x "$directory/maki" ]] && "$directory/maki" --version >&2 || {
+        _throw 'InstallError' 'Maki installer did not produce a working executable'
+        exit 1
+      }
+      echo true
+    )
+  ]
+
+  # Raw: preserve installation failures and keep ensure's stdout boolean-only.
+  rawClassMethod: ensure [
+    local executable
+    executable=$(@ "$_RECEIVER" path)
+    if [[ -z "$executable" ]]; then
+      @ "$_RECEIVER" install >/dev/null || return 1
+      executable=$(@ "$_RECEIVER" path)
+    fi
+    [[ -n "$executable" ]] && "$executable" --version >/dev/null 2>&1 || {
+      _throw 'ToolError' 'Maki executable is missing or cannot run'
+      return 1
+    }
+    echo true
+  ]
+
+  classMethod: version [
+    | executable argv |
+    executable := @ self path.
+    executable isEmpty ifTrue: [^ 'not installed'].
+    argv := #(executable '--version') asJson.
+    ^ @ self runArgvJson: argv
+  ]
+
+  classMethod: authStatus [
+    | executable argv |
+    executable := @ self path.
+    executable isEmpty ifTrue: [^ 'not installed'].
+    argv := #(executable 'auth' 'status') asJson.
+    ^ @ self runArgvJson: argv
+  ]
+
+  # Interactive OS boundary: preserve terminal input/output and the CLI exit
+  # status. Do not capture the login prompts or interpolate shell commands.
+  rawClassMethod: loginToProvider: provider [
+    pragma: direct
+    local executable pattern='^[a-zA-Z0-9][a-zA-Z0-9_-]*$'
+    [[ "$1" =~ $pattern ]] || {
+      _throw 'ArgumentError' 'Expected a provider name such as openai'
+      return 2
+    }
+    executable=$(@ "$_RECEIVER" path)
+    [[ -n "$executable" ]] || {
+      _throw 'ToolError' 'Maki is not installed; run @ Trash doctor or @ Maki install'
+      return 127
+    }
+    "$executable" auth login "$1"
+  ]

@@ -4,6 +4,9 @@
 
 ### Added
 
+- `Maki` Tool class with version/authentication checks and interactive
+  `loginToProvider:`. `Trash doctor` installs Maki when missing using the
+  official installer and verifies the resulting executable.
 - A durable agent-routing outbox, committed atomically with each delivered
   message. Routing replay preserves delivery identity and attempt history.
 - A continuously running `bin/trash-worker`, with launchd and systemd user

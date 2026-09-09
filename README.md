@@ -104,6 +104,9 @@ If anything misbehaves, run the built-in diagnostics first:
 It checks bash version (needs 4.0+), required tools (`jo`/`jq`/`sqlite3`/`uuidgen`),
 whether the sqlite3 in use can load the optional honker extension, and whether
 classes have been compiled — and prints a clear OK/WARN/FAIL line for each.
+It also installs Maki when missing, using the official installer in
+`~/.local/bin` (override with `MAKI_INSTALL_DIR`), and verifies the executable.
+Provider login is separate: `@ Maki loginToProvider: 'openai'`.
 
 Common fixes:
 
