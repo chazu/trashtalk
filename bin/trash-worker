@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Foreground worker for a user-service supervisor. Children detach independently.
+set -uo pipefail
+TRASHTALK_DIR="${TRASHTALK_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+export TRASHTALK_DIR
+# A service must not inherit a terminal shell's object cache or cleanup owner.
+unset TRASH_SESSION_ID
+source "$TRASHTALK_DIR/lib/trash.bash" || exit 1
+case "${1:-run}" in
+  --once) @ AgentWorker tick; exit $? ;;
+  run) ;;
+  *) printf '%s\n' 'Usage: trash-worker [run|--once]' >&2; exit 2 ;;
+esac
+interval=${TRASHTALK_WORKER_INTERVAL:-1}
+[[ "$interval" =~ ^[0-9]+([.][0-9]+)?$ && "$interval" == *[1-9]* ]] || { echo 'Invalid worker interval' >&2; exit 2; }
+# Exiting the worker never signals an independently detached harness.
+trap 'exit 0' INT TERM HUP
+while :; do
+  @ AgentWorker tick >/dev/null || printf '%s\n' 'AgentWorker tick failed; will retry' >&2
+  sleep "$interval" &
+  wait "$!" || true
+done

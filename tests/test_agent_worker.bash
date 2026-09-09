@@ -121,7 +121,7 @@ echo "3. a process that exits without settling leaves the delivery uncertain"
 export TRASHTALK_SHELL_DRIVER="$AGENT_NO_SETTLE"
 msg3=$(@ Gusgus chat: 'third' workingDirectory: "$TRASHTALK_DIR" status: 0 lastResult: '' 2>/dev/null)
 settle_session "$session" && pass "third run finished" || fail "third run finished" "no active run" "$(@ $session activeRun)"
-run3=$(@ Store findByClass: AgentRun where: "json_extract(data, '\$.session') = '$session'" orderBy: 'created_at DESC' limit: 1)
+run3=$(@ Store findByClass: AgentRun where: "json_extract(data, '\$.session') = '$session'" orderBy: 'created_at DESC, rowid DESC' limit: 1)
 assert_eq "run is unsettled" "unsettled" "$(@ $run3 state)"
 d3=$(@ AgentDelivery offeredFor: "$run3")
 assert_empty "no delivery still offered on the run" "$d3"
@@ -135,13 +135,16 @@ assert_eq "kinds are alert and result" "alert result " "$kinds"
 
 # ==========================================
 echo ""
-echo "4. a failing process retries once, then stalls with an alert; a human skips it"
+@ $session skip: "$d3" note: "reviewed the unsettled test result" >/dev/null
+@ $owner_inbox readAll >/dev/null
+
+echo "4. a failure before process launch retries once, then stalls with an alert; a human skips it"
 # ==========================================
 
-export TRASHTALK_SHELL_DRIVER="$AGENT_CRASH"
+export TRASHTALK_SHELL_DRIVER=""
 msg4=$(@ Gusgus chat: 'fourth' workingDirectory: "$TRASHTALK_DIR" status: 0 lastResult: '' 2>/dev/null)
-d4=$(@ Store findByClass: AgentDelivery where: "json_extract(data, '\$.session') = '$session'" orderBy: 'created_at DESC' limit: 1)
-# First attempt: process exits 1 -> run failed -> delivery back to pending.
+d4=$(@ Store findByClass: AgentDelivery where: "json_extract(data, '\$.session') = '$session'" orderBy: 'created_at DESC, rowid DESC' limit: 1)
+# First attempt: missing driver command -> run failed -> delivery back to pending.
 for i in $(seq 1 50); do
     [[ -z "$(@ $session activeRun)" ]] && break
     sleep 0.2
@@ -173,7 +176,7 @@ echo "5. a blocking question blocks the delivery; the user's reply unblocks it"
 export TRASHTALK_SHELL_DRIVER="$AGENT_ASK"
 msg5=$(@ Gusgus chat: 'fifth' workingDirectory: "$TRASHTALK_DIR" status: 0 lastResult: '' 2>/dev/null)
 settle_session "$session" && pass "asking run finished" || fail "asking run finished" "no active run" "$(@ $session activeRun)"
-run5=$(@ Store findByClass: AgentRun where: "json_extract(data, '\$.session') = '$session'" orderBy: 'created_at DESC' limit: 1)
+run5=$(@ Store findByClass: AgentRun where: "json_extract(data, '\$.session') = '$session'" orderBy: 'created_at DESC, rowid DESC' limit: 1)
 assert_eq "run is waiting for the user" "waiting_for_user" "$(@ $run5 state)"
 d5=$(@ Store findByClass: AgentDelivery where: "json_extract(data, '\$.run') = '$run5'" orderBy: 'created_at ASC' limit: 1)
 assert_eq "delivery is blocked" "blocked" "$(@ $d5 state)"
@@ -185,7 +188,7 @@ export TRASHTALK_SHELL_DRIVER="$AGENT_OK"
 answer=$(@ $question reply: 'B')
 settle_session "$session" && pass "resumed run finished" || fail "resumed run finished" "no active run" "$(@ $session activeRun)"
 assert_eq "blocked delivery was processed after the reply" "processed" "$(@ $d5 state)"
-run6=$(@ Store findByClass: AgentRun where: "json_extract(data, '\$.session') = '$session'" orderBy: 'created_at DESC' limit: 1)
+run6=$(@ Store findByClass: AgentRun where: "json_extract(data, '\$.session') = '$session'" orderBy: 'created_at DESC, rowid DESC' limit: 1)
 assert_eq "resumed run succeeded" "succeeded" "$(@ $run6 state)"
 assert_contains "agent saw both the original and the answer" "pong: 2" "$(for m in $(@ $owner_inbox unread); do @ $m body; done)"
 @ $owner_inbox readAll >/dev/null

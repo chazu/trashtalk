@@ -1,0 +1,96 @@
+# Human-facing projection shared by inbox previews and session transcripts.
+# Message.show remains the complete metadata view. Rendering never marks read.
+MessagePresentation subclass: Object
+
+  classMethod: dataFor: message [
+    | data sender rowSender recipient timestamp day today shortDate fullDate kind status marker subject body label prefix text search |
+    data := @ message asJson.
+    sender := @ self participant: (data jsonTextAt: 'from').
+    recipient := @ self participant: (data jsonTextAt: 'to').
+    timestamp := data jsonTextAt: 'sentAt'.
+    timestamp isEmpty ifTrue: [timestamp := 0].
+    # Message.sentAt is milliseconds; Time.format expects seconds.
+    timestamp := timestamp / 1000.
+    shortDate := data jsonTextAt: 'created'.
+    fullDate := shortDate.
+    (timestamp > 0) ifTrue: [
+      day := @ Time format: timestamp as: '%Y-%m-%d'.
+      today := @ Time nowFormatted: '%Y-%m-%d'.
+      fullDate := @ Time format: timestamp as: '%Y-%m-%d %H:%M %Z'.
+      shortDate := @ Time format: timestamp as: '%Y-%m-%d %H:%M'.
+      (day = today) ifTrue: [
+        shortDate := @ Time format: timestamp as: '%H:%M'.
+        fullDate := 'Today ' , shortDate
+      ]
+    ].
+    kind := data jsonTextAt: 'kind'.
+    status := data jsonTextAt: 'status'.
+    marker := ' '.
+    (status = 'unread') ifTrue: [marker := '●'].
+    (kind = 'question') ifTrue: [marker := marker , '?'].
+    (kind = 'alert') ifTrue: [marker := marker , '!'].
+    subject := @ self singleLine: (data jsonTextAt: 'subject').
+    body := data jsonTextAt: 'body'.
+    label := subject.
+    (label = kind) ifTrue: [label := ''. subject := ''].
+    label isEmpty ifTrue: [label := @ self firstLine: body].
+    label isEmpty ifTrue: [label := '(empty message)'].
+    rowSender := @ self rowName: sender.
+    prefix := marker , ' ' , rowSender , '  ' , shortDate.
+    text := sender , ' → ' , recipient , '  ·  ' , fullDate.
+    search := (data jsonTextAt: 'from') , ' ' , (data jsonTextAt: 'to') , ' ' , status , ' ' , kind , ' ' , body.
+    ^ #{label: label prefix: prefix header: text subject: subject body: body search: search} asJson
+  ]
+
+  classMethod: textFor: message [
+    | data |
+    data := @ self dataFor: message.
+    ^ @ self textFrom: data
+  ]
+
+  classMethod: textFrom: data [
+    | subject |
+    @ Console print: (data jsonTextAt: 'header').
+    subject := data jsonTextAt: 'subject'.
+    subject notEmpty ifTrue: [@ Console print: subject].
+    @ Console print: ''.
+    @ Console print: (data jsonTextAt: 'body')
+  ]
+
+  classMethod: recordFor: message data: data [
+    | label prefix search kind path |
+    label := data jsonTextAt: 'label'.
+    prefix := data jsonTextAt: 'prefix'.
+    search := data jsonTextAt: 'search'.
+    kind := @ message kind.
+    path := message , '.txt'.
+    ^ #{schema_version: 1 id: message label: label kind: kind detail: prefix path: path line: 1 column: 1 display: #{prefix: prefix preview_title: 'Message' search_text: search}} asJson
+  ]
+
+  # SQL boundary: resolve existing addresses without creating inboxes/identities.
+  # Unknown senders retain their address so distinct participants stay distinct.
+  rawClassMethod: participant: address [
+    local address="$1" name escaped
+    if [[ "$address" == "${TRASHTALK_USER:-$USER}" ]]; then echo You; return; fi
+    escaped=$(_db_escape "$address")
+    name=$(_db_sql "SELECT COALESCE(NULLIF(json_extract(i.data,'$.displayName'),''),json_extract(i.data,'$.handle')) FROM instances i WHERE i.class='AgentIdentity' AND (json_extract(i.data,'$.inbox')='$escaped' OR i.id=(SELECT json_extract(s.data,'$.identity') FROM instances s WHERE s.class='AgentSession' AND json_extract(s.data,'$.inbox')='$escaped' LIMIT 1)) LIMIT 1;")
+    @ MessagePresentation singleLine: "${name:-$address}"
+  ]
+
+  # Text normalization at the jq boundary; discard control codes and collapse
+  # whitespace before putting untrusted message text on a single terminal row.
+  rawClassMethod: singleLine: text [
+    printf '%s' "$1" | jq -Rrs 'gsub("[\u0000-\u001f\u007f-\u009f]"; " ") | gsub("\\s+"; " ") | sub("^ +"; "") | sub(" +$"; "")'
+  ]
+
+  rawClassMethod: firstLine: text [
+    local line
+    line=$(printf '%s' "$1" | jq -Rrs 'split("\n") | map(select(test("\\S"))) | .[0] // ""')
+    @ MessagePresentation singleLine: "$line"
+  ]
+
+  # Unicode slicing at the jq boundary: Bash substring under LC_ALL=C may
+  # split a UTF-8 name mid-character. Preserve the full name in the preview.
+  rawClassMethod: rowName: name [
+    printf '%s' "$1" | jq -Rrs 'if length > 20 then .[:19] + "…" else . end'
+  ]

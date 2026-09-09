@@ -1,6 +1,9 @@
 # Headless Agent Sessions Design
 
-**Status:** Proposed; revised after document review and harness discussion
+**Status:** Design with partial implementation. The durable worker/recovery and
+snapshot session browser are described in [agent operations](agent-operations.md).
+The broader subscription, role, live-focus, and multi-host fencing contracts
+below are not all implemented.
 **Date:** 2026-09-08
 
 ## Problem

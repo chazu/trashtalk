@@ -192,7 +192,11 @@ assert_eq "failed task is a task_error" 'task_error' "$(field "$result" .outcome
 assert_eq "failed task preserves the task status" '2' "$(field "$result" .exit_code)"
 assert_eq "succeeded: is false for failures" 'false' "$(@ Tools::Mise succeeded: "$result")"
 
-PATH="/usr/bin:/bin"
+# Hide the tested executable, but keep jq for envelope construction/assertions.
+# On macOS jq is installed by Homebrew rather than in /usr/bin.
+mkdir -p "$TEST_TMP/dependencies"
+ln -s "$(command -v jq)" "$TEST_TMP/dependencies/jq"
+PATH="$TEST_TMP/dependencies:/usr/bin:/bin"
 hash -r
 missing=$(@ Tools::Mise runTask: build)
 assert_eq "missing mise has a distinct outcome" 'missing_tool' "$(field "$missing" .outcome)"

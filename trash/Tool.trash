@@ -294,13 +294,17 @@ Tool subclass: Object
       launcher=(perl -MPOSIX -e 'defined(POSIX::setsid()) or do { exit 0 if fork; POSIX::setsid() }; exec @ARGV')
     fi
 
-    wrapper='trap "" HUP; trap ":" INT TERM; pf=$1; ef=$2; in=$3; out=$4; err=$5; shift 5; printf "%s\n" "$$" >"$pf.tmp" && mv -f "$pf.tmp" "$pf"; "$@" <"$in" >"$out" 2>"$err"; s=$?; printf "%s\n" "$s" >"$ef.tmp" && mv -f "$ef.tmp" "$ef"; exit "$s"'
+    wrapper='trap "" HUP; trap ":" INT TERM; pf=$1; ef=$2; in=$3; out=$4; err=$5; shift 5; ps -p "$$" -o lstart= >"$pf.start.tmp" && mv -f "$pf.start.tmp" "$pf.start"; printf "%s\n" "$$" >"$pf.tmp" && mv -f "$pf.tmp" "$pf"; "$@" <"$in" >"$out" 2>"$err"; s=$?; printf "%s\n" "$s" >"$ef.tmp" && mv -f "$ef.tmp" "$ef"; exit "$s"'
 
     rm -f "$pid_file" "$pid_file.tmp" "$exit_file" "$exit_file.tmp"
 
     # set -m: the job gets its own process group and, unlike a plain
     # non-interactive `&`, does not inherit SIGINT/SIGQUIT as ignored.
     (
+      # A detached harness must not retain the worker's advisory lock.
+      if [[ -n "${TRASH_PROCESS_LOCK_FD:-}" ]]; then
+        _trash_close_process_lock
+      fi
       set -m
       trap '' HUP
       "${launcher[@]}" bash -c "$wrapper" "$tag" "$pid_file" "$exit_file" \

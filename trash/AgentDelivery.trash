@@ -15,42 +15,33 @@ AgentDelivery subclass: Object
                 lastError:'' note:'' created:''
 
   # Common transition rule: check the table, set, save, echo the new state.
-  rawMethod: transitionTo: newState [
+  method: transitionTo: newState [
+    ^ @ self transitionTo: newState with: '{}'
+  ]
+
+  # Atomic state transition plus associated fields; rejected transitions write nothing.
+  rawMethod: transitionTo: newState with: patchJson [
     local to="$1" from allowed
+    _env_set "$_RECEIVER" "$(db_get "$_RECEIVER")"
     from=$(_ivar state)
     allowed=" pending:offered offered:processed offered:blocked offered:uncertain offered:pending offered:failed blocked:processed blocked:pending failed:pending failed:skipped uncertain:pending uncertain:processed uncertain:skipped "
     if [[ "$allowed" != *" $from:$to "* ]]; then
       _throw "TransitionError" "AgentDelivery $_RECEIVER: $from -> $to rejected"
       return 1
     fi
-    _ivar_set state "$to"
-    @ "$_RECEIVER" save
+    local eid ef et changed patch
+    printf '%s' "$2" | jq -e 'type == "object"' >/dev/null || return 1
+    patch=$(_db_escape "$2")
+    eid=$(_db_escape "$_RECEIVER"); ef=$(_db_escape "$from"); et=$(_db_escape "$to")
+    changed=$(_db_sql "UPDATE instances SET data=json_set(json_patch(data,'$patch'),'$.state','$et') WHERE id='$eid' AND json_extract(data,'$.state')='$ef'; SELECT changes();") || return 1
+    [[ "$changed" == 1 ]] || { _throw "TransitionError" "Concurrent transition; reload and retry"; return 1; }
+    _env_set "$_RECEIVER" "$(db_get "$_RECEIVER")"
     echo "$to"
   ]
 
   # Create (or return the existing) delivery for these message ids.
-  rawClassMethod: forSession: sessionId messages: idsJson [
-    local sid="$1" ids="$2" key existing id now hash
-    if ! printf '%s' "$ids" | jq -e 'type == "array"' >/dev/null 2>&1; then
-      _throw "AgentDeliveryError" "messages: must be a JSON array of message ids"
-      return 1
-    fi
-    ids=$(printf '%s' "$ids" | jq -c .)
-    hash=$(printf '%s' "$ids" | shasum -a 256 | cut -d' ' -f1)
-    key="$sid:${hash:0:16}"
-    existing=$(@ AgentDelivery forKey: "$key")
-    if [[ -n "$existing" ]]; then
-      echo "$existing"
-      return
-    fi
-    now=$(@ Time nowISO)
-    id=$(@ AgentDelivery new)
-    @ "$id" session: "$sid"
-    @ "$id" messageIds: "$ids"
-    @ "$id" deliveryKey: "$key"
-    @ "$id" created: "$now"
-    @ "$id" save
-    echo "$id"
+  classMethod: forSession: sessionId messages: idsJson [
+    ^ @ AgentQueue assign: sessionId messages: idsJson outbox: ''
   ]
 
   # Pending deliveries for a session, oldest first

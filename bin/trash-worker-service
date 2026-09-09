@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# Install/start/stop the same foreground worker under a user OS supervisor.
+set -euo pipefail
+root="${TRASHTALK_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+label=org.trashtalk.agent-worker
+platform=$(uname -s)
+action=${1:-status}
+case "$action" in install|start|stop|status) ;; *) echo 'Usage: trash-worker-service install|start|stop|status' >&2; exit 2;; esac
+bash_path=$(command -v bash)
+logdir="$root/run/worker"
+if [[ "$platform" == Darwin ]]; then
+  target="$HOME/Library/LaunchAgents/$label.plist"
+  domain="gui/$(id -u)"
+  case "$action" in
+    install)
+      mkdir -p "$(dirname "$target")" "$logdir"
+      jq -nr --arg bash "$bash_path" --arg root "$root" --arg path "$PATH" --arg db "${SQLITE_JSON_DB:-$root/instances.db}" --arg owner "${TRASHTALK_USER:-$USER}" --arg logs "$logdir" '
+        def xml: @html;
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n<plist version=\"1.0\"><dict>\n<key>Label</key><string>org.trashtalk.agent-worker</string>\n<key>ProgramArguments</key><array><string>\($bash|xml)</string><string>\(($root + "/bin/trash-worker")|xml)</string></array>\n<key>WorkingDirectory</key><string>\($root|xml)</string>\n<key>EnvironmentVariables</key><dict><key>PATH</key><string>\($path|xml)</string><key>TRASHTALK_DIR</key><string>\($root|xml)</string><key>SQLITE_JSON_DB</key><string>\($db|xml)</string><key>TRASHTALK_USER</key><string>\($owner|xml)</string></dict>\n<key>RunAtLoad</key><true/><key>KeepAlive</key><true/><key>ThrottleInterval</key><integer>5</integer>\n<key>AbandonProcessGroup</key><true/>\n<key>StandardOutPath</key><string>\(($logs + "/stdout.log")|xml)</string><key>StandardErrorPath</key><string>\(($logs + "/stderr.log")|xml)</string>\n</dict></plist>"' > "$target"
+      plutil -lint "$target"
+      ;;
+    start) launchctl print "$domain/$label" >/dev/null 2>&1 || launchctl bootstrap "$domain" "$target" ;;
+    stop) launchctl bootout "$domain/$label" ;;
+    status) launchctl print "$domain/$label" ;;
+  esac
+elif [[ "$platform" == Linux ]]; then
+  target="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/$label.service"
+  # systemd string quoting, including literal percent specifiers.
+  quote() { local s=${1//\\/\\\\}; s=${s//\"/\\\"}; s=${s//%/%%}; s=${s//$'\n'/\\n}; printf '"%s"' "$s"; }
+  case "$action" in
+    install)
+      mkdir -p "$(dirname "$target")"
+      {
+        printf '[Unit]\nDescription=Trashtalk agent worker\n\n[Service]\nType=simple\nExecStart='
+        quote "$bash_path"; printf ' '; quote "$root/bin/trash-worker"; printf '\nWorkingDirectory='; quote "$root"
+        printf '\nEnvironment='; quote "PATH=$PATH"
+        printf '\nEnvironment='; quote "TRASHTALK_DIR=$root"
+        printf '\nEnvironment='; quote "SQLITE_JSON_DB=${SQLITE_JSON_DB:-$root/instances.db}"
+        printf '\nEnvironment='; quote "TRASHTALK_USER=${TRASHTALK_USER:-$USER}"
+        printf '\nRestart=always\nRestartSec=2\nKillMode=process\n\n[Install]\nWantedBy=default.target\n'
+      } > "$target"
+      systemctl --user daemon-reload
+      ;;
+    start) systemctl --user enable --now "$label.service" ;;
+    stop) systemctl --user disable --now "$label.service" ;;
+    status) systemctl --user status "$label.service" ;;
+  esac
+else
+  echo "Unsupported service platform: $platform" >&2; exit 1
+fi

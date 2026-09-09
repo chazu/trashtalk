@@ -1,0 +1,74 @@
+# AgentQueue - SQLite boundary for durable message routing and delivery identity.
+# Outbox rows are committed with the final message snapshot. Honker is a hint;
+# the worker can route these rows after any crash, without a second logical send.
+AgentQueue subclass: Object
+
+  rawClassMethod: ensureSchema [
+    _db_sql "CREATE TABLE IF NOT EXISTS agent_outbox (
+      message_id TEXT PRIMARY KEY, inbox TEXT NOT NULL,
+      session TEXT NOT NULL DEFAULT '', attempted_at INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL DEFAULT (unixepoch()));"
+  ]
+
+  rawClassMethod: persist: message [
+    local id data address
+    @ AgentQueue ensureSchema || return 1
+    id=$(_db_escape "$1")
+    data=$(@ "$1" asJson) || return 1
+    address=$(printf '%s' "$data" | jq -r '.to')
+    address=$(_db_escape "$address")
+    data=$(_db_escape "$data")
+    @ Store executeBatch: "BEGIN IMMEDIATE;
+      INSERT INTO instances(id,data) VALUES('$id','$data')
+        ON CONFLICT(id) DO UPDATE SET data=excluded.data;
+      INSERT OR IGNORE INTO agent_outbox(message_id,inbox)
+        SELECT '$id','$address' WHERE '$address' LIKE 'session:%' OR '$address' LIKE 'agent:%';
+      COMMIT;"
+  ]
+
+  rawClassMethod: pending [
+    @ AgentQueue ensureSchema || return 1
+    _db_sql "SELECT message_id FROM agent_outbox WHERE session='' ORDER BY attempted_at, created_at, rowid LIMIT 100;"
+  ]
+
+  # Atomic lookup/create, plus routing acknowledgement and question unblocking.
+  # A deterministic id and BEGIN IMMEDIATE make concurrent replay harmless.
+  rawClassMethod: assign: sessionId messages: idsJson outbox: messageId [
+    local sid ids key hash id now data esc_key esc_sid esc_id esc_data esc_msg guard
+    sid="$1"
+    ids=$(printf '%s' "$2" | jq -ce 'select(type == "array" and length > 0 and all(.[]; type == "string"))') || return 1
+    @ AgentQueue ensureSchema || return 1
+    hash=$(printf '%s' "$ids" | shasum -a 256 | cut -d' ' -f1)
+    key="$sid:${hash:0:16}"
+    id="agentdelivery_$(printf '%s' "$key" | shasum -a 256 | cut -d' ' -f1)"
+    now=$(@ Time nowISO)
+    data=$(jq -cn --arg sid "$sid" --argjson ids "$ids" --arg key "$key" --arg now "$now" \
+      '{class:"AgentDelivery",session:$sid,messageIds:$ids,deliveryKey:$key,state:"pending",run:"",attempts:0,lastError:"",note:"",created:$now,created_at:(now|floor)} | ._vars = (keys - ["class"])')
+    esc_sid=$(_db_escape "$sid"); esc_key=$(_db_escape "$key")
+    esc_id=$(_db_escape "$id"); esc_data=$(_db_escape "$data"); esc_msg=$(_db_escape "$3")
+    guard="('$esc_msg' = '' OR EXISTS(SELECT 1 FROM agent_outbox WHERE message_id='$esc_msg' AND session=''))"
+    @ Store executeBatch: "BEGIN IMMEDIATE;
+      INSERT INTO instances(id,data) SELECT '$esc_id','$esc_data'
+        WHERE $guard AND NOT EXISTS(SELECT 1 FROM instances WHERE json_extract(data,'$.class')='AgentDelivery' AND json_extract(data,'$.deliveryKey')='$esc_key');
+      UPDATE instances SET data=json_set(data,'$.state','pending')
+        WHERE json_extract(data,'$.class')='AgentDelivery' AND json_extract(data,'$.session')='$esc_sid'
+        AND json_extract(data,'$.state')='blocked' AND '$esc_msg' != '' AND $guard;
+      UPDATE agent_outbox SET session='$esc_sid' WHERE message_id='$esc_msg' AND session='';
+      COMMIT;
+      SELECT id FROM instances WHERE json_extract(data,'$.class')='AgentDelivery' AND json_extract(data,'$.deliveryKey')='$esc_key' LIMIT 1;"
+  ]
+
+  # Session caches are snapshots; refresh worker-owned records between ticks.
+  # No application-wide cache semantics are changed by running a worker.
+  rawClassMethod: refresh [
+    local id data
+    while IFS='|' read -r id data; do
+      [[ -z "$id" ]] || _env_set "$id" "$data"
+    done < <(_db_sql "SELECT id || '|' || json(data) FROM instances WHERE class IN ('AgentSession','AgentRun','AgentDelivery','Message');")
+  ]
+
+  # Move unresolved identity routes to the back so they cannot starve new mail.
+  rawClassMethod: attempted: message [
+    local id
+    id=$(_db_escape "$1")
+    _db_sql "UPDATE agent_outbox SET attempted_at=unixepoch() WHERE message_id='$id';"
+  ]

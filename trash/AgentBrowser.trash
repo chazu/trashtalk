@@ -1,0 +1,180 @@
+# AgentBrowser - Snapshot inspection and explicit recovery through Innards.
+# Pickers return intent; Trashtalk validates membership and owns all mutations.
+# Closing any view does not signal a worker or harness, or mark messages read.
+AgentBrowser subclass: Object
+
+  # OS boundary: temporary preview files and signal/exit cleanup.
+  rawClassMethod: browse [
+    (
+      local dir
+      dir=$(mktemp -d "${TMPDIR:-/tmp}/trash-sessions.XXXXXX") || exit 1
+      trap 'rm -rf "$dir"' EXIT
+      @ AgentBrowser browseIn: "$dir"
+    )
+  ]
+
+  rawClassMethod: browseSession: session [
+    (
+      local dir
+      dir=$(mktemp -d "${TMPDIR:-/tmp}/trash-sessions.XXXXXX") || exit 1
+      trap 'rm -rf "$dir"' EXIT
+      @ AgentBrowser session: "$1" in: "$dir"
+    )
+  ]
+
+  classMethod: browseIn: dir [
+    | records selected ignored |
+    [1 = 1] whileTrue: [
+      records := @ self sessionRecordsIn: dir.
+      selected := @ self pick: records root: dir title: 'Agent sessions'.
+      selected isEmpty ifTrue: [^ 'dismissed'].
+      ignored := @ self session: selected in: dir
+    ]
+  ]
+
+  classMethod: session: session in: dir [
+    | details path records action text ignored |
+    [1 = 1] whileTrue: [
+      @ session reload.
+      details := @ session details.
+      path := dir , '/session.txt'.
+      @ File write: details to: path.
+      records := @ self actionRecordsFor: session.
+      action := @ self pick: records root: dir title: 'Session actions'.
+      action isEmpty ifTrue: [^ 'dismissed'].
+      (action = 'back') ifTrue: [^ 'dismissed'].
+      (action = 'details') ifTrue: [ignored := @ self page: details title: 'Session details'].
+      (action = 'messages') ifTrue: [
+        text := @ self messagesFor: session.
+        ignored := @ self page: text title: 'Session messages (read-only)'
+      ].
+      (action = 'runs') ifTrue: [ignored := @ self runsFor: session in: dir].
+      (action = 'retry') ifTrue: [ignored := @ self retryFor: session in: dir].
+      (action = 'pause') ifTrue: [ignored := @ session pause].
+      (action = 'resume') ifTrue: [
+        ignored := @ session resume.
+        ignored := @ AgentWorker tickSession: session
+      ]
+    ]
+  ]
+
+  classMethod: page: text title: title [
+    | available |
+    available := @ Tools::Inpage isInstalled.
+    (available = 'true') ifTrue: [^ @ Tools::Inpage viewText: text title: title].
+    @ Console print: text
+  ]
+
+  classMethod: pick: records root: root title: title [
+    | available result |
+    available := @ Tools::Inpick isInstalled.
+    (available = 'true') ifTrue: [
+      result := @ Tools::Inpick selectRecords: records root: root query: '' title: title
+    ] ifFalse: [
+      result := @ Tools::Inpick fallbackSelectRecords: records query: '' title: title
+    ].
+    ^ @ self selectedFrom: result records: records
+  ]
+
+  # Validate structured UI output against the offered records, never dispatch
+  # arbitrary ids returned by an external process.
+  rawClassMethod: selectedFrom: result records: records [
+    local id
+    id=$(printf '%s' "$1" | jq -er 'select(.outcome == "selected") | .selection.id' 2>/dev/null) || return 0
+    printf '%s\n' "$2" | jq -er --arg id "$id" 'select(.id == $id) | .id' | head -n 1
+  ]
+
+  classMethod: record: id label: label detail: detail path: path [
+    ^ #{schema_version: 1 id: id label: label detail: detail path: path line: 1 column: 1 kind: 'agent'} asJson
+  ]
+
+  # Filesystem projection only; session state comes from its public snapshot.
+  rawClassMethod: sessionRecordsIn: dir [
+    local session data text label path
+    for session in $(@ AgentSession findAll); do
+      data=$(@ "$session" snapshot) || return 1
+      text=$(@ AgentBrowser describeSession: "$data")
+      path="$session.txt"
+      printf '%s\n' "$text" > "$1/$path"
+      label=$(printf '%s' "$data" | jq -r '"\(.workspace) [\(.lifecycle)/\(.activity)] pending=\(.pending) questions=\(.questions) stalled=\(.stalled)"')
+      @ AgentBrowser record: "$session" label: "$label" detail: "$session" path: "$path"
+    done
+  ]
+
+  # Text formatting is a projection of the snapshot, not a state mutation.
+  rawClassMethod: describeSession: data [
+    printf '%s' "$1" | jq -r '"Session: \(.id)\nIdentity: \(.identity)\nWorkspace: \(.workspace)\nLifecycle: \(.lifecycle)\nLatest run state: \(.activity)\nQueued: \(.pending)\nBlocked deliveries / questions: \(.questions)\nNeeds review: \(.stalled)\nLatest run: \(.run)\nLatest failure: \(.error)"'
+  ]
+
+  classMethod: actionRecordsFor: session [
+    | state |
+    @ self record: 'details' label: 'Session details' detail: 'Refresh snapshot' path: 'session.txt'.
+    @ self record: 'messages' label: 'Messages and questions' detail: 'Read-only conversation' path: 'session.txt'.
+    @ self record: 'runs' label: 'Runs and logs' detail: 'Inspect failures and output' path: 'session.txt'.
+    @ self record: 'retry' label: 'Retry a stalled delivery' detail: 'Choose a delivery, inspect, then confirm' path: 'session.txt'.
+    state := @ session lifecycleState.
+    (state = 'open') ifTrue: [@ self record: 'pause' label: 'Pause new work' detail: 'Active work continues' path: 'session.txt'].
+    (state = 'paused') ifTrue: [@ self record: 'resume' label: 'Resume queued work' detail: 'Allow dispatch' path: 'session.txt'].
+    @ self record: 'back' label: 'Back' detail: 'Dismiss without stopping work' path: 'session.txt'
+  ]
+
+  rawClassMethod: messagesFor: session [
+    local id
+    for id in $(@ "$1" messageIds); do
+      @ "$id" reload >/dev/null || return 1
+      @ MessagePresentation textFor: "$id"
+      printf '\n----------------------------------------\n'
+    done
+  ]
+
+  rawClassMethod: runDetails: run [
+    local log
+    @ "$1" reload >/dev/null || return 1
+    @ "$1" asJson | jq 'del(.capabilityTokenHash)'
+    for log in "$(@ "$1" outputLog)" "$(@ "$1" errorLog)"; do
+      [[ -n "$log" && -f "$log" ]] || continue
+      printf '\n--- %s (last 100 lines) ---\n' "$log"
+      tail -n 100 "$log"
+    done
+  ]
+
+  rawClassMethod: runRecordsFor: session in: dir [
+    local run text
+    for run in $(@ "$1" runs); do
+      text=$(@ AgentBrowser runDetails: "$run")
+      printf '%s\n' "$text" > "$2/$run.txt"
+      @ AgentBrowser record: "$run" label: "$run [$(@ "$run" state)]" detail: "$(@ "$run" error)" path: "$run.txt"
+    done
+  ]
+
+  classMethod: runsFor: session in: dir [
+    | records run text |
+    records := @ self runRecordsFor: session in: dir.
+    run := @ self pick: records root: dir title: 'Session runs'.
+    run isEmpty ifTrue: [^ 'dismissed'].
+    text := @ self runDetails: run.
+    ^ @ self page: text title: 'Run details and logs'
+  ]
+
+  rawClassMethod: retryRecordsFor: session in: dir [
+    local d
+    for d in $(@ "$1" stalledDeliveries); do
+      @ "$d" reload >/dev/null || return 1
+      @ "$d" asJson | jq . > "$2/$d.txt"
+      @ AgentBrowser record: "$d" label: "$d [$(@ "$d" state)]" detail: "$(@ "$d" lastError)" path: "$d.txt"
+    done
+  ]
+
+  classMethod: retryFor: session in: dir [
+    | records delivery answer path ignored |
+    records := @ self retryRecordsFor: session in: dir.
+    delivery := @ self pick: records root: dir title: 'Choose delivery to retry'.
+    delivery isEmpty ifTrue: [^ 'dismissed'].
+    path := delivery , '.txt'.
+    records := @ self record: 'retry' label: 'Retry this delivery' detail: 'Uncertain work may already have produced effects' path: path.
+    answer := @ self pick: records root: dir title: 'Confirm retry (Esc cancels)'.
+    (answer = 'retry') ifTrue: [
+      ignored := @ session requeue: delivery.
+      ignored := @ AgentWorker tickSession: session
+    ]
+  ]

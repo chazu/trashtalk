@@ -109,6 +109,7 @@ Gusgus subclass: Object
     echo "  inbox=\$(@ Trash userInbox)"
     echo "  @ \$inbox browse              # Innards UI: read replies, respond in-thread"
     echo "  @ \$inbox list                # Gusgus's replies"
+    echo "  @ AgentSession browse        # activity, questions, logs, pause/resume/retry"
     echo "  @ \$msg reply: 'and then?'    # continues the same conversation"
     echo ""
     echo "  @ Gusgus sessionFor: \"\$PWD\"  # the session id for this workspace"

@@ -161,7 +161,11 @@ else
     fail "failed export reports diagnostics on stderr"
 fi
 
-PATH="/usr/bin:/bin"
+# Hide the tested executable, but keep jq for envelope construction/assertions.
+# On macOS jq is installed by Homebrew rather than in /usr/bin.
+mkdir -p "$TEST_TMP/dependencies"
+ln -s "$(command -v jq)" "$TEST_TMP/dependencies/jq"
+PATH="$TEST_TMP/dependencies:/usr/bin:/bin"
 hash -r
 missing=$(@ Tools::Cue vet: 'schema.cue')
 assert_eq "missing cue has a distinct outcome" 'missing_tool' "$(field "$missing" .outcome)"

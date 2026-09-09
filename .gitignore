@@ -1,4 +1,5 @@
 *.db
+*.db.worker.lock
 lib/vendor/honker/*.dylib
 lib/vendor/honker/*.so
 trash/user
@@ -40,3 +41,6 @@ lib/jq-compiler/tests/*
 
 # Per-run prompt/log/pid files for headless agent sessions
 run/
+
+# Portable OS lock helper used by Process and detached agent workers.
+!lib/process-lock.bash

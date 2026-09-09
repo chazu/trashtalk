@@ -111,9 +111,10 @@ assert_eq "empty queue cancels the loop" "cancelled" "$outcome"
 records=$(cat "$CAPTURE_RECORDS")
 assert_eq "one record per message" "2" "$(line_count "$records")"
 assert_eq "newest message first" "$n1" "$(printf '%s\n' "$records" | head -1 | jq -r .id)"
-assert_contains "unread marker and kind in label" "* [question] alice: ok to force-push?" "$(printf '%s\n' "$records" | jq -r 'select(.id == "'"$q1"'") | .label')"
+assert_eq "content-first label" "ok to force-push?" "$(printf '%s\n' "$records" | jq -r 'select(.id == "'"$q1"'") | .label')"
+assert_contains "unread and question markers in compact prefix" "●? alice" "$(printf '%s\n' "$records" | jq -r 'select(.id == "'"$q1"'") | .display.prefix')"
 assert_eq "record kind is the message kind" "result" "$(printf '%s\n' "$records" | head -1 | jq -r .kind)"
-assert_contains "detail carries status" "unread" "$(printf '%s\n' "$records" | head -1 | jq -r .detail)"
+assert_contains "hidden search text carries status" "unread" "$(printf '%s\n' "$records" | head -1 | jq -r .display.search_text)"
 assert_eq "preview path is the message file" "$n1.txt" "$(printf '%s\n' "$records" | head -1 | jq -r .path)"
 assert_contains "picker was given the preview root" "--root" "$(cat "$CAPTURE_PICKER_ARGV")"
 assert_contains "picker title names the inbox" "Inbox tester" "$(cat "$CAPTURE_PICKER_ARGV")"
@@ -124,16 +125,18 @@ echo "2. selecting a message marks it read; view shows the thread; reply sends i
 # ==========================================
 
 : > "$CAPTURE_RECORDS"; : > "$CAPTURE_PICKER_ARGV"; : > "$CAPTURE_PAGER_TEXT"; : > "$CAPTURE_EDITOR_ARGV"
-printf '%s\n%s\n%s\n' "$q1" "view" "reply" > "$PICK_QUEUE"
+printf '%s\n' "$q1" "view" "details" "reply" > "$PICK_QUEUE"
 outcome=$(@ $inbox browse 2>/dev/null)
 assert_eq "loop ends when the queue runs out" "cancelled" "$outcome"
 assert_contains "action picker offered view" '"id":"view"' "$(cat "$CAPTURE_RECORDS")"
 assert_eq "selected message marked read" "read" "$(@ $q1 status)"
 assert_contains "pager showed the question body" "ok to force-push?" "$(cat "$CAPTURE_PAGER_TEXT")"
 assert_contains "action picker offered reply" '"id":"reply"' "$(cat "$CAPTURE_RECORDS")"
+assert_contains "details action exposes original message id" "$q1" "$(cat "$CAPTURE_PAGER_TEXT")"
+assert_contains "details action exposes full metadata" 'From:    alice' "$(cat "$CAPTURE_PAGER_TEXT")"
 assert_eq "every picker record carries path, line, and column" "0" "$(jq -c 'select((.path|type) != "string" or (.line|type) != "number" or (.column|type) != "number")' "$CAPTURE_RECORDS" | grep -c .)"
 assert_eq "action records preview the selected message" "$q1.txt" "$(jq -r 'select(.id == "reply") | .path' "$CAPTURE_RECORDS" | head -1)"
-assert_eq "pickers ran: list, action, action after view, list again" "4" "$(grep -c 'From alice\|Inbox tester' "$CAPTURE_PICKER_ARGV")"
+assert_eq "pickers ran: list, actions after view and details, list again" "5" "$(grep -c 'From alice\|Inbox tester' "$CAPTURE_PICKER_ARGV")"
 assert_contains "editor opened with an output path" "-o" "$(cat "$CAPTURE_EDITOR_ARGV")"
 assert_contains "editor title names the sender" "Reply to alice" "$(cat "$CAPTURE_EDITOR_ARGV")"
 alice=$(@ Inbox named: alice)

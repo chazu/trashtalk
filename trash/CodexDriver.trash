@@ -87,3 +87,13 @@ CodexDriver subclass: AgentDriver
       echo false
     fi
   ]
+
+  # Codex can report provider failures in JSONL on stdout, not just stderr.
+  rawClassMethod: errorFor: runId [
+    local log error
+    log=$(@ "$1" outputLog)
+    if [[ -n "$log" && -f "$log" ]]; then
+      error=$(jq -r 'select(.type == "error" or .type == "turn.failed") | .message // .error.message // empty' "$log" 2>/dev/null | tail -c 4096)
+    fi
+    if [[ -n "$error" ]]; then printf '%s\n' "$error"; else @ AgentDriver errorFor: "$1"; fi
+  ]

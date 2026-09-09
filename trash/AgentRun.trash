@@ -24,16 +24,27 @@ AgentRun subclass: Object
                 heartbeatAt:'' finished:'' outcome:'' error:''
 
   # Common transition rule over state.
-  rawMethod: transitionTo: newState [
+  method: transitionTo: newState [
+    ^ @ self transitionTo: newState with: '{}'
+  ]
+
+  # Atomic state transition plus associated fields; rejected transitions write nothing.
+  rawMethod: transitionTo: newState with: patchJson [
     local to="$1" from allowed
+    _env_set "$_RECEIVER" "$(db_get "$_RECEIVER")"
     from=$(_ivar state)
     allowed=" starting:running starting:failed running:recovering running:succeeded running:waiting_for_user running:unsettled running:failed running:interrupted recovering:running recovering:failed recovering:unsettled recovering:succeeded recovering:waiting_for_user recovering:interrupted "
     if [[ "$allowed" != *" $from:$to "* ]]; then
       _throw "TransitionError" "AgentRun $_RECEIVER: $from -> $to rejected"
       return 1
     fi
-    _ivar_set state "$to"
-    @ "$_RECEIVER" save
+    local eid ef et changed patch
+    printf '%s' "$2" | jq -e 'type == "object"' >/dev/null || return 1
+    patch=$(_db_escape "$2")
+    eid=$(_db_escape "$_RECEIVER"); ef=$(_db_escape "$from"); et=$(_db_escape "$to")
+    changed=$(_db_sql "UPDATE instances SET data=json_set(json_patch(data,'$patch'),'$.state','$et') WHERE id='$eid' AND json_extract(data,'$.state')='$ef'; SELECT changes();") || return 1
+    [[ "$changed" == 1 ]] || { _throw "TransitionError" "Concurrent transition; reload and retry"; return 1; }
+    _env_set "$_RECEIVER" "$(db_get "$_RECEIVER")"
     echo "$to"
   ]
 
@@ -58,31 +69,37 @@ AgentRun subclass: Object
   ]
 
   rawMethod: finishWith: state outcome: o error: e [
-    local now
-    @ "$_RECEIVER" transitionTo: "$1" >/dev/null || return 1
-    now=$(@ Time nowISO)
-    _ivar_set outcome "$2"
-    _ivar_set error "$3"
-    _ivar_set finished "$now"
-    @ "$_RECEIVER" save
-    echo "$1"
+    local patch
+    patch=$(jq -cn --arg outcome "$2" --arg error "$3" --arg now "$(@ Time nowISO)" '{outcome:$outcome,error:$error,finished:$now}')
+    @ "$_RECEIVER" transitionTo: "$1" with: "$patch"
   ]
 
   method: markHeartbeat [
-    | now |
+    | now patch |
     now := @ Time nowISO.
-    heartbeatAt := now.
-    @ self save
+    patch := #{heartbeatAt: now} asJson.
+    @ Store patch: self with: patch
   ]
 
+  # Prefer the durable pid file: the launcher may die before storing processPid.
+  # Exit files win over kill -0 (which can see an unrelated reused PID).
   rawMethod: isProcessAlive [
-    local pid
+    local pid pf ef state birth actual
+    ef=$(_ivar exitFile)
+    [[ -z "$ef" || ! -f "$ef" ]] || { echo false; return; }
+    pf=$(_ivar pidFile)
     pid=$(_ivar processPid)
+    [[ -z "$pf" || ! -s "$pf" ]] || read -r pid < "$pf"
     if [[ "$pid" =~ ^[0-9]+$ && "$pid" -gt 0 ]] && kill -0 "$pid" 2>/dev/null; then
-      echo "true"
-    else
-      echo "false"
+      if [[ -n "$pf" && -s "$pf.start" ]]; then
+        birth=$(cat "$pf.start")
+        actual=$(ps -p "$pid" -o lstart= 2>/dev/null)
+        [[ "$birth" == "$actual" ]] || { echo false; return; }
+      fi
+      state=$(ps -p "$pid" -o stat= 2>/dev/null)
+      [[ -n "$state" && "$state" != *Z* ]] && { echo true; return; }
     fi
+    echo false
   ]
 
   # Resolve the calling agent's run from TRASHTALK_RUN_TOKEN. Prints the run
@@ -103,7 +120,8 @@ AgentRun subclass: Object
       _throw "RunTokenError" "Unknown run '$runId'"
       return 1
     fi
-    stored=$(@ "$runId" capabilityTokenHash)
+    _env_set "$runId" "$data"
+    stored=$(printf '%s' "$data" | jq -r '.capabilityTokenHash // empty')
     hash=$(printf '%s' "$secret" | shasum -a 256 | cut -d' ' -f1)
     if [[ -z "$stored" || "$hash" != "$stored" ]]; then
       _throw "RunTokenError" "Run token rejected for '$runId'"
@@ -116,7 +134,7 @@ AgentRun subclass: Object
     fi
     sid=$(@ "$runId" session)
     life=""
-    [[ -n "$sid" ]] && life=$(@ "$sid" lifecycleState)
+    [[ -n "$sid" ]] && life=$(db_get "$sid" | jq -r '.lifecycleState // empty')
     if [[ -z "$life" || "$life" == "terminated" ]]; then
       _throw "RunTokenError" "Session for run '$runId' is terminated"
       return 1
@@ -161,8 +179,7 @@ AgentRun subclass: Object
       _throw "RunError" "Delivery $d is $state; only offered or blocked deliveries can be settled"
       return 1
     fi
-    [[ -n "$note" ]] && @ "$d" note: "$note"
-    @ "$d" transitionTo: processed >/dev/null || return 1
+    @ "$d" transitionTo: processed with: "$(jq -cn --arg note "$note" '{note:$note}')" >/dev/null || return 1
     echo "processed"
   ]
 

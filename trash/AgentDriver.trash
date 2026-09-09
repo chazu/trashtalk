@@ -40,7 +40,7 @@ AgentDriver subclass: Object
     unsets=$(@ "$_RECEIVER" envUnsets)
     full_argv=$(jq -cn --arg env "$env_path" --argjson unsets "$unsets" \
       --arg tok "TRASHTALK_RUN_TOKEN=$token" --arg dir "TRASHTALK_DIR=$tdir" \
-      --argjson rest "$argv_json" '[$env] + $unsets + [$tok, $dir] + $rest')
+      --argjson rest "$argv_json" '[$env, "-u", "TRASH_SESSION_ID"] + $unsets + [$tok, $dir] + $rest')
     # Record paths and move to running BEFORE launching: a fast agent can call
     # trash-send before this method returns, and its token is only valid while
     # the run is running.
@@ -68,7 +68,7 @@ AgentDriver subclass: Object
   # Normalized view of a run's process outcome. Never infers success from exit
   # alone; the worker combines this with delivery settlement.
   rawClassMethod: outcomeOf: runId [
-    local run_id="$1" exit_file last_file exit_code="" exited=false last_msg="" ref seen
+    local run_id="$1" exit_file last_file exit_code="" exited=false last_msg="" ref seen error
     exit_file=$(@ "$run_id" exitFile)
     last_file=$(@ "$run_id" lastMessageFile)
     if [[ -n "$exit_file" && -f "$exit_file" ]]; then
@@ -81,14 +81,15 @@ AgentDriver subclass: Object
     ref=$(@ "$_RECEIVER" conversationRefFor: "$run_id")
     seen=$(@ "$_RECEIVER" resultSeenFor: "$run_id")
     if [[ "$seen" != true ]]; then seen=false; fi
-    jq -cn --argjson exited "$exited" --arg code "$exit_code" --arg ref "$ref" \
+    error=$(@ "$_RECEIVER" errorFor: "$run_id")
+    jq -cn --arg error "$error" --argjson exited "$exited" --arg code "$exit_code" --arg ref "$ref" \
       --arg last "$last_msg" --argjson seen "$seen" '
       {schema_version: 1,
        exited: $exited,
        exit_code: (if ($code | test("^[0-9]+$")) then ($code | tonumber) else null end),
        conversation_ref: $ref,
        last_message: $last,
-       result_seen: $seen}'
+       result_seen: $seen, error: $error}'
   ]
 
   # Default: the reference recorded at launch or resume.
@@ -115,4 +116,11 @@ AgentDriver subclass: Object
       @ Tool interruptPid: "$pid" signal: TERM >/dev/null
     fi
     echo true
+  ]
+
+  # Bounded diagnostics at the filesystem boundary; stderr is not protocol data.
+  rawClassMethod: errorFor: runId [
+    local log
+    log=$(@ "$1" errorLog)
+    [[ -z "$log" || ! -f "$log" ]] || tail -c 4096 "$log"
   ]

@@ -17,6 +17,14 @@ Process subclass: Object
   ]
 
   # List running Process instances, one instance id per line
+  # OS boundary: flock is held by this shell's open file description. Perl
+  # supplies flock(2) on both macOS and Linux. Crash/exit closes the descriptor;
+  # there is no expiring lease that can admit a second live owner. Busy = no-op.
+  rawClassMethod: withLock: path receiver: receiver selector: selector argument: argument [
+    source "${TRASHTALK_DIR:-$HOME/.trashtalk}/lib/process-lock.bash" || return 1
+    _trash_with_process_lock "$@"
+  ]
+
   rawClassMethod: listProcesses [
     @ Runtime dataForClass: Process | jq -r 'to_entries[] | select(.value.status == "running") | .key'
   ]

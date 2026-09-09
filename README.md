@@ -443,9 +443,12 @@ stored conversation after the first), sandboxed to the workspace plus the
 Trashtalk store. Inside that process the agent reports back with
 `trash-send AgentRun result:` and `settle:`, authenticated by a run token in
 its environment. A message sent while Gusgus is busy waits for the next
-process. Nothing runs in the background between deliveries; `@@` and inbox
-replies drive the worker, and `@ AgentWorker tick` reconciles any session by
-hand. Gusgus uses medium reasoning effort. Configure with
+process. `@@` and inbox replies request foreground ticks. For queued work to continue
+without another command, run `bin/trash-worker` or install and start its user
+service with `bin/trash-worker-service install` and `bin/trash-worker-service start`.
+`@ AgentSession browse` opens session activity, messages, run logs, and explicit
+pause/resume/retry actions in Innards. See [agent operations](docs/agent-operations.md)
+for recovery behavior, service controls, and validation. Gusgus uses medium reasoning effort. Configure with
 `TRASHTALK_CODEX_MODEL` (default `gpt-5.6-terra`),
 `TRASHTALK_USER` (your inbox name, default `$USER`), and
 `TRASHTALK_GUSGUS_PROFILE` (`assistant-low-power`, or `shell` to drive the

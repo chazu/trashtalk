@@ -17,16 +17,27 @@ AgentSession subclass: Object
                 created:'' lastActivityAt:''
 
   # Common transition rule over lifecycleState.
-  rawMethod: transitionTo: newState [
+  method: transitionTo: newState [
+    ^ @ self transitionTo: newState with: '{}'
+  ]
+
+  # Atomic state transition plus associated fields; rejected transitions write nothing.
+  rawMethod: transitionTo: newState with: patchJson [
     local to="$1" from allowed
+    _env_set "$_RECEIVER" "$(db_get "$_RECEIVER")"
     from=$(_ivar lifecycleState)
     allowed=" open:paused paused:open open:closed paused:closed closed:open open:terminated paused:terminated closed:terminated "
     if [[ "$allowed" != *" $from:$to "* ]]; then
       _throw "TransitionError" "AgentSession $_RECEIVER: $from -> $to rejected"
       return 1
     fi
-    _ivar_set lifecycleState "$to"
-    @ "$_RECEIVER" save
+    local eid ef et changed patch
+    printf '%s' "$2" | jq -e 'type == "object"' >/dev/null || return 1
+    patch=$(_db_escape "$2")
+    eid=$(_db_escape "$_RECEIVER"); ef=$(_db_escape "$from"); et=$(_db_escape "$to")
+    changed=$(_db_sql "UPDATE instances SET data=json_set(json_patch(data,'$patch'),'$.lifecycleState','$et') WHERE id='$eid' AND json_extract(data,'$.lifecycleState')='$ef'; SELECT changes();") || return 1
+    [[ "$changed" == 1 ]] || { _throw "TransitionError" "Concurrent transition; reload and retry"; return 1; }
+    _env_set "$_RECEIVER" "$(db_get "$_RECEIVER")"
     echo "$to"
   ]
 
@@ -105,8 +116,7 @@ AgentSession subclass: Object
   method: touch [
     | now |
     now := @ Time nowISO.
-    lastActivityAt := now.
-    @ self save
+    @ Store patch: self with: (#{lastActivityAt: now} asJson)
   ]
 
   method: inboxObject [
@@ -158,9 +168,7 @@ AgentSession subclass: Object
       _throw "SessionError" "Delivery $d is $state; only failed or uncertain deliveries can be requeued"
       return 1
     fi
-    @ "$d" attempts: 0
-    @ "$d" save
-    @ "$d" transitionTo: pending >/dev/null || return 1
+    @ "$d" transitionTo: pending with: '{"attempts":0}' >/dev/null || return 1
     echo "pending"
   ]
 
@@ -181,9 +189,7 @@ AgentSession subclass: Object
       _throw "SessionError" "Delivery $d is $state; only failed or uncertain deliveries can be skipped"
       return 1
     fi
-    @ "$d" lastError: "$note"
-    @ "$d" note: "$note"
-    @ "$d" transitionTo: skipped >/dev/null || return 1
+    @ "$d" transitionTo: skipped with: "$(jq -cn --arg note "$note" '{note:$note,lastError:$note}')" >/dev/null || return 1
     # Record the skip where the human reads, not in the session inbox: a message
     # to the session would become a new delivery.
     inboxName=$(@ AgentWorker ownerInboxFor: "$_RECEIVER")
@@ -191,4 +197,68 @@ AgentSession subclass: Object
     line="skipped $d in session $_RECEIVER: $note"
     @ Inbox send: "$line" to: "$inboxName" from: worker subject: skipped kind: note >/dev/null
     echo "skipped"
+  ]
+
+  # SQL aggregate boundary; presentation and workflow use these public counts.
+  rawMethod: deliveryCountIn: states [
+    local sid states
+    sid=$(_db_escape "$_RECEIVER")
+    states=$(_db_escape "$1")
+    _db_sql "SELECT count(*) FROM instances WHERE json_extract(data,'$.class')='AgentDelivery' AND json_extract(data,'$.session')='$sid' AND json_extract(data,'$.state') IN (SELECT value FROM json_each('$states'));"
+  ]
+
+  method: stalledCount [
+    ^ @ self deliveryCountIn: '["failed","uncertain"]'
+  ]
+
+  method: questionCount [
+    ^ @ self deliveryCountIn: '["blocked"]'
+  ]
+
+  # Snapshot in one SQLite read, so a picker never mixes counts from two ticks.
+  rawMethod: snapshot [
+    local sid
+    sid=$(_db_escape "$_RECEIVER")
+    _db_sql "SELECT json_object(
+      'id',s.id,'identity',json_extract(s.data,'$.identity'),
+      'workspace',json_extract(s.data,'$.workspace'),'lifecycle',json_extract(s.data,'$.lifecycleState'),
+      'pending',(SELECT count(*) FROM instances d WHERE json_extract(d.data,'$.class')='AgentDelivery' AND json_extract(d.data,'$.session')=s.id AND json_extract(d.data,'$.state')='pending'),
+      'questions',(SELECT count(*) FROM instances d WHERE json_extract(d.data,'$.class')='AgentDelivery' AND json_extract(d.data,'$.session')=s.id AND json_extract(d.data,'$.state')='blocked'),
+      'stalled',(SELECT count(*) FROM instances d WHERE json_extract(d.data,'$.class')='AgentDelivery' AND json_extract(d.data,'$.session')=s.id AND json_extract(d.data,'$.state') IN ('failed','uncertain')),
+      'run',coalesce((SELECT r.id FROM instances r WHERE json_extract(r.data,'$.class')='AgentRun' AND json_extract(r.data,'$.session')=s.id ORDER BY r.rowid DESC LIMIT 1),''),
+      'activity',coalesce((SELECT json_extract(r.data,'$.state') FROM instances r WHERE json_extract(r.data,'$.class')='AgentRun' AND json_extract(r.data,'$.session')=s.id ORDER BY r.rowid DESC LIMIT 1),'idle'),
+      'error',coalesce((SELECT json_extract(r.data,'$.error') FROM instances r WHERE json_extract(r.data,'$.class')='AgentRun' AND json_extract(r.data,'$.session')=s.id AND coalesce(json_extract(r.data,'$.error'),'')!='' ORDER BY r.rowid DESC LIMIT 1),''))
+      FROM instances s WHERE s.id='$sid';"
+  ]
+
+  method: details [
+    | data |
+    data := @ self snapshot.
+    ^ @ AgentBrowser describeSession: data
+  ]
+
+  rawMethod: runs [
+    local sid
+    sid=$(_db_escape "$_RECEIVER")
+    @ Store findByClass: AgentRun where: "json_extract(data,'$.session')='$sid'" orderBy: 'rowid DESC' limit: 100
+  ]
+
+  rawMethod: stalledDeliveries [
+    local sid
+    sid=$(_db_escape "$_RECEIVER")
+    @ Store findByClass: AgentDelivery where: "json_extract(data,'$.session')='$sid' AND json_extract(data,'$.state') IN ('failed','uncertain')" orderBy: 'rowid ASC' limit: 100
+  ]
+
+  rawMethod: messageIds [
+    local address
+    address=$(_db_escape "$(@ "$_RECEIVER" inbox)")
+    @ Store findByClass: Message where: "json_extract(data,'$.to')='$address' OR json_extract(data,'$.from')='$address'" orderBy: 'rowid ASC' limit: 200
+  ]
+
+  classMethod: browse [
+    ^ @ AgentBrowser browse
+  ]
+
+  method: browse [
+    ^ @ AgentBrowser browseSession: self
   ]

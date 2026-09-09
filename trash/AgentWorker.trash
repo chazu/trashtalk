@@ -1,6 +1,6 @@
 # AgentWorker - Foreground dispatch and reconciliation for agent sessions.
-# No daemon: `@@` and Inbox deliver: call it directly, and an OS supervisor may
-# loop `tick` later. A tick reconciles the session's active run (if its process
+# `@@` and Inbox deliver: call it directly; bin/trash-worker runs the same
+# tick under a user OS supervisor. A tick reconciles the session's active run (if its process
 # has exited) and then claims pending deliveries into one new detached run.
 #
 #   @ AgentWorker tick                        # every open/paused session
@@ -8,7 +8,7 @@
 #   @ AgentWorker deliverMessage: $msg toInbox: 'session:...'   # Inbox hook
 #
 # Environment:
-#   TRASHTALK_NO_AUTOTICK=1   deliveries are recorded but nothing is launched
+#   TRASHTALK_NO_AUTOTICK=1   suppress foreground ticks (not the service)
 #   TRASHTALK_RUN_DIR         where per-run prompt/log/pid files live
 AgentWorker subclass: Object
 
@@ -71,34 +71,64 @@ AgentWorker subclass: Object
     fi
     [[ -n "$session" ]] || return 0
     ids=$(jq -cn --arg m "$msg" '[$m]')
-    @ AgentDelivery forSession: "$session" messages: "$ids" >/dev/null || return 1
-    for blocked in $(@ "$_RECEIVER" blockedDeliveriesFor: "$session"); do
-      @ "$blocked" transitionTo: pending >/dev/null
-    done
+    @ AgentQueue assign: "$session" messages: "$ids" outbox: "$msg" >/dev/null || return 1
     if [[ "${TRASHTALK_NO_AUTOTICK:-}" == 1 ]]; then return 0; fi
     @ "$_RECEIVER" tickSession: "$session" >/dev/null
     return 0
+  ]
+
+  # Route durable outbox rows without recursively launching foreground ticks.
+  rawClassMethod: routePending [
+    local msg address TRASHTALK_NO_AUTOTICK=1
+    for msg in $(@ AgentQueue pending); do
+      @ AgentQueue attempted: "$msg" || return 1
+      address=$(@ "$msg" to)
+      @ AgentWorker deliverMessage: "$msg" toInbox: "$address" || return 1
+    done
+  ]
+
+  # Same lock for manual ticks and supervised workers, scoped to this store.
+  rawClassMethod: lockPath [
+    local path
+    path=$(perl -MCwd=abs_path -e 'print abs_path(shift) // die "missing database"' "$SQLITE_JSON_DB") || return 1
+    printf '%s.worker.lock\n' "$path"
+  ]
+
+  classMethod: tick [
+    | path |
+    path := @ self lockPath.
+    ^ @ Process withLock: path receiver: self selector: 'work:' argument: ''
+  ]
+
+  classMethod: tickSession: sessionId [
+    | path |
+    path := @ self lockPath.
+    ^ @ Process withLock: path receiver: self selector: 'work:' argument: sessionId
+  ]
+
+  classMethod: dispatchSession: sessionId [
+    ^ @ self tickSession: sessionId
+  ]
+
+  # Work runs only while holding the OS lock; every tick repairs outbox routing.
+  rawClassMethod: work: sessionId [
+    local ids session state run rc=0
+    @ AgentQueue refresh || return 1
+    @ AgentWorker routePending || return 1
+    if [[ -n "$1" ]]; then ids="$1"; else ids=$(@ AgentSession findAll); fi
+    for session in $ids; do
+      @ AgentWorker tickOwnedSession: "$session" || rc=1
+    done
+    return "$rc"
   ]
 
   # ------------------------------------------------------------------
   # Ticks
   # ------------------------------------------------------------------
 
-  rawClassMethod: tick [
-    local ids session state run
-    ids=$(@ AgentSession findAll)
-    for session in $ids; do
-      state=$(@ "$session" lifecycleState)
-      [[ "$state" == open || "$state" == paused ]] || continue
-      run=$(@ "$_RECEIVER" tickSession: "$session")
-      [[ -n "$run" ]] && printf '%s\n' "$run"
-    done
-    return 0
-  ]
-
   # Reconcile the active run if any; then dispatch pending work. Prints the id
   # of a newly started run, or nothing.
-  rawClassMethod: tickSession: sessionId [
+  rawClassMethod: tickOwnedSession: sessionId [
     local session="$1" run outcome
     run=$(@ "$session" activeRun)
     if [[ -n "$run" ]]; then
@@ -107,7 +137,7 @@ AgentWorker subclass: Object
         return 0
       fi
     fi
-    @ "$_RECEIVER" dispatchSession: "$session"
+    @ "$_RECEIVER" dispatchOwnedSession: "$session"
   ]
 
   # ------------------------------------------------------------------
@@ -116,8 +146,13 @@ AgentWorker subclass: Object
 
   # Prints the run's resulting state: running (still alive) or a terminal state.
   rawClassMethod: reconcileRun: runId [
-    local run_id="$1" session profile driver outcome exited code seen ref alive
+    local run_id="$1" session profile driver outcome exited code seen ref alive reason
     local d st has_offered=false has_blocked=false final owner
+    if [[ "$(@ "$run_id" state)" == starting ]]; then
+      @ "$_RECEIVER" failRun: "$run_id" error: "worker stopped before launch"
+      echo failed
+      return 0
+    fi
     alive=$(@ "$run_id" isProcessAlive)
     if [[ "$alive" == true ]]; then
       @ "$run_id" markHeartbeat >/dev/null
@@ -133,18 +168,18 @@ AgentWorker subclass: Object
     seen=$(jq -r '.result_seen' <<<"$outcome")
     ref=$(jq -r '.conversation_ref // ""' <<<"$outcome")
     if [[ -n "$ref" ]]; then
-      @ "$run_id" externalConversationRef: "$ref"
-      @ "$run_id" save
-      @ "$session" lastConversationRef: "$ref"
-      @ "$session" save
+      @ Store patch: "$run_id" with: "$(jq -cn --arg ref "$ref" '{externalConversationRef:$ref}')"
+      @ Store patch: "$session" with: "$(jq -cn --arg ref "$ref" '{lastConversationRef:$ref}')"
     fi
     if [[ "$exited" != true ]]; then
-      @ "$_RECEIVER" failRun: "$run_id" error: "process vanished without an exit status"
+      @ "$_RECEIVER" failRun: "$run_id" error: "process vanished without an exit status; inspect logs before retrying"
       echo failed
       return 0
     fi
     if [[ "$code" != 0 || "$seen" != true ]]; then
-      @ "$_RECEIVER" failRun: "$run_id" error: "exit $code, result_seen=$seen"
+      reason=$(printf '%s' "$outcome" | jq -r '.error // empty')
+      [[ -n "$reason" ]] || reason="exit $code, result_seen=$seen"
+      @ "$_RECEIVER" failRun: "$run_id" error: "$reason"
       echo failed
       return 0
     fi
@@ -173,17 +208,27 @@ AgentWorker subclass: Object
   # Fail the run; offered deliveries fail and retry while attempts remain,
   # otherwise the owner is alerted and the delivery stalls until skipped.
   rawClassMethod: failRun: runId error: err [
-    local run_id="$1" err="$2" session role limit d st attempts owner
+    local run_id="$1" err="$2" session role limit d st attempts owner ambiguous=false output lastfile oldstate driver outcome
     session=$(@ "$run_id" session)
     role=$(@ "$session" role)
     limit=$(@ "$role" retryLimit | tr -cd '0123456789')
     [[ -n "$limit" ]] || limit=2
-    @ "$run_id" finishWith: failed outcome: "" error: "$err" >/dev/null
+    oldstate=$(@ "$run_id" state)
+    output=$(@ "$run_id" outputLog)
+    lastfile=$(@ "$run_id" lastMessageFile)
+    # Once launch began, even a silent process may have produced effects.
+    # Only failures still in starting are known to be safe to auto-retry.
+    [[ "$oldstate" == starting ]] || ambiguous=true
     for d in $(@ AgentDelivery offeredFor: "$run_id"); do
       st=$(@ "$d" state)
       [[ "$st" == offered ]] || continue
-      @ "$d" lastError: "$err"
-      @ "$d" save
+      @ Store patch: "$d" with: "$(jq -cn --arg error "$err" '{lastError:$error}')"
+      if [[ "$ambiguous" == true ]]; then
+        @ "$d" transitionTo: uncertain >/dev/null
+        owner=$(@ "$_RECEIVER" ownerInboxFor: "$session")
+        @ Inbox alert: "Delivery $d needs review after run $run_id: $err. Inspect its logs before retrying." to: "$owner" from: worker >/dev/null
+        continue
+      fi
       @ "$d" transitionTo: failed >/dev/null
       attempts=$(@ "$d" attempts)
       if [[ "$attempts" -lt "$limit" ]]; then
@@ -193,6 +238,9 @@ AgentWorker subclass: Object
         @ Inbox alert: "Delivery $d in session $session stalled after $attempts attempts: $err. Skip it with: @ $session skip: $d note: 'reason'" to: "$owner" from: worker >/dev/null
       fi
     done
+    driver=$(@ AgentWorker driverFor: "$(@ "$run_id" backendProfile)")
+    outcome=$(@ "$driver" outcomeOf: "$run_id")
+    @ "$run_id" finishWith: failed outcome: "$outcome" error: "$err" >/dev/null
   ]
 
   # ------------------------------------------------------------------
@@ -201,10 +249,11 @@ AgentWorker subclass: Object
 
   # Claim every pending delivery into one new run and launch it. Prints the
   # run id, or nothing when there was nothing to do.
-  rawClassMethod: dispatchSession: sessionId [
+  rawClassMethod: dispatchOwnedSession: sessionId [
     local session="$1" state pending profile driver run token d claimed="" run_dir prompt_file ref pid rc
     state=$(@ "$session" lifecycleState)
     [[ "$state" == open ]] || return 0
+    [[ "$(@ "$session" stalledCount)" == 0 ]] || return 0
     pending=$(@ "$session" pendingDeliveries)
     [[ -n "$pending" ]] || return 0
     profile=$(@ "$session" backendProfile)

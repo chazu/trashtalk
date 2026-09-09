@@ -109,16 +109,27 @@ Inbox subclass: Object
   # Stamp, persist, and signal. Returns the message id. Inboxes named
   # `session:<id>` or `agent:<handle>` belong to agent sessions: the message
   # also becomes an AgentDelivery and the worker ticks that session.
-  method: deliver: message [
-    | now millis existingThread payload available routed |
+  # Raw: the DSL cannot yet propagate a failed transaction's exit status.
+  # Never report success or emit a wake when persistence failed.
+  rawMethod: deliver: message [
+    @ "$_RECEIVER" prepare: "$1" || return 1
+    @ AgentQueue persist: "$1" || return 1
+    @ "$_RECEIVER" announce: "$1"
+  ]
+
+  method: prepare: message [
+    | now millis existingThread |
     now := @ Time nowISO.
     millis := @ Time nowMillis.
     @ message to: name.
     @ message created: now.
     @ message sentAt: millis.
     existingThread := @ message thread.
-    (existingThread isEmpty) ifTrue: [@ message thread: message].
-    @ message save.
+    (existingThread isEmpty) ifTrue: [@ message thread: message]
+  ]
+
+  method: announce: message [
+    | payload available routed |
     available := @ Honker isAvailable.
     (available = 'true') ifTrue: [
       payload := @ message asJson.
@@ -257,6 +268,7 @@ Inbox subclass: Object
         case "$action" in
           reply) @ "$_RECEIVER" composeReplyTo: "$msg" >/dev/null; break ;;
           view) @ "$_RECEIVER" readThreadOf: "$msg" ;;
+          details) @ "$_RECEIVER" readDetailsOf: "$msg" ;;
           archive) @ "$msg" archive >/dev/null; break ;;
           *) break ;;
         esac
@@ -269,28 +281,15 @@ Inbox subclass: Object
   # One picker record per recent message, newest first, with a rendered
   # preview file the picker can show beside the list.
   rawMethod: pickMessageIn: previewDir [
-    local dir="$1" ids m kind from subject body status created marker preview label name title records
+    local dir="$1" ids m data name title records
     name=$(_ivar name)
     : > "$dir/records.jsonl"
     ids=$(@ "$_RECEIVER" messages: 200)
     for m in $ids; do
-      kind=$(@ "$m" kind)
-      from=$(@ "$m" from)
-      subject=$(@ "$m" subject)
-      body=$(@ "$m" body)
-      status=$(@ "$m" status)
-      created=$(@ "$m" created)
-      marker=" "
-      [[ "$status" == unread ]] && marker="*"
-      preview="$subject"
-      [[ -n "$preview" ]] || preview=$(printf '%s\n' "$body" | head -n 1)
-      preview="${preview:0:72}"
-      @ "$m" show > "$dir/$m.txt" 2>/dev/null
-      label=$(printf '%s [%s] %s: %s' "$marker" "$kind" "$from" "$preview")
-      jq -cn --arg id "$m" --arg label "$label" --arg kind "$kind" \
-        --arg detail "$status  $created" --arg path "$m.txt" \
-        '{schema_version:1,id:$id,path:$path,line:1,column:1,label:$label,kind:$kind,detail:$detail}' \
-        >> "$dir/records.jsonl"
+      @ "$m" reload >/dev/null
+      data=$(@ MessagePresentation dataFor: "$m") || return 1
+      @ MessagePresentation textFrom: "$data" > "$dir/$m.txt"
+      @ MessagePresentation recordFor: "$m" data: "$data" >> "$dir/records.jsonl"
     done
     if [[ ! -s "$dir/records.jsonl" ]]; then
       printf '%s\n' "Inbox $name is empty" >&2
@@ -312,9 +311,9 @@ Inbox subclass: Object
     local msg="$1" thread text m rule
     thread=$(@ "$msg" thread)
     rule="----------------------------------------"
-    text=$(for m in $(@ "$_RECEIVER" thread: "$thread"); do @ "$m" show; printf '\n%s\n\n' "$rule"; done)
+    text=$(for m in $(@ "$_RECEIVER" thread: "$thread"); do @ MessagePresentation textFor: "$m"; printf '\n%s\n\n' "$rule"; done)
     if [[ "$(@ Tools::Inpage isInstalled)" == true ]]; then
-      @ Tools::Inpage viewText: "$text" title: "Thread $thread" >/dev/null
+      @ Tools::Inpage viewText: "$text" title: 'Conversation' >/dev/null
     else
       printf '%s\n' "$text"
     fi
@@ -325,12 +324,13 @@ Inbox subclass: Object
   # view, archive, or back.
   rawMethod: pickActionFor: messageId in: previewDir [
     local msg="$1" dir="$2" records result outcome title from
-    from=$(@ "$msg" from)
+    from=$(@ MessagePresentation participant: "$(@ "$msg" from)")
     records=$(jq -cn --arg path "$msg.txt" '
       {schema_version:1,id:"reply",path:$path,line:1,column:1,label:"Reply in this thread",kind:"action",detail:"compose in inmacs; Ctrl-X Ctrl-S saves and sends"},
       {schema_version:1,id:"view",path:$path,line:1,column:1,label:"View the whole thread",kind:"action",detail:"inpage; leave with Ctrl-X Ctrl-C"},
+      {schema_version:1,id:"details",path:$path,line:1,column:1,label:"Message details",kind:"action",detail:"Full addresses, timestamps, and IDs"},
       {schema_version:1,id:"archive",path:$path,line:1,column:1,label:"Archive",kind:"action",detail:"hide it from the inbox"},
-      {schema_version:1,id:"back",path:$path,line:1,column:1,label:"Back to inbox",kind:"action",detail:""}')
+      {schema_version:1,id:"back",path:$path,line:1,column:1,label:"Back to inbox",kind:"action",detail:""} | . + {display:{prefix:"",preview_title:"Message"}}')
     title="From $from"
     if [[ "$(@ Tools::Inpick isInstalled)" == true ]]; then
       result=$(@ Tools::Inpick selectRecords: "$records" root: "$dir" query: "" title: "$title")
@@ -342,12 +342,21 @@ Inbox subclass: Object
     printf '%s' "$result" | jq -r '.selection.id // "back"'
   ]
 
+  method: readDetailsOf: message [
+    | text available ignored |
+    text := @ message show.
+    available := @ Tools::Inpage isInstalled.
+    (available = 'true') ifTrue: [
+      ignored := @ Tools::Inpage viewText: text title: 'Message details'
+    ] ifFalse: [@ Console print: text]
+  ]
+
   # Compose a reply in inmacs (or $EDITOR) and send it into the thread. Prints
   # the new message id, or the editor outcome when nothing was sent.
   rawMethod: composeReplyTo: messageId [
     local msg="$1" draft result outcome text reply from
     draft=$(mktemp "${TMPDIR:-/tmp}/trash-reply.XXXXXX")
-    from=$(@ "$msg" from)
+    from=$(@ MessagePresentation participant: "$(@ "$msg" from)")
     if [[ "$(@ Tools::Inmacs isInstalled)" == true ]]; then
       result=$(@ Tools::Inmacs composeInto: "$draft" title: "Reply to $from")
       outcome=$(printf '%s' "$result" | jq -r '.outcome // "cancelled"')
