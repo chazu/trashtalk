@@ -60,21 +60,10 @@ Inbox subclass: Object
     @ Store ensureIndex: 'msg_thread' path: '$.thread'
   ]
 
-  # Current user's inbox. Raw: reading the owner from the shell environment.
-  rawClassMethod: current [
-    @ Inbox named: "${TRASHTALK_USER:-$USER}"
-  ]
-
-  classMethod: unreadCount [
-    | inbox |
-    inbox := @ self current.
-    ^ @ inbox unreadCount
-  ]
-
+  # Class sends fall through to instance methods before trait methods, so
+  # preserve Persistable's class count explicitly alongside message count.
   classMethod: count [
-    | inbox |
-    inbox := @ self current.
-    ^ @ inbox count
+    ^ @ Store countByClass: self
   ]
 
   # Names of every known inbox
@@ -243,13 +232,6 @@ Inbox subclass: Object
   # ------------------------------------------------------------------
   # Innards UI: pick a message, read its thread, reply or archive
   # ------------------------------------------------------------------
-
-  # Browse the current user's inbox.
-  classMethod: browse [
-    | inbox |
-    inbox := @ self current.
-    ^ @ inbox browse
-  ]
 
   # Interactive loop over inpick / inpage / inmacs (with fzf and $EDITOR
   # fallbacks). Selecting a message marks it read and offers reply, view
@@ -438,9 +420,8 @@ Inbox subclass: Object
     echo "  @ Inbox alert: 'disk 95%' to: 'chazu' from: 'cron'          # kind: alert"
     echo ""
     echo "Read:"
-    echo "  @ Inbox count               # non-archived messages in your inbox"
-    echo "  @ Inbox unreadCount         # unread in your current user's inbox"
-    echo "  inbox=\$(@ Inbox named: 'chazu')"
+    echo "  inbox=\$(@ Trash userInbox)   # your Inbox instance"
+    echo "  other=\$(@ Inbox named: 'gusgus')  # another Inbox instance"
     echo "  @ \$inbox list               # unread, one line each"
     echo "  @ \$inbox show: \$msgId       # full message, marks read"
     echo "  @ \$inbox count | unread | unreadCount | questions | messages | messages: 10"
@@ -449,8 +430,7 @@ Inbox subclass: Object
     echo "  @ \$msgId reply: 'yes'       # to sender, same thread"
     echo ""
     echo "Browse (Innards, with fzf/\$EDITOR fallbacks):"
-    echo "  @ Inbox browse               # your inbox: pick, read thread, reply or archive"
-    echo "  @ \$inbox browse"
+    echo "  @ \$inbox browse             # pick, read thread, reply or archive"
     echo "  Ctrl-D archives the highlighted message; Enter opens its actions."
     echo ""
     echo "Wakeups (needs honker):"
@@ -460,5 +440,6 @@ Inbox subclass: Object
     echo ""
     echo "Other:"
     echo "  @ Inbox names"
+    echo "  @ Inbox count               # number of stored Inbox instances"
     echo "  @ Message help"
   ]

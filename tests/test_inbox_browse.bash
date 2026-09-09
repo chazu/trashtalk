@@ -165,12 +165,13 @@ assert_eq "archived message no longer listed" "1" "$(line_count "$(cat "$CAPTURE
 
 # ==========================================
 echo ""
-echo "4. class-side browse uses the current user's inbox"
+echo "4. browse the instance returned by Trash userInbox"
 # ==========================================
 
 : > "$CAPTURE_PICKER_ARGV"; : > "$PICK_QUEUE"
-TRASHTALK_USER=tester @ Inbox browse >/dev/null 2>&1
-assert_contains "class browse opened the user's inbox" "Inbox tester" "$(cat "$CAPTURE_PICKER_ARGV")"
+user_inbox=$(TRASHTALK_USER=tester @ Trash userInbox)
+@ "$user_inbox" browse >/dev/null 2>&1
+assert_contains "userInbox browse opened the user's inbox" "Inbox tester" "$(cat "$CAPTURE_PICKER_ARGV")"
 
 echo ""
 echo "5. Ctrl-D archives directly from the message list and preserves the thread"

@@ -3,6 +3,11 @@
 Trash subclass: Object
   include: Debuggable
 
+  # Resolve the user's durable Inbox instance. Raw: shell environment lookup.
+  rawClassMethod: userInbox [
+    @ Inbox named: "${TRASHTALK_USER:-$USER}"
+  ]
+
   # Get system information
   rawMethod: info [
     echo "=== Trash System Information ==="
@@ -513,6 +518,7 @@ EOF
     echo "=== Trash System Commands ==="
     echo "@ Trash info                        - Show system information"
     echo "@ Trash doctor                      - Diagnose environment/setup issues"
+    echo "@ Trash userInbox                   - Return your Inbox instance"
     echo "@ Trash listObjects                 - List all objects"
     echo "@ Trash listTraits                  - List all traits"
     echo "@ Trash methodsFor: <class>         - Show methods for class"

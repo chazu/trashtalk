@@ -407,7 +407,7 @@ false
 __='the command produced this output'
 @@ 'why did that fail?'                 # prints the message id and returns
 
-inbox=$(@ Inbox named: "$USER")
+inbox=$(@ Trash userInbox)
 @ $inbox list                            # Gusgus's reply appears here
 @ $inbox show: $msg
 @ $msg reply: 'and how do I fix it?'     # resumes the same conversation
@@ -419,7 +419,11 @@ inbox=$(@ Inbox named: "$USER")
 @ Gusgus help
 ```
 
-`@ Inbox browse` opens your inbox in Innards: `inpick` lists the messages
+`inbox=$(@ Trash userInbox)` returns your persisted `Inbox` instance, using
+`TRASHTALK_USER` with `$USER` as the fallback. Other inboxes are instances of
+the same class, retrieved with `@ Inbox named: 'gusgus'`.
+
+`@ "$inbox" browse` opens that inbox in Innards: `inpick` lists the messages
 with a rendered preview of each. **Ctrl-D** archives the highlighted message
 and refreshes the inbox; archived messages remain available in their threads.
 **Enter** opens actions for reply, viewing the thread in `inpage`, archive,
@@ -428,11 +432,10 @@ in `inmacs` and sends the saved text into the thread, which resumes Gusgus
 when the message came from a session. Without Innards the same loop falls
 back to `fzf` and `$EDITOR`.
 
-`@ Inbox count` returns the total non-archived messages for the same inbox
-(`TRASHTALK_USER`, falling back to `$USER`), including read messages.
-`@ Inbox unreadCount` counts only unread messages. Both counts also work on
-a specific inbox instance. Use `@ Store countByClass: Inbox` to count inbox
-records themselves.
+`@ "$inbox" count` returns its total non-archived messages, including read
+messages. `@ "$inbox" unreadCount` counts only unread messages.
+`@ Inbox count` counts stored inbox instances. The `Inbox` class does not
+implicitly select the current user's inbox.
 
 Each `@@` becomes an `AgentDelivery` on the workspace's `AgentSession`; the
 `AgentWorker` launches one `codex exec` process per delivery (resuming the
