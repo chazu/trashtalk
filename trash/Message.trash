@@ -49,12 +49,36 @@ Message subclass: Object
     ^ 'false'
   ]
 
+  # Processing links are owned by the queue, independently of read/archive state.
+  method: blockingDeliveryIds [
+    | question |
+    question := @ AgentQueue questionFor: self.
+    ^ question jsonAt: 'deliveryIds'
+  ]
+
+  method: answerId [
+    | question |
+    question := @ AgentQueue questionFor: self.
+    ^ question jsonTextAt: 'answerId'
+  ]
+
   method: markRead [
     | now |
     now := @ Time nowISO.
     status := 'read'.
     readAt := now.
     @ self save
+  ]
+
+  # UI reads preserve archive state and the first read timestamp.
+  method: markViewed [
+    @ self reload.
+    (status = 'unread') ifTrue: [@ self markRead]
+  ]
+
+  method: readText [
+    @ self markViewed.
+    ^ @ MessagePresentation textFor: self
   ]
 
   method: archive [

@@ -28,14 +28,24 @@ AgentSession subclass: Object
     from=$(_ivar lifecycleState)
     allowed=" open:paused paused:open open:closed paused:closed closed:open open:terminated paused:terminated closed:terminated "
     if [[ "$allowed" != *" $from:$to "* ]]; then
-      _throw "TransitionError" "AgentSession $_RECEIVER: $from -> $to rejected"
-      return 1
+      # Pre-durable AgentSession records have no lifecycle. Permit explicit
+      # retirement without treating these incomplete records as open sessions.
+      if [[ -n "$from" || "$to" != terminated ]]; then
+        _throw "TransitionError" "AgentSession $_RECEIVER: $from -> $to rejected"
+        return 1
+      fi
     fi
     local eid ef et changed patch
     printf '%s' "$2" | jq -e 'type == "object"' >/dev/null || return 1
     patch=$(_db_escape "$2")
     eid=$(_db_escape "$_RECEIVER"); ef=$(_db_escape "$from"); et=$(_db_escape "$to")
-    changed=$(_db_sql "UPDATE instances SET data=json_set(json_patch(data,'$patch'),'$.lifecycleState','$et') WHERE id='$eid' AND json_extract(data,'$.lifecycleState')='$ef'; SELECT changes();") || return 1
+    # Register the field atomically too: lazy schema loading must not replace
+    # a legacy record's explicit terminal state with the default open state.
+    changed=$(_db_sql "UPDATE instances SET data=json_set(json_patch(data,'$patch'),'$.lifecycleState','$et',
+      '$._vars',json(CASE WHEN EXISTS (SELECT 1 FROM json_each(json_extract(data,'$._vars')) WHERE value='lifecycleState')
+        THEN json_extract(data,'$._vars')
+        ELSE json_insert(coalesce(json_extract(data,'$._vars'),'[]'),'\$[#]','lifecycleState') END))
+      WHERE id='$eid' AND coalesce(json_extract(data,'$.lifecycleState'),'')='$ef'; SELECT changes();") || return 1
     [[ "$changed" == 1 ]] || { _throw "TransitionError" "Concurrent transition; reload and retry"; return 1; }
     _env_set "$_RECEIVER" "$(db_get "$_RECEIVER")"
     echo "$to"
@@ -110,7 +120,7 @@ AgentSession subclass: Object
   ]
 
   method: terminate [
-    ^ @ self transitionTo: 'terminated'
+    ^ @ AgentWorker terminateSession: self
   ]
 
   method: touch [

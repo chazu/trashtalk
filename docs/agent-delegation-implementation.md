@@ -3,8 +3,11 @@
 **Status:** Proposed implementation plan for discussion. No runtime changes
 are made by this document. All new selectors below are API sketches, not
 commands that work today. Names and later slices remain open to revision.
-The identity/session distinction below records the subsequent discussion:
-assignments belong to agents and can span multiple sessions.
+The discussion has established that assignments belong to agents and can span
+multiple sessions. Jcode is the next harness integration. The common contract
+must support queued prompts and explicit stop; agents receive notifications
+and read messages through the inbox. These decisions are recorded below;
+the selectors and implementation details remain proposals.
 
 **Baseline:** `8be14c8` plus the current uncommitted worker, question,
 termination, and Maki changes. See [agent operations](agent-operations.md),
@@ -46,12 +49,98 @@ reply to Gusgus. However:
 - Keyed sends use lookup followed by creation; delegation needs transactional
   uniqueness across concurrent calls and restarted runs.
 - Prompts currently teach low-level `AgentRun result:` and `settle:` commands.
+- The worker copies message bodies into a fixed launch prompt. New messages
+  wait until the active harness process exits; there is no live notification
+  channel or common agent-facing operation for stopping another agent's work.
 - Roles have policy fields, but enforcement is incomplete. Maki has normal
   user OS permissions and no OS sandbox.
 - Workspace is a path; repository, worktree, external issue, and long-term
   memory objects have not been added.
 
 These are implementation gaps, not reasons to replace the worker or harness.
+
+## Ongoing sessions and a common harness contract
+
+A session is an ongoing conversation. A run is a period of autonomous work
+within it and can contain many model/tool turns. The harness process or
+connection may remain alive between runs. Completing work must not require
+that a resident harness process exit. An idle resident agent need not spend
+model turns polling for work.
+
+Humans and agents use the same Trashtalk operations regardless of harness.
+The minimum contract is:
+
+| Operation | Required behavior |
+|---|---|
+| Send a message | Persist it in the addressed inbox and schedule a notification for its selected recipient session. Return a durable message reference, without implying that the recipient has acted. |
+| Notify an idle session | Start or resume processing so the agent can read pending inbox messages. |
+| Notify a busy session | Schedule a subsequent prompt to read pending messages after the current prompt finishes. A harness may also support presenting the notification at a safe point during current work. |
+| Stop current work | Allow an authorized human or agent to request that the selected execution stop; record the request and report confirmed stop or an unresolved failure. |
+| Inspect and reconnect | Retain message, execution, and outcome references across controller disconnection; reconcile pending notification and stop requests. |
+
+Use **steer** for supplying input during current work and **stop** for ending
+that work. Steering is an optional capability. Scheduling a later prompt and
+stopping work are required. Ordinary senders do not choose ACP methods, SDK
+requests, or a harness-specific messaging path. A caller that explicitly
+requires steering must receive an unsupported result when the harness can
+only queue input; an ordinary message remains deliverable through the common
+queue behavior.
+
+Stopping is a control operation, independent of the model reading a message
+that asks it to stop. Authenticate the calling agent, resolve the target
+execution, and check its authority to stop that work. Record the target's
+execution generation so a delayed request cannot stop replacement work.
+Stopping a run does not terminate its identity or close its session, and it
+does not prove that external effects were rolled back. Queued input remains
+inspectable and must not immediately restart the stopped work; continuing
+that work requires an explicit action. A shared harness daemon or other
+sessions must survive a targeted stop.
+
+Add Jcode next behind this common contract. Evaluate its native Harness API
+for resident sessions and optional steering; using a native protocol inside
+the adapter does not change the public Trashtalk interface. Jcode is the
+leading candidate for the default, with a default change following the
+walkthrough below. Maki remains suitable if queued prompts and confirmed stop
+work through the same interface. If it cannot meet that minimum, use Jcode
+alone for this workflow rather than exposing separate public APIs.
+
+The current launch-time run token and process-exit reconciliation assume one
+process per run. The Jcode slice must establish how a resident harness gives
+each execution the correct acting context and how terminal run events are
+recorded independently of daemon lifetime. Keep Trashtalk responsible for
+assignment, delivery, and stop authority; do not introduce a second owner of
+those decisions through harness-native delegation or autonomous wake features.
+
+### Notifications point to inbox messages
+
+Message bodies, sender attribution, thread relationships, and replies belong
+to durable `Message` objects in the messaging plane. A harness notification
+carries only the references needed to discover pending messages, such as an
+inbox handle and message handles or a processing cursor. It instructs the
+agent to read those messages through the public Inbox/Message operations.
+Do not substitute a copied body or a generated summary in the harness prompt
+for that inbox read. This applies to initial input, later input, questions,
+answers, and assignment outcomes.
+
+The sequence is: persist message and notification obligation; present a wake
+prompt when the harness can accept it; let the agent read the identified
+messages from the inbox; record the reply or assignment outcome through the
+same messaging plane. On a busy harness without steering, the queued prompt
+says that messages are available and tells the agent where to read them.
+
+Select pending work from durable delivery records, independently of unread
+or archived presentation state. Identity-addressed and session-addressed
+messages must both remain discoverable from the selected execution, even
+when their original inboxes differ. Reading or archiving a message does not
+settle its delivery or complete an assignment.
+
+Notifications can be coalesced, but messages retain their individual identity
+and thread. A repeated notification must not create another logical delivery.
+A message arriving during an inbox read must remain pending for that read or
+a subsequent notification. Record the difference between a stored message,
+a harness accepting its notification, and the agent handling its delivery.
+After a disconnect, reconcile that state; a successful transport write alone
+does not establish consumption or make an uncertain replay safe.
 
 ## Agents own assignments; sessions work on them
 
@@ -164,11 +253,12 @@ Each run should receive:
    harness/profile, and actual capabilities. Read the applicable `AGENTS.md`
    and referenced instructions; avoid duplicating their contents indefinitely.
 3. **Work:** assignment handle, assignee identity, current execution session,
-   objective, completion criteria, requester, recorded progress, relevant
-   messages and answers from participating sessions, and the source revision
-   when applicable.
+   references for inspecting its objective, completion criteria, requester,
+   and progress, plus inbox/message references and the source revision when
+   applicable. Message and answer contents are read from the inbox.
 4. **A short Trashtalk guide:** how to load the runtime, inspect the assignment,
-   ask a question, record an outcome, and discover additional methods.
+   read notified inbox messages, ask a question, record an outcome, and
+   discover additional methods.
 5. **Optional evidence:** a bounded set of relevant remembered observations,
    labeled with their sources and dates.
 
@@ -177,7 +267,8 @@ instruction is: “Use the assignment object to report your outcome or ask for
 missing information. Completion means you have supplied the requested
 evidence; it does not merge code or close an external issue.”
 
-The generated context is refreshed on every run, including resumed runs.
+The generated context is refreshed on every run, including resumed runs;
+notifications during a run identify newly available inbox messages.
 It should distinguish instructions from quoted requests, retrieved text,
 and evidence. Memory and old transcripts do not override current instructions
 or the stored state of work. Preserve the assembled prompt for inspection;
@@ -261,17 +352,20 @@ Moving to a later session records a new execution participation under the same
 assignment, with its own deduplicated delivery obligation.
 
 Gusgus's handling of the input can finish once the handoff is durable. The
-assignment remains outstanding. A child outcome queues an explicit
-continuation carrying the assignment and original human thread, so a later
-Gusgus run can summarize it there. Handling that notification does not complete
-unrelated work or obligate Gusgus to reply to the child again.
+assignment remains outstanding. A child outcome persists a message linked to
+the assignment and original human thread, together with an obligation to
+notify Gusgus. Gusgus reads that message from its inbox and can summarize it
+in the human thread. Reading the outcome does not complete unrelated work or
+obligate Gusgus to reply to the child again. A busy Gusgus can receive a queued
+notification, or a live notification when its harness supports steering.
 
 Waiting for a specialist is distinct from waiting for a human. Neither should
 keep a model process alive polling. Initially child questions go to the human
 owner and remain linked to the assignment; Gusgus can inspect them. Letting
 Gusgus answer selected questions can follow after the basic route works.
 
-Completion and notification creation must be atomic and replayable. Failed
+Completion, outcome message persistence, and creation of the notification
+obligation must be atomic and replayable. Failed
 or uncertain execution remains visible; silence never proves that retrying
 external effects is safe. Cancelling an assignment records intent separately
 from confirmed process stop. Pausing or terminating Gusgus does not silently
@@ -386,13 +480,21 @@ external system adds no value, remove the adapter without changing delegation.
 
 ## Delivery sequence and acceptance
 
+Slice 0 implementation is now present: the `jcode` profile, common inbox
+notification prompts and run launchers, delivery-scoped results, exact-run stop,
+and conservative resident-session recovery. See [Jcode session driver](jcode-session-driver.md)
+for the implementation and validation record. Jcode is now the default for new
+Gusgus sessions; native steering remains optional and unexposed. Assignment slices below
+remain planned.
+
 Each row is a bounded change followed by a pause to use and review it. Later
 rows are options in dependency order, not authorization for one large patch.
 
 | Slice | Concrete change | Evidence required before moving on |
 |---|---|---|
+| 0. Common messaging and Jcode | Add the Jcode adapter, notification-driven inbox reads, queued input, explicit authorized stop, and resident-session reconciliation behind the common Trashtalk interface. Test Maki against the same minimum contract. | During substantive work, send another message and observe the agent read it from the inbox after notification. Queued delivery works when steering is unavailable; the message body is absent from the notification prompt. An authorized agent can stop another execution without stopping unrelated sessions; stale or unauthorized stop requests fail. Reconnect and reconcile pending input without silently losing or duplicating work. Qualify optional Jcode steering separately and choose the default from this walkthrough. |
 | 1. Human walkthrough | Explicitly configure one agent identity and its initial session using existing objects. Add minimal Assignment draft/assignTo:/workIn:/show/ask:/complete: operations and session participation history. Exercise them manually from Bash before enabling a model; implement atomic publication/settlement. | Assign to the identity instance, select its session, and inspect the assignment from another shell. Continue the same open assignment in a second session of that identity with progress/questions retained. A foreign identity's session is rejected; repeated selection/completion creates no duplicate work/outcome; superseded or stale execution cannot complete it. |
-| 2. One specialist | Add assignment-specific prompt context and dispatch through the selected specialist session, reusing the worker and Maki driver. Keep new dispatch limited to one child and no recursion. | Do the same walkthrough through a real harness; it uses documented Bash messages. A later session can continue the same identity's assignment without its predecessor's transcript. Questions resume the right work; its result wakes Gusgus with the original conversation link. |
+| 2. One specialist | Add assignment-specific context and dispatch through the selected specialist session, reusing the worker and common harness interface established in slice 0. Keep new dispatch limited to one child and no recursion. | Do the same walkthrough through a real harness; it reads notified inbox messages through documented Bash operations. A later session can continue the same identity's assignment without its predecessor's transcript. Questions resume the right work; its result notifies Gusgus with the original conversation link. An unrelated user message receives no specialist result. |
 | 3. Recovery and visibility | Add assignment inspection from session/inbox views, cancellation reporting, and continuation reconciliation. | Restart at assignment creation and completion boundaries; no lost or duplicated handoffs. An unrelated user message receives no specialist result. Human visibility survives paused/terminated Gusgus. |
 | 4. Memory experiment | Select one provider and implement its small Tool/store interface, with no automatic prompt injection initially. | Fresh-session recall, provenance, correction/deletion, and provider-unavailable behavior are useful and understandable. |
 | 5. One coding assignment | Add minimal Repository/Worktree objects and run an edit in an explicitly selected managed checkout. | Dirty user checkout stays intact; worktree creation recovers after interruption; changes and validation are reviewable; failure preserves work. |
@@ -401,8 +503,9 @@ rows are options in dependency order, not authorization for one large patch.
 Slice 1 is deliberately a small human exercise, not a production task manager.
 The human is exercising the shared API as the trusted local operator, not
 impersonating the specialist or making a human name a new assignee type.
-Use controlled run fixtures for agent-authorization checks; real model work
-begins in slice 2. Explicit session replacement in slice 1 proves the object
+Use controlled run fixtures for assignment-authorization checks; real model
+delegation begins in slice 2, after slice 0 qualifies harness messaging and
+control. Explicit session replacement in slice 1 proves the object
 model without requiring an automatic session-selection policy.
 Do not enable unattended delegation before slices 2 and 3 pass. Automated
 tests should target meaningful transaction boundaries and routing mistakes;
@@ -425,5 +528,6 @@ introducing another scheduler or duplicating shell command construction.
 - Which specialist model/profile is appropriate once more than one is needed?
 
 General event subscriptions, recursive delegation, parallel writers, generic
-tracker synchronization, live harness steering, and automatic landing remain
-deferred. They should follow evidence from these small workflows.
+tracker synchronization, and automatic landing remain deferred. Optional
+harness steering can be qualified in slice 0; it is not required for the
+common queued-message and stop contract.

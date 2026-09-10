@@ -1,0 +1,43 @@
+# Jcode - Installation discovery and interactive authentication for the CLI.
+# Persistent execution belongs to JcodeDriver, not the one-shot Agent adapter.
+Jcode subclass: Tool
+
+  classMethod: name [
+    ^ 'jcode'
+  ]
+
+  rawClassMethod: path [
+    local executable
+    executable=$(command -v jcode) && { printf '%s\n' "$executable"; return; }
+    [[ ! -x "$HOME/.local/bin/jcode" ]] || printf '%s\n' "$HOME/.local/bin/jcode"
+    return 0
+  ]
+
+  classMethod: installCommand [
+    ^ 'See https://jcode.sh for Jcode installation'
+  ]
+
+  classMethod: version [
+    | executable argv |
+    executable := @ self path.
+    executable isEmpty ifTrue: [^ 'not installed'].
+    argv := #(executable '--version') asJson.
+    ^ @ self runArgvJson: argv
+  ]
+
+  classMethod: authStatus [
+    | executable argv |
+    executable := @ self path.
+    executable isEmpty ifTrue: [^ 'not installed'].
+    argv := #(executable 'auth' 'status') asJson.
+    ^ @ self runArgvJson: argv
+  ]
+
+  # Interactive OS boundary: the CLI owns OAuth and terminal interaction.
+  rawClassMethod: login [
+    pragma: direct
+    local executable
+    executable=$(@ Jcode path)
+    [[ -n "$executable" ]] || { _throw 'ToolError' 'Jcode is not installed'; return 127; }
+    "$executable" login openai
+  ]

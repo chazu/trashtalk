@@ -104,9 +104,10 @@ If anything misbehaves, run the built-in diagnostics first:
 It checks bash version (needs 4.0+), required tools (`jo`/`jq`/`sqlite3`/`uuidgen`),
 whether the sqlite3 in use can load the optional honker extension, and whether
 classes have been compiled — and prints a clear OK/WARN/FAIL line for each.
-It also installs Maki when missing, using the official installer in
-`~/.local/bin` (override with `MAKI_INSTALL_DIR`), and verifies the executable.
-Provider login is separate: `@ Maki loginToProvider: 'openai'`.
+It checks Jcode, the default session harness. Install it from [jcode.sh](https://jcode.sh)
+if needed, then use `@ Jcode login` for OpenAI subscription authentication.
+When `TRASHTALK_GUSGUS_PROFILE=maki` is selected, doctor installs Maki if missing
+and verifies its executable. Maki login is `@ Maki loginToProvider: 'openai'`.
 
 Common fixes:
 
@@ -427,7 +428,9 @@ inbox=$(@ Trash userInbox)
 the same class, retrieved with `@ Inbox named: 'gusgus'`.
 
 `@ "$inbox" browse` opens that inbox in Innards: `inpick` lists the messages
-with a rendered preview of each. **Ctrl-D** archives the highlighted message
+with a rendered preview of each. Displaying a preview marks that message read
+and clears its unread dot. Opening a thread marks its messages read too.
+**Ctrl-D** archives the highlighted message
 and refreshes the inbox; archived messages remain available in their threads.
 **Enter** opens actions for reply, viewing the thread in `inpage`, archive,
 or back. Reply composes
@@ -440,22 +443,33 @@ messages. `@ "$inbox" unreadCount` counts only unread messages.
 `@ Inbox count` counts stored inbox instances. The `Inbox` class does not
 implicitly select the current user's inbox.
 
-Each `@@` becomes an `AgentDelivery` on the workspace's `AgentSession`; the
-`AgentWorker` launches one `codex exec` process per delivery (resuming the
-stored conversation after the first), sandboxed to the workspace plus the
-Trashtalk store. Inside that process the agent reports back with
-`trash-send AgentRun result:` and `settle:`, authenticated by a run token in
-its environment. A message sent while Gusgus is busy waits for the next
-process. `@@` and inbox replies request foreground ticks. For queued work to continue
+Each `@@` becomes an `AgentDelivery` on the workspace's `AgentSession`.
+`AgentWorker` notifies the configured harness with inbox message references;
+the agent reads their contents from Inbox and uses `AgentRun result:forDelivery:`
+and `settle:` to respond and acknowledge work. Every run gets a private launcher
+for the common `trash-send` API. Busy sessions queue messages for the next prompt.
+Jcode is the default and uses a resident daemon, resuming the same native
+conversation across runs. Jcode and Maki run with your normal OS permissions.
+`@@` and inbox replies request foreground ticks. For queued work to continue
 without another command, run `bin/trash-worker` or install and start its user
 service with `bin/trash-worker-service install` and `bin/trash-worker-service start`.
 `@ AgentSession browse` opens session activity, messages, run logs, and explicit
 pause/resume/retry actions in Innards. See [agent operations](docs/agent-operations.md)
-for recovery behavior, service controls, and validation. Gusgus uses medium reasoning effort. Configure with
-`TRASHTALK_CODEX_MODEL` (default `gpt-5.6-terra`),
+for recovery behavior, service controls, and validation. Gusgus uses OpenAI
+OAuth and medium reasoning effort. Configure with
+`TRASHTALK_JCODE_MODEL` (default `gpt-5.6-terra`),
 `TRASHTALK_USER` (your inbox name, default `$USER`), and
-`TRASHTALK_GUSGUS_PROFILE` (`assistant-low-power`, or `shell` to drive the
-loop with a script in `TRASHTALK_SHELL_DRIVER` for testing). The design is in
+`TRASHTALK_GUSGUS_PROFILE` (`jcode` by default; `maki` for Maki; `codex` or the legacy
+`assistant-low-power` for Codex; `shell` for a script in
+`TRASHTALK_SHELL_DRIVER`). Codex uses `TRASHTALK_CODEX_MODEL`
+(default `gpt-5.6-terra`). Maki uses `TRASHTALK_MAKI_MODEL`
+(default `openai/gpt-5.6-terra`). Jcode uses existing OpenAI subscription login.
+`@ Jcode login` starts interactive authentication. `@ "$run" stop` pauses its
+session and stops that exact run; agents use `AgentRun stop:` with `agent.stop`
+role authority. Profiles are captured when a session opens;
+changing the default does not migrate existing conversations. See the
+[Jcode driver design](docs/jcode-session-driver.md),
+[Maki driver design](docs/maki-session-driver.md), and
 `docs/headless-agent-sessions-design.md`.
 
 ## One-shot agent questions
@@ -681,7 +695,7 @@ RECOMMENDATIONS
 | `AgentIdentity`, `AgentArchetype`, `AgentRole` | Who an agent is, what it is for, and what it may do |
 | `AgentRun`, `AgentDelivery` | One harness process, and the durable input batch it was offered |
 | `AgentWorker` | Foreground dispatch and reconciliation: claim, launch, settle |
-| `CodexDriver`, `ShellDriver` | Session drivers: `codex exec` with resume, or a shell script for tests |
+| `JcodeDriver`, `MakiDriver`, `CodexDriver`, `ShellDriver` | Common session drivers for resident Jcode, Maki SDK, Codex, and test scripts |
 | `TmuxSession` | Legacy tmux-backed session metadata for interactive CLIs |
 
 ### Traits

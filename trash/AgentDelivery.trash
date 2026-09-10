@@ -64,6 +64,16 @@ AgentDelivery subclass: Object
     @ Store findByClass: AgentDelivery where: "json_extract(data, '\$.deliveryKey') = '$esc'" orderBy: 'created_at ASC' limit: 1
   ]
 
+  # SQLite boundary: stopping a launched run never infers successful processing.
+  rawClassMethod: interruptFor: runId [
+    local run ids delivery
+    run=$(_db_escape "$1")
+    ids=$(_db_sql "UPDATE instances SET data=json_set(data,'$.state','uncertain','$.lastError','Run explicitly stopped or session terminated')
+      WHERE class='AgentDelivery' AND json_extract(data,'$.run')='$run' AND json_extract(data,'$.state')='offered' RETURNING id;") || return 1
+    for delivery in $ids; do @ "$delivery" reload >/dev/null || return 1; done
+    echo true
+  ]
+
   # Atomic claim: pending -> offered for runId, attempts+1, in one SQL
   # statement guarded by the current state. Prints true when the row changed.
   rawClassMethod: claim: deliveryId run: runId [

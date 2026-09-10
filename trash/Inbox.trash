@@ -262,7 +262,7 @@ Inbox subclass: Object
         @ "$msg" archive >/dev/null
         continue
       fi
-      @ "$msg" markRead >/dev/null
+      @ "$msg" markViewed >/dev/null
       while true; do
         action=$(@ "$_RECEIVER" pickActionFor: "$msg" in: "$preview_dir")
         case "$action" in
@@ -299,10 +299,32 @@ Inbox subclass: Object
     records=$(cat "$dir/records.jsonl")
     title="Inbox $name"
     if [[ "$(@ Tools::Inpick isInstalled)" == true ]]; then
-      @ Tools::Inpick selectRecords: "$records" root: "$dir" query: "" title: "$title" controlDAction: archive
+      @ "$_RECEIVER" writePreviewHookIn: "$dir" || return 1
+      @ Tools::Inpick selectRecords: "$records" root: "$dir" query: "" title: "$title" controlDAction: archive previewHook: "$dir/preview-hook"
     else
       @ Tools::Inpick fallbackSelectRecords: "$records" query: "" title: "$title" controlDAction: archive
     fi
+  ]
+
+  # OS boundary: inpick reports only previews it has displayed. The private
+  # executable validates the id against this picker before using the public API.
+  rawMethod: writePreviewHookIn: dir [
+    local dir="$1" tdir="${TRASHTALK_DIR:-$HOME/.trashtalk}"
+    {
+      printf '#!/usr/bin/env bash\nset -euo pipefail\n'
+      printf 'export TRASHTALK_DIR=%q SQLITE_JSON_DB=%q\n' "$tdir" "$SQLITE_JSON_DB"
+      # Share the caller's cache so subsequent message getters see this read.
+      printf 'export TRASH_SESSION_ID=%q\n' "$TRASH_SESSION_ID"
+      printf 'id=$(jq -er .id)\n'
+      printf 'jq -e --arg id "$id" %q %q >/dev/null\n' 'select(.id == $id)' "$dir/records.jsonl"
+      printf 'exec %q %q previewed: "$id"\n' "$tdir/bin/trash-send" "$_RECEIVER"
+    } > "$dir/preview-hook" || return 1
+    chmod 700 "$dir/preview-hook"
+  ]
+
+  method: previewed: message [
+    @ message markViewed.
+    ^ @ MessagePresentation displayFor: message
   ]
 
   # Show the whole thread in inpage (or plain stdout). Leave inpage with
@@ -311,7 +333,7 @@ Inbox subclass: Object
     local msg="$1" thread text m rule
     thread=$(@ "$msg" thread)
     rule="----------------------------------------"
-    text=$(for m in $(@ "$_RECEIVER" thread: "$thread"); do @ MessagePresentation textFor: "$m"; printf '\n%s\n\n' "$rule"; done)
+    text=$(for m in $(@ "$_RECEIVER" thread: "$thread"); do @ "$m" readText; printf '\n%s\n\n' "$rule"; done)
     if [[ "$(@ Tools::Inpage isInstalled)" == true ]]; then
       @ Tools::Inpage viewText: "$text" title: 'Conversation' >/dev/null
     else
@@ -344,6 +366,7 @@ Inbox subclass: Object
 
   method: readDetailsOf: message [
     | text available ignored |
+    @ message markViewed.
     text := @ message show.
     available := @ Tools::Inpage isInstalled.
     (available = 'true') ifTrue: [

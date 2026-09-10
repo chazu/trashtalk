@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+export TRASHTALK_GUSGUS_PROFILE=maki
 if [[ "${TRASHTALK_TEST_ISOLATED:-}" != 1 ]]; then
     exec bash "$(dirname "${BASH_SOURCE[0]}")/../lib/test-isolated.bash" "${BASH_SOURCE[0]}" "$@"
 fi

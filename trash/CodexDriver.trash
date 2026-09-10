@@ -10,7 +10,7 @@
 CodexDriver subclass: AgentDriver
 
   classMethod: capabilities [
-    ^ '{"schema_version":1,"headless":true,"resume":true,"live_input":false,"sandbox":true}'
+    ^ '{"schema_version":1,"headless":true,"resume":true,"queued_input":true,"stop":true,"live_input":false,"sandbox":true}'
   ]
 
   # Never let API keys reach the child; subscription auth is used.

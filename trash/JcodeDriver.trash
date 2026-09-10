@@ -1,0 +1,116 @@
+# JcodeDriver - A private resident daemon per session, one API adapter per run.
+# Worker lifecycle and message delivery remain harness-independent.
+JcodeDriver subclass: AgentDriver
+
+  classMethod: capabilities [
+    ^ '{"schema_version":1,"headless":true,"resume":true,"queued_input":true,"stop":true,"live_input":false,"sandbox":false}'
+  ]
+
+  rawClassMethod: model [
+    printf '%s\n' "${TRASHTALK_JCODE_MODEL:-gpt-5.6-terra}"
+  ]
+
+  classMethod: launch: promptFile run: run token: token [
+    ^ @ self launchRef: '' promptFile: promptFile run: run token: token
+  ]
+
+  classMethod: resume: ref promptFile: promptFile run: run token: token [
+    ^ @ self launchRef: ref promptFile: promptFile run: run token: token
+  ]
+
+  # Filesystem/CLI boundary. Private homes exclude ambient Jcode config and
+  # share only OAuth files (symlinks preserve credential refresh). Runtime paths
+  # are short for macOS Unix socket limits and persisted with the session home.
+  rawClassMethod: prepare: run ref: ref [
+    local run="$1" ref="$2" directory session home runtime source_auth codex_auth executable workspace model bash_path
+    executable=$(@ Jcode path)
+    [[ -n "$executable" ]] || { echo 'Jcode is missing; see https://jcode.sh' >&2; return 1; }
+    directory=$(@ AgentDriver runDirFor: "$run")
+    session=$(@ "$run" session)
+    workspace=$(@ "$session" workspace)
+    home="${directory%/*}/hosts/$session/jcode"
+    source_auth="${JCODE_HOME:-$HOME/.jcode}/openai-auth.json"
+    codex_auth="${CODEX_HOME:-$HOME/.codex}/auth.json"
+    [[ -f "$source_auth" || -f "$codex_auth" ]] || {
+      echo 'Jcode requires OpenAI subscription authentication; run @ Jcode login' >&2
+      return 1
+    }
+    umask 077
+    mkdir -p "$home/external/.codex" "$home/bin" "$home/processes" || return 1
+    bash_path=$(command -v bash)
+    {
+      printf '#!%s\n' "$bash_path"
+      printf 'exec %q %q shell %q %q "$@"\n' "$bash_path" "${TRASHTALK_DIR:-$HOME/.trashtalk}/lib/jcode-processes.bash" "$home" "$bash_path"
+    } > "$home/bin/bash.tmp" || return 1
+    chmod 700 "$home/bin/bash.tmp" && mv "$home/bin/bash.tmp" "$home/bin/bash" || return 1
+    rm -f "$home/stopping"
+    if [[ -f "$source_auth" ]]; then ln -sfn "$source_auth" "$home/openai-auth.json" || return 1; fi
+    if [[ -f "$codex_auth" ]]; then ln -sfn "$codex_auth" "$home/external/.codex/auth.json" || return 1; fi
+    runtime=''
+    [[ ! -s "$home/runtime.path" ]] || runtime=$(cat "$home/runtime.path")
+    # /tmp may be cleared on reboot; history lives in the durable private home.
+    if [[ -z "$runtime" || ( ! -e "$runtime" && ! -L "$runtime" ) ]]; then
+      runtime=$(mktemp -d /tmp/tt-jcode.XXXXXXXX) || return 1
+      printf '%s\n' "$runtime" > "$home/runtime.path.tmp" && mv "$home/runtime.path.tmp" "$home/runtime.path" || return 1
+    fi
+    [[ -d "$runtime" && -O "$runtime" && ! -L "$runtime" ]] || {
+      echo 'Jcode private runtime directory is missing or has changed ownership' >&2; return 1;
+    }
+    model=$(@ JcodeDriver model)
+    jq -cn --arg executable "$executable" --arg home "$home" --arg runtime "$runtime" \
+      --arg workspace "$workspace" --arg model "$model" --arg ref "$ref" --arg bash "$bash_path" \
+      '{executable:$executable,home:$home,runtime:$runtime,workspace:$workspace,model:$model,ref:$ref,bash:$bash}' > "$directory/jcode.json"
+  ]
+
+  rawClassMethod: launchRef: ref promptFile: promptFile run: run token: token [
+    local directory argv
+    directory=$(@ AgentDriver runDirFor: "$3")
+    mkdir -p "$directory" || return 1
+    @ "$3" errorLog: "$directory/stderr.log"
+    @ "$3" save
+    @ JcodeDriver prepare: "$3" ref: "$1" 2>"$directory/stderr.log" || return 1
+    [[ "$2" == "$directory/prompt.txt" ]] || cp "$2" "$directory/prompt.txt" || return 1
+    argv=$(jq -cn --arg bash "$(command -v bash)" --arg script "${TRASHTALK_DIR:-$HOME/.trashtalk}/lib/jcode-api.bash" \
+      --arg directory "$directory" '[$bash,$script,"run",$directory]') || return 1
+    @ JcodeDriver launchArgv: "$argv" promptFile: "$directory/prompt.txt" run: "$3" token: "$4" ref: "$1"
+  ]
+
+  rawClassMethod: conversationRefFor: run [
+    local directory
+    directory=$(@ AgentDriver runDirFor: "$1")
+    if [[ -s "$directory/conversation" ]]; then cat "$directory/conversation"; else @ AgentDriver conversationRefFor: "$1"; fi
+  ]
+
+  rawClassMethod: resultSeenFor: run [
+    local directory
+    directory=$(@ AgentDriver runDirFor: "$1")
+    if [[ -s "$directory/completed" && -s "$directory/conversation" ]] && cmp -s "$directory/completed" "$directory/conversation"; then echo true; else echo false; fi
+  ]
+
+  # A sent prompt with no terminal receipt may still be executing in the daemon.
+  # Keep its exact run available for stop even if its adapter has disappeared.
+  rawClassMethod: outcomeOf: run [
+    local directory outcome resident=false
+    directory=$(@ AgentDriver runDirFor: "$1")
+    outcome=$(@ AgentDriver outcomeOf: "$1")
+    # Base dispatch uses its receiver for hooks; supply this driver's receipts.
+    outcome=$(jq -c --arg ref "$(@ JcodeDriver conversationRefFor: "$1")" \
+      --argjson seen "$(@ JcodeDriver resultSeenFor: "$1")" '.conversation_ref=$ref | .result_seen=$seen' <<<"$outcome")
+    if [[ -e "$directory/send-intent" && "$(@ JcodeDriver resultSeenFor: "$1")" != true ]]; then resident=true; fi
+    jq -c --argjson resident "$resident" '.resident_unconfirmed=$resident' <<<"$outcome"
+  ]
+
+  # Stop the adapter first: it must not race cancellation by sending late input.
+  # Then stop the exact native conversation, even when the adapter was lost.
+  rawClassMethod: interrupt: run [
+    local directory
+    [[ "$(@ AgentDriver interrupt: "$1")" == true ]] || { echo false; return; }
+    directory=$(@ AgentDriver runDirFor: "$1")
+    [[ -e "$directory/send-intent" ]] || { echo true; return; }
+    if [[ -s "$directory/conversation" && -s "$directory/jcode.json" ]] && \
+      bash "${TRASHTALK_DIR:-$HOME/.trashtalk}/lib/jcode-api.bash" stop "$directory" >>"$directory/control.log" 2>>"$directory/stderr.log"; then
+      echo true
+    else
+      echo false
+    fi
+  ]

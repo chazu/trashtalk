@@ -28,6 +28,14 @@ set -uo pipefail
 printf '%s\n' "$@" >> "$CAPTURE_PICKER_ARGV"
 records=$(cat)
 printf '%s\n' "$records" >> "$CAPTURE_RECORDS"
+hook=''
+while (( $# )); do
+    if [[ "$1" == --preview-hook ]]; then hook="$2"; shift; fi
+    shift
+done
+if [[ -n "$hook" && -n "${FAKE_PREVIEW_ID:-}" ]]; then
+    printf '%s\n' "$records" | jq -c --arg id "$FAKE_PREVIEW_ID" 'select(.id == $id)' | "$hook" > "$CAPTURE_PREVIEW_DISPLAY" || exit 1
+fi
 pick=""
 if [[ -s "$PICK_QUEUE" ]]; then
     pick=$(head -n 1 "$PICK_QUEUE")
@@ -118,6 +126,19 @@ assert_contains "hidden search text carries status" "unread" "$(printf '%s\n' "$
 assert_eq "preview path is the message file" "$n1.txt" "$(printf '%s\n' "$records" | head -1 | jq -r .path)"
 assert_contains "picker was given the preview root" "--root" "$(cat "$CAPTURE_PICKER_ARGV")"
 assert_contains "picker title names the inbox" "Inbox tester" "$(cat "$CAPTURE_PICKER_ARGV")"
+assert_eq "rendering unvisited previews does not read them" "2" "$(@ $inbox unreadCount)"
+
+export FAKE_PREVIEW_ID="$n1" CAPTURE_PREVIEW_DISPLAY="$TEST_TMP/preview-display"
+outcome=$(@ $inbox browse)
+assert_eq "preview is read even when picker is cancelled" "read" "$(@ $n1 status)"
+assert_eq "unvisited message remains unread" "unread" "$(@ $q1 status)"
+assert_eq "preview updates the unread count" "1" "$(@ $inbox unreadCount)"
+assert_eq "preview removes unread dot from displayed row" "false" "$(jq '.prefix | contains("●")' "$CAPTURE_PREVIEW_DISPLAY")"
+seen_at=$(@ $n1 readAt)
+assert_eq "preview records a read timestamp" "true" "$([[ -n "$seen_at" ]] && echo true || echo false)"
+@ $inbox browse >/dev/null
+assert_eq "repeat preview keeps first read timestamp" "$seen_at" "$(@ $n1 readAt)"
+unset FAKE_PREVIEW_ID
 
 # ==========================================
 echo ""
@@ -204,6 +225,26 @@ result=$(@ Tools::Inpick fallbackSelectRecords: "$record" query: '' title: Inbox
 assert_eq "fallback reports archive" "archive" "$(printf '%s' "$result" | jq -r .action)"
 assert_eq "fallback preserves message identity" "$q1" "$(printf '%s' "$result" | jq -r .selection.id)"
 assert_contains "fallback binds Ctrl-D" '--expect=ctrl-d' "$(cat "$CAPTURE_PICKER_ARGV")"
+
+echo ""
+echo "7. reading a thread marks its unread messages without restoring archived ones"
+thread_reply=$(@ $q1 reply: 'a later reply')
+thread_archived=$(@ $q1 reply: 'archived history')
+@ $thread_archived archive
+@ $inbox readThreadOf: "$q1" >/dev/null
+assert_eq "opening the thread reads its other messages" "read" "$(@ $thread_reply status)"
+assert_eq "reading preserves archived history" "archived" "$(@ $thread_archived status)"
+assert_eq "thread does not reset original read time" "$seen_at" "$(@ $n1 readAt)"
+
+echo ""
+echo "8. the preview hook rejects a message outside the offered records"
+foreign=$(@ Inbox send: 'not in this picker' to: another-inbox from: alice)
+printf '%s\n' "$record" > "$TEST_TMP/records.jsonl"
+@ $inbox writePreviewHookIn: "$TEST_TMP"
+jq -cn --arg id "$foreign" '{id:$id}' | "$TEST_TMP/preview-hook" >/dev/null 2>&1
+hook_status=$?
+assert_eq "foreign preview rejected" "true" "$([[ "$hook_status" != 0 ]] && echo true || echo false)"
+assert_eq "foreign message remains unread" "unread" "$(@ $foreign status)"
 
 echo ""
 echo "=== Results: $PASSED passed, $FAILED failed ==="

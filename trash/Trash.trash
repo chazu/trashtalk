@@ -20,8 +20,9 @@ Trash subclass: Object
   ]
 
   # Diagnose the environment: bash, required tools, sqlite3 extension support,
-  # and whether classes have been compiled. Installs Maki when missing.
-  # Exits non-zero if any required check or the Maki installation fails.
+  # and whether classes have been compiled. Checks the selected session harness;
+  # Maki installation is automatic only when the Maki profile is selected.
+  # Exits non-zero if a required check or selected Maki installation fails.
   rawMethod: doctor [
     local ok=0 warn=0 bad=0
     local g='\033[0;32m' y='\033[0;33m' r='\033[0;31m' n='\033[0m'
@@ -67,12 +68,26 @@ Trash subclass: Object
       _d_warn "ininspect not found; objects retain textual inspect output"
     fi
 
-    # Maki installation is automated; provider login remains interactive.
-    if @ Maki ensure >/dev/null; then
-      _d_ok "Maki found ($(@ Maki path)); $(@ Maki version)"
-    else
-      _d_bad "Maki installation/check failed; retry with: @ Maki install"
-    fi
+    # Check the configured session harness; provider login stays interactive.
+    local session_profile session_executable session_version
+    session_profile=$(@ Gusgus profile)
+    case "$session_profile" in
+      jcode)
+        session_executable=$(@ Jcode path)
+        if [[ -n "$session_executable" ]] && session_version=$("$session_executable" --version 2>&1); then
+          _d_ok "Jcode found ($session_executable); $session_version"
+        else
+          _d_bad "Jcode is missing or cannot run; $(@ Jcode installCommand)"
+        fi
+        ;;
+      maki)
+        if @ Maki ensure >/dev/null; then
+          _d_ok "Maki found ($(@ Maki path)); $(@ Maki version)"
+        else
+          _d_bad "Maki installation/check failed; retry with: @ Maki install"
+        fi
+        ;;
+    esac
 
     # The selected one-shot backend is optional. Installation and authentication stay
     # explicit because they belong to the external harness.

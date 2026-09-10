@@ -21,7 +21,7 @@ AgentRun subclass: Object
                 backendProfile:'' externalConversationRef:'' ownerGeneration:0 workerId:''
                 capabilityTokenHash:'' processPid:0 pidFile:'' exitFile:'' outputLog:''
                 errorLog:'' promptFile:'' lastMessageFile:'' priorRun:'' started:''
-                heartbeatAt:'' finished:'' outcome:'' error:''
+                heartbeatAt:'' finished:'' outcome:'' error:'' stopRequested:'false'
 
   # Common transition rule over state.
   method: transitionTo: newState [
@@ -219,6 +219,34 @@ AgentRun subclass: Object
     done
   ]
 
+  # Reply to one held delivery, retaining its thread and authenticated sender.
+  # Raw boundary: reject foreign receipts before resolving their message data.
+  rawClassMethod: result: body forDelivery: delivery [
+    local run sid first msg inbox
+    run=$(@ AgentRun current) || return 1
+    [[ "$(@ "$2" run)" == "$run" ]] || { _throw 'RunError' 'Delivery is not held by this run'; return 1; }
+    case "$(@ "$2" state)" in offered|blocked) ;; *) _throw 'RunError' 'Delivery is no longer held'; return 1 ;; esac
+    first=$(@ "$2" messageIdList | head -n 1)
+    [[ -n "$first" ]] || return 1
+    sid=$(@ "$run" session)
+    msg=$(@ Message to: "$(@ "$first" from)" from: "session:$sid" subject: "$(@ "$first" subject)" body: "$1" kind: result)
+    @ "$msg" thread: "$(@ "$first" thread)"
+    @ "$msg" replyTo: "$first"
+    inbox=$(@ Inbox named: "$(@ "$first" from)")
+    @ "$inbox" deliver: "$msg"
+  ]
+
+  # Local user control targets this immutable run id, never a replacement run.
+  method: stop [
+    ^ @ AgentWorker stopRun: self
+  ]
+
+  # Agent entry point requires a valid token even if the caller omitted one.
+  rawClassMethod: stop: target [
+    @ AgentRun current >/dev/null || return 1
+    @ AgentWorker stopRun: "$1"
+  ]
+
   rawClassMethod: send: body to: address [
     local run sid
     run=$(@ AgentRun current) || {
@@ -248,31 +276,46 @@ AgentRun subclass: Object
     @ Inbox send: "$1" to: "$2" from: "session:$sid" subject: "$key" kind: note
   ]
 
-  # Ask the identity owner a blocking question; held deliveries become blocked.
+  # Default: the question blocks all deliveries currently held by this run.
   rawClassMethod: askUser: question [
-    local run sid owner deliveries d first thread msg inbox id state
+    local run ids
+    run=$(@ AgentRun current) || return 1
+    ids=$(@ AgentDelivery offeredFor: "$run" | jq -Rsc 'split("\n") | map(select(length > 0))') || return 1
+    @ AgentRun askUser: "$1" forDeliveries: "$ids"
+  ]
+
+  classMethod: askUser: question forDelivery: delivery [
+    | ids |
+    ids := #(delivery) asJson.
+    ^ @ self askUser: question forDeliveries: ids
+  ]
+
+  # Raw wrapper propagates transaction failure before sending notifications.
+  # The queue checks delivery ownership again inside the publication transaction.
+  rawClassMethod: askUser: question forDeliveries: deliveryIds [
+    local run sid owner ids first delivery thread msg inbox
     run=$(@ AgentRun current) || {
       _throw "RunTokenError" "AgentRun askUser: requires a valid TRASHTALK_RUN_TOKEN"
       return 1
     }
     sid=$(@ "$run" session)
     owner=$(@ AgentRun ownerInboxFor: "$run")
-    deliveries=$(@ AgentDelivery offeredFor: "$run")
+    ids=$(printf '%s' "$2" | jq -ce 'select(type == "array" and all(.[]; type == "string")) | unique') || return 1
+    delivery=$(printf '%s' "$ids" | jq -r '.[0] // empty')
     thread=""
-    for d in $deliveries; do
-      [[ -z "$thread" ]] || break
-      first=$(@ "$d" messageIdList | head -n 1)
+    if [[ -n "$delivery" ]]; then
+      first=$(@ "$delivery" messageIdList | head -n 1)
       [[ -n "$first" ]] && thread=$(@ "$first" thread)
-    done
+    fi
     msg=$(@ Message to: "$owner" from: "session:$sid" subject: question body: "$1" kind: question)
     [[ -n "$thread" ]] && @ "$msg" thread: "$thread"
     inbox=$(@ Inbox named: "$owner")
-    id=$(@ "$inbox" deliver: "$msg")
-    for d in $deliveries; do
-      state=$(@ "$d" state)
-      [[ "$state" == "offered" ]] && @ "$d" transitionTo: blocked >/dev/null
+    @ "$inbox" prepare: "$msg" || return 1
+    @ AgentQueue persist: "$msg" questionRun: "$run" deliveries: "$ids" || return 1
+    for delivery in $(printf '%s' "$ids" | jq -r '.[]'); do
+      @ "$delivery" reload >/dev/null
     done
-    echo "$id"
+    @ "$inbox" announce: "$msg"
   ]
 
   rawClassMethod: inbox [

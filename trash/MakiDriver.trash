@@ -1,0 +1,124 @@
+# MakiDriver - Stock Maki SDK protocol over a detached CLI process.
+# One user JSONL record per delivery batch; --session resumes Maki's own history.
+# Uses OpenAI OAuth and a run-local standard configuration for medium effort.
+MakiDriver subclass: AgentDriver
+
+  classMethod: capabilities [
+    ^ '{"schema_version":1,"headless":true,"resume":true,"queued_input":true,"stop":true,"live_input":false,"sandbox":false}'
+  ]
+
+  classMethod: envUnsets [
+    ^ '["-u","CODEX_API_KEY","-u","OPENAI_API_KEY","-u","OPENROUTER_API_KEY"]'
+  ]
+
+  rawClassMethod: model [
+    printf '%s\n' "${TRASHTALK_MAKI_MODEL:-openai/gpt-5.6-terra}"
+  ]
+
+  classMethod: launch: promptFile run: run token: token [
+    ^ @ self launchRef: '' promptFile: promptFile run: run token: token
+  ]
+
+  classMethod: resume: ref promptFile: promptFile run: run token: token [
+    ^ @ self launchRef: ref promptFile: promptFile run: run token: token
+  ]
+
+  classMethod: argvFor: executable workspace: workspace config: config model: model ref: ref [
+    | argv |
+    argv := #('env' ('XDG_CONFIG_HOME=' , config) 'bash' '-c'
+      'cd "$1" && shift && exec "$@"' 'maki-driver' workspace executable
+      '--print' '--input-format' 'stream-json' '--output-format' 'stream-json'
+      '--no-commands' '--disallowed-tools' 'Task,Memory'
+      '--permission-mode' 'bypassPermissions' '--model' model) asJson.
+    ref notEmpty ifTrue: [
+      argv := argv arrayPush: '--session'.
+      argv := argv arrayPush: ref
+    ].
+    ^ argv
+  ]
+
+  # OS boundary: validate local configuration/authentication, write standard
+  # Maki configuration and protocol input, then reuse AgentDriver's launcher.
+  rawClassMethod: launchRef: ref promptFile: promptFile run: run token: token [
+    local directory status
+    directory=$(@ "$_RECEIVER" runDirFor: "$3")
+    mkdir -p "$directory" || return 1
+    @ "$3" errorLog: "$directory/stderr.log"
+    @ "$3" save
+    @ "$_RECEIVER" launchPreparedRef: "$1" promptFile: "$2" run: "$3" token: "$4" 2>"$directory/stderr.log"
+    status=$?
+    return "$status"
+  ]
+
+  # _throw carries runtime error state but does not write stderr; persist the
+  # diagnostic explicitly so detached worker failures remain inspectable.
+  rawClassMethod: reject: reason [
+    printf '%s\n' "$1" >&2
+    _throw 'DriverError' "$1"
+    return 1
+  ]
+
+  rawClassMethod: launchPreparedRef: ref promptFile: promptFile run: run token: token [
+    local ref="$1" prompt="$2" run="$3" token="$4" executable session workspace directory model auth argv config file
+    executable=$(@ Maki path)
+    [[ -n "$executable" ]] || { @ "$_RECEIVER" reject: 'Maki is missing; run @ Trash doctor'; return 1; }
+    model=$(@ "$_RECEIVER" model)
+    [[ "${model%%/*}" == openai ]] || { @ "$_RECEIVER" reject: 'MakiDriver currently requires an openai/ model with OAuth'; return 1; }
+    session=$(@ "$run" session)
+    workspace=$(@ "$session" workspace)
+    # Maki 0.5.2 ignores --effort and --strict-mcp-config. Use its supported
+    # standard config, excluding ambient project Lua/MCP/env additions.
+    for file in 'init.lua' 'mcp.toml' '.env'; do
+      [[ ! -e "$workspace/.maki/$file" ]] || {
+        @ "$_RECEIVER" reject: "Stock Maki session cannot load project .maki/$file"
+        return 1
+      }
+    done
+    [[ ! -d "$HOME/.maki" ]] || {
+      @ "$_RECEIVER" reject: 'Maki legacy ~/.maki config overrides managed configuration; migrate it before using MakiDriver'
+      return 1
+    }
+    directory=$(@ "$_RECEIVER" runDirFor: "$run")
+    config="$directory/config"
+    mkdir -p "$config/maki" || return 1
+    printf '%s\n' 'maki.setup({ always_thinking = "medium" })' > "$config/maki/init.lua" || return 1
+    auth=$(env -u OPENAI_API_KEY -u CODEX_API_KEY -u OPENROUTER_API_KEY "XDG_CONFIG_HOME=$config" "$executable" auth status 2>&1) || { printf '%s\n' "$auth" >&2; return 1; }
+    if ! printf '%s\n' "$auth" | grep -Eq 'openai[[:space:]]+OpenAI \(oauth\)'; then
+      @ "$_RECEIVER" reject: 'Maki needs OpenAI OAuth; run @ Maki loginToProvider: openai'
+      return 1
+    fi
+    jq -cn --rawfile prompt "$prompt" '{type:"user",message:{role:"user",content:$prompt}}' > "$directory/input.jsonl" || return 1
+    argv=$(@ "$_RECEIVER" argvFor: "$executable" workspace: "$workspace" config: "$config" model: "$model" ref: "$ref") || return 1
+    @ "$_RECEIVER" launchArgv: "$argv" promptFile: "$directory/input.jsonl" run: "$run" token: "$token" ref: "$ref"
+  ]
+
+  # JSONL parsing boundary. The last result wins: a failed result must never
+  # be mistaken for success merely because a prior result appeared in the log.
+  rawClassMethod: conversationRefFor: run [
+    local log ref=''
+    log=$(@ "$1" outputLog)
+    if [[ -f "$log" ]]; then
+      ref=$(jq -r 'select((.type=="system" and .subtype=="init") or .type=="result") | .session_id // empty' "$log" 2>/dev/null | tail -n 1)
+    fi
+    [[ -n "$ref" ]] || ref=$(@ "$1" externalConversationRef)
+    printf '%s\n' "$ref"
+  ]
+
+  rawClassMethod: resultSeenFor: run [
+    local log
+    log=$(@ "$1" outputLog)
+    if [[ -f "$log" ]] && jq -se '[.[] | select(.type=="result")] | last | .subtype=="success" and .is_error==false' "$log" >/dev/null 2>&1; then
+      echo true
+    else
+      echo false
+    fi
+  ]
+
+  rawClassMethod: errorFor: run [
+    local log error=''
+    log=$(@ "$1" outputLog)
+    if [[ -f "$log" ]]; then
+      error=$(jq -sr '[.[] | select(.type=="result")] | last | select(. != null and (.is_error==true or .subtype!="success")) | .result // .subtype // "Maki run failed"' "$log" 2>/dev/null | tail -c 4096)
+    fi
+    if [[ -n "$error" ]]; then printf '%s\n' "$error"; else @ AgentDriver errorFor: "$1"; fi
+  ]

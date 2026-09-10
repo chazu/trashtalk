@@ -21,9 +21,10 @@ honker_available && honker_bootstrap
 
 PASSED=0
 FAILED=0
+FAILURE_DETAILS=''
 
 pass() { echo "  PASS: $1"; ((PASSED++)) || true; }
-fail() { echo "  FAIL: $1 (expected: $2, got: $3)"; ((FAILED++)) || true; }
+fail() { local detail="  FAIL: $1 (expected: $2, got: $3)"; echo "$detail"; FAILURE_DETAILS+="$detail"$'\n'; ((FAILED++)) || true; }
 assert_eq() { [[ "$2" == "$3" ]] && pass "$1" || fail "$1" "$2" "$3"; }
 assert_contains() { [[ "$3" == *"$2"* ]] && pass "$1" || fail "$1" "*$2*" "$3"; }
 assert_nonempty() { [[ -n "$2" ]] && pass "$1" || fail "$1" "non-empty" ""; }
@@ -31,6 +32,10 @@ assert_empty() { [[ -z "$2" ]] && pass "$1" || fail "$1" "empty" "$2"; }
 line_count() { if [[ -z "$1" ]]; then echo 0; else printf '%s\n' "$1" | grep -c .; fi; }
 
 cleanup() {
+    if [[ "${TRASH_TEST_KEEP:-}" == 1 ]]; then
+        echo "Worker artifacts: $SQLITE_JSON_DB $TRASHTALK_RUN_DIR"
+        return
+    fi
     rm -f "$SQLITE_JSON_DB"
     rm -rf "$TRASHTALK_RUN_DIR"
 }
@@ -48,7 +53,7 @@ settle_session() {
 }
 
 # The stand-in agent: answer with a count of the messages it saw, then settle.
-AGENT_OK='prompt=$(cat); ids=$(printf "%s\n" "$prompt" | sed -n "s/^--- delivery //p"); ts="$TRASHTALK_DIR/bin/trash-send"; "$ts" AgentRun result: "pong: $(printf "%s\n" "$prompt" | grep -c "^From:")" >/dev/null; for id in $ids; do "$ts" AgentRun settle: "$id" >/dev/null; done'
+AGENT_OK='prompt=$(cat); ids=$(printf "%s\n" "$prompt" | sed -n "s/^--- delivery //p"); ts="$TRASHTALK_DIR/bin/trash-send"; "$ts" AgentRun result: "pong: $(printf "%s\n" "$prompt" | grep -c "^Message:")" >/dev/null; for id in $ids; do "$ts" AgentRun settle: "$id" >/dev/null; done'
 AGENT_NO_SETTLE='prompt=$(cat); "$TRASHTALK_DIR/bin/trash-send" AgentRun result: "forgot to settle" >/dev/null'
 AGENT_CRASH='cat >/dev/null; exit 1'
 AGENT_ASK='prompt=$(cat); "$TRASHTALK_DIR/bin/trash-send" AgentRun askUser: "A or B?" >/dev/null'
@@ -91,7 +96,8 @@ assert_eq "reply is from the session" "session:$session" "$(@ $reply from)"
 assert_eq "reply is in the question's thread" "$msg" "$(@ $reply thread)"
 assert_eq "reply points at the question" "$msg" "$(@ $reply replyTo)"
 assert_contains "reply body carries the agent's answer" "pong: 1" "$(@ $reply body)"
-assert_contains "prompt included the context line" "working_directory=" "$(cat "$(@ $run promptFile)")"
+assert_contains "inbox message retains the context line" "working_directory=" "$(@ $msg body)"
+assert_eq "notification omits message body" 0 "$(grep -c working_directory= "$(@ $run promptFile)")"
 assert_contains "prompt named the delivery" "--- delivery $delivery" "$(cat "$(@ $run promptFile)")"
 
 # ==========================================
@@ -228,5 +234,33 @@ settle_session "$session2" >/dev/null
 assert_contains "summary shows the identity" "gusgus" "$(@ $session2 summary)"
 
 echo ""
+echo "8. a question committed after the worker snapshot is still blocking"
+export TRASHTALK_NO_AUTOTICK=1
+race_message=$(@ Inbox send: 'question race' to: "session:$session2" from: tester)
+race_delivery=$(@ "$session2" pendingDeliveries)
+mapfile -t race_started < <(@ AgentRun startFor: "$session2" profile: shell)
+race_run=${race_started[0]}
+@ AgentDelivery claim: "$race_delivery" run: "$race_run" >/dev/null
+@ "$race_run" transitionTo: running >/dev/null
+mkdir -p "$TRASHTALK_RUN_DIR/race"
+echo 0 > "$TRASHTALK_RUN_DIR/race/exit"
+@ "$race_run" exitFile: "$TRASHTALK_RUN_DIR/race/exit"
+@ "$race_run" save
+@ AgentQueue refresh
+# Simulate the harness commit after refresh, leaving the worker cache offered.
+_db_sql "UPDATE instances SET data=json_set(data,'$.state','blocked') WHERE id='$race_delivery';"
+assert_eq "reconcile reads the final committed delivery state" waiting_for_user "$(@ AgentWorker reconcileRun: "$race_run")"
+assert_eq "blocking receipt remains blocked" blocked "$(@ "$race_delivery" reload >/dev/null; @ "$race_delivery" state)"
+
+echo ""
+echo "9. worker snapshots cannot overwrite messages still being published"
+draft=$(@ Message new)
+_env_delete "$draft"
+@ AgentQueue refresh
+_db_sql "UPDATE instances SET data=json_set(data,'$.kind','result','$.body','published result') WHERE id='$draft';"
+assert_eq "worker does not cache another process's message draft" result "$(@ "$draft" kind)"
+
+echo ""
 echo "=== Results: $PASSED passed, $FAILED failed ==="
+[[ -z "$FAILURE_DETAILS" ]] || printf '%s' "$FAILURE_DETAILS"
 [[ $FAILED -eq 0 ]]

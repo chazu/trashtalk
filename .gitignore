@@ -44,3 +44,7 @@ run/
 
 # Portable OS lock helper used by Process and detached agent workers.
 !lib/process-lock.bash
+
+# Jcode wire protocol and owned process-group boundaries.
+!lib/jcode-api.bash
+!lib/jcode-processes.bash

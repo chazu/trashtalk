@@ -1,12 +1,54 @@
 # Changelog
 
+## 2026-09-10
+
+### Added
+
+- `jcode` persistent-session profile, `JcodeDriver`, and `Jcode` CLI discovery,
+  authentication status, and interactive login. The native Harness API adapter
+  uses a private resident daemon per session and resumes its conversation.
+- Common exact-run stop (`@ "$run" stop`; authenticated agents use
+  `AgentRun stop:` with `agent.stop` and the same owner). Stops revoke run
+  authority, pause dispatch, and preserve unsettled work. Jcode stop confirms
+  native idle state, terminates verified Bash tool process groups, and closes
+  the private daemon even after the run adapter disappears.
+- Stateful fake-Jcode regression coverage and an opt-in authenticated test.
+
+### Changed
+
+- Innards marks displayed Inbox previews and opened conversations read, updates
+  the unread indicator, and preserves archived state and first-read timestamps.
+- Jcode resolves its helper paths when an interactive shell has not set
+  `TRASHTALK_DIR`, matching the common launcher's default.
+- New Gusgus sessions default to Jcode. Explicit profile overrides and existing
+  session profiles are retained; `Trash doctor` checks the selected harness.
+- All session harnesses receive inbox notifications containing references;
+  agents read message contents through Inbox. Private per-run `trash-send`
+  launchers carry current authority across resident harness environments.
+- `AgentRun result:forDelivery:` replies to one held delivery's thread.
+- Jcode connection loss after send pauses the session and retains a recovering
+  run for explicit stop, without replaying its prompt.
+- Worker reconciliation reloads delivery state after harness exit, preserving
+  blocking questions committed after the worker's initial snapshot.
+- Worker snapshots refresh published messages and final delivery states, while
+  excluding message drafts that another process is still filling in.
+
 ## 2026-09-09
 
 ### Added
 
+- `MakiDriver` for stock Maki execution and SDK conversation resume, including
+  OpenAI OAuth preflight, API-key stripping, medium-effort configuration,
+  persisted failure diagnostics, and fake/opt-in authenticated acceptance tests.
 - `Maki` Tool class with version/authentication checks and interactive
   `loginToProvider:`. `Trash doctor` installs Maki when missing using the
   official installer and verifies the resulting executable.
+- Ctrl-D in the session list opens a termination confirmation. Confirming
+  revokes run access and stops active work, retaining messages and logs and
+  reporting any unconfirmed process stop.
+- Explicit blocking-question links, `AgentRun askUser:forDelivery:` and
+  `askUser:forDeliveries:`, and message queries for linked deliveries and the
+  first recorded answer. Question publication and delivery blocking are atomic.
 - A durable agent-routing outbox, committed atomically with each delivered
   message. Routing replay preserves delivery identity and attempt history.
 - A continuously running `bin/trash-worker`, with launchd and systemd user
@@ -26,6 +68,16 @@
 
 ### Changed
 
+- New Gusgus sessions default to Maki with `openai/gpt-5.6-terra` at medium
+  effort. Codex profiles remain available for existing sessions and explicit
+  selection. Maki runs with normal OS permissions, without Codex's sandbox.
+- The session picker hides terminated sessions, including immediately after
+  confirmation. Their history remains accessible by session ID.
+- Legacy sessions without a lifecycle field can be explicitly terminated from
+  the session picker; their stored context is retained.
+- Replies resume only the deliveries linked to the question they answer, once
+  all questions blocking each delivery have been answered. Unrelated messages,
+  reading, archiving, and replaying old answers do not release blocked work.
 - Access the current user's inbox through `@ Trash userInbox`, then send
   `count`, `unreadCount`, or `browse` to that instance. `Inbox` class methods
   no longer stand in for one user's inbox; class-side `count` counts inboxes.

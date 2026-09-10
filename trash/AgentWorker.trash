@@ -15,6 +15,8 @@ AgentWorker subclass: Object
   rawClassMethod: driverFor: profile [
     case "$1" in
       shell) echo ShellDriver ;;
+      maki) echo MakiDriver ;;
+      jcode) echo JcodeDriver ;;
       codex|"assistant-low-power"|"") echo CodexDriver ;;
       *) _throw "WorkerError" "Unknown backend profile '$1'"; return 1 ;;
     esac
@@ -49,7 +51,7 @@ AgentWorker subclass: Object
   # Inbound: a message landed in a session or identity inbox
   # ------------------------------------------------------------------
 
-  # A reply to a session unblocks every delivery waiting on a question there.
+  # Inspection only; reply routing uses the question's persisted delivery links.
   rawClassMethod: blockedDeliveriesFor: sessionId [
     local esc
     esc=$(_db_escape "$1")
@@ -82,6 +84,7 @@ AgentWorker subclass: Object
     local msg address TRASHTALK_NO_AUTOTICK=1
     for msg in $(@ AgentQueue pending); do
       @ AgentQueue attempted: "$msg" || return 1
+      @ "$msg" reload >/dev/null || return 1
       address=$(@ "$msg" to)
       @ AgentWorker deliverMessage: "$msg" toInbox: "$address" || return 1
     done
@@ -108,6 +111,138 @@ AgentWorker subclass: Object
 
   classMethod: dispatchSession: sessionId [
     ^ @ self tickSession: sessionId
+  ]
+
+  # Cooperative API authority. A local user may stop a run; an agent must have
+  # agent.stop and share the target's owner. Recheck inside the worker lock.
+  rawClassMethod: authorizeStop: run [
+    local actor session role caps
+    [[ $(db_get "$1" | jq -r '.class // empty') == AgentRun ]] || return 1
+    if [[ -n "${TRASHTALK_RUN_TOKEN:-}" ]]; then
+      actor=$(@ AgentRun current) || return 1
+      session=$(@ "$actor" session)
+      role=$(@ "$session" role)
+      caps=$(@ "$role" capabilities)
+      jq -e 'if type=="string" then fromjson else . end | index("agent.stop") != null' <<<"$caps" >/dev/null || {
+        _throw 'RunError' 'Role does not allow agent.stop'; return 1;
+      }
+      [[ "$(@ AgentRun ownerInboxFor: "$actor")" == "$(@ AgentRun ownerInboxFor: "$1")" ]] || {
+        _throw 'RunError' 'Cannot stop a run belonging to another owner'; return 1;
+      }
+    fi
+    echo true
+  ]
+
+  rawClassMethod: stopRun: run [
+    local path result attempt
+    path=$(@ AgentWorker lockPath) || return 1
+    for attempt in {1..50}; do
+      result=$(@ Process withLock: "$path" receiver: AgentWorker selector: 'stopOwnedRun:' argument: "$1") || return 1
+      if [[ -n "$result" ]]; then
+        [[ "$result" == interrupted || "$result" == 'already-stopped' ]] || { printf '%s\n' "$result" >&2; return 1; }
+        printf '%s\n' "$result"
+        return 0
+      fi
+      sleep 0.1
+    done
+    _throw 'WorkerError' 'Worker is busy; stop was not applied. Try again.'
+    return 1
+  ]
+
+  classMethod: stopOwnedRun: run [
+    | authorized state session active result |
+    authorized := @ self authorizeStop: run.
+    (authorized = 'true') ifFalse: [^ 'Stop is not authorized.'].
+    @ run reload.
+    state := @ run state.
+    (state = 'interrupted') ifTrue: [^ 'already-stopped'].
+    session := @ run session.
+    active := @ session activeRun.
+    (active = run) ifFalse: [^ 'Run is no longer active; no replacement was stopped.'].
+    state := @ session lifecycleState.
+    (state = 'open') ifTrue: [result := @ session pause].
+    # Revoke before signalling, including when cancellation cannot be confirmed.
+    @ Store patch: run with: '{"capabilityTokenHash":"","stopRequested":"true"}'.
+    ^ @ self finishStop: run
+  ]
+
+  classMethod: finishStop: run [
+    | profile driver stopped result state |
+    profile := @ run backendProfile.
+    driver := @ self driverFor: profile.
+    stopped := @ driver interrupt: run.
+    (stopped = 'true') ifFalse: [^ 'Stop remains unconfirmed; session paused. Retry stop on this run.'].
+    @ self rememberConversationFor: run.
+    result := @ AgentDelivery interruptFor: run.
+    (result = 'true') ifFalse: [^ 'Unable to record unsettled deliveries; retry stop.'].
+    state := @ run state.
+    (state = 'starting') ifTrue: [
+      result := @ run finishWith: 'failed' outcome: '{}' error: 'Run stopped before launch'
+    ] ifFalse: [
+      result := @ run finishWith: 'interrupted' outcome: '{}' error: 'Run explicitly stopped'
+    ].
+    result isEmpty ifTrue: [^ 'Unable to record stop outcome; retry stop.'].
+    ^ 'interrupted'
+  ]
+
+  classMethod: rememberConversationFor: run [
+    | profile driver ref session patch |
+    profile := @ run backendProfile.
+    driver := @ self driverFor: profile.
+    ref := @ driver conversationRefFor: run.
+    ref notEmpty ifTrue: [
+      patch := #{externalConversationRef: ref} asJson.
+      @ Store patch: run with: patch.
+      session := @ run session.
+      patch := #{lastConversationRef: ref} asJson.
+      @ Store patch: session with: patch
+    ]
+  ]
+
+  # Process-lock boundary: wait briefly for an in-progress tick rather than
+  # silently dropping a user control operation when the nonblocking lock is busy.
+  rawClassMethod: terminateSession: sessionId [
+    local path result attempt
+    path=$(@ AgentWorker lockPath) || return 1
+    for attempt in {1..50}; do
+      result=$(@ Process withLock: "$path" receiver: AgentWorker selector: 'terminateOwnedSession:' argument: "$1") || return 1
+      if [[ -n "$result" ]]; then
+        [[ "$result" == terminated ]] || { printf '%s\n' "$result" >&2; return 1; }
+        printf '%s\n' "$result"
+        return 0
+      fi
+      sleep 0.1
+    done
+    _throw 'WorkerError' 'Worker is busy; session termination was not applied. Try again.'
+    return 1
+  ]
+
+  classMethod: terminateOwnedSession: session [
+    | state run alive profile driver stopped result |
+    @ session reload.
+    state := @ session lifecycleState.
+    (state = 'terminated') ifFalse: [state := @ session transitionTo: 'terminated'].
+    (state = 'terminated') ifFalse: [^ 'Unable to terminate the session.'].
+    run := @ session activeRun.
+    run isEmpty ifTrue: [^ 'terminated'].
+    @ run reload.
+    profile := @ run backendProfile.
+    driver := @ self driverFor: profile.
+    driver isEmpty ifTrue: [^ 'Session terminated, but its harness driver is unavailable; process stop is unconfirmed.'].
+    stopped := @ driver interrupt: run.
+    (stopped = 'true') ifFalse: [^ 'Session terminated, but the harness has not stopped. Inspect its logs and retry termination.'].
+    @ self rememberConversationFor: run.
+    # Record unsettled work before closing the run so a failed write is retryable.
+    result := @ AgentDelivery interruptFor: run.
+    (result = 'true') ifFalse: [^ 'Session terminated; unable to record unsettled deliveries.'].
+    state := @ run state.
+    (state = 'starting') ifTrue: [
+      result := @ run finishWith: 'failed' outcome: '{}' error: 'Session terminated before launch'
+    ] ifFalse: [
+      result := @ run finishWith: 'interrupted' outcome: '{}' error: 'Session terminated by the user'
+    ].
+    result isEmpty ifTrue: [^ 'Session terminated; unable to record the run stop outcome.'].
+    ^ 'terminated'
   ]
 
   # Work runs only while holding the OS lock; every tick repairs outbox routing.
@@ -148,6 +283,11 @@ AgentWorker subclass: Object
   rawClassMethod: reconcileRun: runId [
     local run_id="$1" session profile driver outcome exited code seen ref alive reason
     local d st has_offered=false has_blocked=false final owner
+    if [[ "$(@ "$run_id" stopRequested)" == true ]]; then
+      final=$(@ AgentWorker finishStop: "$run_id")
+      if [[ "$final" == interrupted ]]; then echo interrupted; else echo running; fi
+      return 0
+    fi
     if [[ "$(@ "$run_id" state)" == starting ]]; then
       @ "$_RECEIVER" failRun: "$run_id" error: "worker stopped before launch"
       echo failed
@@ -159,6 +299,9 @@ AgentWorker subclass: Object
       echo running
       return 0
     fi
+    # Include deliveries that became processed and therefore no longer appear
+    # in offeredFor:. The harness may have committed after the initial tick snapshot.
+    @ AgentQueue refresh || return 1
     session=$(@ "$run_id" session)
     profile=$(@ "$run_id" backendProfile)
     driver=$(@ "$_RECEIVER" driverFor: "$profile") || return 1
@@ -170,6 +313,15 @@ AgentWorker subclass: Object
     if [[ -n "$ref" ]]; then
       @ Store patch: "$run_id" with: "$(jq -cn --arg ref "$ref" '{externalConversationRef:$ref}')"
       @ Store patch: "$session" with: "$(jq -cn --arg ref "$ref" '{lastConversationRef:$ref}')"
+    fi
+    if [[ $(jq -r '.resident_unconfirmed // false' <<<"$outcome") == true ]]; then
+      # The resident harness may still be working after its adapter disappears.
+      # Fence authority and dispatch, retaining the exact active run for stop.
+      @ Store patch: "$run_id" with: '{"capabilityTokenHash":"","error":"Jcode connection lost without completion; stop the run before resuming"}' || return 1
+      [[ "$(@ "$session" lifecycleState)" != open ]] || @ "$session" pause >/dev/null
+      [[ "$(@ "$run_id" state)" != running ]] || @ "$run_id" transitionTo: recovering >/dev/null
+      echo running
+      return 0
     fi
     if [[ "$exited" != true ]]; then
       @ "$_RECEIVER" failRun: "$run_id" error: "process vanished without an exit status; inspect logs before retrying"
@@ -184,6 +336,9 @@ AgentWorker subclass: Object
       return 0
     fi
     for d in $(@ AgentDelivery offeredFor: "$run_id"); do
+      # The harness can settle/block after work:'s initial snapshot but before
+      # its exit is observed. Read the final durable delivery state now.
+      @ "$d" reload >/dev/null || return 1
       st=$(@ "$d" state)
       if [[ "$st" == offered ]]; then
         @ "$d" transitionTo: uncertain >/dev/null
@@ -220,6 +375,7 @@ AgentWorker subclass: Object
     # Only failures still in starting are known to be safe to auto-retry.
     [[ "$oldstate" == starting ]] || ambiguous=true
     for d in $(@ AgentDelivery offeredFor: "$run_id"); do
+      @ "$d" reload >/dev/null || return 1
       st=$(@ "$d" state)
       [[ "$st" == offered ]] || continue
       @ Store patch: "$d" with: "$(jq -cn --arg error "$err" '{lastError:$error}')"
@@ -274,7 +430,7 @@ AgentWorker subclass: Object
       return 0
     fi
     run_dir=$(@ AgentDriver runDirFor: "$run")
-    mkdir -p "$run_dir" || return 1
+    @ AgentDriver prepareContextFor: "$run" token: "$token" || return 1
     prompt_file="$run_dir/prompt.txt"
     @ "$_RECEIVER" writePrompt: "$prompt_file" run: "$run" session: "$session" deliveries: "$claimed"
     ref=$(@ "$session" lastConversationRef)
@@ -296,29 +452,30 @@ AgentWorker subclass: Object
   # trash-send instructions) followed by the deliveries.
   rawClassMethod: writePrompt: promptFile run: runId session: sessionId deliveries: ids [
     local prompt_file="$1" run_id="$2" session="$3" ids="$4"
-    local archetype instructions workspace tdir ts d m from subject kind body
+    local archetype instructions workspace tdir ts d m inbox
     archetype=$(@ "$session" archetype)
     instructions=$(@ "$archetype" instructions)
     workspace=$(@ "$session" workspace)
     tdir="${TRASHTALK_DIR:-$HOME/.trashtalk}"
-    ts="$tdir/bin/trash-send"
+    printf -v ts '%q' "$(@ AgentDriver runDirFor: "$run_id")/trash-send"
     {
       printf '%s\n\n' "$instructions"
       printf 'You are run %s in session %s. Workspace: %s.\n' "$run_id" "$session" "$workspace"
       printf 'Trashtalk lives at %s. Act by running shell commands with %s.\n' "$tdir" "$ts"
-      printf 'Reply to the user with:        %s AgentRun result: %s\n' "$ts" "'your answer'"
+      printf 'Reply to a delivery with:      %s AgentRun result: %s forDelivery: %s\n' "$ts" "'your answer'" "'<deliveryId>'"
       printf 'Ask a blocking question with:  %s AgentRun askUser: %s\n' "$ts" "'your question'"
+      printf 'To block only one delivery:  %s AgentRun askUser: %s forDelivery: %s\n' "$ts" "'your question'" "'<deliveryId>'"
       printf 'When finished, settle each delivery: %s AgentRun settle: %s\n' "$ts" "'<deliveryId>'"
-      printf 'Always send result: before settling. The environment variable TRASHTALK_RUN_TOKEN identifies you; never print it.\n'
+      printf 'Send the appropriate reply before settling. Use this run-specific launcher for every Trashtalk command; it supplies your private authority. Never print or read its contents.\n'
+      printf 'Message another agent with: %s AgentRun send: %s to: %s\n' "$ts" "'message'" "'session:<sessionId>'"
+      printf 'With agent.stop authority, stop an exact run with: %s AgentRun stop: %s\n' "$ts" "'<runId>'"
+      printf '\nNew inbox messages are ready. Read each with its Inbox show: command below. Message bodies and attribution live in the inbox. Do not poll for new work; later deliveries produce another notification.\n'
       printf '\nDeliveries:\n'
       for d in $ids; do
         printf '%s\n' "--- delivery $d"
         for m in $(@ "$d" messageIdList); do
-          from=$(@ "$m" from)
-          subject=$(@ "$m" subject)
-          kind=$(@ "$m" kind)
-          body=$(@ "$m" body)
-          printf 'From: %s\nSubject: %s\nKind: %s\n\n%s\n\n' "$from" "$subject" "$kind" "$body"
+          inbox=$(@ Inbox named: "$(@ "$m" to)")
+          printf 'Message: %s\nRead: %s %q show: %q\n' "$m" "$ts" "$inbox" "$m"
         done
       done
     } > "$prompt_file"

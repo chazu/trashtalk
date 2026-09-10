@@ -1,6 +1,6 @@
 # AgentBrowser - Snapshot inspection and explicit recovery through Innards.
 # Pickers return intent; Trashtalk validates membership and owns all mutations.
-# Closing any view does not signal a worker or harness, or mark messages read.
+# Reading a conversation marks its messages read without signalling execution.
 AgentBrowser subclass: Object
 
   # OS boundary: temporary preview files and signal/exit cleanup.
@@ -23,13 +23,58 @@ AgentBrowser subclass: Object
   ]
 
   classMethod: browseIn: dir [
-    | records selected ignored |
+    | records choice selected action ignored |
     [1 = 1] whileTrue: [
       records := @ self sessionRecordsIn: dir.
-      selected := @ self pick: records root: dir title: 'Agent sessions'.
+      choice := @ self pickSession: records in: dir.
+      selected := choice jsonTextAt: 'id'.
       selected isEmpty ifTrue: [^ 'dismissed'].
-      ignored := @ self session: selected in: dir
+      action := choice jsonTextAt: 'action'.
+      (action = 'terminate') ifTrue: [
+        ignored := @ self confirmTerminationOf: selected in: dir
+      ] ifFalse: [ignored := @ self session: selected in: dir]
     ]
+  ]
+
+  classMethod: pickSession: records in: dir [
+    | available result selected action hasAction |
+    available := @ Tools::Inpick isInstalled.
+    (available = 'true') ifTrue: [
+      result := @ Tools::Inpick selectRecords: records root: dir query: '' title: 'Agent sessions' controlDAction: 'terminate'
+    ] ifFalse: [
+      result := @ Tools::Inpick fallbackSelectRecords: records query: '' title: 'Agent sessions' controlDAction: 'terminate'
+    ].
+    selected := @ self selectedFrom: result records: records.
+    action := ''.
+    hasAction := result jsonHas: 'action'.
+    (hasAction = 'true') ifTrue: [action := result jsonTextAt: 'action'].
+    ^ #{id: selected action: action} asJson
+  ]
+
+  classMethod: confirmTerminationOf: session in: dir [
+    | path details records choice result ignored |
+    @ session reload.
+    details := @ session details.
+    path := session , '.txt'.
+    @ File write: details to: (dir , '/' , path).
+    records := @ self terminationRecordsAt: path.
+    choice := @ self pick: records root: dir title: 'Terminate selected session?'.
+    (choice = 'terminate') ifTrue: [
+      result := @ self terminateResultFor: session.
+      (result = 'terminated') ifFalse: [
+        ignored := @ self page: result title: 'Session termination needs attention'
+      ]
+    ]
+  ]
+
+  classMethod: terminationRecordsAt: path [
+    @ self record: 'cancel' label: 'Cancel' detail: 'Keep the session as it is' path: path.
+    @ self record: 'terminate' label: 'Terminate session and stop active work' detail: 'Revoke run access; retain messages and logs' path: path
+  ]
+
+  # Capture failure diagnostics for the UI; never report a stop we did not observe.
+  rawClassMethod: terminateResultFor: session [
+    @ "$1" terminate 2>&1
   ]
 
   classMethod: session: session in: dir [
@@ -46,7 +91,7 @@ AgentBrowser subclass: Object
       (action = 'details') ifTrue: [ignored := @ self page: details title: 'Session details'].
       (action = 'messages') ifTrue: [
         text := @ self messagesFor: session.
-        ignored := @ self page: text title: 'Session messages (read-only)'
+        ignored := @ self page: text title: 'Session messages'
       ].
       (action = 'runs') ifTrue: [ignored := @ self runsFor: session in: dir].
       (action = 'retry') ifTrue: [ignored := @ self retryFor: session in: dir].
@@ -88,10 +133,14 @@ AgentBrowser subclass: Object
     ^ #{schema_version: 1 id: id label: label detail: detail path: path line: 1 column: 1 kind: 'agent'} asJson
   ]
 
+  classMethod: listedSessions [
+    ^ @ Store query: "class = 'AgentSession' AND coalesce(json_extract(data, '$.lifecycleState'), '') != 'terminated'"
+  ]
+
   # Filesystem projection only; session state comes from its public snapshot.
   rawClassMethod: sessionRecordsIn: dir [
     local session data text label path
-    for session in $(@ AgentSession findAll); do
+    for session in $(@ AgentBrowser listedSessions); do
       data=$(@ "$session" snapshot) || return 1
       text=$(@ AgentBrowser describeSession: "$data")
       path="$session.txt"
@@ -109,7 +158,7 @@ AgentBrowser subclass: Object
   classMethod: actionRecordsFor: session [
     | state |
     @ self record: 'details' label: 'Session details' detail: 'Refresh snapshot' path: 'session.txt'.
-    @ self record: 'messages' label: 'Messages and questions' detail: 'Read-only conversation' path: 'session.txt'.
+    @ self record: 'messages' label: 'Messages and questions' detail: 'Read conversation' path: 'session.txt'.
     @ self record: 'runs' label: 'Runs and logs' detail: 'Inspect failures and output' path: 'session.txt'.
     @ self record: 'retry' label: 'Retry a stalled delivery' detail: 'Choose a delivery, inspect, then confirm' path: 'session.txt'.
     state := @ session lifecycleState.
@@ -122,7 +171,7 @@ AgentBrowser subclass: Object
     local id
     for id in $(@ "$1" messageIds); do
       @ "$id" reload >/dev/null || return 1
-      @ MessagePresentation textFor: "$id"
+      @ "$id" readText
       printf '\n----------------------------------------\n'
     done
   ]

@@ -67,6 +67,12 @@ MessagePresentation subclass: Object
     ^ #{schema_version: 1 id: message label: label kind: kind detail: prefix path: path line: 1 column: 1 display: #{prefix: prefix preview_title: 'Message' search_text: search}} asJson
   ]
 
+  classMethod: displayFor: message [
+    | data |
+    data := @ self dataFor: message.
+    ^ #{prefix: (data jsonTextAt: 'prefix') preview_title: 'Message' search_text: (data jsonTextAt: 'search')} asJson
+  ]
+
   # SQL boundary: resolve existing addresses without creating inboxes/identities.
   # Unknown senders retain their address so distinct participants stay distinct.
   rawClassMethod: participant: address [

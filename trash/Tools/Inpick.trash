@@ -12,6 +12,10 @@ Inpick subclass: Tool
   ]
 
   classMethod: selectRecords: records root: root query: query title: title controlDAction: action [
+    ^ @ self selectRecords: records root: root query: query title: title controlDAction: action previewHook: ''
+  ]
+
+  classMethod: selectRecords: records root: root query: query title: title controlDAction: action previewHook: hook [
     | argv toolPath |
     toolPath := @ self path.
     argv := #(toolPath '--result-json' '--root' root) asJson.
@@ -26,6 +30,10 @@ Inpick subclass: Tool
     action notEmpty ifTrue: [
       argv := argv arrayPush: '--ctrl-d-action'.
       argv := argv arrayPush: action
+    ].
+    hook notEmpty ifTrue: [
+      argv := argv arrayPush: '--preview-hook'.
+      argv := argv arrayPush: hook
     ].
 
     ^ @ self runArgvJson: argv input: records

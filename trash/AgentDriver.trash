@@ -13,12 +13,33 @@
 AgentDriver subclass: Object
 
   classMethod: capabilities [
-    ^ '{"schema_version":1,"headless":true,"resume":false,"live_input":false,"sandbox":false}'
+    ^ '{"schema_version":1,"headless":true,"resume":false,"queued_input":true,"stop":true,"live_input":false,"sandbox":false}'
+  ]
+
+  # Filesystem boundary: immutable per-run capability context. Resident harness
+  # tools invoke the same public dispatcher without inheriting a stale token.
+  rawClassMethod: prepareContextFor: run token: token [
+    local directory tdir
+    directory=$(@ AgentDriver runDirFor: "$1")
+    tdir="${TRASHTALK_DIR:-$HOME/.trashtalk}"
+    (
+      umask 077
+      mkdir -p "$directory" && chmod 700 "$directory" || exit 1
+      {
+        printf '#!/usr/bin/env bash\n'
+        printf 'export TRASHTALK_DIR=%q SQLITE_JSON_DB=%q TRASHTALK_RUN_DIR=%q\n' "$tdir" "$SQLITE_JSON_DB" "${directory%/*}"
+        printf 'export TRASHTALK_RUN_TOKEN=%q TRASHTALK_NO_AUTOTICK=1\n' "$2"
+        printf 'unset TRASH_SESSION_ID\n'
+        printf 'exec %q "$@"\n' "$tdir/bin/trash-send"
+      } > "$directory/trash-send" || exit 1
+      chmod 700 "$directory/trash-send"
+    )
   ]
 
   # Per-run scratch directory holding prompt, logs, pid, and exit files.
   rawClassMethod: runDirFor: runId [
     local base="${TRASHTALK_RUN_DIR:-${TRASHTALK_DIR:-$HOME/.trashtalk}/run}"
+    [[ "$base" == /* ]] || base="$PWD/$base"
     printf '%s/%s\n' "$base" "$1"
   ]
 
@@ -104,18 +125,23 @@ AgentDriver subclass: Object
     if [[ -n "$exit_file" && -f "$exit_file" ]]; then echo true; else echo false; fi
   ]
 
-  # INT to the process group, then TERM if it is still alive after 5 seconds.
+  # OS boundary: signal only the recorded live process, including its birth
+  # check, then observe exit. Report false if INT/TERM did not stop it.
   rawClassMethod: interrupt: runId [
-    local run_id="$1" pid alive
-    pid=$(@ "$run_id" processPid)
-    if [[ -z "$pid" || "$pid" == 0 ]]; then echo false; return 0; fi
-    @ Tool interruptPid: "$pid" signal: INT >/dev/null
-    sleep 5
-    alive=$(@ Tool isAlivePid: "$pid")
-    if [[ "$alive" == true ]]; then
-      @ Tool interruptPid: "$pid" signal: TERM >/dev/null
-    fi
-    echo true
+    local run_id="$1" pid pf signal attempt
+    @ "$run_id" reload >/dev/null || return 1
+    for signal in INT TERM; do
+      [[ "$(@ "$run_id" isProcessAlive)" == true ]] || { echo true; return; }
+      pf=$(@ "$run_id" pidFile)
+      pid=$(@ "$run_id" processPid)
+      [[ -z "$pf" || ! -s "$pf" ]] || read -r pid < "$pf"
+      @ Tool interruptPid: "$pid" signal: "$signal" >/dev/null
+      for attempt in {1..50}; do
+        [[ "$(@ "$run_id" isProcessAlive)" == true ]] || { echo true; return; }
+        sleep 0.1
+      done
+    done
+    echo false
   ]
 
   # Bounded diagnostics at the filesystem boundary; stderr is not protocol data.

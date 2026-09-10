@@ -6,9 +6,11 @@
 #
 # Environment:
 #   TRASHTALK_USER            owner inbox name (default: $USER)
-#   TRASHTALK_GUSGUS_PROFILE  backend profile (default: assistant-low-power -> Codex)
+#   TRASHTALK_GUSGUS_PROFILE  backend profile (default: jcode)
+#   TRASHTALK_JCODE_MODEL     Jcode model (default: gpt-5.6-terra)
+#   TRASHTALK_MAKI_MODEL      Maki model (default: openai/gpt-5.6-terra)
 #   TRASHTALK_CODEX_MODEL     model for the Codex driver (default: gpt-5.6-terra)
-# The Codex driver uses medium reasoning effort.
+# Jcode, Maki, and Codex drivers use medium reasoning effort.
 Gusgus subclass: Object
 
   rawClassMethod: owner [
@@ -16,7 +18,7 @@ Gusgus subclass: Object
   ]
 
   rawClassMethod: profile [
-    printf '%s\n' "${TRASHTALK_GUSGUS_PROFILE:-assistant-low-power}"
+    printf '%s\n' "${TRASHTALK_GUSGUS_PROFILE:-jcode}"
   ]
 
   rawClassMethod: instructions [

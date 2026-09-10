@@ -1,17 +1,18 @@
-# Maki as Gusgus's default harness
+# Maki session driver
 
-Implemented 2026-09-09 against stock Maki 0.5.2.
+Implemented 2026-09-09 against stock Maki 0.5.2. Jcode became the default on
+2026-09-10; Maki remains available through `TRASHTALK_GUSGUS_PROFILE=maki`.
 
 ## Problem
 
 The Maki Tool wrapper installed the executable and exposed provider login,
-but Gusgus still dispatched Codex. Making Maki the default requires an actual
+but Gusgus still dispatched Codex. Making Maki the default required an actual
 session adapter: launching a process alone does not establish resumable
 conversation identity, durable replies, or successful delivery settlement.
 
 ## Design and implementation
 
-`Gusgus profile` defaults to `maki`; `AgentWorker driverFor:` resolves that
+`TRASHTALK_GUSGUS_PROFILE=maki` selects Maki; `AgentWorker driverFor:` resolves that
 profile to `MakiDriver`. Existing `codex` and `assistant-low-power` mappings
 remain Codex so historical runs retain their correct interpretation. Sessions
 capture their profile on creation. The one-shot `Agent` backend is unchanged.
