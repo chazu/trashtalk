@@ -1,0 +1,152 @@
+{
+  "experiment": "Assignment completion with selective reads and guarded queries",
+  "command": "bash tests/test_assignment_transaction.bash",
+  "scope": "Isolated test fixtures; no production runtime changes",
+  "proof_checks_passed": 187,
+  "existing_assignment_checks_passed": 103,
+  "measurement_scope": "Human completion; three sequential samples per size; history seeding and index creation excluded; includes metric/query capture hook",
+  "indexes": [
+    "instances(class, json_extract(data, '$.session'), json_extract(data, '$.state'))",
+    "instances(class, json_extract(data, '$.assignment'))"
+  ],
+  "index_plan_checks": "EXPLAIN QUERY PLAN confirmed both indexes at every size",
+  "samples": [
+    {
+      "copied_records": 3,
+      "record_guards": 3,
+      "query_guards": 2,
+      "query_result_rows": 0,
+      "written_records": 3,
+      "outbox_rows": 1,
+      "unrelated_objects": 200,
+      "unrelated_questions": 100,
+      "unrelated_outbox_rows": 100,
+      "trial": 1,
+      "seconds": 0.571
+    },
+    {
+      "copied_records": 3,
+      "record_guards": 3,
+      "query_guards": 2,
+      "query_result_rows": 0,
+      "written_records": 3,
+      "outbox_rows": 1,
+      "unrelated_objects": 200,
+      "unrelated_questions": 100,
+      "unrelated_outbox_rows": 100,
+      "trial": 2,
+      "seconds": 0.732
+    },
+    {
+      "copied_records": 3,
+      "record_guards": 3,
+      "query_guards": 2,
+      "query_result_rows": 0,
+      "written_records": 3,
+      "outbox_rows": 1,
+      "unrelated_objects": 200,
+      "unrelated_questions": 100,
+      "unrelated_outbox_rows": 100,
+      "trial": 3,
+      "seconds": 0.587
+    },
+    {
+      "copied_records": 3,
+      "record_guards": 3,
+      "query_guards": 2,
+      "query_result_rows": 0,
+      "written_records": 3,
+      "outbox_rows": 1,
+      "unrelated_objects": 2000,
+      "unrelated_questions": 1000,
+      "unrelated_outbox_rows": 1000,
+      "trial": 1,
+      "seconds": 0.603
+    },
+    {
+      "copied_records": 3,
+      "record_guards": 3,
+      "query_guards": 2,
+      "query_result_rows": 0,
+      "written_records": 3,
+      "outbox_rows": 1,
+      "unrelated_objects": 2000,
+      "unrelated_questions": 1000,
+      "unrelated_outbox_rows": 1000,
+      "trial": 2,
+      "seconds": 0.643
+    },
+    {
+      "copied_records": 3,
+      "record_guards": 3,
+      "query_guards": 2,
+      "query_result_rows": 0,
+      "written_records": 3,
+      "outbox_rows": 1,
+      "unrelated_objects": 2000,
+      "unrelated_questions": 1000,
+      "unrelated_outbox_rows": 1000,
+      "trial": 3,
+      "seconds": 0.607
+    },
+    {
+      "copied_records": 3,
+      "record_guards": 3,
+      "query_guards": 2,
+      "query_result_rows": 0,
+      "written_records": 3,
+      "outbox_rows": 1,
+      "unrelated_objects": 20000,
+      "unrelated_questions": 10000,
+      "unrelated_outbox_rows": 10000,
+      "trial": 1,
+      "seconds": 0.599
+    },
+    {
+      "copied_records": 3,
+      "record_guards": 3,
+      "query_guards": 2,
+      "query_result_rows": 0,
+      "written_records": 3,
+      "outbox_rows": 1,
+      "unrelated_objects": 20000,
+      "unrelated_questions": 10000,
+      "unrelated_outbox_rows": 10000,
+      "trial": 2,
+      "seconds": 0.598
+    },
+    {
+      "copied_records": 3,
+      "record_guards": 3,
+      "query_guards": 2,
+      "query_result_rows": 0,
+      "written_records": 3,
+      "outbox_rows": 1,
+      "unrelated_objects": 20000,
+      "unrelated_questions": 10000,
+      "unrelated_outbox_rows": 10000,
+      "trial": 3,
+      "seconds": 0.592
+    }
+  ],
+  "medians": [
+    {
+      "unrelated_objects": 200,
+      "seconds": 0.587
+    },
+    {
+      "unrelated_objects": 2000,
+      "seconds": 0.607
+    },
+    {
+      "unrelated_objects": 20000,
+      "seconds": 0.598
+    }
+  ],
+  "limitations": [
+    "Small local sample, not throughput qualification",
+    "Record guards compare whole object snapshots",
+    "Only two audited queries and the completion path are supported",
+    "No general arbitrary SQL or external-effects transaction guarantee"
+  ]
+}

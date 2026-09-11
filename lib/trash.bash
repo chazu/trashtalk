@@ -110,6 +110,7 @@ fi
 
 source "$SCRIPT_DIR/trash-progress.bash" || return 1
 source "$SCRIPT_DIR/trash-json.bash" || return 1
+source "$SCRIPT_DIR/store-transaction.bash" || return 1
 
 # ============================================
 # Profiling Support
@@ -472,6 +473,7 @@ _print_stack_trace() {
 # Throw an error (sets error state and returns 1)
 # Usage: _throw "ErrorType" "Error message"
 _throw() {
+  [[ -z ${_STORE_TX:-} ]] || printf '%s: %s\n' "$1" "$2" > "$_STORE_TX/failed"
   _ERROR_TYPE="$1"
   _ERROR_MSG="$2"
   _ERROR_ORIGIN="${_CALL_STACK[_CALL_DEPTH - 1]:-unknown}"
@@ -1037,6 +1039,7 @@ function _generate_accessor {
 # Usage: _create_instance <class_name> <instance_id>
 # class_name can be qualified (MyApp::Counter) or unqualified (Counter)
 function _create_instance {
+  if [[ -n ${_STORE_TX:-} ]]; then _store_tx_new "$2" || return; fi
   local class_name="$1" instance_id="$2" current="$1" defaults_var vars_var super_var spec data created_at
   local -a templates=()
   local -A visited=()
@@ -2285,7 +2288,7 @@ _trash_value_eligible() {
 
 # Invoke trash - Send a message
 # Captures output in $__ for REPL chaining: @ Counter new -> @ $__ increment
-function @ {
+function _trash_dispatch {
   local ___want_value=${_trash_value_context:-0} _trash_value_context=0
   if [ $# == 1 ]; then
     is_a Object
@@ -2392,6 +2395,15 @@ function @ {
   [[ -n "$___result" ]] && echo "$___result"
 
   return $___exit_code
+}
+
+# A shared failure marker survives command substitutions and caught sends.
+function @ {
+  if [[ -z ${_STORE_TX:-} ]]; then _trash_dispatch "$@"; return; fi
+  [[ ! -e "$_STORE_TX/failed" ]] || return 1
+  local rc=0
+  _trash_dispatch "$@" || rc=$?
+  ((rc == 0)) || { _store_tx_fail 'Message send failed'; return "$rc"; }
 }
 
 # @@ syntax - Talk to Gusgus, the persistent assistant for this workspace.

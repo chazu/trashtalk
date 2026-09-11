@@ -1,16 +1,18 @@
 # Agent delegation: implementation in small steps
 
-**Status:** Proposed implementation plan for discussion. No runtime changes
-are made by this document. All new selectors below are API sketches, not
-commands that work today. Names and later slices remain open to revision.
-The discussion has established that assignments belong to agents and can span
-multiple sessions. Jcode is the next harness integration. The common contract
-must support queued prompts and explicit stop; agents receive notifications
-and read messages through the inbox. These decisions are recorded below;
-the selectors and implementation details remain proposals.
+**Status:** Slices 0 and 1 are implemented. Jcode is the default harness for new
+Gusgus sessions; the common contract supports queued inbox notifications and
+explicit stop. The Assignment API supports the manual human walkthrough and
+controlled run fixtures, with work held from automatic dispatch. See the
+[Assignment walkthrough](assignments.md) for executable commands. Automatic
+specialist delegation and later slices below remain proposals.
 
-**Baseline:** `8be14c8` plus the current uncommitted worker, question,
-termination, and Maki changes. See [agent operations](agent-operations.md),
+The [Assignment persistence refactor](assignment-persistence-implementation.md)
+is implemented: domain behavior uses DSL methods and traits over shared Store
+transactions. Automatic specialist delegation remains the next slice.
+
+**Original planning baseline:** `8be14c8` plus the then-uncommitted worker,
+question, termination, and Maki changes. See [agent operations](agent-operations.md),
 [Maki support](maki-session-driver.md), the
 [headless design](headless-agent-sessions-design.md), and the
 [direction review](ambient-agent-direction-review.md).
@@ -41,17 +43,19 @@ dispatch decisions under the store lock.
 `AgentRun send:to:` can already address another session, whose `result:` can
 reply to Gusgus. However:
 
-- There is no durable assignment or completion relationship.
-- `result:` replies to every thread held by the run. Batching unrelated
-  inputs can therefore send an answer to the wrong participants.
+- Assignment now provides a durable responsibility and completion relationship
+  for the manual walkthrough; model-driven delegation remains to be connected.
+- `result:forDelivery:` and Assignment completion target a specific request.
+  The older broad `result:` remains available and should not be used to report
+  an assignment outcome across unrelated inputs.
 - Identity routing requires exactly one eligible session. It does not select
   a specialist session for a particular workspace or assignment.
 - Keyed sends use lookup followed by creation; delegation needs transactional
   uniqueness across concurrent calls and restarted runs.
 - Prompts currently teach low-level `AgentRun result:` and `settle:` commands.
-- The worker copies message bodies into a fixed launch prompt. New messages
-  wait until the active harness process exits; there is no live notification
-  channel or common agent-facing operation for stopping another agent's work.
+- The worker supplies inbox references in notification prompts and supports
+  authorized exact-run stop. Assignment-specific context and dispatch remain
+  part of the one-specialist slice.
 - Roles have policy fields, but enforcement is incomplete. Maki has normal
   user OS permissions and no OS sandbox.
 - Workspace is a path; repository, worktree, external issue, and long-term
@@ -188,7 +192,7 @@ worked on.
 For example, a specialist's shell invocation could be:
 
 ```bash
-# Proposed interface; source in each shell invocation unless already loaded.
+# Implemented API; agent use currently requires a controlled run fixture.
 source "$TRASHTALK_DIR/lib/trash.bash"
 assignment=$(@ Trash currentAssignment)
 @ "$assignment" show
@@ -205,7 +209,7 @@ first delivery. Shell variables need not survive between harness tool calls.
 Creation and assignment should also read naturally:
 
 ```bash
-# Existing setup calls; the Assignment messages are proposed.
+# Manual Assignment API; these calls do not launch a harness.
 agent=$(@ Gusgus identity)
 session=$(@ Gusgus sessionFor: "$PWD")
 assignment=$(@ Assignment draft: 'Explain the failing integration test' in: "$PWD")
@@ -484,8 +488,11 @@ Slice 0 implementation is now present: the `jcode` profile, common inbox
 notification prompts and run launchers, delivery-scoped results, exact-run stop,
 and conservative resident-session recovery. See [Jcode session driver](jcode-session-driver.md)
 for the implementation and validation record. Jcode is now the default for new
-Gusgus sessions; native steering remains optional and unexposed. Assignment slices below
-remain planned.
+Gusgus sessions; native steering remains optional and unexposed. Slice 1 is also
+implemented: identity assignment, explicit sequential session participation,
+durable progress/questions, and atomic completion. Its work and session replies
+are held for the [manual walkthrough](assignments.md). Slice 2 and later remain
+planned; automatic specialist dispatch is not enabled.
 
 Each row is a bounded change followed by a pause to use and review it. Later
 rows are options in dependency order, not authorization for one large patch.

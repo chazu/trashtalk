@@ -26,6 +26,7 @@
 Message subclass: Object
   include: Persistable
   instanceVars: to:'' from:'' subject:'' body:'' kind:'note' status:'unread'
+                assignment:'' generation:0 dispatchMode:'automatic'
                 thread:'' replyTo:'' created:'' sentAt:0 readAt:''
 
   # Build an undelivered message. Inbox deliver: stamps to/created/sentAt/thread.
@@ -150,4 +151,71 @@ Message subclass: Object
     echo "  @ \$msg reply: 'thanks'   # to sender, same thread"
     echo ""
     echo "Kinds (conventional): note | question | alert | result"
+  ]
+
+  # Assignment factories use Message defaults and the normal serializer.
+  classMethod: forAssignment: assignment id: id to: recipient sender: sender subject: title body: body kind: kind [
+    | msg origin conversation now millis |
+    @ Store requireTransaction.
+    msg := @ Store create: 'Message' id: id.
+    origin := @ assignment originMessage.
+    conversation := msg.
+    (origin notEmpty) ifTrue: [
+      origin := @ Store read: origin class: 'Message'.
+      conversation := @ origin thread.
+      (conversation isEmpty) ifTrue: [conversation := msg]
+    ].
+    now := @ Time nowISO.
+    millis := @ Time nowMillis.
+    @ msg to: recipient.
+    @ msg from: sender.
+    @ msg subject: title.
+    @ msg body: body.
+    @ msg kind: kind.
+    @ msg thread: conversation.
+    @ msg replyTo: origin.
+    @ msg created: now.
+    @ msg sentAt: millis.
+    @ msg assignment: assignment.
+    @ msg dispatchMode: 'manual'.
+    ^ msg
+  ]
+
+  classMethod: workForAssignment: assignment session: session generation: generation sender: sender [
+    | id recipient title objective criteria body msg |
+    id := 'message_' , assignment , '_work_' , generation.
+    recipient := 'session:' , session.
+    objective := @ assignment objective.
+    criteria := @ assignment completionCriteria.
+    title := 'Assignment: ' , objective.
+    body := @ Console printf: 'Assignment %s\n%s\nCompletion criteria: %s' with: assignment and: objective and: criteria.
+    msg := @ self forAssignment: assignment id: id to: recipient sender: sender subject: title body: body kind: 'assignment'.
+    @ msg generation: generation.
+    ^ msg
+  ]
+
+  classMethod: questionForAssignment: assignment body: body sender: sender [
+    | id recipient objective title |
+    id := @ Runtime generateId: 'Message'.
+    recipient := @ assignment owner.
+    objective := @ assignment objective.
+    title := 'Question: ' , objective.
+    ^ @ self forAssignment: assignment id: id to: recipient sender: sender subject: title body: body kind: 'question'
+  ]
+
+  classMethod: outcomeForAssignment: assignment body: body sender: sender cancelled: cancelled [
+    | id recipient origin objective title kind |
+    id := 'message_' , assignment , '_outcome'.
+    recipient := @ assignment owner.
+    origin := @ assignment originMessage.
+    (origin notEmpty) ifTrue: [
+      origin := @ Store read: origin class: 'Message'.
+      recipient := @ origin from.
+      (recipient isEmpty) ifTrue: [recipient := @ assignment owner]
+    ].
+    objective := @ assignment objective.
+    title := 'Assignment completed: ' , objective.
+    kind := 'result'.
+    (cancelled = 'true') ifTrue: [title := 'Assignment cancelled: ' , objective. kind := 'note'].
+    ^ @ self forAssignment: assignment id: id to: recipient sender: sender subject: title body: body kind: kind
   ]

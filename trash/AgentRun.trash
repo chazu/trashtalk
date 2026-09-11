@@ -328,3 +328,28 @@ AgentRun subclass: Object
     ib=$(@ "$sid" inboxObject)
     @ "$ib" list
   ]
+
+  # Environment boundary: a present but invalid token never becomes a human.
+  rawClassMethod: actingContext [
+    local run hash
+    if [[ ${TRASHTALK_RUN_TOKEN+x} ]]; then
+      run=$(@ AgentRun current) || return 1
+      hash=$(printf '%s' "${TRASHTALK_RUN_TOKEN#*:}" | shasum -a 256 | cut -d' ' -f1)
+      jq -cn --arg run "$run" --arg hash "$hash" '{run:$run,hash:$hash,human:""}'
+    else
+      jq -cn --arg human "${TRASHTALK_USER:-${USER:-user}}" '{run:"",hash:"",human:$human}'
+    fi
+  ]
+
+
+  classMethod: activeFor: session except: run [
+    | fields ids remaining same |
+    fields := #{session: session state: #('starting' 'running' 'recovering')} asJson.
+    ids := @ Store idsOf: 'AgentRun' matching: fields.
+    remaining := '[]'.
+    ids arrayEach: [:id |
+      same := @ String equals: id to: run.
+      (same = 'false') ifTrue: [remaining := remaining arrayPush: id]
+    ].
+    ^ remaining
+  ]

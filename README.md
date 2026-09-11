@@ -472,6 +472,11 @@ changing the default does not migrate existing conversations. See the
 [Maki driver design](docs/maki-session-driver.md), and
 `docs/headless-agent-sessions-design.md`.
 
+`Assignment` adds durable work owned by an identity, with explicit session
+selection, progress, inbox questions, and atomic completion. Its first slice is
+manual: published work is held from harness dispatch. Follow the
+[Assignment walkthrough](docs/assignments.md) to try it from Bash.
+
 ## One-shot agent questions
 
 `@@ --one-shot` sends one explicit, read-only request through the selected

@@ -4,6 +4,11 @@
 
 ### Added
 
+- Manual `Assignment` workflow: identity ownership, completion criteria, origin
+  and optional opaque issue reference, sequential session/run history, progress,
+  inbox questions, and atomic outcome publication/settlement. Work is held from
+  automatic harness dispatch. Repeated selection/completion is idempotent, and
+  current-delivery authority fences stale or superseded runs.
 - `jcode` persistent-session profile, `JcodeDriver`, and `Jcode` CLI discovery,
   authentication status, and interactive login. The native Harness API adapter
   uses a private resident daemon per session and resumes its conversation.
@@ -15,6 +20,10 @@
 - Stateful fake-Jcode regression coverage and an opt-in authenticated test.
 
 ### Changed
+
+- Assignment lifecycle and authorization now use DSL methods and traits with
+  ordinary `Persistable` saves. Shared selective Store transactions retain
+  atomic message/queue publication and conflict checks; `AssignmentStore` is removed.
 
 - Innards marks displayed Inbox previews and opened conversations read, updates
   the unread indicator, and preserves archived state and first-read timestamps.

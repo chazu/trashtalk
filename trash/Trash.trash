@@ -3,6 +3,10 @@
 Trash subclass: Object
   include: Debuggable
 
+  classMethod: currentAssignment [
+    ^ @ Assignment current
+  ]
+
   # Resolve the user's durable Inbox instance. Raw: shell environment lookup.
   rawClassMethod: userInbox [
     @ Inbox named: "${TRASHTALK_USER:-$USER}"

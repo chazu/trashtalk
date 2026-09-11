@@ -195,3 +195,48 @@ Store subclass: Object
       echo "false"
     fi
   ]
+
+  # Selective unit of work. The single argument may be a JSON value object.
+  # Replays are opt-in and read-only: they can acknowledge prior success only.
+  classMethod: transaction: receiver sending: selector with: argument [
+    ^ @ self transaction: receiver sending: selector with: argument replaying: false
+  ]
+
+  rawClassMethod: transaction: receiver sending: selector with: argument replaying: replay [
+    _store_transaction "$4" "$1" "$2" "$3"
+  ]
+
+  rawClassMethod: requireTransaction [
+    [[ -n ${_STORE_TX:-} ]] || { _throw TransactionError 'This operation requires a Store transaction'; return 1; }
+  ]
+
+  # Fresh, typed lookup; missing objects are precondition failures.
+  rawClassMethod: read: id class: expected [
+    local data
+    data=$(db_get "$1") || return 1
+    printf '%s' "$data" | jq -e --arg cls "$2" '.class == $cls' >/dev/null || { _throw StoreError "Missing $2 object: $1"; return 1; }
+    _env_set "$1" "$data" || return
+    printf '%s\n' "$1"
+  ]
+
+  classMethod: create: className id: id [
+    | exists |
+    exists := @ self exists: id.
+    @ Require equal: exists to: 'false'.
+    @ Runtime create: className id: id.
+    ^ id
+  ]
+
+  rawClassMethod: idsOf: className matching: fields [
+    _store_matching "$1" "$2"
+  ]
+
+  rawClassMethod: insert: row into: table [
+    _store_tx_insert "$2" "$1"
+  ]
+
+  # Notification hints run only after durable commit. Failure cannot undo it.
+  rawClassMethod: afterCommit: receiver sending: selector with: argument [
+    [[ -n ${_STORE_TX:-} && ${_STORE_READONLY:-0} == 0 ]] || return 1
+    _store_tx_sql "INSERT INTO store_callbacks VALUES('$(_db_escape "$1")','$(_db_escape "$2")','$(_db_escape "$3")');"
+  ]

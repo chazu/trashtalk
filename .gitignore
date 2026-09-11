@@ -48,3 +48,6 @@ run/
 # Jcode wire protocol and owned process-group boundaries.
 !lib/jcode-api.bash
 !lib/jcode-processes.bash
+
+# Shared selective persistence transaction boundary.
+!lib/store-transaction.bash

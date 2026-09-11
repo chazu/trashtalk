@@ -146,7 +146,7 @@ _db_escape() {
 
 # Run SQL command (with busy timeout for concurrent access)
 # Loads honker extension when available
-_db_sql() {
+_db_sql_direct() {
     if [[ -n "$_HONKER_LOAD_CMD" ]]; then
         "$_SQLITE3" -cmd ".timeout 5000" -cmd "$_HONKER_LOAD_CMD" "$SQLITE_JSON_DB" "$@"
     else
@@ -154,9 +154,16 @@ _db_sql() {
     fi
 }
 
+# Raw SQL has no read-set contract and is unsupported during staging.
+_db_sql() {
+    [[ -z ${_STORE_TX:-} ]] || { _store_tx_fail 'Use tracked Store operations inside a transaction'; return 1; }
+    _db_sql_direct "$@"
+}
+
 # Run SQL and return JSON results (with busy timeout)
 # Loads honker extension when available
 _db_sql_json() {
+    [[ -z ${_STORE_TX:-} ]] || { _store_tx_fail "Untracked JSON query"; return 1; }
     if [[ -n "$_HONKER_LOAD_CMD" ]]; then
         "$_SQLITE3" -cmd ".timeout 5000" -cmd "$_HONKER_LOAD_CMD" -json "$SQLITE_JSON_DB" "$@"
     else
@@ -230,6 +237,8 @@ db_put() {
         return 1
     }
 
+    if [[ -n ${_STORE_TX:-} ]]; then _store_tx_put "$id" "$data"; return; fi
+
     # Use native accelerator if available
     if _db_has_native; then
         "$_ENVIRONMENT_NATIVE" Environment set_to_ "$id" "$data" >/dev/null 2>&1
@@ -259,6 +268,8 @@ db_get() {
         return 1
     }
 
+    if [[ -n ${_STORE_TX:-} ]]; then _store_tx_get "$id"; return; fi
+
     # Use native accelerator if available
     if _db_has_native; then
         local result
@@ -277,6 +288,7 @@ db_get() {
 # Delete a document by id
 # Usage: db_delete <id>
 db_delete() {
+    [[ -z ${_STORE_TX:-} ]] || { _store_tx_fail "Deletion is unsupported in transactions"; return 1; }
     local id="$1"
 
     [[ -n "$id" ]] || {

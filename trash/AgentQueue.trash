@@ -10,7 +10,12 @@ AgentQueue subclass: Object
       CREATE TABLE IF NOT EXISTS agent_questions (
         message_id TEXT PRIMARY KEY, session TEXT NOT NULL, run TEXT NOT NULL,
         delivery_ids TEXT NOT NULL, answer_id TEXT NOT NULL DEFAULT '', answered_at INTEGER);
-      CREATE INDEX IF NOT EXISTS agent_questions_session_run ON agent_questions(session,run);"
+      CREATE INDEX IF NOT EXISTS agent_runs_session_state ON instances(class,json_extract(data,'$.session'),json_extract(data,'$.state'));
+      CREATE INDEX IF NOT EXISTS agent_messages_assignment ON instances(class,json_extract(data,'$.assignment'));
+      CREATE INDEX IF NOT EXISTS agent_questions_session_run ON agent_questions(session,run);
+      CREATE VIEW IF NOT EXISTS agent_manual_messages AS
+        SELECT m.id FROM instances m LEFT JOIN instances origin ON origin.id=json_extract(m.data,'$.replyTo')
+        WHERE m.class='Message' AND (json_extract(m.data,'$.dispatchMode')='manual' OR json_extract(origin.data,'$.dispatchMode')='manual');"
   ]
 
   classMethod: persist: message [
@@ -52,10 +57,27 @@ AgentQueue subclass: Object
     @ Store executeBatch: "BEGIN IMMEDIATE;
       INSERT INTO instances(id,data) VALUES('$id','$data')
         ON CONFLICT(id) DO UPDATE SET data=excluded.data;
-      INSERT OR IGNORE INTO agent_outbox(message_id,inbox)
-        SELECT '$id','$address' WHERE '$address' LIKE 'session:%' OR '$address' LIKE 'agent:%';
+      -- Carry the manual boundary through subsequent replies in this exchange.
+      UPDATE instances SET data=json_set(data,'$.dispatchMode','manual','\$._vars',json(
+        CASE WHEN EXISTS(SELECT 1 FROM json_each(json_extract(data,'$._vars')) WHERE value='dispatchMode')
+          THEN json_extract(data,'$._vars') ELSE json_insert(coalesce(json_extract(data,'$._vars'),'[]'),'\$[#]','dispatchMode') END))
+        WHERE id='$id' AND EXISTS(SELECT 1 FROM instances origin
+          WHERE origin.id=json_extract('$data','$.replyTo') AND json_extract(origin.data,'$.dispatchMode')='manual');
+      -- Replies to manual Assignment questions remain in the inbox for the
+      -- walkthrough. Record the answer atomically, without launching a harness.
+      UPDATE agent_questions SET answer_id='$id',answered_at=unixepoch()
+        WHERE answer_id='' AND EXISTS(SELECT 1 FROM instances q WHERE q.id=agent_questions.message_id
+          AND q.id=json_extract('$data','$.replyTo') AND json_extract(q.data,'$.dispatchMode')='manual'
+          AND json_extract(q.data,'$.from')=json_extract('$data','$.to')
+          AND json_extract(q.data,'$.to')=json_extract('$data','$.from'));
+      INSERT OR IGNORE INTO agent_outbox(message_id,inbox,session)
+        SELECT '$id','$address',CASE WHEN '$address' LIKE 'session:%' AND EXISTS(SELECT 1 FROM instances q
+          WHERE q.id=json_extract('$data','$.replyTo') AND json_extract(q.data,'$.dispatchMode')='manual')
+          THEN substr('$address',9) ELSE '' END
+        WHERE '$address' LIKE 'session:%' OR '$address' LIKE 'agent:%';
       $question_sql
-      COMMIT;"
+      COMMIT;" || return 1
+    _env_set "$1" "$(db_get "$1")"
   ]
 
   # Separate processing metadata survives Message read/archive saves and caches.
@@ -71,7 +93,9 @@ AgentQueue subclass: Object
 
   rawClassMethod: pending [
     @ AgentQueue ensureSchema || return 1
-    _db_sql "SELECT message_id FROM agent_outbox WHERE session='' ORDER BY attempted_at, created_at, rowid LIMIT 100;"
+    _db_sql "SELECT message_id FROM agent_outbox WHERE session=''
+      AND message_id NOT IN (SELECT id FROM agent_manual_messages)
+      ORDER BY attempted_at, created_at, rowid LIMIT 100;"
   ]
 
   # Atomic lookup/create, plus routing acknowledgement and question unblocking.
@@ -89,7 +113,8 @@ AgentQueue subclass: Object
       '{class:"AgentDelivery",session:$sid,messageIds:$ids,deliveryKey:$key,state:"pending",run:"",attempts:0,lastError:"",note:"",created:$now,created_at:(now|floor)} | ._vars = (keys - ["class"])')
     esc_sid=$(_db_escape "$sid"); esc_key=$(_db_escape "$key")
     esc_id=$(_db_escape "$id"); esc_data=$(_db_escape "$data"); esc_msg=$(_db_escape "$3")
-    guard="('$esc_msg' = '' OR EXISTS(SELECT 1 FROM agent_outbox WHERE message_id='$esc_msg' AND session=''))"
+    guard="('$esc_msg' = '' OR EXISTS(SELECT 1 FROM agent_outbox WHERE message_id='$esc_msg' AND session=''
+      AND message_id NOT IN (SELECT id FROM agent_manual_messages)))"
     @ Store executeBatch: "BEGIN IMMEDIATE;
       INSERT INTO instances(id,data) SELECT '$esc_id','$esc_data'
         WHERE $guard AND NOT EXISTS(SELECT 1 FROM instances WHERE json_extract(data,'$.class')='AgentDelivery' AND json_extract(data,'$.deliveryKey')='$esc_key');
@@ -131,4 +156,58 @@ AgentQueue subclass: Object
     local id
     id=$(_db_escape "$1")
     _db_sql "UPDATE agent_outbox SET attempted_at=unixepoch() WHERE message_id='$id';"
+  ]
+
+  # SQL is confined to queue storage; Assignment owns question/lifecycle policy.
+  rawClassMethod: questionsForAssignment: assignment [
+    _store_guarded_query "SELECT coalesce(json_group_array(json_object('message',message_id,'answer',answer_id)),'[]') FROM
+      (SELECT q.message_id,q.answer_id FROM instances m JOIN agent_questions q ON q.message_id=m.id
+       WHERE m.class='Message' AND json_extract(m.data,'\$.assignment')='$(_db_escape "$1")' ORDER BY q.message_id)"
+  ]
+
+  classMethod: unansweredForAssignment: assignment [
+    | questions unanswered answer |
+    questions := @ self questionsForAssignment: assignment.
+    unanswered := '[]'.
+    questions arrayEach: [:question |
+      answer := question jsonTextAt: 'answer'.
+      (answer isEmpty) ifTrue: [unanswered := unanswered arrayPush: (question jsonTextAt: 'message')]
+    ].
+    ^ unanswered
+  ]
+
+  classMethod: publishManual: message [
+    | recipient session isSession isAgent row |
+    @ Store requireTransaction.
+    @ message save.
+    recipient := @ message to.
+    session := ''.
+    isSession := @ String startsWith: recipient prefix: 'session:'.
+    isAgent := @ String startsWith: recipient prefix: 'agent:'.
+    (isSession = 'true') ifTrue: [session := @ String trimPrefix: 'session:' from: recipient].
+    (isAgent = 'true') ifTrue: [isSession := 'true'].
+    (isSession = 'true') ifTrue: [
+      row := #{message_id: message inbox: recipient session: session} asJson.
+      @ Store insert: row into: 'agent_outbox'
+    ].
+    @ Store afterCommit: 'AgentQueue' sending: 'announce:' with: message
+  ]
+
+  classMethod: linkQuestion: message session: session run: run delivery: delivery [
+    | ids row |
+    ids := #() asJson.
+    ids := ids arrayPush: delivery.
+    row := #{message_id: message session: session run: run delivery_ids: ids} asJson.
+    @ Store insert: row into: 'agent_questions'
+  ]
+
+  classMethod: announce: message [
+    | recipient inbox available payload |
+    recipient := @ message to.
+    inbox := @ Inbox named: recipient.
+    available := @ Honker isAvailable.
+    (available = 'true') ifTrue: [
+      payload := @ message asJson.
+      @ inbox emit: 'message' payload: payload
+    ]
   ]

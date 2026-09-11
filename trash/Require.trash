@@ -1,0 +1,36 @@
+# Reusable preconditions. Failure goes through the runtime error boundary, so a
+# failed send also aborts a Store transaction across captured DSL expressions.
+Require subclass: Object
+  rawClassMethod: reject: reason [
+    _throw PreconditionError "$1"
+    printf '%s\n' "$1" >&2
+    return 1
+  ]
+
+  classMethod: equal: actual to: expected [
+    | same |
+    same := @ String equals: actual to: expected.
+    (same = 'true') ifFalse: [^ @ self reject: 'Equality precondition rejected']
+  ]
+
+  classMethod: contains: value in: values [
+    | found same |
+    found := 'false'.
+    values arrayEach: [:entry |
+      same := @ String equals: entry to: value.
+      (same = 'true') ifTrue: [found := 'true']
+    ].
+    ^ found
+  ]
+
+  classMethod: member: value of: values [
+    | found |
+    found := @ self contains: value in: values.
+    @ self equal: found to: 'true'
+  ]
+
+  classMethod: text: value [
+    | trimmed |
+    trimmed := @ String trim: value.
+    (trimmed isEmpty) ifTrue: [^ @ self reject: 'Nonempty text is required']
+  ]

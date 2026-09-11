@@ -12,7 +12,7 @@
 AgentDelivery subclass: Object
   include: Persistable
   instanceVars: session:'' run:'' messageIds:'[]' deliveryKey:'' state:'pending' attempts:0
-                lastError:'' note:'' created:''
+                lastError:'' note:'' created:'' assignment:'' generation:0 dispatchMode:'automatic'
 
   # Common transition rule: check the table, set, save, echo the new state.
   method: transitionTo: newState [
@@ -48,7 +48,7 @@ AgentDelivery subclass: Object
   rawClassMethod: pendingFor: sessionId [
     local esc
     esc=$(_db_escape "$1")
-    @ Store findByClass: AgentDelivery where: "json_extract(data, '\$.session') = '$esc' AND json_extract(data, '\$.state') = 'pending'" orderBy: "json_extract(data, '\$.created') ASC, rowid ASC" limit: 1000
+    @ Store findByClass: AgentDelivery where: "json_extract(data, '\$.session') = '$esc' AND json_extract(data, '\$.state') = 'pending' AND coalesce(json_extract(data, '\$.dispatchMode'),'automatic') != 'manual'" orderBy: "json_extract(data, '\$.created') ASC, rowid ASC" limit: 1000
   ]
 
   # Deliveries a run is currently holding (offered or blocked), oldest first
@@ -78,6 +78,12 @@ AgentDelivery subclass: Object
   # statement guarded by the current state. Prints true when the row changed.
   rawClassMethod: claim: deliveryId run: runId [
     local id="$1" erun eid changed
+    # Assignment claims also fence the selected session generation and append
+    # participating runs in the same transaction as the delivery claim.
+    if [[ -n "$(db_get "$id" | jq -r '.assignment // empty')" ]]; then
+      @ Assignment claim: "$id" run: "$2"
+      return
+    fi
     erun=$(_db_escape "$2")
     eid=$(_db_escape "$id")
     changed=$(_db_sql "UPDATE instances SET data = json_set(data, '\$.state', 'offered', '\$.run', '$erun', '\$.attempts', json_extract(data, '\$.attempts') + 1) WHERE id = '$eid' AND json_extract(data, '\$.state') = 'pending'; SELECT changes();")
@@ -102,4 +108,24 @@ AgentDelivery subclass: Object
     first=$(@ "$_RECEIVER" messageIdList | head -n 1)
     [[ -n "$first" ]] || return 0
     @ "$first" from
+  ]
+
+  classMethod: forAssignment: assignment session: session generation: generation message: message [
+    | id d ids key now |
+    @ Store requireTransaction.
+    id := 'agentdelivery_' , assignment , '_' , generation.
+    d := @ Store create: 'AgentDelivery' id: id.
+    ids := '[]'.
+    ids := ids arrayPush: message.
+    key := assignment , ':' , generation.
+    now := @ Time nowISO.
+    @ d session: session.
+    @ d messageIds: ids.
+    @ d deliveryKey: key.
+    @ d created: now.
+    @ d assignment: assignment.
+    @ d generation: generation.
+    @ d dispatchMode: 'manual'.
+    @ d save.
+    ^ d
   ]

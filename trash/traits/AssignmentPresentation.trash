@@ -1,0 +1,101 @@
+# Read projections derive activity from persisted work, execution and questions.
+AssignmentPresentation trait
+  method: snapshot [
+    @ AgentQueue ensureSchema.
+    ^ @ Store transaction: self sending: 'snapshotWithin:' with: ''
+  ]
+
+  method: snapshotWithin: unused [
+    | a data questions session d sData dData run rData state error execution activity |
+    @ Store requireTransaction.
+    a := @ Store read: self class: 'Assignment'.
+    data := @ a asJson.
+    questions := @ AgentQueue questionsForAssignment: a.
+    session := data objectAt: 'currentSession'.
+    d := data objectAt: 'delivery'.
+    execution := '{}'.
+    (session notEmpty) ifTrue: [
+      sData := @ Store getInstance: session.
+      dData := @ Store getInstance: d.
+      (sData notEmpty) ifTrue: [(dData notEmpty) ifTrue: [
+        run := dData objectAt: 'run'.
+        rData := '{}'.
+        (run notEmpty) ifTrue: [rData := @ Store getInstance: run].
+        error := dData objectAt: 'lastError'.
+        (error isEmpty) ifTrue: [error := rData objectAt: 'error'].
+        execution := #{sessionState: (sData objectAt: 'lifecycleState') deliveryState: (dData objectAt: 'state') run: run runState: (rData objectAt: 'state') error: error} asJson
+      ] ]
+    ].
+    activity := @ self activityFrom: data execution: execution questions: questions.
+    data := data objectAt: 'questions' putJson: questions.
+    data := data objectAt: 'execution' putJson: execution.
+    data := data objectAt: 'activity' put: activity.
+    ^ data
+  ]
+
+  method: activityFrom: data execution: execution questions: questions [
+    | state value deliveryState active unanswered |
+    state := data objectAt: 'state'.
+    (state = 'open') ifFalse: [^ state].
+    value := data objectAt: 'assignee'.
+    (value isEmpty) ifTrue: [^ 'unassigned'].
+    value := data objectAt: 'currentSession'.
+    (value isEmpty) ifTrue: [^ 'awaiting session'].
+    deliveryState := execution objectAt: 'deliveryState'.
+    value := @ Require contains: deliveryState in: '["failed","uncertain"]'.
+    (value = 'true') ifTrue: [^ 'needs review'].
+    active := @ Require contains: (execution objectAt: 'runState') in: '["starting","running","recovering"]'.
+    (deliveryState = 'offered') ifTrue: [(active = 'false') ifTrue: [^ 'needs review'] ].
+    unanswered := 'false'.
+    questions arrayEach: [:question |
+      value := question objectAt: 'answer'.
+      (value isEmpty) ifTrue: [unanswered := 'true']
+    ].
+    (unanswered = 'true') ifTrue: [^ 'waiting on question'].
+    value := @ Require contains: deliveryState in: '["offered","blocked"]'.
+    (value = 'true') ifTrue: [(active = 'true') ifTrue: [^ 'running'] ].
+    value := execution objectAt: 'sessionState'.
+    (value notEmpty) ifTrue: [
+      value := @ Require contains: value in: '["open","paused"]'.
+      (value = 'false') ifTrue: [^ 'needs session']
+    ].
+    ^ 'ready for manual work'
+  ]
+
+  method: show [
+    | data execution history events questions value runs answer text |
+    data := @ self snapshot.
+    text := 'Assignment: ' , (data objectAt: 'objective'). @ Console print: text.
+    text := 'State: ' , (data objectAt: 'state') , ' (' , (data objectAt: 'activity') , ')'. @ Console print: text.
+    text := 'Criteria: ' , (data objectAt: 'completionCriteria'). @ Console print: text.
+    text := 'Requester: ' , (data objectAt: 'requester') , '  Origin: ' , (data objectAt: 'originMessage'). @ Console print: text.
+    text := 'Assignee: ' , (data objectAt: 'assignee'). @ Console print: text.
+    text := 'Workspace: ' , (data objectAt: 'workspace'). @ Console print: text.
+    text := 'Session: ' , (data objectAt: 'currentSession') , '  Delivery: ' , (data objectAt: 'delivery'). @ Console print: text.
+    execution := data jsonAt: 'execution'.
+    value := execution objectAt: 'deliveryState'.
+    (value notEmpty) ifTrue: [text := 'Execution: ' , (execution objectAt: 'sessionState') , ', delivery ' , value , ', run ' , (execution objectAt: 'runState') , ' ' , (execution objectAt: 'error'). @ Console print: text].
+    value := data objectAt: 'externalIssue'.
+    (value notEmpty) ifTrue: [text := 'Issue reference: ' , value. @ Console print: text].
+    history := data jsonAt: 'history'.
+    history arrayEach: [:entry |
+      runs := entry jsonAt: 'runs'.
+      value := ''.
+      runs arrayEach: [:run |
+        (value notEmpty) ifTrue: [value := value , ', '].
+        value := value , run
+      ].
+      runs := value.
+      text := 'Participation ' , (entry objectAt: 'generation') , ': ' , (entry objectAt: 'session') , '  Runs: ' , runs. @ Console print: text
+    ].
+    events := data jsonAt: 'events'.
+    events arrayEach: [:event | text := (event objectAt: 'kind') , ' [' , (event objectAt: 'actor') , ']: ' , (event objectAt: 'body'). @ Console print: text].
+    questions := data jsonAt: 'questions'.
+    questions arrayEach: [:question |
+      answer := question objectAt: 'answer'.
+      (answer isEmpty) ifTrue: [answer := 'awaiting reply'].
+      text := 'Question: ' , (question objectAt: 'message') , '  Answer: ' , answer. @ Console print: text
+    ].
+    value := data objectAt: 'resultMessage'.
+    (value notEmpty) ifTrue: [text := 'Outcome message: ' , value. @ Console print: text]
+  ]

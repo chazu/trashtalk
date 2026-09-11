@@ -1,0 +1,56 @@
+# Fault injection only; all domain work uses the production Assignment methods.
+TransactionFaults subclass: Object
+  include: Persistable
+  instanceVars: value:0
+  classMethod: swallowedFailure: assignment outcome: outcome [
+    | ignored args |
+    ignored := @ Require reject: 'Injected early failure'.
+    args := #{outcome: outcome cancel: 'false'} asJson.
+    ^ @ assignment finishWithin: args
+  ]
+
+  classMethod: nested: assignment outcome: outcome [
+    | args |
+    args := #{outcome: outcome cancel: 'false'} asJson.
+    ^ @ Store transaction: assignment sending: 'finishWithin:' with: args
+  ]
+
+  # A non-Assignment object exercises the shared Persistable transaction path.
+  method: incrementWithin: amount [
+    | object value data |
+    @ Store requireTransaction.
+    object := @ Store read: self class: 'TransactionFaults'.
+    value := @ object value.
+    value := value + amount.
+    @ object value: value.
+    @ object save.
+    data := @ Store getInstance: object.
+    ^ data jsonTextAt: 'value'
+  ]
+
+  classMethod: failAfterSave: object [
+    | ignored |
+    ignored := @ object incrementWithin: 1.
+    ignored := @ Require reject: 'Failure after staged save'.
+    ^ 'must not escape'
+  ]
+
+  classMethod: saveAndNotify: args [
+    | object result |
+    object := args jsonTextAt: 'object'.
+    result := @ object incrementWithin: 1.
+    @ Store afterCommit: 'TransactionFaults' sending: 'hint:' with: args.
+    ^ result
+  ]
+
+  # Test-only external effect: the callback must observe the committed value.
+  rawClassMethod: hint: args [
+    local object path
+    object=$(printf '%s' "$1" | jq -r .object)
+    path=$(printf '%s' "$1" | jq -r .path)
+    db_get "$object" | jq -r .value >> "$path"
+  ]
+
+  classMethod: matchingWithin: fields [
+    ^ @ Store idsOf: 'TransactionFaults' matching: fields
+  ]

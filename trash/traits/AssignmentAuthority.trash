@@ -1,0 +1,49 @@
+# Fresh responsibility and run authorization, shared by Assignment operations.
+AssignmentAuthority trait
+  method: authorize: actor operatorOnly: operatorOnly [
+    | a run human r s i role d owner participation history state aData rData sData iData roleData dData |
+    @ Store requireTransaction.
+    a := @ Store read: self class: 'Assignment'.
+    aData := @ a asJson.
+    run := actor objectAt: 'run'.
+    (run isEmpty) ifTrue: [
+      human := actor objectAt: 'human'.
+      @ Require equal: human to: (aData objectAt: 'owner').
+      ^ human
+    ].
+    @ Require equal: operatorOnly to: 'false'.
+    r := @ Store read: run class: 'AgentRun'.
+    rData := @ r asJson.
+    s := @ Store read: (rData objectAt: 'session') class: 'AgentSession'.
+    sData := @ s asJson.
+    i := @ Store read: (sData objectAt: 'identity') class: 'AgentIdentity'.
+    iData := @ i asJson.
+    role := @ Store read: (sData objectAt: 'role') class: 'AgentRole'.
+    roleData := @ role asJson.
+    d := @ Store read: (aData objectAt: 'delivery') class: 'AgentDelivery'.
+    dData := @ d asJson.
+    @ Require member: (rData objectAt: 'state') of: '["running","recovering"]'.
+    @ Require equal: (rData objectAt: 'capabilityTokenHash') to: (actor objectAt: 'hash').
+    @ Require member: (sData objectAt: 'lifecycleState') of: '["open","paused"]'.
+    @ Require member: (iData objectAt: 'enabled') of: '["true","1"]'.
+    @ Require equal: i to: (aData objectAt: 'assignee').
+    @ Require equal: s to: (aData objectAt: 'currentSession').
+    owner := @ i owner.
+    (owner isEmpty) ifTrue: [owner := @ a owner].
+    @ Require equal: owner to: (aData objectAt: 'owner').
+    history := @ a history.
+    participation := history arrayLast.
+    @ Require equal: (sData objectAt: 'workspace') to: (participation objectAt: 'workspace').
+    @ Require equal: (rData objectAt: 'roleRevision') to: (sData objectAt: 'roleRevision').
+    @ Require equal: (roleData objectAt: 'revision') to: (sData objectAt: 'roleRevision').
+    @ Require equal: (dData objectAt: 'assignment') to: a.
+    @ Require equal: (dData objectAt: 'generation') to: (aData objectAt: 'generation').
+    @ Require equal: (dData objectAt: 'session') to: s.
+    @ Require equal: (dData objectAt: 'run') to: r.
+    state := @ d state.
+    (state = 'processed') ifTrue: [
+      @ Require equal: (aData objectAt: 'state') to: 'completed'
+    ] ifFalse: [@ Require member: state of: '["offered","blocked"]'].
+    @ Require member: 'assignment.work' of: (roleData jsonAt: 'capabilities').
+    ^ 'session:' , s
+  ]
