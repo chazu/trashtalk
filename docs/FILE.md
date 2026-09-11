@@ -1,5 +1,7 @@
 # File API
 
+**Status:** Current API reference for File.
+
 File provides an interface for file system operations - reading, writing, and managing files.
 
 ## Quick Operations (Class Methods)

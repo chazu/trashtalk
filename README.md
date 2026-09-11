@@ -53,25 +53,26 @@ Trashtalk uses a **DSL compiler** that transforms Smalltalk-inspired source file
 
 ### Key Components
 
-- **DSL Compiler** (`lib/jq-compiler/`) - jq-based two-pass compiler that transforms `.trash` source files into executable Bash
+- **DSL Compiler** (`lib/jq-compiler/`) - Bash tokenizer and jq parser/code generator that transforms `.trash` source files into executable Bash
 - **Dispatcher** (`lib/trash.bash`) - Routes `@` message sends to the appropriate namespaced function
 - **Source Files** (`trash/*.trash`) - Human-readable class definitions
-- **Compiled Files** (`trash/.compiled/`) - Generated Bash code (also copied to `trash/` for runtime)
+- **Compiled Files** (`trash/.compiled/`) - Generated Bash code loaded by the runtime
 
 ## Installation
 
 ### Requirements
 
-- **bash 4.0+** — macOS ships bash 3.2 at `/bin/bash`; install a modern one with
-  `brew install bash` and start a session with it (`exec "$(brew --prefix)/bin/bash"`).
-- Required tools: `jo`, `jq`, `sqlite3`, `uuidgen`
+- **Bash 4.4+** — macOS ships bash 3.2 at `/bin/bash`; install a modern one with
+  `brew install bash`, put it first on PATH (`export PATH="$(brew --prefix)/bin:$PATH"`),
+  then start it with `exec bash`. Build scripts also resolve `bash` from PATH.
+- Required tools: `jo`, `jq`, `sqlite3`, `uuidgen`; builds also need `make` and `shasum`
   - macOS: `brew install jo jq sqlite` (`uuidgen` is built in)
-  - Debian/Ubuntu: `sudo apt install jo jq sqlite3 uuid-runtime`
+  - Debian/Ubuntu: `sudo apt install bash jo jq sqlite3 uuid-runtime make libdigest-sha-perl`
 
 Clone or copy this repository to `~/.trashtalk`:
 
 ```bash
-git clone <repo-url> ~/.trashtalk
+git clone https://github.com/chazu/trashtalk.git ~/.trashtalk
 ```
 
 Compile the bundled classes (required before first use — the runtime dispatches
@@ -81,17 +82,23 @@ to generated bash in `trash/.compiled/`):
 cd ~/.trashtalk && make
 ```
 
-Add the following to your `.bashrc` or `.zshrc`:
+Add the following to your Bash startup file (`~/.bashrc`; source it from
+`~/.bash_profile` if you use login shells). Trashtalk must run in Bash:
 
 ```bash
 source ~/.trashtalk/lib/trash.bash
 ```
 
-Verify the install:
+Start a fresh Bash session or source the file above, then verify:
 
 ```bash
+@ Trash doctor
 @ Trash info
 ```
+
+The Bash floor comes from NUL-delimited `mapfile -d` in the Tool process
+boundary. macOS system Bash 3.2 and Zsh are not supported runtimes. See the
+[documentation index](docs/README.md) for current APIs, designs, and historical notes.
 
 ## Troubleshooting
 
@@ -101,7 +108,7 @@ If anything misbehaves, run the built-in diagnostics first:
 @ Trash doctor      # or: make doctor
 ```
 
-It checks bash version (needs 4.0+), required tools (`jo`/`jq`/`sqlite3`/`uuidgen`),
+It checks bash version (needs 4.4+), required tools (`jo`/`jq`/`sqlite3`/`uuidgen`),
 whether the sqlite3 in use can load the optional honker extension, and whether
 classes have been compiled — and prints a clear OK/WARN/FAIL line for each.
 It checks Jcode, the default session harness. Install it from [jcode.sh](https://jcode.sh)
@@ -417,10 +424,10 @@ when the sender can be resolved. See [session view controls and setup](docs/agen
 
 ## Gusgus: the assistant behind `@@`
 
-`@@` talks to Gusgus, a persistent low-power assistant with one conversation
+`@@` talks to Gusgus, a persistent assistant with one conversation
 per workspace (the git repository root, or the directory itself outside a
 repository). It sends your message and returns immediately; Gusgus works in a
-detached Codex process and answers into your inbox, in the same thread as
+managed Jcode session by default and answers into your inbox, in the same thread as
 your question. Replying to that message continues the same conversation.
 
 ```bash
@@ -626,15 +633,13 @@ TRASH_PROFILE=1 TRASH_PROFILE_FILE=profile.log @ MyApp run
 Profiling logs entry and exit points with timing:
 
 ```
-[1767909948.119] → Counter.new [native]
-[daemon] Counter.new 44ms route=fallback reason=no_plugin
-[1767909948.248] → Counter.new [native→bash]
-[1767909948.295] ← Counter.new [native→bash] 153ms
+[1767909948.119] → Counter.new [bash]
+[1767909948.295] ← Counter.new [bash] 176ms
 ```
 
 - `→` marks method entry
 - `←` marks method exit with elapsed time
-- Route types: `native`, `bash`, `native→bash`, `bash:direct`
+- Routes identify Bash dispatch (`bash`) or caller-shell methods (`bash:direct`).
 
 ### Environment Variables
 
@@ -657,40 +662,12 @@ TRASH_PROFILE=1 @ MyApp run 2>profile.log
 bin/trash-profile-analyze profile.log
 ```
 
-The analyzer generates a report showing:
-
-- **Dispatch Routing**: Breakdown of native vs bash execution
-- **Slowest Methods**: Top 10 methods by execution time
-- **Most Called Methods**: Top 10 methods by call count
-- **Classes by Call Count**: Which classes are used most
-- **Recommendations**: Suggestions for optimization (e.g., classes that would benefit from native plugins)
-
-Example output:
-
-```
-================================================================================
-                        TRASHTALK PROFILE REPORT
-================================================================================
-
-Run duration: 2.5 seconds
-Total method calls: 150
-Total method time: 2340ms
-
-DISPATCH ROUTING
-----------------
-  [native→bash]          120 calls ( 80%)   avg    15ms   total   1800ms
-  [bash]                  30 calls ( 20%)   avg    18ms   total    540ms
-
-SLOWEST METHODS (top 10)
-------------------------
-     153ms  Dictionary.new                           [native→bash]
-      89ms  Array.map                                [bash]
-      ...
-
-RECOMMENDATIONS
----------------
-  1. Dictionary has 45 calls but no native support - prioritize for dylib
-```
+The analyzer reports dispatch routes, slowest individual calls, the most-called
+methods, and classes by call count. Method times include nested calls, so their
+sum is not wall-clock duration. The report's timestamp span covers the first
+through last completed call. Use these measurements to choose a representative
+workflow to benchmark; the report does not infer subprocess counts or recommend
+another runtime.
 
 ## Core Classes
 
@@ -718,13 +695,14 @@ RECOMMENDATIONS
 | `AgentRun`, `AgentDelivery` | One harness process, and the durable input batch it was offered |
 | `AgentWorker` | Foreground dispatch and reconciliation: claim, launch, settle |
 | `JcodeDriver`, `MakiDriver`, `CodexDriver`, `ShellDriver` | Common session drivers for resident Jcode, Maki SDK, Codex, and test scripts |
-| `TmuxSession` | Legacy tmux-backed session metadata for interactive CLIs |
 
 ### Traits
 
 | Trait | Description |
 |-------|-------------|
+| `Persistable` | Save/reload, deletion, and Store queries |
 | `Debuggable` | Debug logging, inspection, ancestry tracing |
+| `Assignment::Authority`, `Assignment::Reporting`, `Assignment::Presentation` | Assignment authorization, progress/questions, and views |
 | `Observable` | Event emission, subscription, and atomic save+emit for any class |
 
 ## Message Sending
@@ -736,24 +714,27 @@ RECOMMENDATIONS
 # Examples
 @ Trash info                      # No arguments
 @ Counter new                     # Returns instance ID
-@ $counter increment 5            # Instance method with arg
-@ Store getField_field "$id" name # Keyword method (compiled form)
+@ "$counter" incrementBy: 5            # Instance method with arg
+@ Store getField: "$id" field: name # Public keyword message
 ```
 
 ## Instance Persistence
 
-Instances are stored in SQLite via the Store class:
+`new` immediately saves an initial SQLite record. Subsequent mutations update
+the session cache and need an explicit `save` to become durable:
 
 ```bash
-# Create and persist
 counter=$(@ Counter new)
-@ $counter setValue 42
-
-# Find later
-@ Counter findAll                 # List all Counter instances
-@ Counter find "value > 10"       # Query with predicate
-@ Counter count                   # Count instances
+@ "$counter" value: 42
+@ "$counter" save
+@ Counter findAll                 # List stored Counter instances
+@ Counter find: 'value > 10'       # Query durable state
+@ Counter count
 ```
+
+`Persistable` supplies save, reload, deletion, and query methods. See
+[object persistence](docs/persistence.md) for cache freshness, deletion, and
+Store transactions.
 
 ## Honker Integration
 

@@ -8,7 +8,6 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TRASHTALK_ROOT="$SCRIPT_DIR/.."
 
-export TRASHTALK_DISABLE_NATIVE=1
 source "$TRASHTALK_ROOT/lib/trash.bash"
 
 echo "=== Collection Methods Tests ==="

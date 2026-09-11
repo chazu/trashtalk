@@ -1,6 +1,8 @@
 # Trashtalk Namespaces Design Document
 
-**Status**: Implemented (Milestones 1-3, 5)
+**Status**: Bash namespaces implemented (Milestones 1-3, 5). Procyon sections
+are historical and no longer apply; use [compiler capabilities](COMPILER_CAPABILITIES.md)
+for the current surface.
 **Author**: Claude + chazu
 **Date**: 2025-12-22
 **Updated**: 2025-12-23

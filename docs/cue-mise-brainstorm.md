@@ -1,5 +1,7 @@
 # CUE and mise in Trashtalk: a brainstorm
 
+**Status:** Mixed: Cue/Mise Tool adapters are implemented; numbered integration ideas below are proposals.
+
 Trashtalk now ships two exact-argv tool wrappers:
 
 - `Tools::Cue` (`trash/Tools/Cue.trash`) wraps the CUE CLI: validation,
@@ -62,7 +64,8 @@ in SQLite as JSON. A class could optionally ship a CUE definition next to its
 Ideas that fall out of this:
 
 - **`Object validate`**: a base-class message that runs
-  `@ Tools::Cue vet: schemaFile json: (@ Environment get: id)` and returns the
+  `data := @ Runtime dataFor: id` followed by
+  `@ Tools::Cue vet: schemaFile json: data` and returns the
   envelope. Instances can check themselves before a risky mutation, and
   `Persistable` could refuse to store an instance that fails its schema.
 - **Schema-driven defaults**: `unify:json:` fills CUE defaults. `Object new`

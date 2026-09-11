@@ -591,31 +591,24 @@ name := $(@ $dict at: 'name')
 
 ## Persistence
 
-Classes that include the `Persistable` trait can be saved to SQLite:
+Ordinary `new` immediately saves an initial SQLite record, even for classes
+without `Persistable`. Later field changes update the session cache. The
+`Persistable` trait adds explicit saves, reloads, deletion, and Store queries.
 
-```smalltalk
-Counter subclass: Object
-  include: Persistable
-  instanceVars: value:0
+```bash
+counter=$(@ Counter new)             # initial defaults already saved
+@ "$counter" increment              # update the live cached object
+@ "$counter" save                   # persist that change
+@ "$counter" reload                 # discard cached changes and load Store data
+@ Counter findAll                   # stored instance IDs
+@ Counter find: 'value > 5'          # query stored state
+@ "$counter" delete                 # remove from Store and this session cache
 ```
 
-Usage:
-
-```smalltalk
-counter := $(@ Counter new)          # Create in memory
-@ $counter increment
-@ $counter save                      # Persist to database
-
-# Or create and persist in one step:
-counter := $(@ Counter create)
-
-@ $counter delete                    # Remove from database
-
-# Queries
-@ Counter findAll                    # All instance IDs
-@ Counter count                      # Number of instances
-@ Counter find 'value > 5'           # Query with predicate
-```
+`create` calls `new` and `save`; it is a convenience, not a separate persistence
+mode. `Runtime delete:` removes only the cached copy. See
+[object persistence](docs/persistence.md) for freshness, deletion, and
+`Store transaction:` semantics.
 
 ## Error Handling
 
@@ -844,29 +837,23 @@ task=$(@ Task titled "Write docs")
 - The `$__` variable holds the result of the last `@` command (REPL only)
 - Instance variables are automatically inferred in regular methods
 
-## Known Issues
+## Limitations and regression coverage
 
-- **Method name collision**: Keyword methods (e.g., `skip:`) and unary methods with the same base name (e.g., `skip`) compile to the same function. Avoid this pattern.
-- **Negative numbers in arguments**: Arguments like `0 -1` may be mangled. Use variables instead of negative literals in method calls.
-- **Non-local returns in custom methods**: Early return (`^`) works correctly inside compiler-recognized control flow (`ifTrue:`, `ifFalse:`, `whileTrue:`, `timesRepeat:`, `to:do:`) and collection methods (`do:`, `collect:`, `select:`). However, blocks passed to custom methods cannot perform non-local returns due to bash limitations. The `return` only exits the block evaluation, not the enclosing method.
-- **Namespace references in `rawMethod:` bodies**: The tokenizer treats `::` as a `NAMESPACE_SEP` token. In `rawMethod:` and `rawClassMethod:` bodies, writing `@ Pkg::Class method` is tokenized as three separate tokens and compiled with spaces — `@ Pkg :: Class method` — which breaks dispatch at runtime. Use a local variable instead:
+- **Non-local returns in custom methods:** `^` works inside compiler-recognized
+  inline control flow and supported collection iteration. A block passed to an
+  arbitrary custom method returns from its own evaluation, not its enclosing
+  method. See `test_block_early_return.bash` and `test_blocks.bash`.
+- **Failure propagation:** a failed `@` send does not automatically return from
+  the method. Check and return explicitly at effect boundaries. A Store
+  transaction rejects commit after any failed send, even if later code succeeds.
+- **Arithmetic:** Bash arithmetic operates on integers; JSON numbers do not add
+  floating point arithmetic to DSL expressions.
 
-  ```smalltalk
-  rawMethod: example [
-    local _Foo="Pkg::Bar"
-    @ "$_Foo" someMethod
-  ]
-  ```
-
-  When sending to the same class you're in, use `"$_RECEIVER"` (class methods) or `"$_CLASS"` (either):
-
-  ```smalltalk
-  rawClassMethod: create [
-    @ "$_RECEIVER" new   # safe: dispatches to self
-  ]
-  ```
-
-  Regular `method:` blocks are not affected — the DSL transformation handles namespace resolution correctly.
+Unary `skip` and keyword `skip:` are distinct selectors; negative arguments and
+qualified names such as `@ Pkg::Class method` in raw bodies are supported.
+`test_known_issues.bash`, `test_namespaces.bash`, and `test_expr_codegen.bash`
+exercise these formerly broken cases through the production compiler.
+See [compiler capabilities](docs/COMPILER_CAPABILITIES.md) for the test map.
 
 ## Development Workflow
 

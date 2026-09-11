@@ -1,7 +1,13 @@
 # Innards as an Ambient UI/IDE Layer for Trashtalk: Revised Plan
 
+**Status: historical / superseded.** Preserved for design history. Native
+backend instructions and proposed APIs below are not current implementation
+guidance. See the [current documentation index](../README.md),
+[compiler reference](../COMPILER_CAPABILITIES.md), and
+[live agent session view](../agent-session-view.md).
+
 *Implementation plan, September 2026. This is a companion to
-`docs/innards-ambient-ide.md`: the original remains the exploratory design and
+`docs/archive/innards-ambient-ide.md`: the original remains the exploratory design and
 inventory; this document revises the execution plan.*
 
 ## 1. Decision summary

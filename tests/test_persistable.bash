@@ -5,7 +5,7 @@ if [[ "${TRASHTALK_TEST_ISOLATED:-}" != 1 ]]; then
 fi
 # Test script for Persistable trait
 #
-# Note: With native compilation, `new` now immediately persists to the database.
+# Ordinary `new` immediately persists initial defaults; later changes need save.
 # This is the simplified model where all instances are persistent by default.
 # Use `delete` for explicit cleanup.
 
@@ -20,7 +20,7 @@ counter=$(@ Counter new)
 echo "   Created: $counter"
 @ $counter increment
 @ $counter increment
-# Save to persist the updated value (Bash-only classes need explicit save)
+# Save the changed session-cache value.
 @ $counter save
 echo "   Value: $(@ $counter getValue)"
 echo ""

@@ -1,5 +1,7 @@
 # Future API
 
+**Status:** Current API reference for the Future class (not a project roadmap).
+
 Future provides simple async computation with result retrieval. Use it for running Trashtalk code in the background and getting results later.
 
 ## Basic Usage

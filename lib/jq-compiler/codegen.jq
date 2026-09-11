@@ -157,10 +157,6 @@ def expr_is_json_unary:
    $tok.value == "stringToJsonArray" or $tok.value == "asJson" or
    $tok.value == "jsonValue");
 
-# Combined check for any JSON primitive
-def expr_is_json_primitive:
-  expr_is_json_array_keyword or expr_is_json_object_keyword or expr_is_json_unary;
-
 # Check if current token terminates a keyword argument
 # (used to stop expression parsing at message boundaries)
 def expr_is_arg_terminator:
@@ -1172,7 +1168,7 @@ def expr_gen($locals; $ivars; $cvars):
     (.value.type == "string") as $is_string |
     (.value.type == "dstring") as $is_dstring |
     (.value.type == "message_send" or .value.type == "cascade") as $is_message |
-    # Check for arithmetic binary ops - generate Procyon-compatible code (no subshell wrapper)
+    # Check for arithmetic binary ops - generate without subprocess capture code (no subshell wrapper)
     (.value.type == "binary" and (.value.op == "+" or .value.op == "-" or .value.op == "*" or .value.op == "/" or .value.op == "%")) as $is_arithmetic |
     # Also check for unary minus (negation)
     (.value.type == "unary" and .value.op == "-") as $is_unary_arith |
@@ -1181,7 +1177,7 @@ def expr_gen($locals; $ivars; $cvars):
     (if $is_message then "$(\($val_code))" else $val_code end) as $final_val |
     if expr_is_local(.target; $locals) then
       if $is_arithmetic then
-        # Use (( var = expr )) for Procyon compatibility - no subshell
+        # Use (( var = expr )) to avoid subshell capture
         "(( \(.target) = \(.value | expr_gen_arith($locals; $ivars; $cvars)) ))"
       elif $is_unary_arith then
         "(( \(.target) = \(.value | expr_gen_arith($locals; $ivars; $cvars)) ))"
@@ -1194,7 +1190,7 @@ def expr_gen($locals; $ivars; $cvars):
     elif expr_is_ivar(.target; $ivars) then
       # For ivars, use _ivar_set (collection literals rare in loop bodies)
       if $is_arithmetic then
-        # Use temp var + arithmetic command for Procyon compatibility
+        # Use temp var + arithmetic command to avoid subshell capture
         "local __arith__; (( __arith__ = \(.value | expr_gen_arith($locals; $ivars; $cvars)) )); _ivar_set \(.target) \"$__arith__\""
       elif $is_unary_arith then
         "local __arith__; (( __arith__ = \(.value | expr_gen_arith($locals; $ivars; $cvars)) )); _ivar_set \(.target) \"$__arith__\""
@@ -1936,146 +1932,6 @@ def expr_gen_json($locals; $ivars; $cvars):
     expr_gen($locals; $ivars; $cvars)
   end;
 
-# Generate a test expression (file tests, string tests)
-def expr_gen_test_expr($locals; $ivars; $cvars):
-  (.subject | expr_gen($locals; $ivars; $cvars)) as $subj |
-  if .test == "fileExists" then "[[ -e \"\($subj)\" ]]"
-  elif .test == "isFile" then "[[ -f \"\($subj)\" ]]"
-  elif .test == "isDirectory" then "[[ -d \"\($subj)\" ]]"
-  elif .test == "isFifo" then "[[ -p \"\($subj)\" ]]"
-  elif .test == "isSymlink" then "[[ -L \"\($subj)\" ]]"
-  elif .test == "isReadable" then "[[ -r \"\($subj)\" ]]"
-  elif .test == "isWritable" then "[[ -w \"\($subj)\" ]]"
-  elif .test == "isExecutable" then "[[ -x \"\($subj)\" ]]"
-  elif .test == "isEmpty" then "[[ -z \"\($subj)\" ]]"
-  elif .test == "notEmpty" then "[[ -n \"\($subj)\" ]]"
-  elif .test == "isSocket" then "[[ -S \"\($subj)\" ]]"
-  elif .test == "isBlockDevice" then "[[ -b \"\($subj)\" ]]"
-  elif .test == "isCharDevice" then "[[ -c \"\($subj)\" ]]"
-  else "# unknown test: \(.test)"
-  end;
-
-# Check if a condition is a test expression (needs [[ ]] wrapper instead of (( )))
-def is_test_condition:
-  .type == "test_expr";
-
-# Generate condition for control flow (inner part, no wrapper)
-def expr_gen_condition_inner($locals; $ivars; $cvars):
-  if .type == "binary" then
-    "\(.left | expr_gen_arith($locals; $ivars; $cvars)) \(.op) \(.right | expr_gen_arith($locals; $ivars; $cvars))"
-  elif .type == "block" then
-    [(.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
-  elif .type == "identifier" then
-    if expr_is_local(.name; $locals) then "$\(.name)"
-    elif expr_is_ivar(.name; $ivars) then "$(_ivar \(.name))"
-    else .name
-    end
-  elif .type == "variable" then .value
-  elif .type == "boolean" then (if .value then "1" else "0" end)
-  else expr_gen($locals; $ivars; $cvars)
-  end;
-
-# Generate condition with appropriate wrapper
-def expr_gen_condition($locals; $ivars; $cvars):
-  if .type == "test_expr" then
-    # Test expressions generate their own [[ ]] wrapper
-    expr_gen_test_expr($locals; $ivars; $cvars)
-  else
-    expr_gen_condition_inner($locals; $ivars; $cvars)
-  end;
-
-# Helper to generate block body (handles both tokens and body array)
-def expr_gen_block_body($locals; $ivars; $cvars):
-  if .tokens != null then
-    ({ tokens: .tokens, pos: 0 } | expr_parse_stmts) as $parsed |
-    [($parsed.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
-  elif .body != null then
-    [(.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
-  else
-    ""
-  end;
-
-# Helper to generate block as a while condition
-# For single comparison expressions, uses (( )) instead of $(( ))
-def expr_gen_block_as_condition($locals; $ivars; $cvars):
-  if .tokens != null then
-    ({ tokens: .tokens, pos: 0 } | expr_parse_stmts) as $parsed |
-    # If single expression that's a comparison, wrap in (( ))
-    if ($parsed.body | length) == 1 and ($parsed.body[0].type == "binary") then
-      "(( \($parsed.body[0] | expr_gen_condition_inner($locals; $ivars; $cvars)) ))"
-    else
-      [($parsed.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
-    end
-  elif .body != null then
-    if (.body | length) == 1 and (.body[0].type == "binary") then
-      "(( \(.body[0] | expr_gen_condition_inner($locals; $ivars; $cvars)) ))"
-    else
-      [(.body // [])[] | expr_gen($locals; $ivars; $cvars)] | join("; ")
-    end
-  else
-    ""
-  end;
-
-# Wrap a condition with appropriate syntax based on type
-# Test expressions already have [[ ]], arithmetic needs (( ))
-def wrap_condition($locals; $ivars; $cvars):
-  if .type == "test_expr" then
-    # Test expressions generate their own [[ ]] wrapper
-    expr_gen_test_expr($locals; $ivars; $cvars)
-  else
-    # Arithmetic conditions need (( )) wrapper
-    "(( \(expr_gen_condition_inner($locals; $ivars; $cvars)) ))"
-  end;
-
-# Wrap a negated condition
-def wrap_condition_negated($locals; $ivars; $cvars):
-  if .type == "test_expr" then
-    # Negate the test expression
-    "! \(expr_gen_test_expr($locals; $ivars; $cvars))"
-  else
-    # Arithmetic conditions with negation
-    "(( !(\(expr_gen_condition_inner($locals; $ivars; $cvars))) ))"
-  end;
-
-# Generate code for control flow constructs
-def expr_gen_control_flow($locals; $ivars; $cvars):
-  if .kind == "if_true" then
-    "if \(.condition | wrap_condition($locals; $ivars; $cvars)); then \(.block | expr_gen_block_body($locals; $ivars; $cvars)); fi"
-  elif .kind == "if_false" then
-    "if \(.condition | wrap_condition_negated($locals; $ivars; $cvars)); then \(.block | expr_gen_block_body($locals; $ivars; $cvars)); fi"
-  elif .kind == "if_else" then
-    "if \(.condition | wrap_condition($locals; $ivars; $cvars)); then \(.true_block | expr_gen_block_body($locals; $ivars; $cvars)); else \(.false_block | expr_gen_block_body($locals; $ivars; $cvars)); fi"
-  elif .kind == "times_repeat" then
-    "for ((_i=0; _i<\(.count | expr_gen_arith($locals; $ivars; $cvars)); _i++)); do \(.block | expr_gen_block_body($locals; $ivars; $cvars)); done"
-  elif .kind == "range_do" then
-    # Range iteration with loop variable from block parameter
-    (if .block.type == "block_literal" and (.block.params | length) > 0 then
-      .block.params[0]
-    else "_i" end) as $loop_var |
-    ([$loop_var] + $locals) as $block_locals |
-    (.start | expr_gen_arith($locals; $ivars; $cvars)) as $start_code |
-    (.end | expr_gen_arith($locals; $ivars; $cvars)) as $end_code |
-    "for ((\($loop_var)=\($start_code); \($loop_var)<\($end_code); \($loop_var)++)); do \(.block | expr_gen_block_body($block_locals; $ivars; $cvars)); done"
-  elif .kind == "while_true" then
-    if .condition.type == "block" then
-      "while \(.condition | expr_gen_block_as_condition($locals; $ivars; $cvars)); do \(.block | expr_gen_block_body($locals; $ivars; $cvars)); done"
-    else
-      "while \(.condition | wrap_condition($locals; $ivars; $cvars)); do \(.block | expr_gen_block_body($locals; $ivars; $cvars)); done"
-    end
-  elif .kind == "while_false" then
-    if .condition.type == "block" then
-      "while ! \(.condition | expr_gen_block_as_condition($locals; $ivars; $cvars)); do \(.block | expr_gen_block_body($locals; $ivars; $cvars)); done"
-    else
-      "while \(.condition | wrap_condition_negated($locals; $ivars; $cvars)); do \(.block | expr_gen_block_body($locals; $ivars; $cvars)); done"
-    end
-  elif .kind == "try_catch" then
-    (.error_param // "error") as $error_var |
-    ([$error_var] + $locals) as $catch_locals |
-    "if ! { \(.try_block | expr_gen_block_body($locals; $ivars; $cvars)); }; then local \($error_var)=\"$_ERROR_TYPE: $_ERROR_MSG\"; \(.catch_block | expr_gen_block_body($catch_locals; $ivars; $cvars)); _clear_error; fi"
-  else
-    "# ERROR: unknown control flow kind \(.kind)"
-  end;
-
 # Collect local names from statements
 def expr_collect_locals:
   if .type == "statements" and .body != null then
@@ -2105,7 +1961,7 @@ def expr_gen_stmts($locals; $ivars; $cvars):
       ($stmt.value.type == "string") as $is_string |
       ($stmt.value.type == "dstring") as $is_dstring |
       ($stmt.value.type == "message_send" or $stmt.value.type == "cascade") as $is_message |
-      # Check for arithmetic binary ops - generate Procyon-compatible code (no subshell wrapper)
+      # Check for arithmetic binary ops - generate without subprocess capture code (no subshell wrapper)
       ($stmt.value.type == "binary" and ($stmt.value.op == "+" or $stmt.value.op == "-" or $stmt.value.op == "*" or $stmt.value.op == "/" or $stmt.value.op == "%")) as $is_arithmetic |
       # Also check for unary minus (negation)
       ($stmt.value.type == "unary" and $stmt.value.op == "-") as $is_unary_arith |
@@ -2115,7 +1971,7 @@ def expr_gen_stmts($locals; $ivars; $cvars):
       (if $is_message then "$(\($val_code))" else $val_code end) as $msg_code |
       if expr_is_local($stmt.target; $current_locals) then
         if $is_arithmetic or $is_unary_arith then
-          # Use (( var = expr )) for Procyon compatibility - no subshell
+          # Use (( var = expr )) to avoid subshell capture
           .lines += ["  (( \($stmt.target) = \($stmt.value | expr_gen_arith($current_locals; $ivars; $cvars)) ))"]
         elif $is_collection or $is_ansi_quoted then
           .lines += ["  \($stmt.target)=\($val_code)"]
@@ -2130,7 +1986,7 @@ def expr_gen_stmts($locals; $ivars; $cvars):
         end
       elif expr_is_ivar($stmt.target; $ivars) then
         if $is_arithmetic or $is_unary_arith then
-          # Use temp var + arithmetic command for Procyon compatibility - no subshell
+          # Use temp var + arithmetic command to avoid subshell capture
           .lines += ["  local __arith__; (( __arith__ = \($stmt.value | expr_gen_arith($current_locals; $ivars; $cvars)) )); _ivar_set \($stmt.target) \"$__arith__\""]
         elif $is_collection then
           # Use JSON serialization for collection ivars
@@ -2148,7 +2004,7 @@ def expr_gen_stmts($locals; $ivars; $cvars):
         end
       elif expr_is_cvar($stmt.target; $cvars) then
         if $is_arithmetic or $is_unary_arith then
-          # Use temp var + arithmetic command for Procyon compatibility - no subshell
+          # Use temp var + arithmetic command to avoid subshell capture
           .lines += ["  local __arith__; (( __arith__ = \($stmt.value | expr_gen_arith($current_locals; $ivars; $cvars)) )); _cvar_set \($stmt.target) \"$__arith__\""]
         elif $is_collection then
           # Use JSON serialization for collection cvars
@@ -2163,7 +2019,7 @@ def expr_gen_stmts($locals; $ivars; $cvars):
       else
         # Unknown target - treat as regular assignment (could be global/env var)
         if $is_arithmetic or $is_unary_arith then
-          # Use (( var = expr )) for Procyon compatibility - no subshell
+          # Use (( var = expr )) to avoid subshell capture
           .lines += ["  (( \($stmt.target) = \($stmt.value | expr_gen_arith($current_locals; $ivars; $cvars)) ))"]
         elif $is_collection or $is_ansi_quoted then
           .lines += ["  \($stmt.target)=\($val_code)"]
@@ -2404,12 +2260,6 @@ def funcPrefix:
   else
     "__\(.name)"
   end;
-
-# Get the function name prefix from a pre-computed qualified name string
-# Converts :: to __ for bash function names
-def funcPrefixFromName($name):
-  "__\($name | gsub("::"; "__"))";
-
 
 # ------------------------------------------------------------------------------
 # Code Generation: Header
@@ -2960,6 +2810,9 @@ def valueSendCapability($ivars):
   end;
 
 def generateMethod($funcPrefix; $ivars; $cvars):
+  if any((.pragmas // [])[]; IN("procyonOnly", "procyonNative", "bashOnly")) then
+    error("Retired backend pragma: Trashtalk supports Bash only; remove the pragma and review the method body")
+  else . end |
   # Build function name
   (if .kind == "class" then
     "\($funcPrefix)__class__\(.selector)"
@@ -2975,9 +2828,6 @@ def generateMethod($funcPrefix; $ivars; $cvars):
   # would never see them (breaking pragma: direct et al).
   ((.pragmas // []) | map(
     if . == "direct" then "declare -g \($funcName)__direct=1"
-    elif . == "procyonOnly" then "declare -g \($funcName)__procyonOnly=1"
-    elif . == "bashOnly" then "declare -g \($funcName)__bashOnly=1"
-    elif . == "procyonNative" then "declare -g \($funcName)__procyonNative=1"
     else null end
   ) | map(select(. != null))) as $pragmaMarkers |
 
@@ -3009,11 +2859,6 @@ def generateMethod($funcPrefix; $ivars; $cvars):
     .body | transformMethodBody($className; false)
   end) as $body |
 
-  # For procyonOnly methods, replace body with error-throwing stub
-  (if (.pragmas // []) | contains(["procyonOnly"]) then
-    "  _throw \"NotImplemented\" \"Method \(.selector) requires native Procyon runtime\"\n  return 1"
-  else $body end) as $finalBody |
-
   (valueSendCapability($ivars)) as $valueCapability |
 
   # Emit pragma markers if present (may be multiple)
@@ -3021,7 +2866,7 @@ def generateMethod($funcPrefix; $ivars; $cvars):
   # Combine into function
   "\($funcName)() {",
   (if $argBindings != "" then $argBindings else empty end),
-  $finalBody,
+  $body,
   "}",
   (if $valueCapability != null then
     "\($funcPrefix)__valueMethods[\($funcName | ltrimstr($funcPrefix + "__") | @sh)]=\($valueCapability | @sh)"

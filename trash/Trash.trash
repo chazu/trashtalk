@@ -36,11 +36,11 @@ Trash subclass: Object
 
     echo "=== Trashtalk Doctor ==="
 
-    # bash 4.0+
-    if [[ "${BASH_VERSINFO[0]}" -ge 4 ]]; then
-      _d_ok "bash ${BASH_VERSION%%(*} (>= 4.0)"
+    # Bash 4.4+ (mapfile -d for exact argv)
+    if (( BASH_VERSINFO[0] > 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] >= 4) )); then
+      _d_ok "bash ${BASH_VERSION%%(*} (>= 4.4)"
     else
-      _d_bad "bash ${BASH_VERSION%%(*} too old; need 4.0+ (macOS: brew install bash)"
+      _d_bad "bash ${BASH_VERSION%%(*} too old; need 4.4+ (macOS: brew install bash)"
     fi
 
     # required tools

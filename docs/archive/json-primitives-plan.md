@@ -1,5 +1,11 @@
 # JSON Primitives Implementation Plan
 
+**Status: historical / superseded.** Preserved for design history. Native
+backend instructions and proposed APIs below are not current implementation
+guidance. See the [current documentation index](../README.md),
+[compiler reference](../COMPILER_CAPABILITIES.md), and
+[live agent session view](../agent-session-view.md).
+
 ## Progress Summary
 
 | Phase | Status | Completion Date |

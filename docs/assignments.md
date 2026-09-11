@@ -1,5 +1,7 @@
 # Assignments: manual walkthrough
 
+**Status:** Current manual Assignment workflow; automatic specialist dispatch remains proposed.
+
 An `Assignment` records work entrusted to an `AgentIdentity`. It retains its
 objective, completion criteria, requester, progress, questions, outcome, and
 session/run participation history when execution moves to another session.

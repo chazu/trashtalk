@@ -1,5 +1,11 @@
 # Procyon Block Compilation Plan
 
+**Status: historical / superseded.** Preserved for design history. Native
+backend instructions and proposed APIs below are not current implementation
+guidance. See the [current documentation index](../README.md),
+[compiler reference](../COMPILER_CAPABILITIES.md), and
+[live agent session view](../agent-session-view.md).
+
 ## Problem Statement
 
 Trashtalk's iteration methods (`do:`, `collect:`, `select:`, `inject:into:`) use blocks - first-class code objects that can be passed around and executed. Currently these are implemented as `rawMethod` in Bash and cannot be compiled by Procyon.

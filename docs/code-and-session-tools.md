@@ -1,5 +1,7 @@
 # Code and session Tool adapters
 
+**Status:** Current CLI adapters; persistent memory and a Chad session driver remain future work.
+
 `Tools::Roam`, `Tools::AstGrep`, `Tools::Cass`, and `Tools::Chad` are available
 through ordinary class messages. Their methods build exact argument arrays in
 the DSL. `Tool` supplies process capture and child-only directory selection;

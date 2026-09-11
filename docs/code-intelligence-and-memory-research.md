@@ -1,5 +1,7 @@
 # Code intelligence and persistent memory for Trashtalk
 
+**Status:** Dated research and recommendations. Roam, ast-grep, cass, and Chad CLI adapters are now implemented; memory recommendations remain proposals.
+
 ## Recommendations
 
 **Start code intelligence with a small `Tools::Roam` adapter, complemented by

@@ -6,10 +6,10 @@ fi
 # Test: Block early return (^ value inside ifTrue: blocks)
 #
 # Tests that ^ (caret/return) works correctly inside inline control flow blocks.
-# Note: Early return from blocks passed to methods like do: is a known limitation
-# due to bash's inability to do non-local returns from eval'd code.
+# Custom first-class block calls return from the block, not its caller.
+# test_expr_codegen.bash verifies that boundary through production dispatch.
 
-set -u
+set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TRASHTALK_ROOT="${SCRIPT_DIR}/../../.."
@@ -21,7 +21,7 @@ GREEN='\033[0;32m'
 NC='\033[0m' # No Color
 
 pass() { echo -e "  ${GREEN}✓${NC} $1"; }
-fail() { echo -e "  ${RED}✗${NC} $1"; echo "    Expected: $2"; echo "    Got: $3"; }
+fail() { echo -e "  ${RED}✗${NC} $1"; echo "    Expected: $2"; echo "    Got: $3"; exit 1; }
 
 echo "Block Early Return Tests"
 echo "========================"
@@ -30,11 +30,14 @@ echo "========================"
 cd "$TRASHTALK_ROOT"
 source lib/trash.bash >/dev/null 2>&1
 
+scratch=$(mktemp -d "${TMPDIR:-/tmp}/trash-early-return.XXXXXX")
+trap 'rm -rf "$scratch"' EXIT
+
 # Test 1: Simple ifTrue: with early return
 echo ""
 echo "Test 1: ifTrue: with early return"
 
-cat > /tmp/test_early_return.trash << 'EOF'
+cat > "$scratch/test_early_return.trash" << 'EOF'
 TestEarlyReturn subclass: Object
   method: testPositive: n [
     (n > 0) ifTrue: [^ 'positive'].
@@ -52,7 +55,7 @@ TestEarlyReturn subclass: Object
   ]
 EOF
 
-"$DRIVER" compile /tmp/test_early_return.trash > "$TRASHTALK_ROOT/trash/.compiled/TestEarlyReturn" 2>/dev/null
+"$DRIVER" compile "$scratch/test_early_return.trash" > "$TRASHTALK_ROOT/trash/.compiled/TestEarlyReturn" 2>/dev/null
 
 obj=$(@ TestEarlyReturn new 2>/dev/null)
 result=$(@ $obj testPositive: 5 2>/dev/null)
@@ -73,7 +76,7 @@ fi
 echo ""
 echo "Test 2: ifTrue:ifFalse: with early returns"
 
-cat > /tmp/test_dual_branch.trash << 'EOF'
+cat > "$scratch/test_dual_branch.trash" << 'EOF'
 TestDualBranch subclass: Object
   method: sign: n [
     (n > 0) ifTrue: [^ 'pos'] ifFalse: [^ 'non-pos']
@@ -86,7 +89,7 @@ TestDualBranch subclass: Object
   ]
 EOF
 
-"$DRIVER" compile /tmp/test_dual_branch.trash > "$TRASHTALK_ROOT/trash/.compiled/TestDualBranch" 2>/dev/null
+"$DRIVER" compile "$scratch/test_dual_branch.trash" > "$TRASHTALK_ROOT/trash/.compiled/TestDualBranch" 2>/dev/null
 
 obj=$(@ TestDualBranch new 2>/dev/null)
 
@@ -130,7 +133,7 @@ else
 fi
 
 # Cleanup
-rm -f /tmp/test_early_return.trash /tmp/test_dual_branch.trash
+rm -f "$scratch/test_early_return.trash" "$scratch/test_dual_branch.trash"
 rm -f "$TRASHTALK_ROOT/trash/.compiled/TestEarlyReturn" "$TRASHTALK_ROOT/trash/.compiled/TestDualBranch"
 
 echo ""

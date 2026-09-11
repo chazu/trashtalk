@@ -6,30 +6,11 @@ fi
 # ==============================================================================
 # Regression tests for known issues documented in CLAUDE.md
 # ==============================================================================
-# These tests document and verify known limitations. Tests marked XFAIL are
-# expected to fail until the underlying bug is fixed.
+# Former defects remain ordinary failing regressions if they return.
+# The production tokenizer, parser, and generator are used below.
 # ==============================================================================
 
 source "$(dirname "${BASH_SOURCE[0]}")/test_helper.bash"
-
-# Expected-failure test: passes if the bug is still present (expected),
-# warns if it's been fixed (good news, update the test!).
-# Does NOT count toward TESTS_FAILED.
-run_xfail() {
-    local name="$1"
-    local expected="$2"
-    local actual="$3"
-
-    ((TESTS_RUN++)) || true
-
-    if [[ "$expected" == "$actual" ]]; then
-        echo -e "  ${GREEN}✓${NC} $name [XFAIL - still broken as expected]"
-        ((TESTS_PASSED++)) || true
-    else
-        echo -e "  ${YELLOW}!${NC} $name [XFAIL - BUG APPEARS FIXED! Update this test.]"
-        ((TESTS_PASSED++)) || true
-    fi
-}
 
 # Helper: compile source and return output
 compile() {
@@ -53,8 +34,7 @@ compile_contains() {
 
 # ==============================================================================
 # Bug 1: Method name collision (keyword vs unary with same base)
-# CLAUDE.md: "Keyword methods (e.g., skip:) and unary methods with same base
-# name compile to same bash function"
+# Unary and keyword selectors must have distinct generated names.
 # ==============================================================================
 CURRENT_SECTION="Method Name Collision"
 echo ""
@@ -81,9 +61,7 @@ run_test "distinct function names for skip vs skip:" "true" \
 
 # ==============================================================================
 # Bug 2: Negative numbers in arguments
-# CLAUDE.md: "Compiler may mangle 0 -1 into 0-1"
-# Verification: the compiler appears to handle this correctly now for both
-# message send arguments and arithmetic expressions.
+# Preserve negative literals in messages and arithmetic.
 # ==============================================================================
 CURRENT_SECTION="Negative Number Arguments"
 echo ""
@@ -114,8 +92,7 @@ run_test "negative number preserved in arithmetic" "true" \
 
 # ==============================================================================
 # Bug 3: ifTrue: with non-predicate expressions
-# CLAUDE.md: "(@ String contains:...) ifTrue: doesn't work correctly"
-# The issue: message send results go into (( )) arithmetic context
+# Compare predicate message results as strings, not arithmetic.
 # ==============================================================================
 CURRENT_SECTION="ifTrue with Message Send"
 echo ""
@@ -143,7 +120,7 @@ run_test "message send inside ifTrue: uses string comparison" "1" "$uses_string_
 
 # ==============================================================================
 # Bug 4: Namespace references in rawMethod bodies
-# CLAUDE.md: "Tokenizer splits Pkg::Class into three tokens"
+# Reconstruct qualified names without spaces in raw bodies.
 # ==============================================================================
 CURRENT_SECTION="Namespace in rawMethod"
 echo ""

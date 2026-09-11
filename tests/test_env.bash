@@ -4,7 +4,6 @@ if [[ "${TRASHTALK_TEST_ISOLATED:-}" != 1 ]]; then
     exec bash "$(dirname "${BASH_SOURCE[0]}")/../lib/test-isolated.bash" "${BASH_SOURCE[0]}" "$@"
 fi
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
-export TRASHTALK_DISABLE_NATIVE=1
 source lib/trash.bash
 
 echo "=== Env Primitive Methods Tests ==="

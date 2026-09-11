@@ -1,5 +1,7 @@
 # Concurrency Refactor: Process, Future, and Tuplespace
 
+**Status:** Historical refactor design. Process, Future, and Tuplespace are implemented; use their current source and API guides rather than treating every sketch below as an existing selector.
+
 ## Overview
 
 This document outlines a refactor of Trashtalk's concurrency model, moving from a complex Actor-based system to a simpler, more Unix-native approach.

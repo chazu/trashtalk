@@ -1,18 +1,11 @@
 # Pure Trashtalk Patterns for Common Bash Idioms
 
-This guide shows how to rewrite common Bash patterns in pure Trashtalk DSL,
-enabling native compilation with Procyon and cleaner, more maintainable code.
+**Status: DSL recipe reference.** For design choices and current domain examples,
+start with [The Way of Trashtalk](the-way-of-trashtalk.md).
 
-## Why Pure Trashtalk?
-
-Methods written in pure Trashtalk DSL (using `method:`) can be:
-- **Natively compiled** to Go binaries via Procyon
-- **Automatically transformed** with proper ivar handling
-- **More readable** and maintainable
-
-Methods using `rawMethod:` require Bash fallback and cannot be natively compiled.
-
----
+Use `method:` for readable domain behavior with inferred field access. Keep
+`rawMethod:` at shell/process, filesystem, and serialization boundaries. Both
+compile to Bash; there is no native backend or fallback mode.
 
 ## Loop Patterns
 
@@ -483,7 +476,7 @@ method: addAB [
 
 Some patterns cannot be expressed in pure Trashtalk and require `rawMethod:`:
 
-1. **Heredocs**: Multi-line string literals
+1. **Heredocs**: Shell input redirection; use DSL triple strings for multiline values
 2. **File I/O redirection**: `>`, `>>`, `<`
 3. **Process substitution**: `<(...)`, `>(...)`
 4. **Complex pipes**: Multi-stage pipelines
@@ -500,37 +493,11 @@ rawMethod: writeToFile: path contents: data [
 
 ---
 
-## Compilation Status
+See [compiler capabilities](COMPILER_CAPABILITIES.md) for the supported surface.
 
-| Pattern | Pure Trashtalk | Native Compilation |
-|---------|---------------|-------------------|
-| whileTrue:/whileFalse: | ✓ | ✓ |
-| timesRepeat: | ✓ | ✓ |
-| to:do: | ✓ | ✓ |
-| ifTrue:/ifFalse: | ✓ | ✓ |
-| and:/or: | ✓ | ✓ |
-| isEmpty/notEmpty | ✓ | ✓ |
-| matches: | ✓ | ✓ |
-| arrayAt:/arrayPush: | ✓ | ✓ |
-| do:/collect:/select: | ✓ | ✓ |
-| Block valueWith: | ✓ | ✓ |
-| Ivar access/assignment | ✓ | ✓ |
-| File I/O | rawMethod | ✗ |
-| Heredocs | rawMethod | ✗ |
-| Process substitution | rawMethod | ✗ |
+## Choosing a boundary
 
----
-
-## Summary
-
-To maximize native compilation:
-
-1. **Use `method:`** instead of `rawMethod:` when possible
-2. **Use DSL control flow**: `whileTrue:`, `ifTrue:`, `timesRepeat:`
-3. **Use Array methods**: `do:`, `collect:`, `select:`, `inject:into:`
-4. **Use string predicates**: `isEmpty`, `notEmpty`, `matches:`
-5. **Let the compiler infer ivars**: Just use the variable name directly
-6. **Use blocks for callbacks**: `[:arg | ...]` syntax
-
-Methods following these patterns can be natively compiled by Procyon,
-resulting in faster execution and smaller memory footprint.
+Prefer DSL control flow, collection messages, and inferred field access where
+they clearly express the operation. Use a Tool wrapper for external commands.
+Performance claims require measurements of a representative public workflow;
+changing `rawMethod:` to `method:` alone does not establish a speedup.

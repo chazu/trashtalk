@@ -1,5 +1,11 @@
 # Trashtalk Closure Plan
 
+**Status: historical / superseded.** Preserved for design history. Native
+backend instructions and proposed APIs below are not current implementation
+guidance. See the [current documentation index](../README.md),
+[compiler reference](../COMPILER_CAPABILITIES.md), and
+[live agent session view](../agent-session-view.md).
+
 ## Decision Summary
 
 Trashtalk will be finalized as a **bash-only** project. The hybrid native/bash execution model is being abandoned in favor of simplicity and completeness.

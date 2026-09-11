@@ -15,8 +15,6 @@ rm -f "$SQLITE_JSON_DB"
 
 source "$TRASHTALK_DIR/lib/trash.bash"
 
-# Reset native daemon to ensure clean state
-_native_daemon_reset 2>/dev/null
 
 PASSED=0
 FAILED=0

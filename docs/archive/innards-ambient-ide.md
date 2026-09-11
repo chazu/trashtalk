@@ -1,5 +1,11 @@
 # Innards as an Ambient UI/IDE Layer for Trashtalk
 
+**Status: historical / superseded.** Preserved for design history. Native
+backend instructions and proposed APIs below are not current implementation
+guidance. See the [current documentation index](../README.md),
+[compiler reference](../COMPILER_CAPABILITIES.md), and
+[live agent session view](../agent-session-view.md).
+
 *Design report, September 2026. Covers the `chazu/innards` and `chazu/trashtalk`
 repositories as of `innards@25de24d` and `trashtalk@18e7683`.*
 
@@ -657,7 +663,7 @@ the "draw on tty, report on stdout" contract everything else relies on.
   itself inside `rlwrap`.
 - **Spawn cost.** `trash-send` sources `lib/trash.bash` on every call. For
   per-keystroke previews that is too slow; `ReplServer` (step 10) or
-  precomputed preview files are the fixes. `docs/self-hosting-evolution.md`
+  precomputed preview files are the fixes. `docs/archive/self-hosting-evolution.md`
   already measured process-spawn overhead dominating small operations.
 - **Grammar maintenance.** A sublime-syntax for Trashtalk duplicates knowledge
   in `tokenizer.bash` and the Emacs mode. Acceptable for highlighting; do not

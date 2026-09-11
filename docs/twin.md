@@ -1,5 +1,7 @@
 # Twin Integration Guide
 
+**Status:** Legacy optional Twin integration guide. Innards is the current UI direction; this guide does not establish a tested modern Twin installation.
+
 Twin is a text-mode window manager that provides tiled terminal windows. Trashtalk integrates with Twin to create a Smalltalk-like development environment with multiple interactive panes.
 
 ## Prerequisites

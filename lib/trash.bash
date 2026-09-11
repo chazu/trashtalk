@@ -3,15 +3,15 @@
 # Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Trashtalk needs bash 4.0+ (associative arrays via `declare -A`, etc.). macOS
+# Trashtalk needs Bash 4.4+ (including NUL-delimited `mapfile -d` for exact argv). macOS
 # ships bash 3.2 as /bin/bash, where sourcing this file dies with a cryptic
 # `declare: -A: invalid option` partway through. Fail early with a clear fix.
-if [[ -z "${BASH_VERSINFO:-}" || "${BASH_VERSINFO[0]}" -lt 4 ]]; then
+if [[ -z "${BASH_VERSINFO:-}" || "${BASH_VERSINFO[0]}" -lt 4 || ( "${BASH_VERSINFO[0]}" -eq 4 && "${BASH_VERSINFO[1]}" -lt 4 ) ]]; then
     printf '%s\n' \
-        "Error: trashtalk requires bash 4.0+ (current: ${BASH_VERSION:-not running under bash})." \
+        "Error: trashtalk requires Bash 4.4+ (current: ${BASH_VERSION:-not running under bash})." \
         "       macOS ships bash 3.2 at /bin/bash. Install a modern bash with:" \
         "           brew install bash" \
-        "       then start a bash 4+ session, e.g.:" \
+        "       then start a Bash 4.4+ session, e.g.:" \
         "           exec \"\$(brew --prefix)/bin/bash\"" \
         "       and re-source lib/trash.bash. Verify with: bash --version" >&2
     return 1 2>/dev/null || exit 1
@@ -121,8 +121,6 @@ source "$SCRIPT_DIR/store-transaction.bash" || return 1
 #   TRASH_PROFILE_DEPTH=N      Max call depth to log (default: unlimited)
 #   TRASH_PROFILE_MIN_MS=N     Only log calls taking >= N ms
 
-declare _TRASH_PROFILE_DATA=""
-
 # Log a profile entry
 # Usage: _profile_log <direction> <class> <selector> <route> [elapsed_ms] [result_len]
 _profile_log() {
@@ -170,12 +168,6 @@ _profile_log() {
     echo "$log_entry" >> "$TRASH_PROFILE_FILE"
   else
     echo "$log_entry" >&2
-  fi
-
-  # Accumulate data for analysis
-  if [[ "$direction" == "←" ]]; then
-    _TRASH_PROFILE_DATA="${_TRASH_PROFILE_DATA}${class}|${selector}|${route}|${elapsed_ms}
-"
   fi
 }
 
@@ -265,8 +257,9 @@ export -f _is_qualified _get_package _get_class_name _to_func_prefix _to_instanc
 # ============================================
 # Environment Abstraction
 # ============================================
-# All objects live in the MemoryEnv by default (file-based temp store).
-# Persistable objects can be saved to/loaded from the Store (SQLite).
+# Objects have a file-backed session cache and an initial durable Store record.
+# new persists defaults; later mutations affect the cache until explicitly saved.
+# Persistable provides save/reload/query/delete messages (see docs/persistence.md).
 #
 # The "memory" environment uses temp files so it persists across subshells
 # but is cleaned up when the shell session ends.
@@ -814,7 +807,7 @@ function _ensure_class_sourced {
     source "$compiled_file"
     _SOURCED_COMPILED_CLASSES["$class_name"]=1
 
-    # Also source included traits (for bashOnly markers)
+    # Also source included traits (including direct dispatch markers)
     local traits_var="${func_prefix}__traits"
     if [[ -n "${!traits_var:-}" ]]; then
       local trait_name
@@ -1281,7 +1274,7 @@ _resolve_receiver() {
   fi
 }
 
-# Delete an instance from memory (and optionally from Store)
+# Delete only the cached instance; Store can supply it again on a later read.
 function _delete_instance {
   local instance_id="$1"
   _env_delete "$instance_id"

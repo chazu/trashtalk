@@ -94,7 +94,7 @@ after rebuilding. Public `@` keeps its result conventions. See
 source lib/trash.bash              # Load the runtime
 @ Trash info                       # System info
 counter=$(@ Counter new)           # Create instance
-@ $counter increment 5             # Call instance method
+@ "$counter" incrementBy: 5             # Call instance method
 ```
 
 ## DSL Syntax Quick Reference
@@ -254,11 +254,15 @@ Use for methods that need to modify shell state.
 
 ## External Dependencies
 
-Required: `jo`, `jq`, `sqlite3`, `uuidgen`
+Required: Bash 4.4+, `jo`, `jq`, `sqlite3`, `uuidgen`; builds also need `make` and `shasum`.
 
-## Known Issues
+## Language boundaries
 
-- **~~Method name collision~~**: ~~Keyword methods (e.g., `skip:`) and unary methods with same base name compile to same bash function~~ - **FIXED**: keyword methods now get a trailing `_` suffix (e.g., `skip` -> `__Class__skip`, `skip:` -> `__Class__skip_`)
-- **~~Negative numbers in arguments~~**: ~~Compiler may mangle `0 -1` into `0-1`~~ - **FIXED**: negative numbers are preserved correctly in both message sends and arithmetic
-- **~~ifTrue: with non-predicate expressions~~**: ~~`(@ String contains:...) ifTrue:` doesn't work correctly~~ - **FIXED**: a message send used as a condition now compiles to a string comparison (`[[ "$(@ ...)" == "true" ]]`) instead of an invalid `(( ))` arithmetic context.
-- **~~Namespace references in rawMethod/rawClassMethod bodies~~**: ~~The tokenizer splits `Pkg::Class` into three tokens, so `@ Pkg::Class method` compiles to `@ Pkg :: Class method`~~ - **FIXED**: raw-method body reconstruction now rejoins `Pkg::Class` without inserting spaces, so `@ Pkg::Class method` compiles intact. The local-variable workaround is no longer required.
+See [LANGUAGE.md](LANGUAGE.md#limitations-and-regression-coverage) for current
+limitations and [compiler capabilities](docs/COMPILER_CAPABILITIES.md) for their
+regression coverage. Unary/keyword selector collisions, negative arguments, and
+qualified raw-method references are fixed; do not introduce their old workarounds.
+
+See [persistence](docs/persistence.md) for immediate initial persistence, cached
+mutations, explicit saves, and guarded Store transactions. Start with the
+[documentation index](docs/README.md) when deciding whether a design is current.

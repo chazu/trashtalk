@@ -1,8 +1,8 @@
 # Reliable agent delivery and session inspection
 
 Implemented in September 2026. This document describes the current single-host
-worker and snapshot browser; the broader headless-session design remains the
-longer-term plan.
+worker, snapshot browser, and live Innards attachment. The broader
+headless-session design remains a partially implemented plan.
 
 ## Daily use
 
@@ -109,11 +109,16 @@ The picker shows lifecycle, latest run state, queued deliveries,
 blocked deliveries/questions, and work needing review. Its actions provide
 conversations, run metadata and the last 100 lines of each log, pause,
 resume, and confirmed retry of a selected failed or uncertain delivery.
-Snapshots refresh when returning to an action menu; this is not a live event
-viewer. Opening a conversation marks its displayed messages read. Closing the
-picker or pager does not stop the worker or harness. Reply through the Inbox
-browser. Session/run pickers require `inpick` or `fzf`; paging falls back to
-plain terminal output if `inpage` is absent.
+Snapshot menus refresh when returning to an action menu. Choose **Attach to
+conversation**, or send `@ "$session" focus`, for live backlog and harness output.
+The `inagent` composer sends through Inbox with **C-c C-c**; **C-x C-c** detaches.
+Pause and stop are explicit actions. Detaching never stops the worker or harness.
+See [the live session view](agent-session-view.md) for navigation and installation.
+
+Reading displayed messages marks them read, without settling deliveries or
+changing archive state. The Inbox message menu offers **Attach to sender session**
+when the recorded origin resolves to a session. Session/run pickers need `inpick`
+or `fzf`; ordinary paging falls back to terminal output without `inpage`.
 
 Press **Ctrl-D** on a session in the session list, then choose **Terminate
 session and stop active work** to terminate it. **Cancel** is selected by
@@ -270,3 +275,16 @@ The record, worker, browser, service, and Tool detach suites cover transition
 rejection, retry limits, read-only dismissal, explicit UI actions, generated
 supervisor contracts, and independent child lifetime. No paid model calls are
 required by these tests.
+
+## One-shot requests
+
+`@@ --one-shot 'question'` uses the `Agent` facade, selected by
+`TRASHTALK_AGENT_BACKEND=axe` (default) or `codex`. `@@ --dry-run` previews that
+request without running a model. These do not join the persistent Gusgus session.
+Codex one-shot requests require ChatGPT CLI login, remove API-key overrides, and
+use ephemeral read-only execution. Proposal application remains a separate
+explicit SourceProposal operation.
+
+The former tmux Agent API, ClaudeAgent, and TmuxSession have been retired. Use
+AgentIdentity/AgentSession for durable identity and execution. Tools::Tmux remains
+a general command adapter. See [cleanup and migration notes](cleanup-2026-09.md).

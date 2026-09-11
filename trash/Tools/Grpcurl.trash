@@ -1,0 +1,6 @@
+# Executable discovery for GrpcClient; no automatic installation during calls.
+package: Tools
+
+Grpcurl subclass: Tool
+  classMethod: name [ ^ 'grpcurl' ]
+  classMethod: installCommand [ ^ 'brew install grpcurl' ]

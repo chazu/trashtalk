@@ -1,12 +1,13 @@
 # Persistable trait - provides database persistence for objects
-# Objects including this trait can be saved to and loaded from the Store (SQLite).
+# new already saves initial defaults. This trait saves subsequent mutations,
+# reloads cached state, deletes records, and queries the Store (SQLite).
 #
 # Usage:
 #   Counter subclass: Object
 #     include: Persistable
 #     instanceVars: value:0
 #
-#   # Create and save in one step
+#   # Convenience: new followed by save
 #   counter=$(@ Counter create)
 #
 #   # Or create, modify, then save
@@ -56,7 +57,7 @@ Persistable trait
     ^ @ Runtime dataFor: self
   ]
 
-  # Create a new instance and immediately save it to the Store
+  # Convenience: new already saves defaults; save again before returning
   # Usage: counter=$(@ Counter create)
   classMethod: create [
     | id |

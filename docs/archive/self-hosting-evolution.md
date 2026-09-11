@@ -1,5 +1,11 @@
 # Analysis: Trashtalk Self-Hosting and Procyon Integration
 
+**Status: historical / superseded.** Preserved for design history. Native
+backend instructions and proposed APIs below are not current implementation
+guidance. See the [current documentation index](../README.md),
+[compiler reference](../COMPILER_CAPABILITIES.md), and
+[live agent session view](../agent-session-view.md).
+
 *Analysis prepared by language architect agent, January 2026*
 
 ## Current Architecture Summary

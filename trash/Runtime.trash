@@ -46,13 +46,13 @@ Runtime subclass: Object
     _generate_instance_id "$1"
   ]
 
-  # Create a new instance with a given ID
+  # Create an instance with a given ID and persist its initial defaults
   # Usage: @ Runtime create: 'Counter' id: 'counter_abc123'
   rawClassMethod: create: className id: instanceId [
     _create_instance "$1" "$2"
   ]
 
-  # Delete an instance by ID
+  # Delete the session cache entry; retain the Store record
   # Usage: @ Runtime delete: instanceId
   rawClassMethod: delete: instanceId [
     _delete_instance "$1"
@@ -96,7 +96,7 @@ Runtime subclass: Object
     printf '%s' "$snapshot" | jq -cs 'map({key:.id,value:.data}) | from_entries'
   ]
 
-  # Set instance data from JSON
+  # Set session-cache data from JSON (does not save to Store)
   # Usage: @ Runtime setData: '{"value":42}' for: instanceId
   rawClassMethod: setData: json for: instanceId [
     _env_set "$2" "$1"

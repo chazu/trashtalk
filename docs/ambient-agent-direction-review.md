@@ -2,9 +2,7 @@
 
 **Date:** 2026-09-09
 
-**Status:** Proposal for consideration. This records an assessment of the
-existing designs after the recent implementation work; it does not replace
-them or record agreement to the proposed priorities.
+**Status:** Historical assessment of the dated baseline below. Live session attachment has since been implemented; see agent-session-view.md. Remaining recommendations have not all been adopted.
 
 **Implementation baseline:** Trashtalk `8388cb7`, Innards `42411ac`, and the
 local Whisker inbox integration.
@@ -17,8 +15,8 @@ inboxes, and prompt awareness are now the main experience, while the original
 documents treated them as later additions to an inline IDE.
 
 This assessment covers the [ambient-session sketch](ambient-session.md), the
-[original Innards plan](innards-ambient-ide.md), the
-[revised Innards plan](innards-ambient-ide-revised.md), and the
+[original Innards plan](archive/innards-ambient-ide.md), the
+[revised Innards plan](archive/innards-ambient-ide-revised.md), and the
 [headless-session design](headless-agent-sessions-design.md). They now describe
 several different stages of the project. The
 [agent operations guide](agent-operations.md) describes the implemented worker

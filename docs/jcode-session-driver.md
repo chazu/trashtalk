@@ -1,5 +1,7 @@
 # Jcode session driver
 
+**Status:** Implemented driver contract. See agent-operations.md for use and recovery; provider protocol details describe the validated version, not all future Jcode releases.
+
 ## Problem
 
 An AgentSession outlives individual AgentRuns. A resident harness must not retain

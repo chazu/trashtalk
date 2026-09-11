@@ -246,7 +246,7 @@ Inbox subclass: Object
 
   # Interactive loop over inpick / inpage / inmacs (with fzf and $EDITOR
   # fallbacks). Selecting a message marks it read and offers reply, view
-  # thread, archive, or back; viewing returns to the same menu. Returns when
+  # thread/details, attach to sender session, archive, or back. Returns when
   # the message picker is cancelled. Prints the final outcome.
   rawMethod: browse [
     local preview_dir result outcome msg action
@@ -344,7 +344,7 @@ Inbox subclass: Object
 
   # Second picker: what to do with the selected message. Every record points
   # at the message's preview file so inpick keeps showing it. Prints reply,
-  # view, archive, or back.
+  # view, details, session, archive, or back.
   rawMethod: pickActionFor: messageId in: previewDir [
     local msg="$1" dir="$2" records result outcome title from sessions selected
     from=$(@ MessagePresentation participant: "$(@ "$msg" from)")

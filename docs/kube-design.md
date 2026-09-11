@@ -1,5 +1,9 @@
 # Kube Package Design
 
+**Status:** Design with implementation in `trash/Kube/` (cluster queries, resource
+records, snapshots, and diffs). The sketches and open questions below are not a
+complete current API reference; inspect the named classes for available selectors.
+
 A Trashtalk library for querying and observing Kubernetes cluster state. Lives in `package: Kube`.
 
 ## Goals

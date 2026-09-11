@@ -1,5 +1,7 @@
 # Performance and terminal output
 
+**Status:** Current runtime/build contracts plus dated benchmark evidence; timings are not guarantees.
+
 Trashtalk keeps message dispatch in Bash. Class messages use compiled metadata;
 instance messages resolve their class once per public send. Session files still
 carry live object state across command substitutions, and ordinary `new`

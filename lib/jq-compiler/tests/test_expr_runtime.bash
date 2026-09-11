@@ -37,11 +37,13 @@ if ! source "$_TRASH_ROOT/lib/trash.bash" 2>/dev/null; then
 fi
 
 # Compile the test class
-"$_COMPILER_DIR/driver.bash" compile "$_TEST_DIR/test_expr.trash" > /tmp/ExprTest.bash 2>/dev/null
+scratch=$(mktemp -d "${TMPDIR:-/tmp}/trash-expr-runtime.XXXXXX")
+trap 'rm -rf "$scratch"' EXIT
+"$_COMPILER_DIR/driver.bash" compile "$_TEST_DIR/test_expr.trash" > "$scratch/ExprTest.bash" || exit 1
 
 # Source the compiled class
-if ! source /tmp/ExprTest.bash; then
-    echo "Failed to source /tmp/ExprTest.bash"
+if ! source "$scratch/ExprTest.bash"; then
+    echo "Failed to source $scratch/ExprTest.bash"
     exit 1
 fi
 

@@ -1,5 +1,7 @@
 # Process API
 
+**Status:** Current API reference for Process.
+
 Process provides an interface to spawn and manage external OS (POSIX) processes. Use it for running shell commands, capturing output, and managing background tasks.
 
 ## Quick Execution (Class Methods)

@@ -14,7 +14,7 @@ set -o pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Source trash.bash in a way that doesn't interfere with test execution
-TRASH_TEST_MODE=1 source "$SCRIPT_DIR/../lib/trash.bash" 2>/dev/null || true
+TRASH_TEST_MODE=1 source "$SCRIPT_DIR/../lib/trash.bash" 2>/dev/null || exit 1
 
 # Test counters
 TESTS_RUN=0
@@ -144,12 +144,15 @@ unset TRASH_PROFILE
 unset TRASH_PROFILE_FILE
 
 if [[ -f "$PROFILE_LOG_FILE" ]] && [[ -s "$PROFILE_LOG_FILE" ]]; then
-  analyzer_output=$(/opt/homebrew/bin/bash "$SCRIPT_DIR/../bin/trash-profile-analyze" "$PROFILE_LOG_FILE" 2>&1 || true)
+  if analyzer_output=$(bash "$SCRIPT_DIR/../bin/trash-profile-analyze" "$PROFILE_LOG_FILE" 2>&1); then
+    pass "analyzer runs without error"
+  else
+    fail "analyzer exit status" "0" "$?"
+  fi
   assert_contains "$analyzer_output" "TRASHTALK PROFILE REPORT" "analyzer header present"
   assert_contains "$analyzer_output" "Total method calls" "total calls present"
   assert_contains "$analyzer_output" "DISPATCH ROUTING" "routing section present"
   assert_contains "$analyzer_output" "SLOWEST METHODS" "slowest methods section present"
-  pass "analyzer runs without error"
 else
   fail "profile log generated" "non-empty file" "(empty or missing)"
 fi
@@ -164,8 +167,8 @@ echo "--- 5. Profile shows correct route types ---"
 
 profile_output=$(TRASH_PROFILE=1 @ Counter new 2>&1 >/dev/null)
 
-# Should show either [native] or [bash] or [native→bash]
-if [[ "$profile_output" == *"[native"* ]] || [[ "$profile_output" == *"[bash"* ]]; then
+# Current dispatch is Bash.
+if [[ "$profile_output" == *"[bash"* ]]; then
   pass "route type present in output"
 else
   fail "route type present in output" "contains route" "${profile_output:0:100}"
@@ -185,12 +188,28 @@ line_count=$(echo "$profile_output" | grep -c '^\[' || echo "0")
 if [[ "$line_count" -ge 2 ]]; then
   pass "multiple profile lines generated"
 else
-  # Might be 1 if native handles it directly
-  if [[ "$line_count" -eq 1 ]]; then
-    pass "at least one profile line generated"
-  else
-    fail "profile lines generated" ">= 1" "$line_count"
-  fi
+  fail "entry and exit lines generated" ">= 2" "$line_count"
+fi
+
+# Regressions: frequent Bash calls must complete successfully; unrelated log
+# lines are not profile data. A previous recommendation counter exited on zero.
+scratch=$(mktemp -d "${TMPDIR:-/tmp}/trash-profile.XXXXXX")
+trap 'rm -rf "$scratch"' EXIT
+for ((i=0; i<25; i++)); do
+  printf '[100.%03d] ← Counter.increment [bash] 5ms\n' "$i"
+done > "$scratch/calls.log"
+if report=$(bash "$SCRIPT_DIR/../bin/trash-profile-analyze" "$scratch/calls.log"); then
+  assert_contains "$report" 'Total method calls: 25' 'analyzer counts all calls'
+  assert_contains "$report" 'Total inclusive method time: 125ms' 'inclusive timings are summed'
+else
+  fail 'analyzer handles frequent Bash calls' '0' "$?"
+fi
+if [[ "$report" == *native* ]]; then fail 'Bash-only report' 'no native advice' "$report"; fi
+printf '%s\n' '[INFO] unrelated' > "$scratch/empty.log"
+if bash "$SCRIPT_DIR/../bin/trash-profile-analyze" "$scratch/empty.log" >/dev/null 2>&1; then
+  fail 'rejects logs without completed calls' 'nonzero' '0'
+else
+  pass 'rejects logs without completed calls'
 fi
 
 # ============================================

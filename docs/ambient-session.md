@@ -1,4 +1,6 @@
 # Ambient, Terminal-Native Agentic Sessions
+
+**Status:** Historical brainstorm. Current interaction is documented in agent-operations.md and agent-session-view.md; the ideas below are not an implementation checklist.
 TODO Find the discussion in discord which got me started on this path
 
 ## Components

@@ -1,5 +1,5 @@
 # Debuggable trait - provides debugging capabilities to objects
-# All methods are pure Trashtalk (no pragmas) for native compilation
+# Debugging behavior is expressed in the DSL over Console and Runtime.
 Debuggable trait
 
   # Output debug message to stderr with timestamp

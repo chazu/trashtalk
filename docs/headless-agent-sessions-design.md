@@ -1,8 +1,8 @@
 # Headless Agent Sessions Design
 
 **Status:** Design with partial implementation. The durable worker/recovery and
-snapshot session browser are described in [agent operations](agent-operations.md).
-The broader subscription, role, live-focus, and multi-host fencing contracts
+snapshot browser and live Innards attachment are described in [agent operations](agent-operations.md).
+The broader subscription, role, and multi-host fencing contracts
 below are not all implemented.
 **Date:** 2026-09-08
 
@@ -751,11 +751,10 @@ so a polling worker must batch its queries per tick.
 
 ## Harness contract, context, and caching
 
-The existing one-shot `AxeAgent` and `CodexAgent` paths remain valid for
-`@@`. [ClaudeAgent](../trash/ClaudeAgent.trash) is the legacy tmux path with
-no headless or resume support; deprecate it with the tmux session methods and
-stop defaulting `Agent primary` to it. Add separate session drivers behind
-`Agent`; preserve the Codex one-shot path's ChatGPT authentication and
+The one-shot `AxeAgent` and `CodexAgent` paths remain valid for
+`@@ --one-shot`. [ClaudeAgent and the tmux session methods were retired](cleanup-2026-09.md).
+Persistent sessions use separate drivers behind `AgentSession`; the Codex
+one-shot path retains ChatGPT authentication and
 stripped API-key environment. The session driver relaxes the one-shot path's
 read-only sandbox only as far as the workspace and the Trashtalk store.
 

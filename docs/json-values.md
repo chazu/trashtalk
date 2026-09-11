@@ -1,5 +1,7 @@
 # JSON reads and collection traversal
 
+**Status:** Current JSON primitive reference.
+
 Trashtalk carries JSON as text. These primitives validate one complete JSON
 document and keep serialization in the shared Bash/jq boundary.
 

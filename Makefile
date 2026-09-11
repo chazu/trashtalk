@@ -9,8 +9,8 @@
 #   make test     - Run all tests
 #   make clean    - Remove all build artifacts
 
-# Use Homebrew bash on macOS for associative array support
-SHELL := $(shell command -v /opt/homebrew/bin/bash 2>/dev/null || echo /bin/bash)
+# Use the same Bash as driver scripts; put Bash 4.4+ first on PATH.
+SHELL := $(shell command -v bash)
 
 # Directories
 TRASH_DIR := trash

@@ -20,6 +20,11 @@
 
 set -euo pipefail
 
+if (( BASH_VERSINFO[0] < 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] < 4) )); then
+    echo 'Error: trashtalk compiler requires Bash 4.4+ (macOS: brew install bash).' >&2
+    exit 1
+fi
+
 # Get the directory where this script lives
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -67,7 +72,7 @@ error() {
     exit 1
 }
 
-# Fingerprint of the compiler itself (tokenizer + parser + codegen + grammar +
+# Fingerprint of the compiler itself (tokenizer + parser + codegen + build helpers +
 # this driver). Mixed into the AST cache key so that editing the compiler
 # invalidates every cached AST -- otherwise stale entries silently produce
 # output from the old grammar/codegen. Computed once per process.
@@ -77,8 +82,6 @@ _compiler_version() {
         # code generation, so changing browser queries must not flush the AST
         # cache for every source file.
         _COMPILER_VERSION=$(cat "$PARSER" "$CODEGEN" \
-            "$SCRIPT_DIR/expr-parser.jq" "$SCRIPT_DIR/expr-codegen.jq" \
-            "$SCRIPT_DIR/ir.jq" "$SCRIPT_DIR"/grammar/*.jq \
             "$TOKENIZER" "$SCRIPT_DIR/build-cache.bash" "$SCRIPT_DIR/build-plan.jq" "${BASH_SOURCE[0]}" 2>/dev/null \
             | shasum -a 256 2>/dev/null | cut -d' ' -f1 | cut -c1-16)
     fi
@@ -596,9 +599,9 @@ cmd_compile() {
     # Generate code
     local output _codegen_err
     _codegen_err=$(mktemp)
-    output=$(echo "$ast_with_source" | jq -r -f "$CODEGEN" 2>"$_codegen_err")
-
-    if [[ $? -ne 0 ]]; then
+    # Test the assignment directly: set -e must not exit before we expose the
+    # captured diagnostic (including migration errors for retired pragmas).
+    if ! output=$(echo "$ast_with_source" | jq -r -f "$CODEGEN" 2>"$_codegen_err"); then
         local _err_text; _err_text=$(cat "$_codegen_err"); rm -f "$_codegen_err"
         error "Code generation failed for $source_file (jq error):"$'\n'"$_err_text"
     fi

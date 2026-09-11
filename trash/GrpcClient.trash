@@ -1,192 +1,57 @@
-# GrpcClient - Native gRPC client for Trashtalk
-#
-# This class provides gRPC support through the native Procyon plugin.
-# Streaming methods (serverStream, clientStream, bidiStream) require the native plugin.
-# Unary calls and configuration work in both Bash and native modes.
-#
-# Features:
-#   - Unary RPC calls with JSON payloads
-#   - Server streaming with block callbacks (native only)
-#   - Client streaming with block producers (native only)
-#   - Bidirectional streaming (native only)
-#   - Server reflection for dynamic method discovery
-#   - Proto file support for offline schemas
-#
-# Usage:
-#   client := @ GrpcClient connectTo: 'localhost:50051'.
-#   response := @ $client call: 'myservice.Echo/Say' with: '{"message":"hello"}'.
-#
-# With proto file (no reflection needed):
-#   client := @ GrpcClient connectTo: 'localhost:50051' withProto: 'service.proto'.
-#
-# Server streaming (native only):
-#   @ $client serverStream: 'myservice.Stream/Watch' with: '{}' handler: [:msg |
-#     @ Console print: msg
-#   ].
-#
-# To install the native plugin:
-#   cd ~/.trashtalk && make plugins
-
+# GrpcClient - unary gRPC calls and reflection discovery through grpcurl.
+# Each request starts a subprocess. No pooling, callback streaming, or local
+# proto schemas are exposed. Plaintext is the compatibility default; enableTLS
+# selects grpcurl's normal TLS verification. Child stderr/status are preserved.
 GrpcClient subclass: Object
-  instanceVars: address:'' useReflection:'yes' protoFile:'' poolConnections:'no' usePlaintext:'yes'
+  instanceVars: address:'' usePlaintext:'yes'
 
-  # ==========================================================================
-  # Class methods - Factory constructors
-  # ==========================================================================
-
-  rawClassMethod: connectTo: addr [
-    local client
-    client=$(@ GrpcClient new)
-    @ "$client" _setAddress: "$1"
-    echo "$client"
+  classMethod: connectTo: address [
+    | client |
+    address isEmpty ifTrue: [^ @ Require reject: 'A gRPC address is required'].
+    client := @ self new.
+    @ client address: address.
+    ^ client
   ]
 
-  rawClassMethod: connectTo: addr withProto: proto [
-    local client
-    client=$(@ GrpcClient connectTo: "$1")
-    @ "$client" _setProtoFile: "$2"
-    @ "$client" _setUseReflection: 'no'
-    echo "$client"
+  method: call: rpc with: payload [
+    | options arguments |
+    options := #('-d' payload) asJson.
+    arguments := #(rpc) asJson.
+    ^ @ self invokeOptions: options arguments: arguments
   ]
 
-  # ==========================================================================
-  # Unary RPC - Works in both Bash (via grpcurl) and native
-  # ==========================================================================
-
-  # Make unary gRPC call with JSON payload
-  # Bash: uses grpcurl subprocess
-  # Native: uses direct gRPC client
-  rawMethod: call: method with: jsonPayload [
-    local addr method_name json result plaintext_flag
-    method_name="$1"
-    json="$2"
-    addr="$(_ivar address)"
-    # Build plaintext flag
-    if [[ "$(_ivar usePlaintext)" == "yes" ]]; then
-      plaintext_flag="-plaintext"
-    else
-      plaintext_flag=""
-    fi
-    # Use grpcurl for bash fallback
-    result=$(grpcurl $plaintext_flag -d "$json" "$addr" "$method_name" 2>&1)
-    echo "$result"
+  method: call: rpc [
+    ^ @ self call: rpc with: '{}'
   ]
 
-  # Make unary gRPC call without payload (empty JSON)
-  method: call: aMethod [
-    ^ @ self call: aMethod with: "{}"
+  method: listServices [
+    ^ @ self invokeOptions: '[]' arguments: '["list"]'
   ]
 
-  # ==========================================================================
-  # Server Streaming RPC - Native only (requires fast callbacks)
-  # Bash fallback: no-op (streaming requires native support)
-  # ==========================================================================
-
-  method: serverStream: aMethod with: payload handler: block [
-    # Streaming not supported in bash mode - requires native plugin
-    @ Console error: "GrpcClient: serverStream requires native plugin"
+  method: listMethods: service [
+    | arguments |
+    arguments := #('list' service) asJson.
+    ^ @ self invokeOptions: '[]' arguments: arguments
   ]
 
-  # ==========================================================================
-  # Client Streaming RPC - Native only
-  # ==========================================================================
-
-  method: clientStream: aMethod handler: block [
-    # Streaming not supported in bash mode - requires native plugin
-    @ Console error: "GrpcClient: clientStream requires native plugin"
+  method: describe: target [
+    | arguments |
+    arguments := #('describe' target) asJson.
+    ^ @ self invokeOptions: '[]' arguments: arguments
   ]
 
-  # ==========================================================================
-  # Bidirectional Streaming RPC - Native only
-  # ==========================================================================
+  method: enableTLS [ usePlaintext := 'no' ]
+  method: enablePlaintext [ usePlaintext := 'yes' ]
 
-  method: bidiStream: aMethod handler: block [
-    # Streaming not supported in bash mode - requires native plugin
-    @ Console error: "GrpcClient: bidiStream requires native plugin"
+  # Domain configuration builds exact argv; Tool owns JSON decoding and exec.
+  method: invokeOptions: options arguments: arguments [
+    | tool argv |
+    tool := @ Tools::Grpcurl path.
+    tool isEmpty ifTrue: [^ @ Require reject: 'grpcurl is not installed'].
+    argv := #(tool) asJson.
+    (usePlaintext = 'yes') ifTrue: [argv := argv arrayPush: '-plaintext'].
+    argv := @ Tool argv: argv appendEach: options.
+    argv := argv arrayPush: address.
+    argv := @ Tool argv: argv appendEach: arguments.
+    ^ @ Tool runArgvJson: argv
   ]
-
-  # ==========================================================================
-  # Service Discovery (reflection mode)
-  # ==========================================================================
-
-  rawMethod: listServices [
-    local addr plaintext_flag
-    addr="$(_ivar address)"
-    if [[ "$(_ivar usePlaintext)" == "yes" ]]; then
-      plaintext_flag="-plaintext"
-    else
-      plaintext_flag=""
-    fi
-    grpcurl $plaintext_flag "$addr" list 2>&1
-  ]
-
-  rawMethod: listMethods: service [
-    local addr plaintext_flag
-    addr="$(_ivar address)"
-    if [[ "$(_ivar usePlaintext)" == "yes" ]]; then
-      plaintext_flag="-plaintext"
-    else
-      plaintext_flag=""
-    fi
-    grpcurl $plaintext_flag "$addr" list "$1" 2>&1
-  ]
-
-  rawMethod: describe: target [
-    local addr plaintext_flag
-    addr="$(_ivar address)"
-    if [[ "$(_ivar usePlaintext)" == "yes" ]]; then
-      plaintext_flag="-plaintext"
-    else
-      plaintext_flag=""
-    fi
-    grpcurl $plaintext_flag "$addr" describe "$1" 2>&1
-  ]
-
-  # ==========================================================================
-  # Configuration methods
-  # ==========================================================================
-
-  method: enablePooling [
-    poolConnections := "yes"
-  ]
-
-  method: disablePooling [
-    poolConnections := "no"
-  ]
-
-  method: enableTLS [
-    usePlaintext := "no"
-  ]
-
-  method: enablePlaintext [
-    usePlaintext := "yes"
-  ]
-
-  rawMethod: address [
-    echo "$(_ivar address)"
-  ]
-
-  method: isUsingReflection [
-    ^ useReflection
-  ]
-
-  rawMethod: isPoolingEnabled [
-    echo "$(_ivar poolConnections)"
-  ]
-
-  # ==========================================================================
-  # Private setters (used by factory constructors)
-  # ==========================================================================
-
-  method: _setAddress: a [
-    address := a
-  ]
-
-  method: _setProtoFile: p [
-    protoFile := p
-  ]
-
-  method: _setUseReflection: r [
-    useReflection := r
-  ]
-

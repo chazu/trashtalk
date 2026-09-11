@@ -1,6 +1,6 @@
 # Tool - Abstract base class for wrapping external command-line tools
 # Provides detection, installation, and execution of external programs
-# Built on Shell primitives - no raw bash required.
+# Shared raw process primitives own argv decoding, capture, and child execution.
 #
 # Tool subclasses are singletons - use class methods directly:
 #   @ JqTool ensure
@@ -280,7 +280,7 @@ Tool subclass: Object
   ]
 
   # OS boundary: exact-argv bidirectional UI transport. The handler implements
-  # frameFor:context and handleFrame:context:; only it interprets domain intent.
+  # frameFor: and handleFrame:context:; only it interprets domain intent.
   rawClassMethod: duplexArgvJson: argv handler: handler context: context [
     bash "${TRASHTALK_DIR:-$HOME/.trashtalk}/lib/tool-duplex.bash" "$1" "$2" "$3"
   ]
