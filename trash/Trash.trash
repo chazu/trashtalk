@@ -1208,6 +1208,8 @@ EOF
   ]
 
   method: editSource: sourceFile class: className line: initialLine [
+
+    pragma: stream
     pragma: direct
     | diagnostics line editorResult outcome compileResult ok artifact validationResult installResult testResult message |
 

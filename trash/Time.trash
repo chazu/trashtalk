@@ -122,28 +122,26 @@ Time subclass: Object
 
   # Calculate duration between two timestamps
   # Usage: duration := @ Time since: startTime
-  rawClassMethod: since: startTime [
-    local now
-    now=$(date +%s)
-    echo $((now - $1))
+  classMethod: since: startTime [
+    ^ (@ Time now) - startTime
   ]
 
   # Calculate duration between two timestamps
   # Usage: duration := @ Time from: startTime to: endTime
-  rawClassMethod: from: startTime to: endTime [
-    echo $(($2 - $1))
+  classMethod: from: startTime to: endTime [
+    ^ endTime - startTime
   ]
 
   # Add seconds to a timestamp
   # Usage: future := @ Time add: 3600 to: timestamp
-  rawClassMethod: add: seconds to: timestamp [
-    echo $(($2 + $1))
+  classMethod: add: seconds to: timestamp [
+    ^ timestamp + seconds
   ]
 
   # Subtract seconds from a timestamp
   # Usage: past := @ Time subtract: 3600 from: timestamp
-  rawClassMethod: subtract: seconds from: timestamp [
-    echo $(($2 - $1))
+  classMethod: subtract: seconds from: timestamp [
+    ^ timestamp - seconds
   ]
 
   # ==========================================
@@ -151,38 +149,38 @@ Time subclass: Object
   # ==========================================
 
   # Get year from timestamp
-  rawClassMethod: yearOf: timestamp [
-    @ "$_CLASS" format: "$1" as: "%Y"
+  classMethod: yearOf: timestamp [
+    ^ @ self format: timestamp as: '%Y'
   ]
 
   # Get month from timestamp (1-12)
-  rawClassMethod: monthOf: timestamp [
-    @ "$_CLASS" format: "$1" as: "%-m"
+  classMethod: monthOf: timestamp [
+    ^ @ self format: timestamp as: '%-m'
   ]
 
   # Get day of month from timestamp (1-31)
-  rawClassMethod: dayOf: timestamp [
-    @ "$_CLASS" format: "$1" as: "%-d"
+  classMethod: dayOf: timestamp [
+    ^ @ self format: timestamp as: '%-d'
   ]
 
   # Get hour from timestamp (0-23)
-  rawClassMethod: hourOf: timestamp [
-    @ "$_CLASS" format: "$1" as: "%-H"
+  classMethod: hourOf: timestamp [
+    ^ @ self format: timestamp as: '%-H'
   ]
 
   # Get minute from timestamp (0-59)
-  rawClassMethod: minuteOf: timestamp [
-    @ "$_CLASS" format: "$1" as: "%-M"
+  classMethod: minuteOf: timestamp [
+    ^ @ self format: timestamp as: '%-M'
   ]
 
   # Get second from timestamp (0-59)
-  rawClassMethod: secondOf: timestamp [
-    @ "$_CLASS" format: "$1" as: "%-S"
+  classMethod: secondOf: timestamp [
+    ^ @ self format: timestamp as: '%-S'
   ]
 
   # Get day of week (0=Sunday, 6=Saturday)
-  rawClassMethod: weekdayOf: timestamp [
-    @ "$_CLASS" format: "$1" as: "%w"
+  classMethod: weekdayOf: timestamp [
+    ^ @ self format: timestamp as: '%w'
   ]
 
   # ==========================================
@@ -199,16 +197,12 @@ Time subclass: Object
   ]
 
   # Get timestamp for start of tomorrow
-  rawClassMethod: tomorrow [
-    local today
-    today=$(@ "$_CLASS" today)
-    echo $((today + 86400))
+  classMethod: tomorrow [
+    ^ (@ self today) + 86400
   ]
 
   # Get timestamp for start of yesterday
-  rawClassMethod: yesterday [
-    local today
-    today=$(@ "$_CLASS" today)
-    echo $((today - 86400))
+  classMethod: yesterday [
+    ^ (@ self today) - 86400
   ]
 

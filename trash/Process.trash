@@ -178,6 +178,7 @@ Process subclass: Object
 
   # Get process info
   method: info [
+    pragma: stream
     | duration formattedStart formattedEnd line |
     line := 'Command: ' , command.
     @ Console print: line.
@@ -240,6 +241,7 @@ Process subclass: Object
 
   # Show help
   method: help [
+    pragma: stream
     @ Console print: "=== Process Management ==="
     @ Console print: ""
     @ Console print: "Instance Methods (for managed processes):"

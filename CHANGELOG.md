@@ -4,6 +4,45 @@
 
 ### Added
 
+- Compiler forms that replace common raw Bash: string intrinsics on implicit
+  receivers (`startsWith:`, `withoutPrefix:`, `upTo:`, `afterLast:`,
+  `replaceAll:with:`, `copyFrom:to:`, `size`, `asUppercase`, `trimmed`, `lines`,
+  `firstLine`, ...) lowered to parameter expansion; `@ SomeError signal:` and
+  `@ self error:` to fail a method; `ifFailed:` to guard one send with `@ e signal`
+  to re-raise; `linesDo:` over newline-separated values; literal `caseOf:` with
+  `otherwise:`; and `primitive:` / `classPrimitive:` ... `calls:` declarations for
+  bodies that only forward to a Bash function.
+- A method's stdout is its value: non-tail statement sends discard output.
+  `pragma: stream` keeps it for printers and listings.
+- `Store findByClass:matching:orderBy:limit:` and `idsOf:matching:orderBy:limit:`
+  typed finders; `Error` class for raising from raw code and the REPL.
+- Literal `@ Env get: 'NAME'` and `get:default:` compile to `${NAME:-default}`.
+
+### Changed
+
+- String, Console, Env, Time, Tool, AgentRun, AgentSession, AgentWorker, Kube,
+  and Persistable methods moved from raw Bash to DSL; Honker, Store, Runtime,
+  and Scheduler pass-through bridges are declared primitives.
+- Boolean expressions (`and:`, `or:`, `not`, `=~`) are values: they can be
+  returned or assigned. Arithmetic accepts message results and string lengths.
+- Message arguments built by concatenation are quoted as one word; sends inside
+  concatenation contribute their output; `self` is quoted once in comparisons.
+- `((a isEmpty) or: [...])` tokenizes as nested grouping, not a Bash arithmetic
+  command, unless it closes with `))`.
+
+### Fixed
+
+- An unrecognized message on an implicit receiver (`base startsWith: 'x'` before
+  this release, `arr do: [...]` in `Persistable loadAll`) is a compile error
+  instead of invalid shell text.
+- `try:catch:` clears the error state before the catch body runs, and errors
+  raised inside a captured send reach `catch:` and `ifFailed:` blocks.
+- Literal regex patterns in `=~` and `matches:` are regexes, not fixed strings.
+- `String trimPrefix:from:` and related helpers treat their argument literally;
+  a `*` in the data no longer acts as a glob.
+
+### Added (earlier today)
+
 - Live Innards agent focus through `AgentSession focus` / `attach`, including
   backlog, live native output, inbox composition, visible-message read state,
   and validated pause/resume/stop intents. Message actions can jump to the

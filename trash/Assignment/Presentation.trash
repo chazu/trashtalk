@@ -65,6 +65,8 @@ Presentation trait
   ]
 
   method: show [
+
+    pragma: stream
     | data execution history events questions value runs answer text |
     data := @ self snapshot.
     text := 'Assignment: ' , (data objectAt: 'objective'). @ Console print: text.

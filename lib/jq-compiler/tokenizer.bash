@@ -690,6 +690,7 @@ tokenize() {
                 if [[ "$next" == "(" ]]; then
                     local arith="(("
                     local arith_start_col=$col
+                    local arith_start_i=$i
                     ((i += 2))
                     ((col += 2))
                     local paren_depth=2
@@ -704,7 +705,18 @@ tokenize() {
                         ((i++))
                         ((col++))
                     done
-                    add_token "ARITH_CMD" "$arith" "$line" "$arith_start_col"
+                    # A Bash arithmetic command always closes with "))". Anything
+                    # else, such as ((a isEmpty) or: [b]), is nested Smalltalk
+                    # grouping: emit a single LPAREN and rescan from the next char.
+                    if [[ "$arith" == *"))" ]]; then
+                        add_token "ARITH_CMD" "$arith" "$line" "$arith_start_col"
+                    else
+                        i=$arith_start_i
+                        col=$arith_start_col
+                        add_token "LPAREN" "(" "$line" "$col"
+                        ((i++))
+                        ((col++))
+                    fi
                 else
                     add_token "LPAREN" "(" "$line" "$col"
                     ((i++))

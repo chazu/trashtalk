@@ -41,7 +41,14 @@ artifact hashes. See [performance](../../docs/performance.md).
 - DSL locals and fields have distinct assignment paths. `rawMethod:` reconstructs
   a Bash body, including qualified class references; it does not infer fields.
 - `direct` marks a method for caller-shell dispatch. `primitive` preserves its
-  body as Bash. Removed backend pragmas fail compilation with a migration message.
+  body as Bash. `stream` keeps every statement's output; otherwise a non-tail
+  send in a DSL body is compiled with its stdout discarded. Removed backend
+  pragmas fail compilation with a migration message.
+- `classPrimitive: sel: a calls: fn` emits `__Counter__class__sel_() { fn "$1"; }`.
+- String intrinsics (`s startsWith: p`, `s withoutPrefix: p`, `s size`, ...) lower
+  to parameter expansion; `@ SomeError signal: 'm'` lowers to `_throw`; `ifFailed:`,
+  `linesDo:`, and `caseOf:` inline to `if !`, an array loop, and `case`. An
+  unrecognized message on an implicit receiver is a compile error.
 
 See [capabilities](../../docs/COMPILER_CAPABILITIES.md) and
 [language reference](../../LANGUAGE.md) for supported syntax and limitations.

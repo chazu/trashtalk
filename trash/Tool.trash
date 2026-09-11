@@ -39,32 +39,18 @@ Tool subclass: Object
   ]
 
   # Get the version of the tool (override for tool-specific parsing)
-  rawClassMethod: version [
-    local toolName toolPath versionCmd result
-    toolName=$(@ "$_RECEIVER" name)
-    toolPath=$(@ "$_RECEIVER" path)
-
-    if [[ -z "$toolPath" ]]; then
-      echo "not installed"
-      return
-    fi
-
-    # Try --version first
-    versionCmd="${toolPath} --version 2>/dev/null | head -1"
-    result=$(@ Shell exec: "$versionCmd")
-    if [[ -n "$result" ]]; then echo "$result"; return; fi
-
-    # Try -version
-    versionCmd="${toolPath} -version 2>/dev/null | head -1"
-    result=$(@ Shell exec: "$versionCmd")
-    if [[ -n "$result" ]]; then echo "$result"; return; fi
-
-    # Try -V
-    versionCmd="${toolPath} -V 2>/dev/null | head -1"
-    result=$(@ Shell exec: "$versionCmd")
-    if [[ -n "$result" ]]; then echo "$result"; return; fi
-
-    echo "unknown"
+  classMethod: version [
+    | toolName toolPath result |
+    toolName := @ self name.
+    toolPath := @ self path.
+    (toolPath isEmpty) ifTrue: [ ^ 'not installed' ].
+    result := @ Shell exec: toolPath , ' --version 2>/dev/null | head -1'.
+    (result notEmpty) ifTrue: [ ^ result ].
+    result := @ Shell exec: toolPath , ' -version 2>/dev/null | head -1'.
+    (result notEmpty) ifTrue: [ ^ result ].
+    result := @ Shell exec: toolPath , ' -V 2>/dev/null | head -1'.
+    (result notEmpty) ifTrue: [ ^ result ].
+    ^ 'unknown'
   ]
 
   # Install the tool - override in subclasses for custom behavior
@@ -130,35 +116,21 @@ Tool subclass: Object
   ]
 
   # Run the tool with arguments (synchronous)
-  rawClassMethod: run: args [
-    local args="$1" toolName toolPath runCmd
-    toolName=$(@ "$_RECEIVER" name)
-    toolPath=$(@ "$_RECEIVER" path)
-
-    if [[ -z "$toolPath" ]]; then
-      _throw "ToolError" "$toolName is not installed"
-      echo ""
-      return
-    fi
-
-    runCmd="${toolPath} ${args}"
-    @ Shell exec: "$runCmd"
+  classMethod: run: args [
+    | toolName toolPath |
+    toolName := @ self name.
+    toolPath := @ self path.
+    (toolPath isEmpty) ifTrue: [ @ ToolError signal: toolName , ' is not installed' ].
+    ^ @ Shell exec: toolPath , ' ' , args
   ]
 
   # Run the tool with arguments, capturing stdout and stderr
-  rawClassMethod: runCapture: args [
-    local args="$1" toolName toolPath runCmd
-    toolName=$(@ "$_RECEIVER" name)
-    toolPath=$(@ "$_RECEIVER" path)
-
-    if [[ -z "$toolPath" ]]; then
-      _throw "ToolError" "$toolName is not installed"
-      echo ""
-      return
-    fi
-
-    runCmd="${toolPath} ${args}"
-    @ Shell execAll: "$runCmd"
+  classMethod: runCapture: args [
+    | toolName toolPath |
+    toolName := @ self name.
+    toolPath := @ self path.
+    (toolPath isEmpty) ifTrue: [ @ ToolError signal: toolName , ' is not installed' ].
+    ^ @ Shell execAll: toolPath , ' ' , args
   ]
 
   # Execute an exact argv vector represented as JSON. The DSL builds the typed

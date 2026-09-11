@@ -69,9 +69,7 @@ Cluster subclass: Object
   ]
 
   # Map a kind string to its Kube:: class name.
-  rawClassMethod: _classForKind: kind [
-    _kube_class_for_kind "$kind"
-  ]
+  classPrimitive: _classForKind: kind calls: _kube_class_for_kind
 
 # Helper function (not a method) — maps kind strings to resource classes.
 _kube_class_for_kind() {

@@ -54,17 +54,13 @@ Resource subclass: Object
   ]
 
   # Return labels as a jq-formatted JSON object.
-  rawMethod: labels [
-    local raw
-    raw=$(_ivar rawJson)
-    echo "$raw" | jq -c '.metadata.labels // {}'
+  method: labels [
+    ^ rawJson jsonAt: 'metadata.labels' ifAbsent: '{}'
   ]
 
   # Return annotations as a jq-formatted JSON object.
-  rawMethod: annotations [
-    local raw
-    raw=$(_ivar rawJson)
-    echo "$raw" | jq -c '.metadata.annotations // {}'
+  method: annotations [
+    ^ rawJson jsonAt: 'metadata.annotations' ifAbsent: '{}'
   ]
 
   # Human-readable age since creationTimestamp.

@@ -470,7 +470,26 @@ _throw() {
   _ERROR_TYPE="$1"
   _ERROR_MSG="$2"
   _ERROR_ORIGIN="${_CALL_STACK[_CALL_DEPTH - 1]:-unknown}"
+  # A captured send runs in a subshell, so its error state would vanish with it.
+  # Record it for the caller's ifFailed:/catch: prologue (see _trash_last_error).
+  [[ $BASHPID == "$$" ]] || printf '%s\n%s\n' "$1" "${2//$'\n'/ }" > "${TMPDIR:-/tmp}/trash-error.$$"
   return 1
+}
+
+# Bind "Type: message" of the most recent failure into the named variable,
+# recovering an error raised inside a captured send. Builtins only.
+_trash_last_error() {
+  local __f="${TMPDIR:-/tmp}/trash-error.$$"
+  if [[ -z "${_ERROR_TYPE:-}" && -s "$__f" ]]; then
+    { IFS= read -r _ERROR_TYPE; IFS= read -r _ERROR_MSG; } < "$__f"
+    : > "$__f"
+  fi
+  printf -v "$1" '%s: %s' "${_ERROR_TYPE:-Error}" "${_ERROR_MSG:-}"
+}
+
+# Re-raise an error captured as "Type: message" by ifFailed: or catch:
+_trash_rethrow() {
+  if [[ "$1" == *": "* ]]; then _throw "${1%%: *}" "${1#*: }"; else _throw "Error" "$1"; fi
 }
 
 # Clear error state
@@ -478,6 +497,7 @@ _clear_error() {
   _ERROR_TYPE=""
   _ERROR_MSG=""
   _ERROR_ORIGIN=""
+  [[ ! -s "${TMPDIR:-/tmp}/trash-error.$$" ]] || : > "${TMPDIR:-/tmp}/trash-error.$$"
 }
 
 # Register an ensure handler (cleanup that runs on frame exit)
@@ -571,7 +591,7 @@ _run_after_advice() {
 }
 
 # Export context functions for subshells
-export -f _throw _clear_error _ensure _on_error _pop_handler
+export -f _throw _clear_error _trash_last_error _trash_rethrow _ensure _on_error _pop_handler
 export -f _print_stack_trace
 export -f _add_before_advice _add_after_advice _remove_advice
 export -f _run_before_advice _run_after_advice

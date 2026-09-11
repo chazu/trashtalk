@@ -137,8 +137,19 @@ MyClass subclass: Object
 - DSL methods can now handle: ivar accessors (`^ ivar`), predicate returns (`^ path fileExists`),
   ivar assignment from params (`ivar := param`) and literals (`ivar := "value"`),
   message sends to self (`@ self stop`), and string literal returns (`^ "hello"`)
+- String work stays in the DSL: `s startsWith: p`, `s withoutPrefix: p`, `s upTo: ':'`,
+  `s afterLast: '/'`, `s replaceAll: a with: b`, `s size`, `s asUppercase`, `s trimmed`,
+  `s lines`, `s firstLine` compile to parameter expansion with no dispatch
+- Failure stays in the DSL: `@ SomeError signal: 'msg'` fails the method;
+  `(@ x foo) ifFailed: [:e | ...]` guards a send; `@ e signal` re-raises
+- Iteration and dispatch stay in the DSL: `ids linesDo: [:id | ...]` over newline lists,
+  `x caseOf: { 'a' -> [...]. #('b' 'c') -> [...] } otherwise: [...]` over literals
+- A method's stdout is its value: non-tail sends discard output; `pragma: stream`
+  keeps it for methods that print several lines
+- A body that is one call to a Bash function is a declaration:
+  `classPrimitive: notify: channel payload: data calls: honker_notify`
 - Use `rawMethod:` only when you need:
-  - Direct Bash builtins / parameter expansion (e.g. `${str##pattern}`)
+  - Bash builtins the intrinsics do not cover (e.g. `IFS`, `read`, `mapfile`, extglob)
   - External commands (`curl`, `stat`, `printf`, `cat`, etc.)
   - Runtime context variables (`$_CLASS`, `$_INSTANCE`, `$_RECEIVER`, `$_SELECTOR`)
   - Heredocs, traps, process substitution, or complex Bash control flow
@@ -209,6 +220,14 @@ Supported predicates: `fileExists`, `isFile`, `isDirectory`, `isFifo`, `isSymlin
 | `^ path fileExists` | `[[ -e "$path" ]] && echo "true" \|\| echo "false"; return` |
 | `result := path isEmpty` | `result="$([[ -z "$path" ]] && echo true \|\| echo false)"` |
 | `@ self method` | `@ "$_RECEIVER" method` |
+| `base := path afterLast: '/'` | `base="${path##*'/'}"` |
+| `(s startsWith: p) ifTrue: [...]` | `if [[ "$s" == "$p"* ]]; then ...; fi` |
+| `@ StateError signal: 'msg'` | `_throw 'StateError' 'msg'; return 1` |
+| `(@ x save) ifFailed: [^ '']` | `if ! { @ "$x" save >/dev/null; }; then _clear_error; echo ""; return; fi` |
+| `ids linesDo: [:id \| ...]` | `mapfile -t` into an array, then `for id in ...; do ...; done` |
+| `x caseOf: { 'a' -> [...] }` | `case "$x" in 'a') ...;; esac` |
+| `@ x reload.` (non-tail) | `@ "$x" reload >/dev/null` |
+| `classPrimitive: ping calls: fn` | `__Class__class__ping() { fn; }` |
 
 ## Runtime Context Variables
 
@@ -238,6 +257,12 @@ Counter subclass: Object
 - Instance ID: `myapp_counter_uuid`
 
 ## Pragmas
+
+### `pragma: stream`
+
+Keeps the output of every statement in a `method:` body. Without it, a send in a
+non-tail statement is an effect and its stdout is discarded. Use it for help
+text, listings, and reports built from several `Console print:` sends.
 
 ### `pragma: direct`
 

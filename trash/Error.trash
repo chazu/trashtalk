@@ -1,0 +1,17 @@
+# Error - raise a Trashtalk error.
+#
+# DSL methods compile `@ SomeError signal: 'message'` and `@ self error: 'message'`
+# inline to `_throw`, so a method fails with a typed error and returns 1.
+# This class serves raw methods and the REPL, where no compiler is involved:
+#   @ Error signal: 'something went wrong'
+Error subclass: Object
+
+  # Shell boundary: set the runtime error state and fail the current send.
+  rawClassMethod: signal: message [
+    _throw "$_CLASS" "$1"
+  ]
+
+  # Bare `@ Error signal` with no message.
+  rawClassMethod: signal [
+    _throw "$_CLASS" "Error"
+  ]

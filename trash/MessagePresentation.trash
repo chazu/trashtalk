@@ -49,6 +49,8 @@ MessagePresentation subclass: Object
   ]
 
   classMethod: textFrom: data [
+
+    pragma: stream
     | subject |
     @ Console print: (data jsonTextAt: 'header').
     subject := data jsonTextAt: 'subject'.

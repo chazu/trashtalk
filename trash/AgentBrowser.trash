@@ -68,6 +68,8 @@ AgentBrowser subclass: Object
   ]
 
   classMethod: terminationRecordsAt: path [
+
+    pragma: stream
     @ self record: 'cancel' label: 'Cancel' detail: 'Keep the session as it is' path: path.
     @ self record: 'terminate' label: 'Terminate session and stop active work' detail: 'Revoke run access; retain messages and logs' path: path
   ]
@@ -179,6 +181,8 @@ AgentBrowser subclass: Object
   ]
 
   classMethod: actionRecordsFor: session [
+
+    pragma: stream
     | state |
     @ self record: 'attach' label: 'Attach to conversation' detail: 'Live transcript, messages, and run controls' path: 'session.txt'.
     @ self record: 'details' label: 'Session details' detail: 'Refresh snapshot' path: 'session.txt'.

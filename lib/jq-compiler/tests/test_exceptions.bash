@@ -110,11 +110,11 @@ TestExceptionParam subclass: Object
     ]
   ]
 EOF
-result=$("$COMPILER_DIR/driver.bash" compile /tmp/TestExceptionParam.trash 2>&1 | grep 'local err=')
+result=$("$COMPILER_DIR/driver.bash" compile /tmp/TestExceptionParam.trash 2>&1 | grep 'local err; _trash_last_error err')
 if [[ -n "$result" ]]; then
     pass "Error parameter binding generated"
 else
-    fail "Error parameter" "local err=..." "not found"
+    fail "Error parameter" "local err; _trash_last_error err" "not found"
 fi
 rm -f /tmp/TestExceptionParam.trash
 

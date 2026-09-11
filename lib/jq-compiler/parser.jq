@@ -61,6 +61,8 @@ def skipNewlines:
 def isSyncPoint:
   current.value == "method:" or
   current.value == "rawMethod:" or
+  current.value == "primitive:" or
+  current.value == "classPrimitive:" or
   current.value == "classMethod:" or
   current.value == "rawClassMethod:" or
   current.value == "testMethod:" or
@@ -583,7 +585,7 @@ def parseMethodSig:
   if current.type == "KEYWORD" then
     # Keyword method: key1: arg1 key2: arg2 ...
     {selector: "", keywords: [], args: [], state: .} |
-    until((.state | current.type) != "KEYWORD";
+    until((.state | current.type) != "KEYWORD" or (.state | current.value) == "calls:";
       (.state | current.value | rtrimstr(":")) as $kw |
       .state |= advance |
       .state |= skipNewlines |
@@ -651,6 +653,45 @@ def parseMethod:
   else
     fail
   end;
+
+# Parse a declared primitive: a method whose body is one call to a Bash function.
+#   primitive: enqueue: queue payload: data calls: honker_enqueue
+#   classPrimitive: bootstrap calls: honker_bootstrap
+# The generated stub passes the arguments positionally. Declaring the boundary
+# replaces a raw body that only forwarded to shell.
+def parsePrimitive:
+  skipNewlines |
+  {line: current.line, col: current.col} as $location |
+  (if current.value == "primitive:" then "instance"
+   elif current.value == "classPrimitive:" then "class"
+   else null end) as $kind |
+  if $kind != null then
+    advance | skipNewlines |
+    parseMethodSig |
+    if .result != null then
+      .result as $sig |
+      skipNewlines |
+      if current.type == "KEYWORD" and current.value == "calls:" then
+        advance | skipNewlines |
+        if current.type == "IDENTIFIER" and (current.value | test("^[A-Za-z_][A-Za-z0-9_]*$")) then
+          current.value as $fn |
+          advance |
+          .result = {
+            type: "method",
+            kind: $kind,
+            raw: true,
+            selector: $sig.selector,
+            keywords: $sig.keywords,
+            args: $sig.args,
+            body: {type: "block", tokens: []},
+            pragmas: [],
+            primitive: $fn,
+            location: $location
+          }
+        else fail end
+      else fail end
+    else . end
+  else fail end;
 
 # Parse class body elements
 def parseClassBody:
@@ -783,6 +824,21 @@ def parseClassBody:
           message: "Failed to parse advice declaration",
           token: (.state | current),
           context: "advice"
+        }] |
+        .state |= (advance | synchronize)
+      end
+    elif (.state | current.value) == "primitive:" or (.state | current.value) == "classPrimitive:" then
+      .currentCategory as $cat |
+      (.state | parsePrimitive) as $r |
+      if $r.result != null then
+        .methods += [if $cat != null then $r.result + {category: $cat} else $r.result end] |
+        .state = $r
+      else
+        .errors += [{
+          type: "parse_error",
+          message: "Expected `primitive: selector calls: bash_function`",
+          token: (.state | current),
+          context: "primitive"
         }] |
         .state |= (advance | synchronize)
       end

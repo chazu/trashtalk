@@ -144,15 +144,15 @@ AgentRun subclass: Object
 
   # Inbox name of the identity owner behind a run (env TRASHTALK_USER / $USER
   # when the identity has no owner).
-  rawClassMethod: ownerInboxFor: runId [
-    local sid identity owner
-    sid=$(@ "$1" session)
-    identity=""
-    [[ -n "$sid" ]] && identity=$(@ "$sid" identity)
-    owner=""
-    [[ -n "$identity" ]] && owner=$(@ "$identity" owner)
-    [[ -n "$owner" ]] || owner="${TRASHTALK_USER:-${USER:-user}}"
-    echo "$owner"
+  classMethod: ownerInboxFor: runId [
+    | sid identity owner |
+    sid := @ runId session.
+    identity := ''.
+    (sid notEmpty) ifTrue: [ identity := @ sid identity ].
+    owner := ''.
+    (identity notEmpty) ifTrue: [ owner := @ identity owner ].
+    (owner isEmpty) ifTrue: [ owner := @ Env get: 'TRASHTALK_USER' default: (@ Env get: 'USER' default: 'user') ].
+    ^ owner
   ]
 
   # ------------------------------------------------------------------
@@ -163,24 +163,21 @@ AgentRun subclass: Object
     @ AgentRun settle: "$1" note: ''
   ]
 
-  rawClassMethod: settle: deliveryId note: text [
-    local d="$1" note="$2" run drun state
-    run=$(@ AgentRun current) || {
-      _throw "RunTokenError" "AgentRun settle: requires a valid TRASHTALK_RUN_TOKEN"
-      return 1
-    }
-    drun=$(@ "$d" run 2>/dev/null)
-    if [[ -z "$drun" || "$drun" != "$run" ]]; then
-      _throw "RunError" "Delivery $d is not offered to run $run"
-      return 1
-    fi
-    state=$(@ "$d" state)
-    if [[ "$state" != "offered" && "$state" != "blocked" ]]; then
-      _throw "RunError" "Delivery $d is $state; only offered or blocked deliveries can be settled"
-      return 1
-    fi
-    @ "$d" transitionTo: processed with: "$(jq -cn --arg note "$note" '{note:$note}')" >/dev/null || return 1
-    echo "processed"
+  classMethod: settle: deliveryId note: text [
+    | run drun state |
+    run := @ AgentRun current ifFailed: [
+      @ RunTokenError signal: 'AgentRun settle: requires a valid TRASHTALK_RUN_TOKEN'
+    ].
+    drun := @ deliveryId run.
+    ((drun isEmpty) or: [drun ~= run]) ifTrue: [
+      @ RunError signal: 'Delivery ' , deliveryId , ' is not offered to run ' , run
+    ].
+    state := @ deliveryId state.
+    ((state ~= 'offered') and: [state ~= 'blocked']) ifTrue: [
+      @ RunError signal: 'Delivery ' , deliveryId , ' is ' , state , '; only offered or blocked deliveries can be settled'
+    ].
+    (@ deliveryId transitionTo: 'processed' with: (#{note: text} asJson)) ifFailed: [:e | @ e signal ].
+    ^ 'processed'
   ]
 
   # Reply in-thread to every delivery this run holds; prints the message ids.
@@ -242,19 +239,18 @@ AgentRun subclass: Object
   ]
 
   # Agent entry point requires a valid token even if the caller omitted one.
-  rawClassMethod: stop: target [
-    @ AgentRun current >/dev/null || return 1
-    @ AgentWorker stopRun: "$1"
+  classMethod: stop: target [
+    (@ AgentRun current) ifFailed: [:e | @ e signal ].
+    ^ @ AgentWorker stopRun: target
   ]
 
-  rawClassMethod: send: body to: address [
-    local run sid
-    run=$(@ AgentRun current) || {
-      _throw "RunTokenError" "AgentRun send:to: requires a valid TRASHTALK_RUN_TOKEN"
-      return 1
-    }
-    sid=$(@ "$run" session)
-    @ Inbox send: "$1" to: "$2" from: "session:$sid" subject: '' kind: note
+  classMethod: send: body to: address [
+    | run sid |
+    run := @ AgentRun current ifFailed: [
+      @ RunTokenError signal: 'AgentRun send:to: requires a valid TRASHTALK_RUN_TOKEN'
+    ].
+    sid := @ run session.
+    ^ @ Inbox send: body to: address from: 'session:' , sid subject: '' kind: 'note'
   ]
 
   # Deduplicated send: one message per (session, key).

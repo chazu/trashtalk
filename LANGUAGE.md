@@ -68,9 +68,39 @@ rawMethod: complexOperation [
 ]
 ```
 
+### Declared Primitives
+
+A method whose whole body would be one call to a Bash function is declared, not
+written. The compiler generates the stub and passes the arguments positionally:
+
+```smalltalk
+classPrimitive: enqueue: queue payload: data calls: honker_enqueue
+classPrimitive: bootstrap calls: honker_bootstrap
+primitive: whoami calls: bridge_receiver          # instance side; sees $_RECEIVER
+```
+
+The declaration names the shell boundary instead of hiding it in a raw body,
+and browsers list it like any other method. Anything that reorders, transforms,
+or adds arguments stays a `rawMethod:`.
+
 ### Pragmas
 
 Pragmas are method-level directives that modify how a method is compiled or executed. Place them at the start of the method body.
+
+#### `pragma: stream`
+
+A method's stdout is its value, so a send made for its effect in a non-tail
+statement discards its output. Methods that intentionally print several lines
+(help text, listings, reports) declare `pragma: stream` to keep every
+statement's output. See [Statement Values](#statement-values).
+
+```smalltalk
+method: help [
+  pragma: stream
+  @ Console print: 'Usage:'.
+  @ Console print: '  @ Counter increment'
+]
+```
 
 #### `pragma: direct`
 
@@ -270,6 +300,30 @@ Send multiple messages to the same receiver with `;`:
 
 Each cascaded message is compiled to a separate `@` call with the same receiver.
 
+### Statement Values
+
+The value of a method is the output of its last statement, or of `^`. A send
+in any other statement position is made for its effect, and its output is
+discarded (compiled as `>/dev/null`, no capture). This holds inside inline
+control flow too: the last statement of a block in tail position is the
+method's value, everything else is an effect.
+
+```smalltalk
+method: requeue: delivery [
+  @ delivery reload.                     # effect: output dropped
+  @ delivery transitionTo: 'pending'.    # effect: output dropped
+  ^ 'pending'                            # value
+]
+
+classMethod: create [
+  @ Counter new                          # tail statement: its output is the value
+]
+```
+
+Blocks passed to ordinary methods (`do:`, `collect:`) keep every statement's
+output, since a block's value is its output. Use `pragma: stream` for methods
+that print several lines on purpose.
+
 ## Variables
 
 ### Local Variables
@@ -382,7 +436,33 @@ value ifNotNil: [@ self process: value].
 1 to: 10 do: [:i |
   @ Console print: i
 ].
+
+# Newline-separated values (Store finders return one id per line)
+(@ AgentDelivery pendingFor: self) linesDo: [:id |
+  @ id reload.
+  (@ id state) = 'blocked' ifTrue: [^ id]   # ^ returns from the method
+].
 ```
+
+`linesDo:` decodes the lines once into a Bash array and runs the block body in
+the method's own shell: no Block object, no subshell, empty lines skipped, and
+stdin untouched.
+
+### Literal Dispatch
+
+`caseOf:` compares against string, symbol, or number literals and compiles to
+a Bash `case`. An array literal groups several keys; `otherwise:` is optional.
+
+```smalltalk
+^ profile caseOf: {
+  'shell' -> [ 'ShellDriver' ].
+  'maki' -> [ 'MakiDriver' ].
+  #('codex' 'assistant-low-power' '') -> [ 'CodexDriver' ]
+} otherwise: [ @ WorkerError signal: 'Unknown backend profile ' , profile ]
+```
+
+In return position an arm's final value expression is the method's result.
+Keys must be literals; a variable key is a compile error.
 
 ### Boolean Operators
 
@@ -393,6 +473,9 @@ value ifNotNil: [@ self process: value].
 
 # Negation
 (x > 10) not ifTrue: [@ self small].
+
+# Boolean expressions are values too: they return or assign "true"/"false"
+^ (prefix = 'session') or: [prefix = 'agent']
 ```
 
 ## Operators
@@ -459,6 +542,37 @@ File and string testing predicates:
 (str isEmpty) ifTrue: [str := 'default'].
 (str notEmpty) ifTrue: [@ self process].
 ```
+
+### String Intrinsics
+
+String messages on an implicit receiver compile to Bash parameter expansion or
+a `[[ ]]` test. They never dispatch, and a local receiver never forks.
+Arguments are literal: a `*` in the data is a character, not a pattern.
+
+| Message | Result | Compiles to |
+|---------|--------|-------------|
+| `s startsWith: p` / `s endsWith: p` / `s includes: p` | `true`/`false` | `[[ "$s" == "$p"* ]]` |
+| `s withoutPrefix: p` / `s withoutSuffix: p` | text | `${s#"$p"}` / `${s%"$p"}` |
+| `s upTo: d` / `s after: d` | before or after the first `d` | `${s%%"$d"*}` / `${s#*"$d"}` |
+| `s upToLast: d` / `s afterLast: d` | before or after the last `d` | `${s%"$d"*}` / `${s##*"$d"}` |
+| `s replaceAll: a with: b` / `s replaceFirst: a with: b` | text | `${s//"$a"/"$b"}` |
+| `s copyFrom: 2 to: 4` | 1-based inclusive substring | `${s:1:3}` |
+| `s first: n` / `s last: n` | leading or trailing characters | `${s:0:n}` / `${s: -n}` |
+| `s size` | length, usable in arithmetic | `${#s}` |
+| `s asUppercase` / `s asLowercase` | text | `${s^^}` / `${s,,}` |
+| `s firstLine` | text up to the first newline | `${s%%$'\n'*}` |
+| `s trimmed` | surrounding whitespace removed | one capture, no dispatch |
+| `s lines` | JSON array of non-empty lines | one `jq` process |
+
+```smalltalk
+base := path afterLast: '/'.
+(base startsWith: '.') ifTrue: [^ 'hidden'].
+(base size > 64) ifTrue: [@ NameError signal: 'name too long'].
+^ base withoutSuffix: '.trash'
+```
+
+A message the compiler does not recognize on an implicit receiver is a compile
+error. Object messages always use `@ receiver selector`.
 
 ## Blocks (Closures)
 
@@ -612,7 +726,39 @@ mode. `Runtime delete:` removes only the cached copy. See
 
 ## Error Handling
 
-Trashtalk provides structured error handling:
+### Raising and Handling in DSL Methods
+
+A method fails by signalling an error. Any class-like name ending in `Error`
+works as the type; `@ self error:` raises a plain `Error`. The method sets the
+runtime error state and returns 1, so callers see a failed send.
+
+```smalltalk
+method: requeue: delivery [
+  ((@ delivery state) ~= 'failed') ifTrue: [
+    @ SessionError signal: 'Delivery ' , delivery , ' is not failed'
+  ].
+  (@ delivery transitionTo: 'pending') ifFailed: [:e | @ e signal ].   # re-raise
+  ^ 'pending'
+]
+```
+
+`ifFailed:` guards one send and runs its block when the send fails. It works
+on a statement, an assignment, or a return, and inlines to `if ! { ...; }`:
+
+```smalltalk
+(@ store save) ifFailed: [ ^ 'unsaved' ].
+run := @ AgentRun current ifFailed: [ @ RunTokenError signal: 'no run token' ].
+^ (@ self compute) ifFailed: [:e | ^ 'fallback (' , e , ')' ]
+```
+
+The block's optional parameter receives `Type: message`, including errors
+raised inside a captured send. `@ e signal` re-raises it unchanged. The error
+state is cleared before the block runs, and `try: [...] catch: [:e | ...]`
+follows the same rule. Raising from raw code or the REPL: `@ Error signal: 'msg'`.
+
+### Runtime Primitives
+
+Raw methods use the runtime directly:
 
 ```smalltalk
 # Throw an error
@@ -844,8 +990,13 @@ task=$(@ Task titled "Write docs")
   arbitrary custom method returns from its own evaluation, not its enclosing
   method. See `test_block_early_return.bash` and `test_blocks.bash`.
 - **Failure propagation:** a failed `@` send does not automatically return from
-  the method. Check and return explicitly at effect boundaries. A Store
-  transaction rejects commit after any failed send, even if later code succeeds.
+  the method. Guard it with `ifFailed:` or raise with `@ SomeError signal:` at
+  effect boundaries. A Store transaction rejects commit after any failed send,
+  even if later code succeeds.
+- **Keyword sends and trailing keywords:** `ifTrue:`, `ifFailed:`, `linesDo:`,
+  and `caseOf:` after a keyword send need parentheses:
+  `(@ d transitionTo: 'x') ifFailed: [...]`. A unary send does not.
+- **`caseOf:` keys** are literals only; **`linesDo:`** skips empty lines.
 - **Arithmetic:** Bash arithmetic operates on integers; JSON numbers do not add
   floating point arithmetic to DSL expressions.
 

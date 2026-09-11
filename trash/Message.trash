@@ -149,6 +149,7 @@ Message subclass: Object
 
   # Full rendering
   method: show [
+    pragma: stream
     | line |
     line := 'Id:      ' , self.
     @ Console print: line.
