@@ -89,6 +89,7 @@ AgentBrowser subclass: Object
       action isEmpty ifTrue: [^ 'dismissed'].
       (action = 'back') ifTrue: [^ 'dismissed'].
       (action = 'details') ifTrue: [ignored := @ self page: details title: 'Session details'].
+      (action = 'attach') ifTrue: [ignored := @ session focus].
       (action = 'messages') ifTrue: [
         text := @ self messagesFor: session.
         ignored := @ self page: text title: 'Session messages'
@@ -139,15 +140,37 @@ AgentBrowser subclass: Object
 
   # Filesystem projection only; session state comes from its public snapshot.
   rawClassMethod: sessionRecordsIn: dir [
+    @ AgentBrowser sessionRecordsFor: "$(@ AgentBrowser listedSessions)" in: "$1"
+  ]
+
+  rawClassMethod: sessionRecordsFor: sessions in: dir [
     local session data text label path
-    for session in $(@ AgentBrowser listedSessions); do
+    for session in $1; do
       data=$(@ "$session" snapshot) || return 1
       text=$(@ AgentBrowser describeSession: "$data")
       path="$session.txt"
-      printf '%s\n' "$text" > "$1/$path"
+      printf '%s\n' "$text" > "$2/$path"
       label=$(printf '%s' "$data" | jq -r '"\(.workspace) [\(.lifecycle)/\(.activity)] pending=\(.pending) questions=\(.questions) stalled=\(.stalled)"')
       @ AgentBrowser record: "$session" label: "$label" detail: "$session" path: "$path"
     done
+  ]
+
+  classMethod: focusSenderOf: message in: dir [
+    | sessions records selected count |
+    @ message reload.
+    sessions := @ message senderSessions.
+    sessions isEmpty ifTrue: [^ 'No session is available for this sender'].
+    records := @ self sessionRecordsFor: sessions in: dir.
+    count := @ self recordCount: records.
+    (count = '1') ifTrue: [selected := sessions] ifFalse: [
+      selected := @ self pick: records root: dir title: 'Choose sender session'
+    ].
+    selected isEmpty ifTrue: [^ 'dismissed'].
+    ^ @ selected focus
+  ]
+
+  rawClassMethod: recordCount: records [
+    printf '%s\n' "$1" | jq -s length
   ]
 
   # Text formatting is a projection of the snapshot, not a state mutation.
@@ -157,6 +180,7 @@ AgentBrowser subclass: Object
 
   classMethod: actionRecordsFor: session [
     | state |
+    @ self record: 'attach' label: 'Attach to conversation' detail: 'Live transcript, messages, and run controls' path: 'session.txt'.
     @ self record: 'details' label: 'Session details' detail: 'Refresh snapshot' path: 'session.txt'.
     @ self record: 'messages' label: 'Messages and questions' detail: 'Read conversation' path: 'session.txt'.
     @ self record: 'runs' label: 'Runs and logs' detail: 'Inspect failures and output' path: 'session.txt'.

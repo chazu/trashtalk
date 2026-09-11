@@ -4,6 +4,12 @@
 
 ### Added
 
+- Live Innards agent focus through `AgentSession focus` / `attach`, including
+  backlog, live native output, inbox composition, visible-message read state,
+  and validated pause/resume/stop intents. Message actions can jump to the
+  sender's current session or originating history.
+- Reusable exact-argv duplex Tool transport, with UI streams separate from
+  terminal output and teardown confined to the temporary view.
 - `Tools::Roam` for explicit checkout indexing and code-graph queries,
   `Tools::AstGrep` for structural search, and `Tools::Cass` for session history
   search, indexing, status, and source inspection. Shared JSON-result handling

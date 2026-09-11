@@ -272,3 +272,6 @@ AgentSession subclass: Object
   method: browse [
     ^ @ AgentBrowser browseSession: self
   ]
+
+  method: focus [ ^ @ AgentFocus open: self ]
+  method: attach [ ^ @ self focus ]

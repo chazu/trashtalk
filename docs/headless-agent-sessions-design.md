@@ -1003,7 +1003,11 @@ Ephemeral notifications only prompt readers to catch up.
 
 ### Session focus
 
-Add an `inagent` applet using Innards' inline terminal viewport. It renders
+The first [session view](agent-session-view.md) is implemented with bounded log
+projections, composition, and explicit controls. The broader durable event-stream
+proposal below remains future work.
+
+Use an `inagent` applet using Innards' inline terminal viewport. It renders
 a session projection and emits user intents. Trashtalk remains responsible
 for data access, authorization, dispatch, and process signals.
 

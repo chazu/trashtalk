@@ -269,6 +269,7 @@ Inbox subclass: Object
           reply) @ "$_RECEIVER" composeReplyTo: "$msg" >/dev/null; break ;;
           view) @ "$_RECEIVER" readThreadOf: "$msg" ;;
           details) @ "$_RECEIVER" readDetailsOf: "$msg" ;;
+          session) @ AgentBrowser focusSenderOf: "$msg" in: "$preview_dir" >/dev/null ;;
           archive) @ "$msg" archive >/dev/null; break ;;
           *) break ;;
         esac
@@ -345,7 +346,7 @@ Inbox subclass: Object
   # at the message's preview file so inpick keeps showing it. Prints reply,
   # view, archive, or back.
   rawMethod: pickActionFor: messageId in: previewDir [
-    local msg="$1" dir="$2" records result outcome title from
+    local msg="$1" dir="$2" records result outcome title from sessions selected
     from=$(@ MessagePresentation participant: "$(@ "$msg" from)")
     records=$(jq -cn --arg path "$msg.txt" '
       {schema_version:1,id:"reply",path:$path,line:1,column:1,label:"Reply in this thread",kind:"action",detail:"compose in inmacs; Ctrl-X Ctrl-S saves and sends"},
@@ -353,6 +354,10 @@ Inbox subclass: Object
       {schema_version:1,id:"details",path:$path,line:1,column:1,label:"Message details",kind:"action",detail:"Full addresses, timestamps, and IDs"},
       {schema_version:1,id:"archive",path:$path,line:1,column:1,label:"Archive",kind:"action",detail:"hide it from the inbox"},
       {schema_version:1,id:"back",path:$path,line:1,column:1,label:"Back to inbox",kind:"action",detail:""} | . + {display:{prefix:"",preview_title:"Message"}}')
+    sessions=$(@ "$msg" senderSessions)
+    if [[ -n "$sessions" ]]; then
+      records=$(printf '%s\n' "$records"; jq -cn --arg path "$msg.txt" '{schema_version:1,id:"session",path:$path,line:1,column:1,label:"Attach to sender session",kind:"action",detail:"Current conversation, or originating history if none is current",display:{prefix:"",preview_title:"Message"}}')
+    fi
     title="From $from"
     if [[ "$(@ Tools::Inpick isInstalled)" == true ]]; then
       result=$(@ Tools::Inpick selectRecords: "$records" root: "$dir" query: "" title: "$title")
@@ -361,7 +366,8 @@ Inbox subclass: Object
     fi
     outcome=$(printf '%s' "$result" | jq -r '.outcome // "cancelled"')
     if [[ "$outcome" != selected ]]; then echo back; return 0; fi
-    printf '%s' "$result" | jq -r '.selection.id // "back"'
+    selected=$(@ AgentBrowser selectedFrom: "$result" records: "$records")
+    printf '%s\n' "${selected:-back}"
   ]
 
   method: readDetailsOf: message [

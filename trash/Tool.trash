@@ -279,6 +279,12 @@ Tool subclass: Object
     "${argv[@]}"
   ]
 
+  # OS boundary: exact-argv bidirectional UI transport. The handler implements
+  # frameFor:context and handleFrame:context:; only it interprets domain intent.
+  rawClassMethod: duplexArgvJson: argv handler: handler context: context [
+    bash "${TRASHTALK_DIR:-$HOME/.trashtalk}/lib/tool-duplex.bash" "$1" "$2" "$3"
+  ]
+
   # Launch exact argv detached from the caller: its own session and process
   # group, HUP ignored, no inherited stdio. A small bash wrapper records its
   # own PID in pidFile, runs argv with the given stdio files, then records the

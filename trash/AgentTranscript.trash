@@ -1,0 +1,48 @@
+# Read-only projection. SQL selects domain records; the small file adapter
+# normalizes harness logs without exposing run credentials or changing receipts.
+AgentTranscript subclass: Object
+  # Membership query for UI read intents; validate the whole set before any
+  # message is marked viewed, including mail routed from an identity inbox.
+  rawClassMethod: includesMessages: messages inSession: session [
+    local ids sid count found
+    ids=$(_db_escape "$1"); sid=$(_db_escape "$2")
+    count=$(jq -er 'length' <<< "$1") || return 1
+    found=$(_db_sql "SELECT count(*) FROM instances m WHERE m.class='Message' AND m.id IN (SELECT value FROM json_each('$ids')) AND
+      (json_extract(m.data,'$.from')='session:$sid' OR json_extract(m.data,'$.to')='session:$sid' OR
+        EXISTS(SELECT 1 FROM instances d,json_each(json_extract(d.data,'$.messageIds')) j
+        WHERE d.class='AgentDelivery' AND json_extract(d.data,'$.session')='$sid' AND j.value=m.id));") || return 1
+    if [[ "$found" == "$count" ]]; then echo true; else echo false; fi
+  ]
+
+  rawClassMethod: recordsFor: session limit: limit [
+    local sid limit="$2" pattern='^[1-9][0-9]{0,5}$'
+    [[ "$limit" =~ $pattern && "$limit" -le 100000 ]] || return 1
+    sid=$(_db_escape "$1")
+    _db_sql "WITH target AS (SELECT id,data FROM instances WHERE id='$sid' AND class='AgentSession'),
+      history AS (SELECT CASE WHEN r.class='Message' THEN coalesce(json_extract(r.data,'$.sentAt'),0)
+        ELSE coalesce(unixepoch(json_extract(r.data,'$.started'))*1000+999,json_extract(r.data,'$.created_at')*1000,0) END AS seq,
+        r.id,r.data FROM instances r,target s WHERE
+        (r.class='AgentRun' AND json_extract(r.data,'$.session')=s.id) OR
+        (r.class='Message' AND (json_extract(r.data,'$.from')='session:'||s.id OR json_extract(r.data,'$.to')='session:'||s.id OR
+          EXISTS(SELECT 1 FROM instances d,json_each(json_extract(d.data,'$.messageIds')) m
+            WHERE d.class='AgentDelivery' AND json_extract(d.data,'$.session')=s.id AND m.value=r.id))))
+      SELECT json_object('session',json_object('id',s.id,
+        'title',coalesce((SELECT json_extract(i.data,'$.handle') FROM instances i WHERE i.id=json_extract(s.data,'$.identity')),s.id),
+        'workspace',json_extract(s.data,'$.workspace'),'profile',json_extract(s.data,'$.backendProfile'),
+        'lifecycle',json_extract(s.data,'$.lifecycleState'),
+        'run_id',coalesce((SELECT id FROM history WHERE json_extract(data,'$.class')='AgentRun' AND json_extract(data,'$.state') IN ('starting','running','recovering') ORDER BY seq DESC LIMIT 1),''),
+        'activity',coalesce((SELECT json_extract(data,'$.state') FROM history WHERE json_extract(data,'$.class')='AgentRun' ORDER BY seq DESC LIMIT 1),'idle'),
+        'pending',(SELECT count(*) FROM instances d WHERE d.class='AgentDelivery' AND json_extract(d.data,'$.session')=s.id AND json_extract(d.data,'$.state')='pending')),
+        'rows',json(coalesce((SELECT json_group_array(json_object('seq',seq,'id',id,'data',json(data))) FROM (SELECT * FROM history ORDER BY seq DESC,id DESC LIMIT $limit)), '[]')),
+        'has_earlier',(SELECT count(*) FROM history)>$limit)
+      FROM target s;"
+  ]
+
+  # OS boundary: logs may be growing or unavailable; the reader leaves their
+  # durable contents untouched and reports gaps in the resulting projection.
+  rawClassMethod: snapshotFor: session limit: limit [
+    local records
+    records=$(@ AgentTranscript recordsFor: "$1" limit: "$2") || return 1
+    [[ -n "$records" ]] || { echo 'Unknown agent session' >&2; return 1; }
+    printf '%s\n' "$records" | bash "${TRASHTALK_DIR:-$HOME/.trashtalk}/lib/agent-transcript.bash" "$2"
+  ]

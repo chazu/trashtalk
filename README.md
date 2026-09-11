@@ -407,6 +407,14 @@ and plan mode. All use exact argument vectors and preserve process diagnostics.
 See [code and session Tool adapters](docs/code-and-session-tools.md) for setup,
 examples, result contracts, and qualification limits.
 
+## Live agent conversations
+
+Use `@ AgentSession browse` and choose **Attach to conversation**, or send
+`focus` / `attach` to an existing session. The Innards `inagent` applet shows
+backlog and live harness output, offers an inbox-backed composer, and detaches
+without stopping work. Message actions also offer **Attach to sender session**
+when the sender can be resolved. See [session view controls and setup](docs/agent-session-view.md).
+
 ## Gusgus: the assistant behind `@@`
 
 `@@` talks to Gusgus, a persistent low-power assistant with one conversation

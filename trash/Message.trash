@@ -82,6 +82,44 @@ Message subclass: Object
     ^ @ MessagePresentation textFor: self
   ]
 
+  # Address lookup only: no identity/session creation for legacy or unknown mail.
+  rawMethod: originSession [
+    local sender session
+    sender=$(_ivar from)
+    [[ "${sender%%:*}" == session ]] || return 0
+    session=${sender#*:}
+    [[ $(db_get "$session" | jq -r '.class // ""') == AgentSession ]] || return 0
+    printf '%s\n' "$session"
+  ]
+
+  rawMethod: senderIdentity [
+    local sender session
+    sender=$(_ivar from)
+    session=$(@ "$_RECEIVER" originSession)
+    if [[ -n "$session" ]]; then @ "$session" identity
+    elif [[ "${sender%%:*}" == agent ]]; then @ AgentIdentity findByHandle: "${sender#*:}"; fi
+  ]
+
+  # Prefer the exact originating conversation while it is current. Otherwise
+  # return candidates in that same workspace; a UI must resolve ambiguity.
+  method: senderSessions [
+    | origin identity state current workspace |
+    origin := @ self originSession.
+    identity := @ self senderIdentity.
+    identity isEmpty ifTrue: [^ ''].
+    origin notEmpty ifTrue: [
+      @ origin reload.
+      state := @ origin lifecycleState.
+      (state = 'open') ifTrue: [^ origin].
+      (state = 'paused') ifTrue: [^ origin].
+      workspace := @ origin workspace.
+      current := @ AgentSession findFor: identity workspace: workspace.
+      current isEmpty ifTrue: [^ origin].
+      ^ current
+    ].
+    ^ @ AgentWorker eligibleSessionsFor: identity
+  ]
+
   method: archive [
     status := 'archived'.
     @ self save

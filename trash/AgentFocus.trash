@@ -1,0 +1,90 @@
+# Human focus is temporary; messages and explicit controls stay in the domain.
+AgentFocus subclass: Object
+  classMethod: open: session [
+    | available argv context human |
+    human := @ self human.
+    human isEmpty ifTrue: [^ @ Require reject: 'Session focus requires a human context'].
+    available := @ Tools::Inagent isInstalled.
+    (available ~= 'true') ifTrue: [^ @ Require reject: 'inagent is not installed; build and install the Innards applet'].
+    context := #{session: session window: 400} asJson.
+    argv := @ Tools::Inagent argv.
+    ^ @ Tool duplexArgvJson: argv handler: 'AgentFocus' context: context
+  ]
+
+  classMethod: frameFor: context [
+    ^ @ AgentTranscript snapshotFor: (context jsonTextAt: 'session') limit: (context jsonTextAt: 'window')
+  ]
+
+  classMethod: markViewed: messages inSession: session [
+    | included |
+    included := @ AgentTranscript includesMessages: messages inSession: session.
+    (included ~= 'true') ifTrue: [^ @ Require reject: 'Message does not belong to this conversation'].
+    messages arrayEach: [:message | @ message markViewed].
+    ^ 'Messages marked read'
+  ]
+
+  classMethod: perform: intent session: session body: body run: run [
+    | result inbox message state allowed recipient sender |
+    @ session reload.
+    (intent = 'send_message') ifTrue: [
+      state := @ session lifecycleState.
+      allowed := @ Require contains: state in: '["open","paused"]'.
+      (allowed ~= 'true') ifTrue: [^ @ Require reject: 'This session is closed; the message was not sent'].
+      inbox := @ session inboxObject.
+      recipient := @ session inbox.
+      sender := @ self human.
+      message := @ Message to: recipient from: sender subject: '' body: body kind: 'note'.
+      ^ @ inbox deliver: message
+    ].
+    (intent = 'pause_session') ifTrue: [^ @ session pause].
+    (intent = 'resume_session') ifTrue: [
+      result := @ session resume.
+      (result = 'open') ifTrue: [result := @ AgentWorker tickSession: session].
+      ^ 'Resumed'
+    ].
+    (intent = 'interrupt_run') ifTrue: [^ @ AgentWorker stopRun: run].
+    ^ @ Require reject: 'Unsupported session intent'
+  ]
+
+  rawClassMethod: human [
+    [[ ! ${TRASHTALK_RUN_TOKEN+x} ]] || { echo 'Human session focus cannot use a run token' >&2; return 1; }
+    printf '%s\n' "${TRASHTALK_USER:-${USER:-user}}"
+  ]
+
+  # Trust/serialization boundary: fixed intent schema, pinned session/run, and
+  # nonzero action failures become feedback without discarding the draft.
+  rawClassMethod: handleFrame: frame context: context [
+    local frame="$1" context="$2" intent sid body run state request window result ok=true
+    @ AgentFocus human >/dev/null || return 1
+    jq -e 'type=="object" and .schema_version==1 and (.request_id|type=="number" and floor==. and .>0) and
+      (.intent|IN("dismiss","load_older","send_message","mark_viewed","pause_session","resume_session","interrupt_run")) and
+      (if .intent=="mark_viewed" then (.message_ids|type=="array" and length>0 and length<=200 and all(.[];type=="string")) else true end) and
+      (if .intent=="send_message" then (.body|type=="string" and length>0 and length<=100000 and (contains("\u0000")|not) and test("\\S")) else true end) and
+      (if .intent=="interrupt_run" then (.run_id|type=="string" and length>0) else true end)' <<< "$frame" >/dev/null || return 1
+    intent=$(jq -r .intent <<< "$frame")
+    request=$(jq -r .request_id <<< "$frame")
+    sid=$(jq -r .session <<< "$context")
+    state=$(db_get "$sid" | jq -er 'select(.class=="AgentSession") | .lifecycleState') || return 1
+    if [[ "$intent" == dismiss ]]; then
+      jq -cn --argjson context "$context" '{context:$context,done:true}'; return
+    fi
+    if [[ "$intent" == mark_viewed ]]; then
+      result=$(@ AgentFocus markViewed: "$(jq -c .message_ids <<< "$frame")" inSession: "$sid" 2>&1) || ok=false
+    elif [[ "$intent" == load_older ]]; then
+      window=$(jq -r '.window' <<< "$context")
+      if (( window >= 100000 )); then result='History limit reached (100,000 entries); inspect older run logs through Session actions.'; ok=false
+      else context=$(jq -c '.window = ([.window*2,100000]|min)' <<< "$context"); result='Loaded earlier history'; fi
+    else
+      IFS= read -r -d '' body < <(jq -jr '(.body // ""), "\u0000"' <<< "$frame")
+      run=$(jq -r '.run_id // ""' <<< "$frame")
+      if [[ "$intent" == interrupt_run && $(db_get "$run" | jq -r '.session // ""') != "$sid" ]]; then
+        result='The displayed run does not belong to this session'; ok=false
+      else
+        result=$(@ AgentFocus perform: "$intent" session: "$sid" body: "$body" run: "$run" 2>&1) || ok=false
+        [[ -n "$result" ]] || { result='Action failed; inspect the session before retrying'; ok=false; }
+      fi
+    fi
+    jq -cn --argjson context "$context" --argjson request "$request" --argjson ok "$ok" --arg text "$result" --arg intent "$intent" \
+      '{context:$context,frame:{schema_version:1,type:"ack",request_id:$request,ok:$ok,result:$text,
+        message:(if $ok and $intent=="send_message" then "Message sent to agent inbox" else $text end)}}'
+  ]

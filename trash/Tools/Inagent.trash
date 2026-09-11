@@ -1,0 +1,8 @@
+package: Tools
+Inagent subclass: Tool
+  classMethod: name [ ^ 'inagent' ]
+  classMethod: argv [
+    | tool |
+    tool := @ self path.
+    ^ #(tool) asJson
+  ]

@@ -51,3 +51,8 @@ run/
 
 # Shared selective persistence transaction boundary.
 !lib/store-transaction.bash
+
+# Temporary session UI transport and durable transcript projection.
+!lib/tool-duplex.bash
+!lib/agent-transcript.bash
+!lib/agent-transcript.jq
