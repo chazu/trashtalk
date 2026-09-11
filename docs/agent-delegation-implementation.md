@@ -386,29 +386,34 @@ Batching must preserve assignment boundaries and target-specific results.
 
 ## Repository and worktree responsibilities
 
-We will need repository awareness for coding work. We do not need a global
-repository registry before an investigation can be delegated.
+Repository domain objects, local-copy domain objects, and managed worktrees
+are required follow-up work. Their implementation is deferred while the first
+specialist execution journey is completed. The names below describe the intended
+boundaries; they are not implemented APIs.
 
 Keep these concepts distinct:
 
 | Concept | Meaning |
 |---|---|
-| Repository | The local Git repository whose history and configuration are shared. |
+| Repository | A durable logical Git repository identity, independent of a particular machine, clone, or checkout path. |
+| LocalRepository | One local copy/clone of a Repository, with its own Git common directory, configuration, and linked worktrees. Independent clones remain distinct local copies. |
 | Workspace | The directory where this assignment runs; it may not be Git-backed. |
-| Worktree | A particular Git checkout with its own path, branch, and working files. |
+| Worktree | A checkout belonging to a LocalRepository, with its own path, branch, and working files. |
 | Issue | A record in an external task tracker. |
 | AgentIdentity | The agent responsible for assigned work, such as Gusgus. |
 | AgentSession | A conversation that can participate in the agent's assignments. |
 | Assignment | Work entrusted to an agent identity, potentially across sessions, optionally concerning an issue and repository. |
 
 First retain the explicit workspace path. Before enabling coding assignments,
-introduce a small `Repository` object discovered from a directory. Use Git's
-common directory to recognize linked worktrees belonging to one local
-repository; do not assume `.git` is a directory. A durable local ID can survive
-path updates. Remote URLs are metadata, not unique identity: forks, multiple
-remotes, and independent clones require explicit treatment.
+discover a `LocalRepository` and its `Worktree` from a directory, and associate
+that local copy with a `Repository`. Use Git's common directory to recognize
+linked worktrees belonging to one local copy; do not assume `.git` is a
+directory. Durable IDs must survive path updates. Remote URLs are metadata,
+not unique identity: forks, multiple remotes, and independent clones require
+explicit treatment. Association of clones with the same logical Repository
+must be inspectable and correctable.
 
-A `Worktree` belongs to a repository and records its path, branch, base commit,
+A `Worktree` belongs to a local repository and records its path, branch, base commit,
 and owning assignment. Put Git operations behind a concrete Tool wrapper;
 keep decisions about allocation and retention in the domain objects. Do not
 add a separate `Workspace` class until path-plus-associations is insufficient.
@@ -438,13 +443,25 @@ Before allowing edits, use one managed worktree per writing assignment:
 A worktree separates edits, not OS permissions. Avoid multiple writers to the
 same checkout; keep repository-wide mutations serialized where necessary.
 
-## Long-term memory as an optional Tool-backed experiment
+## Persistent memory requirements and provider evaluation
 
-Memory should outlive individual harness conversations and remain accessible
-to both humans and agents. Pick one concrete external system and wrap its real
-CLI/API with a Tool class. Do not select a vendor or invent an adapter contract
-before examining that system. An API-only tool can still be a narrow adapter;
-a CLI is convenient but not mandatory.
+Persistent shared memory, with facts scoped to logical repositories, is required
+follow-up work. Implementation is deferred; provider selection and a small
+evaluation come first. The [code-intelligence and memory research](code-intelligence-and-memory-research.md)
+compares concrete tools to wrap in Tool classes. An API-only service can still
+have a narrow adapter; a CLI is convenient but not mandatory.
+
+Repository memory must be reusable by authorized agents across independent
+local copies and worktrees of the same Repository. Scope by durable repository
+identity, not a checkout basename, absolute path, harness name, or session ID.
+Attach source assignment, author identity, evidence, observed revision, and
+relevant branch/worktree or dirty-state information to facts. A fact observed
+on one branch must not silently become true of every checkout.
+
+Individual agent memory and collective project memory are separate scopes.
+Personal memory follows `AgentIdentity`; repository facts belong to the shared
+repository store. Memory should outlive harness conversations and remain
+inspectable, correctable, and removable by humans and authorized agents.
 
 Separate the provider executable/service from the selected **memory store**.
 For example, a future repository association could return a `MemoryStore`
@@ -480,7 +497,8 @@ only add automatic prompt retrieval after the tool proves useful.
 Evaluate one real question across two fresh sessions: does a saved observation
 reduce repeated investigation, remain attributable, and get corrected when
 the code changes? Compare with a checked-in note and plain search. If the
-external system adds no value, remove the adapter without changing delegation.
+external system adds no value, keep a simpler durable note store and remove
+that adapter without changing delegation. The shared-memory requirement remains.
 
 ## Delivery sequence and acceptance
 
@@ -503,8 +521,8 @@ rows are options in dependency order, not authorization for one large patch.
 | 1. Human walkthrough | Explicitly configure one agent identity and its initial session using existing objects. Add minimal Assignment draft/assignTo:/workIn:/show/ask:/complete: operations and session participation history. Exercise them manually from Bash before enabling a model; implement atomic publication/settlement. | Assign to the identity instance, select its session, and inspect the assignment from another shell. Continue the same open assignment in a second session of that identity with progress/questions retained. A foreign identity's session is rejected; repeated selection/completion creates no duplicate work/outcome; superseded or stale execution cannot complete it. |
 | 2. One specialist | Add assignment-specific context and dispatch through the selected specialist session, reusing the worker and common harness interface established in slice 0. Keep new dispatch limited to one child and no recursion. | Do the same walkthrough through a real harness; it reads notified inbox messages through documented Bash operations. A later session can continue the same identity's assignment without its predecessor's transcript. Questions resume the right work; its result notifies Gusgus with the original conversation link. An unrelated user message receives no specialist result. |
 | 3. Recovery and visibility | Add assignment inspection from session/inbox views, cancellation reporting, and continuation reconciliation. | Restart at assignment creation and completion boundaries; no lost or duplicated handoffs. An unrelated user message receives no specialist result. Human visibility survives paused/terminated Gusgus. |
-| 4. Memory experiment | Select one provider and implement its small Tool/store interface, with no automatic prompt injection initially. | Fresh-session recall, provenance, correction/deletion, and provider-unavailable behavior are useful and understandable. |
-| 5. One coding assignment | Add minimal Repository/Worktree objects and run an edit in an explicitly selected managed checkout. | Dirty user checkout stays intact; worktree creation recovers after interruption; changes and validation are reviewable; failure preserves work. |
+| 4. Persistent memory | Establish stable repository scope, evaluate one provider, and implement its small Tool/store interface with explicit storage/retrieval first. | Fresh-session and cross-agent recall within the same repository; isolation across repositories; revision-aware provenance, correction/deletion, and provider-unavailable behavior. |
+| 5. One coding assignment | Add Repository/LocalRepository/Worktree objects and run an edit in an explicitly selected managed checkout. Repository identity may be introduced earlier for memory scoping. | Independent clones and linked worktrees are distinguished; dirty user checkout stays intact; worktree creation recovers after interruption; changes and validation are reviewable; failure preserves work. |
 | 6. One tracker | Attach a real issue and implement just the chosen provider's read and explicit update operations. | Native tracker state remains authoritative; local completion causes no implicit remote closure; retries do not duplicate remote updates. |
 
 Slice 1 is deliberately a small human exercise, not a production task manager.
