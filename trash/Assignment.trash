@@ -3,8 +3,9 @@
 # ordinary object saves and queue publication one atomic unit of work.
 Assignment subclass: Object
   include: Persistable
-  include: AssignmentAuthority
-  include: AssignmentPresentation
+  include: Assignment::Authority
+  include: Assignment::Presentation
+  include: Assignment::Reporting
   instanceVars: objective:'' completionCriteria:'' requester:'' requesterSession:''
                 owner:'' originMessage:'' workspace:'' assignee:'' state:'open'
                 currentSession:'' generation:0 delivery:'' history:'[]' events:'[]'
@@ -157,106 +158,7 @@ Assignment subclass: Object
   ]
 
   method: selectWithin: session [
-    | actor sender aData s sData identity iData role path canonical allowed current same runs old oldState gen message d now history participation |
-    actor := @ AgentRun actingContext.
-    sender := @ self authorize: actor operatorOnly: true.
-    @ self requireOpen.
-    aData := @ self asJson.
-    s := @ Store read: session class: 'AgentSession'.
-    sData := @ s asJson.
-    identity := @ Store read: (sData objectAt: 'identity') class: 'AgentIdentity'.
-    iData := @ identity asJson.
-    @ Require equal: identity to: (aData objectAt: 'assignee').
-    @ Require member: (iData objectAt: 'enabled') of: '["true","1"]'.
-    @ Require equal: (sData objectAt: 'lifecycleState') to: 'open'.
-    path := @ s workspace.
-    canonical := @ AgentSession workspaceFor: path.
-    @ Require equal: canonical to: (aData objectAt: 'workspace').
-    role := @ Store read: (sData objectAt: 'role') class: 'AgentRole'.
-    allowed := @ role allowsWorkspace: canonical.
-    @ Require equal: allowed to: 'true'.
-    current := @ self currentSession.
-    same := @ String equals: current to: s.
-    (same = 'true') ifTrue: [^ self].
-    runs := @ AgentRun activeFor: s except: ''.
-    @ Require equal: runs to: '[]'.
-    (current notEmpty) ifTrue: [
-      runs := @ AgentRun activeFor: current except: ''.
-      @ Require equal: runs to: '[]'.
-      old := @ Store read: (aData objectAt: 'delivery') class: 'AgentDelivery'.
-      oldState := @ old state.
-      @ Require member: oldState of: '["pending","blocked","processed","skipped"]'.
-      allowed := @ Require contains: oldState in: '["pending","blocked"]'.
-      (allowed = 'true') ifTrue: [
-        @ old state: 'skipped'.
-        @ old note: 'Assignment continued in another session'.
-        @ old save
-      ]
-    ].
-    gen := @ self generation.
-    gen := gen + 1.
-    message := @ Message workForAssignment: self session: s generation: gen sender: sender.
-    d := @ AgentDelivery forAssignment: self session: s generation: gen message: message.
-    now := @ Time nowISO.
-    participation := #{generation: gen session: s delivery: d message: message workspace: path selectedAt: now runs: #()} asJson.
-    participation := participation objectAt: 'generation' putJson: gen.
-    history := @ self history.
-    history := history arrayPushJson: participation.
-    @ self history: history.
-    @ self currentSession: s.
-    @ self generation: gen.
-    @ self delivery: d.
-    @ self save.
-    @ AgentQueue publishManual: message.
-    ^ self
-  ]
-
-  method: progress: text [
-    | args |
-    args := #{kind: 'progress' body: text} asJson.
-    ^ @ Store transaction: self sending: 'recordWithin:' with: args
-  ]
-
-  method: ask: question [
-    | args |
-    @ AgentQueue ensureSchema.
-    args := #{kind: 'question' body: question} asJson.
-    ^ @ Store transaction: self sending: 'recordWithin:' with: args
-  ]
-
-  method: recordWithin: args [
-    | actor sender run kind body session message data d state allowed now gen event events |
-    actor := @ AgentRun actingContext.
-    sender := @ self authorize: actor operatorOnly: false.
-    @ self requireOpen.
-    body := args objectAt: 'body'.
-    kind := args objectAt: 'kind'.
-    @ Require text: body.
-    @ Require member: kind of: '["progress","question"]'.
-    session := @ self currentSession.
-    @ Require text: session.
-    run := actor objectAt: 'run'.
-    message := ''.
-    (kind = 'question') ifTrue: [
-      message := @ Message questionForAssignment: self body: body sender: sender.
-      data := @ self asJson.
-      d := @ Store read: (data objectAt: 'delivery') class: 'AgentDelivery'.
-      state := @ d state.
-      allowed := @ Require contains: state in: '["pending","offered","blocked"]'.
-      (allowed = 'true') ifTrue: [@ d state: 'blocked'. @ d save].
-      @ AgentQueue publishManual: message.
-      @ AgentQueue linkQuestion: message session: session run: run delivery: d
-    ].
-    now := @ Time nowISO.
-    gen := @ self generation.
-    event := #{kind: kind body: body actor: sender run: run generation: gen message: message at: now} asJson.
-    event := event objectAt: 'generation' putJson: gen.
-    events := @ self events.
-    events := events arrayPushJson: event.
-    @ self events: events.
-    @ self save.
-    (kind = 'question') ifTrue: [^ message].
-    ^ self
+    ^ @ Assignment::Participation select: session for: self
   ]
 
   method: complete: outcome [
@@ -274,7 +176,7 @@ Assignment subclass: Object
   ]
 
   method: finishWithin: args [
-    | actor sender run cancel outcome target state previous session runs data d dState questions message now event events assignee |
+    | actor sender run cancel outcome target state previous session runs data d dState questions message now event assignee |
     actor := @ AgentRun actingContext.
     cancel := args objectAt: 'cancel'.
     @ Require member: cancel of: '["true","false"]'.
@@ -318,9 +220,7 @@ Assignment subclass: Object
     ].
     now := @ Time nowISO.
     event := #{kind: target body: outcome actor: sender run: run at: now} asJson.
-    events := @ self events.
-    events := events arrayPushJson: event.
-    @ self events: events.
+    @ self appendEvent: event.
     @ self state: target.
     (cancel = 'true') ifTrue: [@ self cancellationNote: outcome] ifFalse: [@ self result: outcome].
     @ self completedAt: now.
@@ -379,91 +279,5 @@ Assignment subclass: Object
     | args |
     @ AgentQueue ensureSchema.
     args := #{delivery: delivery run: run} asJson.
-    ^ @ Store transaction: self sending: 'claimWithin:' with: args replaying: true
-  ]
-
-  classMethod: claimWithin: args [
-    | actor caller run d dData a aData r rData s sData i iData role roleData same value history participation runs questions previous oldData attempts updated gen |
-    @ Store requireTransaction.
-    actor := @ AgentRun actingContext.
-    caller := actor objectAt: 'run'.
-    run := args objectAt: 'run'.
-    (caller notEmpty) ifTrue: [@ Require equal: caller to: run].
-    d := @ Store read: (args objectAt: 'delivery') class: 'AgentDelivery'.
-    dData := @ d asJson.
-    a := @ Store read: (dData objectAt: 'assignment') class: 'Assignment'.
-    aData := @ a asJson.
-    r := @ Store read: run class: 'AgentRun'.
-    rData := @ r asJson.
-    s := @ Store read: (rData objectAt: 'session') class: 'AgentSession'.
-    sData := @ s asJson.
-    i := @ Store read: (sData objectAt: 'identity') class: 'AgentIdentity'.
-    iData := @ i asJson.
-    role := @ Store read: (sData objectAt: 'role') class: 'AgentRole'.
-    roleData := @ role asJson.
-    (caller isEmpty) ifTrue: [
-      same := @ String equals: (actor objectAt: 'human') to: (aData objectAt: 'owner')
-    ] ifFalse: [same := @ String equals: (actor objectAt: 'hash') to: (rData objectAt: 'capabilityTokenHash')].
-    (same = 'false') ifTrue: [^ 'false'].
-    same := @ String equals: (aData objectAt: 'state') to: 'open'.
-    (same = 'false') ifTrue: [^ 'false'].
-    same := @ String equals: (aData objectAt: 'delivery') to: d.
-    (same = 'false') ifTrue: [^ 'false'].
-    same := @ String equals: (aData objectAt: 'generation') to: (dData objectAt: 'generation').
-    (same = 'false') ifTrue: [^ 'false'].
-    same := @ String equals: (aData objectAt: 'currentSession') to: s.
-    (same = 'false') ifTrue: [^ 'false'].
-    same := @ String equals: (dData objectAt: 'session') to: s.
-    (same = 'false') ifTrue: [^ 'false'].
-    same := @ String equals: (aData objectAt: 'assignee') to: i.
-    (same = 'false') ifTrue: [^ 'false'].
-    same := @ String equals: (sData objectAt: 'lifecycleState') to: 'open'.
-    (same = 'false') ifTrue: [^ 'false'].
-    same := @ Require contains: (iData objectAt: 'enabled') in: '["true","1"]'.
-    (same = 'false') ifTrue: [^ 'false'].
-    same := @ Require contains: 'assignment.work' in: (roleData jsonAt: 'capabilities').
-    (same = 'false') ifTrue: [^ 'false'].
-    same := @ Require contains: (rData objectAt: 'state') in: '["starting","running","recovering"]'.
-    (same = 'false') ifTrue: [^ 'false'].
-    same := @ Require contains: (dData objectAt: 'state') in: '["pending","blocked"]'.
-    (same = 'false') ifTrue: [^ 'false'].
-    history := @ a history.
-    participation := history arrayLast.
-    same := @ String equals: (sData objectAt: 'workspace') to: (participation objectAt: 'workspace').
-    (same = 'false') ifTrue: [^ 'false'].
-    runs := @ AgentRun activeFor: s except: run.
-    (runs = '[]') ifFalse: [^ 'false'].
-    value := @ d state.
-    (value = 'blocked') ifTrue: [
-      previous := @ d run.
-      (previous notEmpty) ifTrue: [
-        oldData := @ Store getInstance: previous.
-        value := oldData objectAt: 'state'.
-        same := @ Require contains: value in: '["starting","running","recovering"]'.
-        (same = 'true') ifTrue: [^ 'false']
-      ]
-    ].
-    questions := @ AgentQueue unansweredForAssignment: a.
-    (questions = '[]') ifFalse: [^ 'false'].
-    attempts := @ d attempts.
-    attempts := attempts + 1.
-    @ d state: 'offered'.
-    @ d run: run.
-    @ d attempts: attempts.
-    @ d save.
-    runs := participation jsonAt: 'runs'.
-    same := @ Require contains: run in: runs.
-    (same = 'false') ifTrue: [
-      runs := runs arrayPush: run.
-      participation := participation objectAt: 'runs' putJson: runs.
-      gen := @ a generation.
-      updated := '[]'.
-      history arrayEach: [:entry |
-        same := @ String equals: (entry objectAt: 'generation') to: gen.
-        (same = 'true') ifTrue: [updated := updated arrayPushJson: participation] ifFalse: [updated := updated arrayPushJson: entry]
-      ].
-      @ a history: updated.
-      @ a save
-    ].
-    ^ 'true'
+    ^ @ Store transaction: 'Assignment::Participation' sending: 'claimWithin:' with: args replaying: true
   ]

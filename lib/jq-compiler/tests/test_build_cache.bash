@@ -63,6 +63,25 @@ printf 'package: Example\nChild subclass: Parent\n  method: read [ ^ added ]\n' 
 source "$TRASHTALK_COMPILED_DIR/Example__Child"
 test "$__Example__Child__superclass" = 'Example::Parent'
 test "$(__Example__Child__read)" = 42
+# Qualified traits resolve from the package directory and participate in the
+# same dependency graph, including warm builds and changes with preserved mtimes.
+ns_trait="$TRASHTALK_DIR/trash/Example/Flavor.trash"
+printf 'package: Example\nFlavor trait\n  method: flavor [ ^ "first" ]\n' > "$ns_trait"
+printf 'Child subclass: Base\n  include: Example::Flavor\n' > "$child"
+"$driver" parse "$child" | jq -e '.traits["Example::Flavor"].isTrait == true' > /dev/null
+"$driver" compile-cached "$child" "$artifact" > "$CACHE_ROOT/qualified-trait"
+source "$TRASHTALK_COMPILED_DIR/Example__Flavor"
+test "$(__Example__Flavor__flavor)" = first
+before=$(wc -l < "$CACHE_CALLS")
+"$driver" compile-cached "$child" "$artifact" > "$CACHE_ROOT/qualified-warm"
+test "$(wc -l < "$CACHE_CALLS")" = "$before"
+cp -p "$ns_trait" "$CACHE_ROOT/trait-time"
+printf 'package: Example\nFlavor trait\n  method: flavor [ ^ "second" ]\n' > "$ns_trait"
+touch -r "$CACHE_ROOT/trait-time" "$ns_trait"
+"$driver" compile-cached "$child" "$artifact" > "$CACHE_ROOT/qualified-changed"
+test "$(($(wc -l < "$CACHE_CALLS") - before))" = 2
+source "$TRASHTALK_COMPILED_DIR/Example__Flavor"
+test "$(__Example__Flavor__flavor)" = second
 cp "$artifact" "$CACHE_ROOT/good"
 printf 'Not a class\n' > "$child"
 if "$driver" compile-cached "$child" "$artifact" > "$CACHE_ROOT/invalid.out" 2> "$CACHE_ROOT/invalid.err"; then exit 1; fi

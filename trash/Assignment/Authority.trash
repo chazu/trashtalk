@@ -1,5 +1,7 @@
+package: Assignment
+
 # Fresh responsibility and run authorization, shared by Assignment operations.
-AssignmentAuthority trait
+Authority trait
   method: authorize: actor operatorOnly: operatorOnly [
     | a run human r s i role d owner participation history state aData rData sData iData roleData dData |
     @ Store requireTransaction.

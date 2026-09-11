@@ -747,6 +747,48 @@ _CURRENT_CLASS_VARS=""
 # Key: var_name, Value: default value (or empty for null)
 declare -A _CURRENT_CLASS_DEFAULTS
 
+# Qualified traits share the package artifact directory with classes; legacy
+# global traits remain under .compiled/traits. Keep lookup identical for sends
+# and development tools (method inspection and reload).
+function _compiled_trait_path {
+  local name="${1//::/__}" file
+  for file in "$TRASHDIR/.compiled/traits/$name" "$TRASHDIR/.compiled/$name"; do
+    if [[ -f "$file" ]]; then printf '%s\n' "$file"; return 0; fi
+  done
+  return 1
+}
+
+function _ensure_trait_sourced {
+  local name="$1" marker="__${1//::/__}__is_trait" file
+  if [[ -n "${_SOURCED_COMPILED_CLASSES[$name]:-}" && "${!marker:-}" == 1 ]]; then return 0; fi
+  file=$(_compiled_trait_path "$name") || return
+  source "$file" || return
+  [[ "${!marker:-}" == 1 ]] || return 1
+  _SOURCED_COMPILED_CLASSES[$name]=1
+}
+export -f _compiled_trait_path _ensure_trait_sourced
+
+# A class can also name a package (Assignment and Assignment::Reporting).
+# Inspection/reload must exclude functions owned by loaded descendants, whose
+# metadata remains available even when they were sourced outside the cache.
+function _compiled_methods_for {
+  local prefix="__${1//::/__}__" marker nested func
+  local -a descendants=()
+  while IFS= read -r marker; do
+    case "$marker" in
+      "$prefix"*__superclass) descendants+=("${marker%superclass}") ;;
+      "$prefix"*__is_trait) descendants+=("${marker%is_trait}") ;;
+    esac
+  done < <(compgen -A variable "$prefix")
+  while IFS= read -r func; do
+    for nested in "${descendants[@]}"; do
+      [[ "$func" != "$nested"* ]] || continue 2
+    done
+    printf '%s\n' "$func"
+  done < <(compgen -A function "$prefix")
+}
+export -f _compiled_methods_for
+
 # Ensure a class is sourced (for accessing its metadata)
 # Usage: _ensure_class_sourced ClassName
 function _ensure_class_sourced {
@@ -775,15 +817,9 @@ function _ensure_class_sourced {
     # Also source included traits (for bashOnly markers)
     local traits_var="${func_prefix}__traits"
     if [[ -n "${!traits_var:-}" ]]; then
-      local trait_name trait_file
+      local trait_name
       for trait_name in ${!traits_var}; do
-        if [[ -z "${_SOURCED_COMPILED_CLASSES["$trait_name"]:-}" ]]; then
-          trait_file="$TRASHDIR/.compiled/traits/$trait_name"
-          if [[ -f "$trait_file" ]]; then
-            source "$trait_file"
-            _SOURCED_COMPILED_CLASSES["$trait_name"]=1
-          fi
-        fi
+        _ensure_trait_sourced "$trait_name" || continue
       done
     fi
     return 0
@@ -2039,17 +2075,9 @@ function send {
     if [[ -n "${!traits_var}" ]]; then
       local trait_name
       for trait_name in ${!traits_var}; do
-        # Source trait if not already sourced
-        if [[ -z "${_SOURCED_COMPILED_CLASSES["$trait_name"]:-}" ]]; then
-          local trait_file="$TRASHDIR/.compiled/traits/$trait_name"
-          if [[ -f "$trait_file" ]]; then
-            source "$trait_file"
-            _SOURCED_COMPILED_CLASSES["$trait_name"]=1
-            msg_debug "Sourced trait $trait_name"
-          fi
-        fi
+        _ensure_trait_sourced "$trait_name" || continue
         # Try trait class method first (for class-level calls)
-        local trait_class_func="__${trait_name}__class__${normalized_selector}"
+        local trait_class_func="__${trait_name//::/__}__class__${normalized_selector}"
         if declare -F "$trait_class_func" >/dev/null 2>&1; then
           msg_debug "Calling trait class method: $trait_class_func"
           "$trait_class_func" "$@"
@@ -2058,7 +2086,7 @@ function send {
           return $exit_code
         fi
         # Try trait instance method
-        local trait_func="__${trait_name}__${normalized_selector}"
+        local trait_func="__${trait_name//::/__}__${normalized_selector}"
         if declare -F "$trait_func" >/dev/null 2>&1; then
           msg_debug "Calling trait method: $trait_func"
           "$trait_func" "$@"

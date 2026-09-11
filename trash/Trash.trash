@@ -158,23 +158,36 @@ Trash subclass: Object
   # List all available objects (compiled classes)
   rawMethod: listObjects [
     find "$TRASHDIR/.compiled" -maxdepth 1 -type f 2>/dev/null | while read -r file; do
-      basename "$file"
+      # Package traits share this directory with classes.
+      if ! grep -Eq '^__[A-Za-z0-9_]+__is_trait="1"$' "$file"; then
+        basename "$file"
+      fi
     done | sort
   ]
 
   # List all available traits (compiled traits)
   rawMethod: listTraits [
-    if [[ -d "$TRASHDIR/.compiled/traits" ]]; then
-      find "$TRASHDIR/.compiled/traits" -type f 2>/dev/null | while read -r file; do
-        basename "$file"
-      done | sort
-    fi
+    local dir file name
+    local name_pattern='^[A-Za-z_][A-Za-z0-9_]*$'
+    for dir in "$TRASHDIR/.compiled/traits" "$TRASHDIR/.compiled"; do
+      for file in "$dir/"*; do
+        [[ -f "$file" ]] || continue
+        name="${file##*/}"
+        [[ "$name" =~ $name_pattern ]] || continue
+        if grep -Eq '^__[A-Za-z0-9_]+__is_trait="1"$' "$file"; then
+          printf '%s\n' "${name//__/::}"
+        fi
+      done
+    done | sort -u
   ]
 
   # Get methods available on a class
   rawMethod: methodsFor: class_name [
-    local compiled_file="$TRASHDIR/.compiled/$class_name"
+    local compiled_name="${class_name//::/__}"
+    local compiled_file="$TRASHDIR/.compiled/$compiled_name"
     local runtime_file="$TRASHDIR/$class_name"
+
+    [[ -f "$compiled_file" ]] || compiled_file=$(_compiled_trait_path "$class_name")
 
     # Check for compiled or runtime class file
     if [[ -f "$compiled_file" ]]; then
@@ -188,26 +201,25 @@ Trash subclass: Object
 
     echo "Methods for $class_name:"
     # List functions defined for this class
-    declare -F | awk '{print $3}' | grep "^__${class_name}__" | grep -v "__class__" | sed "s/__${class_name}__/  /"
+    _compiled_methods_for "$class_name" | grep -v "^__${compiled_name}__class__" | sed "s/__${compiled_name}__/  /"
 
     # Show class methods
     echo "Class methods:"
-    declare -F | awk '{print $3}' | grep "^__${class_name}__class__" | sed "s/__${class_name}__class__/  /"
+    _compiled_methods_for "$class_name" | grep "^__${compiled_name}__class__" | sed "s/__${compiled_name}__class__/  /"
 
     # Show trait methods
-    local traits_var="__${class_name}__traits"
+    local traits_var="__${compiled_name}__traits"
     local traits="${!traits_var:-}"
     if [[ -n "$traits" ]]; then
       for trait in $traits; do
-        local trait_file="$TRASHDIR/.compiled/traits/$trait"
-        if [[ -f "$trait_file" ]]; then
-          source "$trait_file"
+        local trait_name="${trait//::/__}"
+        if _ensure_trait_sourced "$trait"; then
           echo ""
           echo "From trait $trait:"
-          declare -F | awk '{print $3}' | grep "^__${trait}__" | grep -v "__class__" | sed "s/__${trait}__/  /"
+          _compiled_methods_for "$trait" | grep -v "^__${trait_name}__class__" | sed "s/__${trait_name}__/  /"
           # Trait class methods
           local trait_class_methods
-          trait_class_methods=$(declare -F | awk '{print $3}' | grep "^__${trait}__class__" | sed "s/__${trait}__class__/  /")
+          trait_class_methods=$(_compiled_methods_for "$trait" | grep "^__${trait_name}__class__" | sed "s/__${trait_name}__class__/  /")
           if [[ -n "$trait_class_methods" ]]; then
             echo "  (class methods):"
             echo "$trait_class_methods" | sed 's/^/  /'
@@ -217,7 +229,7 @@ Trash subclass: Object
     fi
 
     # Show inherited methods
-    local super_var="__${class_name}__superclass"
+    local super_var="__${compiled_name}__superclass"
     local superclass="${!super_var:-}"
     if [[ -n "$superclass" && "$superclass" != "nil" && "$superclass" != "Object" ]]; then
       echo ""
@@ -400,22 +412,22 @@ EOF
 
     local compiled_name="${class_name//::/__}"
     local source_name="${class_name//:://}"
-    local function_prefix="__${compiled_name}__"
     local compiled_file="$TRASHDIR/.compiled/$compiled_name"
     local class_file="$TRASHDIR/$source_name.trash"
     local trait_file="$TRASHDIR/traits/$source_name.trash"
-    local compiled_trait="$TRASHDIR/.compiled/traits/$compiled_name"
+    local compiled_trait trait_marker="__${compiled_name}__is_trait"
+    compiled_trait=$(_compiled_trait_path "$class_name") || compiled_trait=''
 
     # Clear the sourcing cache so the class will be re-sourced
     _clear_class_cache "$class_name"
 
     # Check if it's a trait
-    if [[ -f "$compiled_trait" ]]; then
+    if [[ -f "$compiled_trait" ]] && grep -q "^${trait_marker}=\"1\"$" "$compiled_trait"; then
       echo "Reloading trait $class_name..."
       # Unset old trait functions
       while IFS= read -r func; do
         unset -f "$func" 2>/dev/null
-      done < <(declare -F | awk '{print $3}' | grep "^${function_prefix}")
+      done < <(_compiled_methods_for "$class_name")
       # Source the compiled trait
       source "$compiled_trait"
       _mark_class_sourced "$class_name"
@@ -429,7 +441,7 @@ EOF
       # Unset old class functions
       while IFS= read -r func; do
         unset -f "$func" 2>/dev/null
-      done < <(declare -F | awk '{print $3}' | grep "^${function_prefix}")
+      done < <(_compiled_methods_for "$class_name")
       # Source the compiled class
       source "$compiled_file"
       _mark_class_sourced "$class_name"
@@ -472,25 +484,26 @@ EOF
       return 1
     fi
 
-    local source_file="$TRASHDIR/${class_name}.trash"
-    local user_source="$TRASHDIR/user/${class_name}.trash"
-    local trait_source="$TRASHDIR/traits/${class_name}.trash"
+    local compiled_name="${class_name//::/__}" source_name="${class_name//:://}"
+    local source_file="$TRASHDIR/${source_name}.trash"
+    local user_source="$TRASHDIR/user/${source_name}.trash"
+    local trait_source="$TRASHDIR/traits/${source_name}.trash"
     local target_file=""
     local file_to_compile=""
-    local temp_file="/tmp/trash_compile_$$_${class_name}"
+    local temp_file="/tmp/trash_compile_$$_${compiled_name}"
 
     # Find source file and determine target (check user dir before system dir)
     if [[ -f "$user_source" ]]; then
       file_to_compile="$user_source"
-      target_file="$TRASHDIR/.compiled/$class_name"
+      target_file="$TRASHDIR/.compiled/$compiled_name"
       echo "Compiling user class $class_name..."
     elif [[ -f "$trait_source" ]]; then
       file_to_compile="$trait_source"
-      target_file="$TRASHDIR/.compiled/traits/$class_name"
+      target_file="$TRASHDIR/.compiled/traits/$compiled_name"
       echo "Compiling trait $class_name..."
     elif [[ -f "$source_file" ]]; then
       file_to_compile="$source_file"
-      target_file="$TRASHDIR/.compiled/$class_name"
+      target_file="$TRASHDIR/.compiled/$compiled_name"
       echo "Compiling class $class_name..."
     else
       echo "Error: No source file found for $class_name"

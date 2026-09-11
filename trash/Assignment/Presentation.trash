@@ -1,5 +1,7 @@
+package: Assignment
+
 # Read projections derive activity from persisted work, execution and questions.
-AssignmentPresentation trait
+Presentation trait
   method: snapshot [
     @ AgentQueue ensureSchema.
     ^ @ Store transaction: self sending: 'snapshotWithin:' with: ''

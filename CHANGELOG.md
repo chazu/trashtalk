@@ -21,6 +21,10 @@
 
 ### Changed
 
+- Assignment helpers now live in the `Assignment` package: Participation handles
+  session selection and claims; Authority, Reporting and Presentation are traits.
+  The public class and stored records are unchanged. Qualified traits support
+  compilation, message dispatch, method inspection and reload.
 - Assignment lifecycle and authorization now use DSL methods and traits with
   ordinary `Persistable` saves. Shared selective Store transactions retain
   atomic message/queue publication and conflict checks; `AssignmentStore` is removed.

@@ -421,7 +421,15 @@ cmd_parse() {
 
     # Parse each trait
     for trait_name in $trait_names; do
-        local trait_file="$traits_dir/$trait_name.trash"
+        local trait_relative="${trait_name//:://}.trash"
+        local trait_file="$traits_dir/$trait_relative"
+        # Qualified traits live beside their package's classes. Global traits
+        # retain the existing traits/ lookup and build layout.
+        if [[ "$trait_name" == *::* ]]; then
+            for cand in "${traits_dir%/traits}/$trait_relative" "$traits_dir/$trait_relative"; do
+                if [[ -f "$cand" ]]; then trait_file="$cand"; break; fi
+            done
+        fi
         if [[ -f "$trait_file" ]]; then
             local trait_ast
             trait_ast=$(_parse_single_file "$trait_file" 2>/dev/null)

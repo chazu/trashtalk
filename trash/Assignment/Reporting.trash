@@ -1,0 +1,59 @@
+package: Assignment
+
+# Progress, inbox questions and event recording for an Assignment. Question
+# publication, blocking and the event commit in the same Store transaction.
+Reporting trait
+  method: progress: text [
+    | args |
+    args := #{kind: 'progress' body: text} asJson.
+    ^ @ Store transaction: self sending: 'recordWithin:' with: args
+  ]
+
+  method: ask: question [
+    | args |
+    @ AgentQueue ensureSchema.
+    args := #{kind: 'question' body: question} asJson.
+    ^ @ Store transaction: self sending: 'recordWithin:' with: args
+  ]
+
+  method: recordWithin: args [
+    | actor sender run kind body session message data d state allowed now gen event |
+    actor := @ AgentRun actingContext.
+    sender := @ self authorize: actor operatorOnly: false.
+    @ self requireOpen.
+    body := args objectAt: 'body'.
+    kind := args objectAt: 'kind'.
+    @ Require text: body.
+    @ Require member: kind of: '["progress","question"]'.
+    session := @ self currentSession.
+    @ Require text: session.
+    run := actor objectAt: 'run'.
+    message := ''.
+    (kind = 'question') ifTrue: [
+      message := @ Message questionForAssignment: self body: body sender: sender.
+      data := @ self asJson.
+      d := @ Store read: (data objectAt: 'delivery') class: 'AgentDelivery'.
+      state := @ d state.
+      allowed := @ Require contains: state in: '["pending","offered","blocked"]'.
+      (allowed = 'true') ifTrue: [@ d state: 'blocked'. @ d save].
+      @ AgentQueue publishManual: message.
+      @ AgentQueue linkQuestion: message session: session run: run delivery: d
+    ].
+    now := @ Time nowISO.
+    gen := @ self generation.
+    event := #{kind: kind body: body actor: sender run: run generation: gen message: message at: now} asJson.
+    event := event objectAt: 'generation' putJson: gen.
+    @ self appendEvent: event.
+    @ self save.
+    (kind = 'question') ifTrue: [^ message].
+    ^ self
+  ]
+
+  # Completion uses the same journal operation before saving its final state.
+  method: appendEvent: event [
+    | events |
+    @ Store requireTransaction.
+    events := @ self events.
+    events := events arrayPushJson: event.
+    @ self events: events
+  ]
