@@ -1,0 +1,59 @@
+# Structural search only. Match locations retain ast-grep's native zero-based
+# lines/columns and byte offsets. No rewrite/interactive flags are introduced.
+package: Tools
+
+AstGrep subclass: Tool
+  include: Tools::JsonOutput
+
+  classMethod: name [ ^ 'ast-grep' ]
+  classMethod: installCommand [ ^ 'brew install ast-grep' ]
+  classMethod: jsonShape [ ^ 'array' ]
+
+
+  classMethod: argvFor: pattern language: language [
+    | tool |
+    tool := @ self path.
+    ^ #(tool 'run' '--pattern' pattern '--lang' language '--json=compact' '--color=never') asJson
+  ]
+
+  classMethod: search: pattern language: language inDirectory: directory [
+    ^ @ self search: pattern language: language files: '["."]' inDirectory: directory
+  ]
+
+  classMethod: search: pattern language: language files: files inDirectory: directory [
+    | available argv |
+    directory isEmpty ifTrue: [^ @ Require reject: 'A search directory is required'].
+    files isEmpty ifTrue: [^ @ Require reject: 'Search files are required'].
+    pattern isEmpty ifTrue: [^ @ Require reject: 'A search pattern is required'].
+    language isEmpty ifTrue: [^ @ Require reject: 'A language is required'].
+    available := @ self isInstalled.
+    (available ~= 'true') ifTrue: [^ @ self missingJsonToolResult: 'search'].
+    argv := @ self argvFor: pattern language: language.
+    argv := argv arrayPush: '--'.
+    argv := @ self argv: argv appendEach: files.
+    ^ @ self captureJsonArgv: argv command: 'search' inDirectory: directory
+  ]
+
+  classMethod: search: pattern language: language in: code [
+    | available argv capture |
+    pattern isEmpty ifTrue: [^ @ Require reject: 'A search pattern is required'].
+    language isEmpty ifTrue: [^ @ Require reject: 'A language is required'].
+    available := @ self isInstalled.
+    (available ~= 'true') ifTrue: [^ @ self missingJsonToolResult: 'search'].
+    argv := @ self argvFor: pattern language: language.
+    argv := argv arrayPush: '--stdin'.
+    capture := @ self captureArgvJson: argv input: code.
+    ^ @ self jsonResultFrom: capture command: 'search'
+  ]
+
+  classMethod: interpretJsonResult: result [
+    | count data status |
+    data := result jsonAt: 'data'.
+    count := data arrayLength.
+    status := result jsonTextAt: 'exit_code'.
+    (count = '0') ifTrue: [
+      (status = '1') ifTrue: [^ result objectAt: 'outcome' put: 'no_matches'].
+      (status = '0') ifTrue: [^ result objectAt: 'outcome' put: 'no_matches']
+    ].
+    ^ result
+  ]

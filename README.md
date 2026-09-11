@@ -398,6 +398,15 @@ ok 2 - custom step works
 # All 2 tests passed
 ```
 
+## Code and session tools
+
+`Tools::Roam` provides checkout-local indexing and code-graph queries;
+`Tools::AstGrep` searches syntax patterns; `Tools::Cass` searches existing agent
+sessions. `Tools::Chad` wraps the local Chad harness for explicit headless tasks
+and plan mode. All use exact argument vectors and preserve process diagnostics.
+See [code and session Tool adapters](docs/code-and-session-tools.md) for setup,
+examples, result contracts, and qualification limits.
+
 ## Gusgus: the assistant behind `@@`
 
 `@@` talks to Gusgus, a persistent low-power assistant with one conversation

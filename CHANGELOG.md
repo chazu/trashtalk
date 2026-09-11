@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-09-11
+
+### Added
+
+- `Tools::Roam` for explicit checkout indexing and code-graph queries,
+  `Tools::AstGrep` for structural search, and `Tools::Cass` for session history
+  search, indexing, status, and source inspection. Shared JSON-result handling
+  preserves native data, diagnostics, partial results, and missing-index states.
+- `Tools::Chad` for headless tasks, plan mode, explicit latest-conversation
+  continuation, model selection, metadata, and invocation previews.
+- Exact-argv process capture can select a child working directory while keeping
+  the caller's directory and environment intact. See
+  [code and session Tool adapters](docs/code-and-session-tools.md).
+
 ## 2026-09-10
 
 ### Added

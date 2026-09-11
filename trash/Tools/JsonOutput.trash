@@ -1,0 +1,72 @@
+package: Tools
+
+# Common result contract for JSON CLI adapters. Process errors retain their
+# status and diagnostics; malformed successful output is never an empty result.
+JsonOutput trait
+  classMethod: jsonShape [ ^ 'object' ]
+
+  classMethod: version [
+    | available argv capture |
+    available := @ self isInstalled.
+    (available ~= 'true') ifTrue: [^ 'not installed'].
+    argv := @ self baseArgv.
+    argv := argv arrayPush: '--version'.
+    capture := @ self captureArgvJson: argv.
+    ^ @ String trim: (capture jsonTextAt: 'stdout')
+  ]
+
+  classMethod: missingJsonToolResult: command [
+    | result |
+    result := @ self missingToolResult: command.
+    ^ result objectAt: 'data' putJson: 'null'
+  ]
+
+  classMethod: captureJsonArgv: argv command: command inDirectory: directory [
+    | capture |
+    capture := @ self captureArgvJson: argv inDirectory: directory.
+    ^ @ self jsonResultFrom: capture command: command
+  ]
+
+  classMethod: jsonResultFrom: capture command: command [
+    | result stdout valid trimmed prefix shape matches outcome |
+    result := @ self resultFrom: capture command: command failureOutcome: 'command_error'.
+    result := result objectAt: 'data' putJson: 'null'.
+    stdout := capture jsonTextAt: 'stdout'.
+    valid := @ String isJson: stdout.
+    # Some robot CLIs (cass) put structured failures on stderr. Keep both
+    # original streams in the envelope while making that error data accessible.
+    outcome := result jsonTextAt: 'outcome'.
+    (outcome ~= 'success') ifTrue: [
+      (valid ~= 'true') ifTrue: [
+        stdout := capture jsonTextAt: 'stderr'.
+        valid := @ String isJson: stdout
+      ]
+    ].
+    (valid = 'true') ifTrue: [
+      trimmed := @ String trim: stdout.
+      shape := @ self jsonShape.
+      prefix := '{'.
+      (shape = 'array') ifTrue: [prefix := '['].
+      matches := @ String startsWith: trimmed prefix: prefix.
+      (matches = 'true') ifTrue: [
+        result := result objectAt: 'data' putJson: stdout.
+        ^ @ self interpretJsonResult: result
+      ]
+    ].
+    outcome := result jsonTextAt: 'outcome'.
+    (outcome = 'success') ifTrue: [
+      result := result objectAt: 'outcome' put: 'invalid_output'
+    ].
+    ^ result
+  ]
+
+  classMethod: interpretJsonResult: result [ ^ result ]
+
+  # Positive, bounded decimal CLI counts; reject expressions before comparison.
+  classMethod: validLimit: limit [
+    | pattern |
+    pattern := '^[1-9][0-9]{0,3}$'.
+    (limit matches: pattern) ifFalse: [^ 'false'].
+    (limit > 1000) ifTrue: [^ 'false'].
+    ^ 'true'
+  ]

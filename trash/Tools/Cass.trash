@@ -1,0 +1,99 @@
+# Search existing coding-agent history. Indexing is an explicit operation;
+# ordinary search stays lexical and does not request model/daemon setup.
+package: Tools
+
+Cass subclass: Tool
+  include: Tools::JsonOutput
+
+  classMethod: name [ ^ 'cass' ]
+  classMethod: installCommand [ ^ 'cargo install --git https://github.com/Dicklesworthstone/coding_agent_session_search --locked' ]
+
+
+  classMethod: argvFor: command dataDirectory: directory [
+    | tool argv |
+    tool := @ self path.
+    argv := #(tool '--color' 'never' '--progress' 'none' command '--json') asJson.
+    directory notEmpty ifTrue: [
+      argv := argv arrayPush: '--data-dir'.
+      argv := argv arrayPush: directory
+    ].
+    ^ argv
+  ]
+
+  classMethod: status [ ^ @ self statusInDataDirectory: '' ]
+
+  classMethod: statusInDataDirectory: directory [
+    | available argv |
+    available := @ self isInstalled.
+    (available ~= 'true') ifTrue: [^ @ self missingJsonToolResult: 'status'].
+    argv := @ self argvFor: 'status' dataDirectory: directory.
+    argv := argv arrayPush: '--robot-meta'.
+    ^ @ self captureJsonArgv: argv command: 'status' inDirectory: ''
+  ]
+
+  # Incremental indexing can discover configured history sources. A data-dir
+  # chooses index storage; it does not restrict which sources cass ingests.
+  classMethod: index [ ^ @ self indexInDataDirectory: '' ]
+
+  classMethod: indexInDataDirectory: directory [
+    | available argv |
+    available := @ self isInstalled.
+    (available ~= 'true') ifTrue: [^ @ self missingJsonToolResult: 'index'].
+    argv := @ self argvFor: 'index' dataDirectory: directory.
+    ^ @ self captureJsonArgv: argv command: 'index' inDirectory: ''
+  ]
+
+  # Unscoped search is explicit; scoped search uses cass's workspace-path filter.
+  classMethod: search: query [ ^ @ self search: query inWorkspace: '' ]
+
+  classMethod: search: query inWorkspace: workspace [
+    ^ @ self search: query inWorkspace: workspace agent: '' limit: '20' dataDirectory: ''
+  ]
+
+  classMethod: search: query inWorkspace: workspace agent: agent limit: limit dataDirectory: directory [
+    | available argv valid |
+    query isEmpty ifTrue: [^ @ Require reject: 'A session search query is required'].
+    valid := @ self validLimit: limit.
+    (valid ~= 'true') ifTrue: [^ @ Require reject: 'Limit must be an integer from 1 through 1000'].
+    available := @ self isInstalled.
+    (available ~= 'true') ifTrue: [^ @ self missingJsonToolResult: 'search'].
+    argv := @ self argvFor: 'search' dataDirectory: directory.
+    argv := @ self argv: argv appendEach: '["--mode","lexical","--no-daemon","--robot-meta","--timeout","5000","--max-content-length","2000"]'.
+    argv := argv arrayPush: '--limit'.
+    argv := argv arrayPush: limit.
+    workspace notEmpty ifTrue: [
+      argv := argv arrayPush: '--workspace'.
+      argv := argv arrayPush: workspace
+    ].
+    agent notEmpty ifTrue: [
+      argv := argv arrayPush: '--agent'.
+      argv := argv arrayPush: agent
+    ].
+    argv := argv arrayPush: '--'.
+    argv := argv arrayPush: query.
+    ^ @ self captureJsonArgv: argv command: 'search' inDirectory: ''
+  ]
+
+  # Follow source_path and line_number returned by search; preserve native JSON.
+  classMethod: view: path line: line [
+    | available argv pattern |
+    path isEmpty ifTrue: [^ @ Require reject: 'A session source path is required'].
+    pattern := '^[1-9][0-9]*$'.
+    (line matches: pattern) ifFalse: [^ @ Require reject: 'Line must be a positive integer'].
+    available := @ self isInstalled.
+    (available ~= 'true') ifTrue: [^ @ self missingJsonToolResult: 'view'].
+    argv := @ self argvFor: 'view' dataDirectory: ''.
+    argv := @ self argv: argv appendEach: '["--context","5"]'.
+    argv := argv arrayPush: '--line'.
+    argv := argv arrayPush: line.
+    argv := argv arrayPush: '--'.
+    argv := argv arrayPush: path.
+    ^ @ self captureJsonArgv: argv command: 'view' inDirectory: ''
+  ]
+
+  classMethod: interpretJsonResult: result [
+    | status |
+    status := result jsonTextAt: 'exit_code'.
+    (status = '3') ifTrue: [^ result objectAt: 'outcome' put: 'index_missing'].
+    ^ result
+  ]

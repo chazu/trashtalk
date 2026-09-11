@@ -451,6 +451,12 @@ evaluation come first. The [code-intelligence and memory research](code-intellig
 compares concrete tools to wrap in Tool classes. An API-only service can still
 have a narrow adapter; a CLI is convenient but not mandatory.
 
+The first [code and session Tool adapters](code-and-session-tools.md) are
+implemented: Roam for checkout-local graph queries, ast-grep for structural
+search, cass for existing session history, and Chad for explicit headless tasks.
+These use the common Tool process boundary. Repository associations, learned
+memory, and a persistent Chad AgentDriver remain follow-up work.
+
 Repository memory must be reusable by authorized agents across independent
 local copies and worktrees of the same Repository. Scope by durable repository
 identity, not a checkout basename, absolute path, harness name, or session ID.

@@ -1,0 +1,102 @@
+# Narrow adapter for https://github.com/nathansutton/chad (chad-code on PyPI).
+# Headless execution can edit files; plan mode is an explicit separate request.
+# Native continuation selects the directory's latest conversation and forks it.
+package: Tools
+
+Chad subclass: Tool
+  include: Tools::JsonOutput
+
+  classMethod: name [ ^ 'chad' ]
+  classMethod: installCommand [ ^ 'uv tool install chad-code==2.0.3' ]
+
+  # Metadata only: upstream levers does not load or download a model.
+  classMethod: levers [
+    | available argv |
+    available := @ self isInstalled.
+    (available ~= 'true') ifTrue: [^ @ self missingJsonToolResult: 'levers'].
+    argv := @ self baseArgv.
+    argv := argv arrayPush: 'levers'.
+    ^ @ self captureJsonArgv: argv command: 'levers' inDirectory: ''
+  ]
+
+  classMethod: run: prompt workingDirectory: directory [
+    ^ @ self run: prompt model: '' workingDirectory: directory
+  ]
+
+  classMethod: run: prompt model: model workingDirectory: directory [
+    ^ @ self invoke: prompt mode: 'execute' continueLatest: 'false' model: model inDirectory: directory dryRun: 'false'
+  ]
+
+  classMethod: plan: prompt workingDirectory: directory [
+    ^ @ self invoke: prompt mode: 'plan' continueLatest: 'false' model: '' inDirectory: directory dryRun: 'false'
+  ]
+
+  classMethod: continueLatest: prompt workingDirectory: directory [
+    ^ @ self invoke: prompt mode: 'execute' continueLatest: 'true' model: '' inDirectory: directory dryRun: 'false'
+  ]
+
+  classMethod: dryRun: prompt workingDirectory: directory [
+    ^ @ self invoke: prompt mode: 'execute' continueLatest: 'false' model: '' inDirectory: directory dryRun: 'true'
+  ]
+
+  # Prompt must be positional for the inspected CLI. EOF on stdin forces the
+  # unattended path. '--' prevents prompts such as 'serve' or '--plan' from
+  # being interpreted as subcommands/options. All values remain exact argv.
+  classMethod: argvFor: prompt mode: mode continueLatest: continuing model: model [
+    | tool argv |
+    tool := @ self path.
+    tool isEmpty ifTrue: [tool := @ self name].
+    argv := #(tool) asJson.
+    (mode = 'plan') ifTrue: [argv := argv arrayPush: '--plan'].
+    (continuing = 'true') ifTrue: [argv := argv arrayPush: '--continue'].
+    model notEmpty ifTrue: [
+      argv := argv arrayPush: '--model'.
+      argv := argv arrayPush: model
+    ].
+    argv := argv arrayPush: '--'.
+    ^ argv arrayPush: prompt
+  ]
+
+  classMethod: invoke: prompt mode: mode continueLatest: continuing model: model inDirectory: directory dryRun: dryRun [
+    | trimmed allowed available argv capture result detail |
+    trimmed := @ String trim: prompt.
+    trimmed isEmpty ifTrue: [^ @ Require reject: 'A nonempty Chad prompt is required'].
+    directory isEmpty ifTrue: [^ @ Require reject: 'A working directory is required'].
+    allowed := @ Require contains: mode in: '["execute","plan"]'.
+    (allowed ~= 'true') ifTrue: [^ @ Require reject: 'Unsupported Chad execution mode'].
+    allowed := @ Require contains: continuing in: '["true","false"]'.
+    (allowed ~= 'true') ifTrue: [^ @ Require reject: 'continueLatest must be true or false'].
+    allowed := @ Require contains: dryRun in: '["true","false"]'.
+    (allowed ~= 'true') ifTrue: [^ @ Require reject: 'dryRun must be true or false'].
+    argv := @ self argvFor: prompt mode: mode continueLatest: continuing model: model.
+    (dryRun = 'true') ifTrue: [
+      detail := #{argv: (argv jsonValue) stdin: '' working_directory: directory
+                  mode: mode continue_latest: (continuing jsonValue) dry_run: true} asJson.
+      ^ #{schema_version: 1 tool: 'chad' backend: 'chad' command: 'run' outcome: 'success'
+          exit_code: 0 stdout: '' stderr: '' result: (detail jsonValue)} asJson
+    ].
+    available := @ self isInstalled.
+    (available ~= 'true') ifTrue: [
+      result := @ self missingToolResult: 'run'.
+      result := result objectAt: 'backend' put: 'chad'.
+      ^ result objectAt: 'result' putJson: 'null'
+    ].
+    capture := @ self captureArgvJson: argv input: '' inDirectory: directory.
+    ^ @ self normalizeRun: capture mode: mode continueLatest: continuing
+  ]
+
+  # The native run stream is text, not a JSON final-response protocol. Exit 0
+  # establishes process success only; it cannot settle a Trashtalk Assignment.
+  classMethod: normalizeRun: capture mode: mode continueLatest: continuing [
+    | result status detail stdout |
+    result := @ self resultFrom: capture command: 'run' failureOutcome: 'runtime_error'.
+    status := capture jsonTextAt: 'exit_code'.
+    (status = '2') ifTrue: [result := result objectAt: 'outcome' put: 'configuration_error'].
+    result := result objectAt: 'backend' put: 'chad'.
+    detail := 'null'.
+    (status = '0') ifTrue: [
+      stdout := capture jsonTextAt: 'stdout'.
+      detail := #{content: stdout format: 'text' mode: mode continue_latest: (continuing jsonValue)} asJson
+    ].
+    ^ result objectAt: 'result' putJson: detail
+  ]

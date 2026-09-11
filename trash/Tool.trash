@@ -200,9 +200,23 @@ Tool subclass: Object
     ^ @ self runProcessRequestJson: request
   ]
 
+  # Directory selection belongs to the process boundary, not shell snippets in
+  # each adapter. The child changes directory; the calling shell never does.
+  classMethod: captureArgvJson: argvJson inDirectory: directory [
+    | request |
+    request := #{argv: (argvJson jsonValue) capture: true working_directory: directory} asJson.
+    ^ @ self runProcessRequestJson: request
+  ]
+
+  classMethod: captureArgvJson: argvJson input: input inDirectory: directory [
+    | request |
+    request := #{argv: (argvJson jsonValue) stdin: input capture: true working_directory: directory} asJson.
+    ^ @ self runProcessRequestJson: request
+  ]
+
   rawClassMethod: runProcessRequestJson: requestJson [
     pragma: direct
-    local request_json="$1" status stdout_file stderr_file progress
+    local request_json="$1" status stdout_file stderr_file progress directory
     local -a argv
 
     if ! printf '%s' "$request_json" | jq -e '
@@ -210,7 +224,8 @@ Tool subclass: Object
       (.argv | type == "array" and all(.[]; type == "string" and (contains("\u0000") | not))) and
       (.stdin == null or (.stdin | type == "string")) and
       (.capture == null or (.capture | type == "boolean")) and
-      (.progress == null or (.progress | type == "string"))
+      (.progress == null or (.progress | type == "string")) and
+      (.working_directory == null or (.working_directory | type == "string" and (contains("\u0000") | not)))
     ' >/dev/null; then
       _throw "ToolError" "Invalid process request JSON"
       return 1
@@ -222,6 +237,17 @@ Tool subclass: Object
     if [[ ${#argv[@]} -eq 0 ]]; then
       _throw "ToolError" "Invalid or empty argv JSON"
       return 1
+    fi
+
+    # NUL-delimited extraction preserves legal path-ending newlines.
+    IFS= read -r -d '' directory < <(
+      printf '%s' "$request_json" | jq -jr '(.working_directory // ""), "\u0000"'
+    )
+    if [[ -n "$directory" ]]; then
+      # All caller values remain argv entries. A fixed script handles the OS
+      # cwd operation; neither paths nor arguments are evaluated as shell code.
+      argv=("$BASH" -c 'unset CDPATH; cd -- "$1" || exit 72; shift; exec "$@"' \
+        'trashtalk-tool' "$directory" "${argv[@]}")
     fi
 
     if printf '%s' "$request_json" | jq -e '.capture == true' >/dev/null; then

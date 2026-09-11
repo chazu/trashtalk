@@ -8,6 +8,12 @@ repository memory, with Basic Memory as the explicit-note baseline and
 Supermemory Local as the lighter service alternative.** These are recommendations
 for subsequent experiments, not installed integrations or measured winners.
 
+Implementation update (September 11): `Tools::Roam` and `Tools::AstGrep` now
+provide the initial code adapters. `Tools::Cass` wraps session-history search,
+and `Tools::Chad` wraps explicit headless harness tasks. See
+[code and session Tool adapters](code-and-session-tools.md) for the implemented
+surface and validation limits. Memory-provider selection remains pending.
+
 | Need | First choice | Reason | Alternative and decision trigger |
 |---|---|---|---|
 | Understand code relationships and likely change impact | Roam | Local graph, machine-readable CLI, explicit index control | GitNexus if its graph adds measurable value and its license fits the intended use; Serena when language-server resolution matters more |

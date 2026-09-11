@@ -1,0 +1,78 @@
+# Local code graph queries. Pass the checkout root explicitly. Its .roam store
+# is selected per invocation; inherited global DB overrides cannot mix checkouts.
+package: Tools
+
+Roam subclass: Tool
+  include: Tools::JsonOutput
+
+  classMethod: name [ ^ 'roam' ]
+  classMethod: installCommand [ ^ 'uv tool install roam-code==14.1.0' ]
+
+
+  # index is deliberate; queries refuse missing/incomplete indexes. Fixed env
+  # entries override both inherited ROAM_DB_DIR and project db_dir configuration.
+  classMethod: argvFor: command [
+    | env tool |
+    env := @ Env which: 'env'.
+    tool := @ self path.
+    ^ #(env 'ROAM_NO_AUTO_INDEX=1' 'ROAM_DB_DIR=.roam' tool
+         '--json' '--budget' '8000' command) asJson
+  ]
+
+  classMethod: indexInDirectory: directory [
+    ^ @ self invoke: 'index' target: '' inDirectory: directory
+  ]
+
+  classMethod: statusInDirectory: directory [
+    ^ @ self invoke: 'index-stats' target: '' inDirectory: directory
+  ]
+
+  classMethod: search: pattern inDirectory: directory [
+    pattern isEmpty ifTrue: [^ @ Require reject: 'A search pattern is required'].
+    ^ @ self invoke: 'search' target: pattern inDirectory: directory
+  ]
+
+  classMethod: context: symbol inDirectory: directory [
+    symbol isEmpty ifTrue: [^ @ Require reject: 'A symbol is required'].
+    ^ @ self invoke: 'context' target: symbol inDirectory: directory
+  ]
+
+  classMethod: impact: symbol inDirectory: directory [
+    symbol isEmpty ifTrue: [^ @ Require reject: 'A symbol is required'].
+    ^ @ self invoke: 'impact' target: symbol inDirectory: directory
+  ]
+
+  classMethod: invoke: command target: target inDirectory: directory [
+    | available argv allowed |
+    directory isEmpty ifTrue: [^ @ Require reject: 'A checkout directory is required'].
+    allowed := @ Require contains: command in: '["index","index-stats","search","context","impact"]'.
+    (allowed ~= 'true') ifTrue: [^ @ Require reject: 'Unsupported Roam command'].
+    available := @ self isInstalled.
+    (available ~= 'true') ifTrue: [^ @ self missingJsonToolResult: command].
+    argv := @ self argvFor: command.
+    target notEmpty ifTrue: [
+      argv := argv arrayPush: '--'.
+      argv := argv arrayPush: target
+    ].
+    ^ @ self captureJsonArgv: argv command: command inDirectory: directory
+  ]
+
+  classMethod: interpretJsonResult: result [
+    | data outcome errorCode partial hasError |
+    data := result jsonAt: 'data'.
+    hasError := data jsonHas: 'error_code'.
+    (hasError = 'true') ifTrue: [
+      errorCode := data jsonTextAt: 'error_code'.
+      (errorCode = 'INDEX_MISSING') ifTrue: [
+        ^ result objectAt: 'outcome' put: 'index_missing'
+      ]
+    ].
+    outcome := result jsonTextAt: 'outcome'.
+    (outcome = 'success') ifTrue: [
+      partial := data jsonAt: 'summary.partial_success' ifAbsent: 'false'.
+      (partial = 'true') ifTrue: [
+        ^ result objectAt: 'outcome' put: 'partial'
+      ]
+    ].
+    ^ result
+  ]
