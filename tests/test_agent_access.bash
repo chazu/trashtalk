@@ -66,4 +66,13 @@ rejects 'run token cannot act as a human viewer' @ AgentAccess session: "$sessio
 unset TRASHTALK_RUN_TOKEN
 rejects 'missing session cannot authorize' @ AgentAccess session: agentsession_missing
 rejects 'identity ID is not a session' @ AgentAccess session: "$identity"
+# A view admission observes membership too, including deletion during validation.
+members=$(_db_sql "SELECT json_group_array(json_object('identity',identity_id,'scope',scope_key,'session',session_id,'revision',policy_revision)) FROM agent_session_memberships WHERE identity_id='$identity';")
+_store_tx_before_commit() { _db_sql "DELETE FROM agent_session_memberships WHERE identity_id='$identity';"; }
+rejects 'membership change during validation conflicts' @ AgentAccess liveSession: "$session"
+unset -f _store_tx_before_commit
+_db_sql "INSERT INTO agent_session_memberships SELECT json_extract(value,'$.identity'),json_extract(value,'$.scope'),json_extract(value,'$.session'),json_extract(value,'$.revision') FROM json_each('$(_db_escape "$members")');"
+check 'restored membership admits current session' "$session" "$(@ AgentAccess liveSession: "$session")"
+# The lighter path and ordinary guarded DSL validator agree on the live fixture.
+check 'snapshot admission matches transaction validator' "$(@ Store transaction: AgentAccess sending: validateLiveSession: with: "$session")" "$(@ AgentAccess liveSession: "$session")"
 printf '%d agent access checks passed\n' "$passed"

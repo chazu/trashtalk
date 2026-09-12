@@ -9,6 +9,7 @@ _store_tx_fail() {
 }
 
 _store_tx_sql() {
+    [[ ${_STORE_SNAPSHOT_MODE:-0} == 0 ]] || { _store_tx_fail 'Snapshot validation cannot access Store state'; return 1; }
     local rc=0
     _db_sql_direct "$@" || rc=$?
     ((rc == 0)) || { _store_tx_fail 'SQLite operation failed'; return "$rc"; }
@@ -188,3 +189,32 @@ _store_transaction() {
     [[ $rc != 75 ]] || printf 'Store transaction conflicted; reload and retry.\n' >&2
     return "$rc"
 }
+
+# Read-only validation of one scalar JSON projection. The callback consumes only
+# that value: it cannot read or write Store state. Recheck the entire projection
+# under the same commit lock used by ordinary transactions before publishing its
+# result. This avoids constructing a staging database for view admission.
+_store_validate_snapshot() (
+    [[ -z ${_STORE_TX:-} ]] || { _store_tx_fail 'Nested transaction'; return 1; }
+    local query="$1" receiver="$2" selector="$3" snapshot directory status=0
+    snapshot=$(_db_sql "$query") || return
+    directory=$(mktemp -d "${TMPDIR:-/tmp}/trash-store-snapshot.XXXXXX") || return
+    trap 'rm -rf "$directory"' EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    (
+        export _STORE_TX="$directory" _STORE_SNAPSHOT_MODE=1
+        @ "$receiver" "$selector" "$snapshot"
+    ) > "$directory/result" || status=$?
+    [[ $status == 0 && ! -e "$directory/failed" ]] || return 1
+    if [[ ${_STORE_IN_BARRIER:-0} == 0 ]] && declare -F _store_tx_before_commit >/dev/null; then
+        (local _STORE_IN_BARRIER=1; _store_tx_before_commit) || return
+    fi
+    _db_sql -bail <<SQL || return
+BEGIN IMMEDIATE;
+CREATE TEMP TABLE snapshot_guard(ok INTEGER NOT NULL CONSTRAINT store_transaction_conflict CHECK(ok=1));
+INSERT INTO snapshot_guard SELECT ($query) IS '$(_db_escape "$snapshot")';
+COMMIT;
+SQL
+    cat "$directory/result"
+)

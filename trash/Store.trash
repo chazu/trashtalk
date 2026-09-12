@@ -189,6 +189,17 @@ Store subclass: Object
     _store_transaction "$4" "$1" "$2" "$3"
   ]
 
+  # Callback validation over one read-only JSON projection, guarded again under
+  # the commit lock. The callback may consume its value but may not access Store.
+  rawClassMethod: validateSnapshot: query using: receiver sending: selector [
+    declare -F _store_validate_snapshot >/dev/null || source "${TRASHTALK_DIR:-$HOME/.trashtalk}/lib/store-transaction.bash" || return 1
+    _store_validate_snapshot "$1" "$2" "$3"
+  ]
+
+  rawClassMethod: requireSnapshot [
+    [[ ${_STORE_SNAPSHOT_MODE:-0} == 1 ]] || { _throw TransactionError 'This operation requires snapshot validation'; return 1; }
+  ]
+
   rawClassMethod: requireTransaction [
     [[ -n ${_STORE_TX:-} ]] || { _throw TransactionError 'This operation requires a Store transaction'; return 1; }
   ]

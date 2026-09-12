@@ -11,7 +11,7 @@ whole-history transcript refreshes. Implement in this order:
 - [x] Use indexed session snapshot predicates, then batch session projections.
 - [x] Add reusable object projection support and batch object browsers.
 - [x] Batch inbox presentation, participant/date lookup, and preview projection.
-- [ ] Consolidate conversation admission and optimize fresh read-only validation.
+- [x] Consolidate conversation admission and optimize fresh read-only validation.
 - [ ] Cache transcript projections per view and consume appended log records.
 - [ ] Reduce repeated message field initialization and delivery serialization.
 - [ ] Run full compiler/runtime verification and measure public interactions.
@@ -58,3 +58,13 @@ uses one ordered reload, one query for distinct participants, and shared calenda
 values from Bash strftime. The 200-row test asserts bounded serializer counts,
 full preview text, fresh cache replacement, and unchanged unread state. Calendar
 values match the existing Time API in UTC and New York across DST transitions.
+
+Admission validation: 22 access checks, 42 focus checks, 59 identity-session
+checks, direct-conversation fixtures and the new Store snapshot tests passed.
+Read-only admission uses `Store validateSnapshot:using:sending:`; callbacks
+consume a coherent SQL projection, cannot access Store, and publish no result
+until the projection matches again under the commit lock. Ownership and
+membership changes during validation are rejected. Domain mutation validators
+continue to use ordinary tracked transactions. Sending validates under the
+worker lock; UI mark-viewed and controls reuse their own public admission checks.
+Run attribution is checked by the public interrupt control itself.

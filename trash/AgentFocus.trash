@@ -32,13 +32,11 @@ AgentFocus subclass: Object
 
   classMethod: perform: intent session: session body: body run: run [
     | result inbox message state allowed recipient sender workspace |
+    # Native input validates current ownership and membership under the worker
+    # lock. Reuse that authoritative admission instead of validating twice here.
+    (intent = 'send_message') ifTrue: [^ @ session input: body].
     session := @ AgentAccess session: session.
     session isEmpty ifTrue: [^ @ Require reject: 'Session access denied'].
-    (intent = 'send_message') ifTrue: [
-      session := @ AgentAccess liveSession: session.
-      (session isEmpty) ifTrue: [^ @ Require reject: 'This conversation is historical; focus the current session to send'].
-      ^ @ session input: body
-    ].
     (intent = 'compact_session') ifTrue: [^ @ session compact].
     (intent = 'pause_session') ifTrue: [^ @ session pause].
     (intent = 'resume_session') ifTrue: [
@@ -46,8 +44,17 @@ AgentFocus subclass: Object
       (result = 'open') ifTrue: [result := @ AgentWorker tickSession: session].
       ^ 'Resumed'
     ].
-    (intent = 'interrupt_run') ifTrue: [^ @ AgentWorker stopRun: run].
+    (intent = 'interrupt_run') ifTrue: [
+      allowed := @ self run: run belongsTo: session.
+      (allowed ~= 'true') ifTrue: [^ @ Require reject: 'The displayed run does not belong to this session'].
+      ^ @ AgentWorker stopRun: run
+    ].
     ^ @ Require reject: 'Unsupported session intent'
+  ]
+
+  # Fresh run attribution applies to public controls as well as UI frames.
+  rawClassMethod: run: run belongsTo: session [
+    db_get "$1" | jq -r --arg session "$2" '.class=="AgentRun" and .session==$session'
   ]
 
   rawClassMethod: human [
@@ -72,22 +79,18 @@ AgentFocus subclass: Object
     if [[ "$intent" == dismiss ]]; then
       jq -cn --argjson context "$context" '{context:$context,done:true}'; return
     fi
-    @ AgentAccess session: "$sid" >/dev/null || return 1
     if [[ "$intent" == mark_viewed ]]; then
       result=$(@ AgentFocus markViewed: "$(jq -c .message_ids <<< "$frame")" inSession: "$sid" 2>&1) || ok=false
     elif [[ "$intent" == load_older ]]; then
+      @ AgentAccess session: "$sid" >/dev/null || return 1
       window=$(jq -r '.window' <<< "$context")
       if (( window >= 100000 )); then result='History limit reached (100,000 entries); inspect older run logs through Session actions.'; ok=false
       else context=$(jq -c '.window = ([.window*2,100000]|min)' <<< "$context"); result='Loaded earlier history'; fi
     else
       IFS= read -r -d '' body < <(jq -jr '(.body // ""), "\u0000"' <<< "$frame")
       run=$(jq -r '.run_id // ""' <<< "$frame")
-      if [[ "$intent" == interrupt_run && $(db_get "$run" | jq -r '.session // ""') != "$sid" ]]; then
-        result='The displayed run does not belong to this session'; ok=false
-      else
-        result=$(@ AgentFocus perform: "$intent" session: "$sid" body: "$body" run: "$run" 2>&1) || ok=false
-        [[ -n "$result" ]] || { result='Action failed; inspect the session before retrying'; ok=false; }
-      fi
+      result=$(@ AgentFocus perform: "$intent" session: "$sid" body: "$body" run: "$run" 2>&1) || ok=false
+      [[ -n "$result" ]] || { result='Action failed; inspect the session before retrying'; ok=false; }
     fi
     jq -cn --argjson context "$context" --argjson request "$request" --argjson ok "$ok" --arg text "$result" --arg intent "$intent" \
       '{context:$context,frame:{schema_version:1,type:"ack",request_id:$request,ok:$ok,result:$text,
