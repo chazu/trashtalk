@@ -134,9 +134,7 @@ Inbox subclass: Object
     | now millis existingThread |
     now := @ Time nowISO.
     millis := @ Time nowMillis.
-    @ message to: name.
-    @ message created: now.
-    @ message sentAt: millis.
+    @ Runtime assign: (#{to: name created: now sentAt: millis} asJson) to: message.
     existingThread := @ message thread.
     (existingThread isEmpty) ifTrue: [@ message thread: message]
   ]

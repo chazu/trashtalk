@@ -33,11 +33,7 @@ Message subclass: Object
   classMethod: to: recipient from: sender subject: subj body: text kind: aKind [
     | msg |
     msg := @ Message new.
-    @ msg to: recipient.
-    @ msg from: sender.
-    @ msg subject: subj.
-    @ msg body: text.
-    @ msg kind: aKind.
+    @ Runtime assign: (#{to: recipient from: sender subject: subj body: text kind: aKind} asJson) to: msg.
     ^ msg
   ]
 

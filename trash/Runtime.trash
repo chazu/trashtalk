@@ -106,6 +106,10 @@ Runtime subclass: Object
     done <<< "$rows"
   ]
 
+  # Assign properties through their public setters. Exact generated setters
+  # without advice share one cache update; custom behavior retains send order.
+  classPrimitive: assign: fields to: instanceId calls: _trash_assign_fields
+
   # Set session-cache data from JSON (does not save to Store)
   # Usage: @ Runtime setData: '{"value":42}' for: instanceId
   rawClassMethod: setData: json for: instanceId [

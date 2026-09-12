@@ -55,6 +55,10 @@ if length != 1 then error("expected exactly one JSON document") else .[0] end
     if type != "object" then error("expected an object") else keys | map(text_value) | @sh end
   elif $operation == "values" then
     if type != "object" then error("expected an object") else [.[] | legacy_text] | @sh end
+  elif $operation == "fields" then
+    if type!="object" or any(to_entries[]; (.key|test("^[A-Za-z][A-Za-z0-9_]*$")|not) or (.value|type)!="string")
+    then error("property assignments require an object of named text values")
+    else [to_entries[] | .key, (.value|text_value)] | @sh end
   elif $operation == "state" then
     if type != "object" then error("expected instance state")
     else [(.class | legacy_text), (to_entries[]

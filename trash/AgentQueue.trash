@@ -26,12 +26,10 @@ AgentQueue subclass: Object
   # SQLite boundary: question publication, its immutable delivery links, and
   # blocking commit together. A reply can never observe a half-published question.
   rawClassMethod: persist: message questionRun: run deliveries: deliveryIds [
-    local id data address erun ids question_sql=''
+    local id data persisted erun ids question_sql=''
     @ AgentQueue ensureSchema || return 1
     id=$(_db_escape "$1")
     data=$(@ "$1" asJson) || return 1
-    address=$(printf '%s' "$data" | jq -r '.to')
-    address=$(_db_escape "$address")
     data=$(_db_escape "$data")
     if [[ -n "$2" ]]; then
       ids=$(printf '%s' "$3" | jq -ce 'select(type == "array" and all(.[]; type == "string")) | unique') || return 1
@@ -55,7 +53,7 @@ AgentQueue subclass: Object
         UPDATE instances SET data=json_set(data,'$.state','blocked')
           WHERE id IN (SELECT value FROM json_each('$ids'));"
     fi
-    @ Store executeBatch: "BEGIN IMMEDIATE;
+    persisted=$(@ Store executeBatch: "BEGIN IMMEDIATE;
       INSERT INTO instances(id,data) VALUES('$id','$data')
         ON CONFLICT(id) DO UPDATE SET data=excluded.data;
       -- Carry the manual boundary through subsequent replies in this exchange.
@@ -72,13 +70,15 @@ AgentQueue subclass: Object
           AND json_extract(q.data,'$.from')=json_extract('$data','$.to')
           AND json_extract(q.data,'$.to')=json_extract('$data','$.from'));
       INSERT OR IGNORE INTO agent_outbox(message_id,inbox,session)
-        SELECT '$id','$address',CASE WHEN '$address' LIKE 'session:%' AND EXISTS(SELECT 1 FROM instances q
+        SELECT '$id',json_extract('$data','$.to'),CASE WHEN json_extract('$data','$.to') LIKE 'session:%' AND EXISTS(SELECT 1 FROM instances q
           WHERE q.id=json_extract('$data','$.replyTo') AND json_extract(q.data,'$.dispatchMode')='manual')
-          THEN substr('$address',9) ELSE '' END
-        WHERE '$address' LIKE 'session:%' OR '$address' LIKE 'agent:%';
+          THEN substr(json_extract('$data','$.to'),9) ELSE '' END
+        WHERE json_extract('$data','$.to') LIKE 'session:%' OR json_extract('$data','$.to') LIKE 'agent:%';
       $question_sql
-      COMMIT;" || return 1
-    _env_set "$1" "$(db_get "$1")"
+      SELECT data FROM instances WHERE id='$id';
+      COMMIT;") || return 1
+    [[ -n "$persisted" ]] || return 1
+    _env_set "$1" "$persisted"
   ]
 
   # Separate processing metadata survives Message read/archive saves and caches.

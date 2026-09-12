@@ -13,7 +13,7 @@ whole-history transcript refreshes. Implement in this order:
 - [x] Batch inbox presentation, participant/date lookup, and preview projection.
 - [x] Consolidate conversation admission and optimize fresh read-only validation.
 - [x] Cache transcript projections per view and consume appended log records.
-- [ ] Reduce repeated message field initialization and delivery serialization.
+- [x] Reduce repeated message field initialization and delivery serialization.
 - [ ] Run full compiler/runtime verification and measure public interactions.
 
 Keep domain behavior in the DSL and use small shared primitives for JSON, SQL,
@@ -80,3 +80,12 @@ Out-of-order entries, changed mail, file replacement/deletion/truncation and
 window changes rebuild. Partial final records are withheld until newline. A
 10,000-chunk fixture confirms one appended record reaches the parser. Perl is
 used only for the existing OS-adapter role: file metadata, byte reads and hashes.
+
+Message assignment validation: the new regression checks scalar/container
+coercion, Unicode and trailing newlines, immediate initial persistence, explicit
+save/delivery, live-cache equality, custom setter replacement, ordered advice,
+and stopped dispatch after setter failure. `Runtime assign:to:` batches only
+exact compiler-generated setters without advice or profiling; other cases use
+ordered public sends. Queue publication reads the final message inside its
+existing atomic message/outbox transaction and installs that result only after
+successful commit, avoiding a second database invocation and address serializer.

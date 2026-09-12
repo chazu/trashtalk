@@ -115,3 +115,40 @@ _trash_json_collect() {
           split("\u0000") | if .[-1] == "" then .[:-1] else . end
           | if $kind == "object" then . as $v | reduce range(0;length;2) as $i ({}; .[$v[$i]]=$v[$i+1]) else . end'
 }
+
+# Explicit bulk property assignment. Only exact compiler-generated setters may
+# share an update; overrides, advice, profiling, and container coercion retain
+# ordered public sends. No persistence is deferred or performed here.
+_trash_assign_fields() {
+    local fields="$1" id="$2" _receiver_class _receiver_instance _receiver_data
+    local -A _receiver_values=()
+    local -a pairs=()
+    local key value fn expected actual updated i fast=true
+    _resolve_receiver "$id" || return
+    [[ -n "$_receiver_instance" ]] || return 1
+    _ensure_class_sourced "$_receiver_class" || return
+    _trash_json_decode pairs "$fields" fields || return
+    [[ ${#_BEFORE_ADVICE[@]} == 0 && ${#_AFTER_ADVICE[@]} == 0 &&
+       $_ENSURE_DEPTH == 0 && $_HANDLER_DEPTH == 0 && -z ${TRASH_PROFILE:-} ]] || fast=false
+    for ((i=0;i<${#pairs[@]};i+=2)); do
+        key=${pairs[i]} value=${pairs[i+1]}
+        # The ordinary setter's JSON-stream coercion remains the authority for
+        # container-looking text, including malformed or multiple documents.
+        if [[ "$value" =~ ^\[.*\]$ || "$value" =~ ^\{.*\}$ ]]; then fast=false; fi
+        fn="__${_receiver_class//::/__}__${key}_"
+        printf -v expected '%s () \n{ \n    _ivar_set %s "$1"\n}' "$fn" "$key"
+        actual=$(declare -f "$fn") || fast=false
+        [[ "$actual" == "$expected" ]] || fast=false
+    done
+    if [[ "$fast" == true ]]; then
+        updated=$(printf '%s' "$_receiver_data" | jq -c --argjson fields "$fields" '
+          reduce ($fields|to_entries[]) as $field (.;
+            .[$field.key] = ($field.value | if test("^-?[0-9]+$") then tonumber else . end))') || return
+        _env_set "$id" "$updated" || return
+    else
+        for ((i=0;i<${#pairs[@]};i+=2)); do
+            @ "$id" "${pairs[i]}:" "${pairs[i+1]}" >/dev/null || return
+        done
+    fi
+    printf '%s\n' "$id"
+}
