@@ -48,8 +48,11 @@ A durable, unique membership record is the source of truth. It contains:
 state (`current`, `migration_pending`, or `superseded`). Only an open or paused
 session can be current.
 
-Closing or terminating atomically releases membership. Reopen, resume, direct
-creation, direct persistence, lifecycle changes, delivery admission, worker
+A **lifecycle close** or termination atomically releases membership. Detaching or
+closing a conversation *view* is not a lifecycle transition: it only stops that
+viewer and leaves the current session, its worker, and any background run
+unchanged. Reopen, resume, direct
+creation, direct persistence, and lifecycle changes, delivery admission, worker
 claim, and recovery must all check membership transactionally. Reopening a
 historical session conflicts if another eligible session owns its scope key.
 Cached objects, retained session IDs, display handles, and workspace paths
