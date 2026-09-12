@@ -8,28 +8,10 @@ trap 'rm -rf "$scratch"' EXIT
 cat > "$scratch/records.json"
 jq -c --arg mode rows --arg run '' --argjson seq 0 --arg profile '' --arg stream '' -f "$base/agent-transcript.jq" "$scratch/records.json" > "$scratch/entries.jsonl"
 earlier=$(jq -r '.has_earlier == 1' "$scratch/records.json")
-while IFS= read -r row; do
-    run=$(jq -r .id <<< "$row")
-    seq=$(jq -r .seq <<< "$row")
-    profile=$(jq -r '.data.backendProfile' <<< "$row")
-    for stream in stdout stderr; do
-        field=outputLog
-        [[ "$stream" != stderr ]] || field=errorLog
-        path=$(jq -r --arg field "$field" '.data[$field] // ""' <<< "$row")
-        [[ -n "$path" ]] || continue
-        if [[ ! -r "$path" || ! -f "$path" ]]; then
-            jq -cn --arg id "$run/$stream/missing" --arg path "$path" --argjson seq "$seq" \
-                '{id:$id,kind:"error",title:"Log unavailable",text:$path,order:[$seq,1]}' >> "$scratch/entries.jsonl"
-            continue
-        fi
-        # Keep physical line IDs even while an append-only file grows. A partial
-        # JSON frame is ignored until its writer completes it on the next poll.
-        awk -v n="$limit" -v count="$scratch/count" '{lines[NR%n]=$0} END {print NR > count; first=NR-n+1; if(first<1)first=1; for(i=first;i<=NR;i++)printf "%d\t%s\n",i,lines[i%n]}' "$path" > "$scratch/log"
-        [[ $(cat "$scratch/count") -le "$limit" ]] || earlier=true
-        jq -Rc --arg mode native --arg run "$run" --argjson seq "$seq" --arg profile "$profile" --arg stream "$stream" \
-            -f "$base/agent-transcript.jq" "$scratch/log" >> "$scratch/entries.jsonl"
-    done
-done < <(jq -c '.rows[] | select(.data.class == "AgentRun")' "$scratch/records.json")
+# This is a conversation surface, not a run-log viewer. AgentRun output may
+# contain tool calls, reasoning, and implementation noise. Durable Messages
+# are the shared chat record between the human and the agent; run details stay
+# available through the session browser and run logs.
 jq -sc --slurpfile records "$scratch/records.json" --argjson limit "$limit" --argjson earlier "$earlier" '
   sort_by(.order, .id) |
   reduce .[] as $entry ([];

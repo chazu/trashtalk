@@ -19,19 +19,17 @@ AgentTranscript subclass: Object
     [[ "$limit" =~ $pattern && "$limit" -le 100000 ]] || return 1
     sid=$(_db_escape "$1")
     _db_sql "WITH target AS (SELECT id,data FROM instances WHERE id='$sid' AND class='AgentSession'),
-      history AS (SELECT CASE WHEN r.class='Message' THEN coalesce(json_extract(r.data,'$.sentAt'),0)
-        ELSE coalesce(unixepoch(json_extract(r.data,'$.started'))*1000+999,json_extract(r.data,'$.created_at')*1000,0) END AS seq,
-        r.id,r.data FROM instances r,target s WHERE
-        (r.class='AgentRun' AND json_extract(r.data,'$.session')=s.id) OR
-        (r.class='Message' AND (json_extract(r.data,'$.from')='session:'||s.id OR json_extract(r.data,'$.to')='session:'||s.id OR
+      history AS (SELECT coalesce(json_extract(r.data,'$.sentAt'),0) AS seq,r.id,r.data
+        FROM instances r,target s WHERE r.class='Message' AND
+        (json_extract(r.data,'$.from')='session:'||s.id OR json_extract(r.data,'$.to')='session:'||s.id OR
           EXISTS(SELECT 1 FROM instances d,json_each(json_extract(d.data,'$.messageIds')) m
-            WHERE d.class='AgentDelivery' AND json_extract(d.data,'$.session')=s.id AND m.value=r.id))))
+            WHERE d.class='AgentDelivery' AND json_extract(d.data,'$.session')=s.id AND m.value=r.id)))
       SELECT json_object('session',json_object('id',s.id,
         'title',coalesce((SELECT json_extract(i.data,'$.handle') FROM instances i WHERE i.id=json_extract(s.data,'$.identity')),s.id),
         'workspace',json_extract(s.data,'$.workspace'),'profile',json_extract(s.data,'$.backendProfile'),
         'lifecycle',json_extract(s.data,'$.lifecycleState'),
-        'run_id',coalesce((SELECT id FROM history WHERE json_extract(data,'$.class')='AgentRun' AND json_extract(data,'$.state') IN ('starting','running','recovering') ORDER BY seq DESC LIMIT 1),''),
-        'activity',coalesce((SELECT json_extract(data,'$.state') FROM history WHERE json_extract(data,'$.class')='AgentRun' ORDER BY seq DESC LIMIT 1),'idle'),
+        'run_id',coalesce((SELECT r.id FROM instances r WHERE r.class='AgentRun' AND json_extract(r.data,'$.session')=s.id AND json_extract(r.data,'$.state') IN ('starting','running','recovering') ORDER BY json_extract(r.data,'$.started') DESC LIMIT 1),''),
+        'activity',coalesce((SELECT json_extract(r.data,'$.state') FROM instances r WHERE r.class='AgentRun' AND json_extract(r.data,'$.session')=s.id ORDER BY json_extract(r.data,'$.started') DESC LIMIT 1),'idle'),
         'pending',(SELECT count(*) FROM instances d WHERE d.class='AgentDelivery' AND json_extract(d.data,'$.session')=s.id AND json_extract(d.data,'$.state')='pending')),
         'rows',json(coalesce((SELECT json_group_array(json_object('seq',seq,'id',id,'data',json(data))) FROM (SELECT * FROM history ORDER BY seq DESC,id DESC LIMIT $limit)), '[]')),
         'has_earlier',(SELECT count(*) FROM history)>$limit)

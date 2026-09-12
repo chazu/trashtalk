@@ -41,5 +41,5 @@ elif $mode == "rows" then
   if $d.class == "Message" then entry($r.id; (if $d.kind == "question" then "question" else "message" end);
     (participant(($d.from // "");$session) + " → " + participant(($d.to // "");$session) + " · " + ($d.created // ""));
     ((if ($d.subject // "") == "" then "" else $d.subject + "\n" end) + ($d.body // "")); [$r.seq,0])
-  else entry($r.id; "status"; ("Run · " + ($d.backendProfile // "") + " · " + ($d.state // "")); ($d.error // ""); [$r.seq,0]) end
+  else empty end
 else . end

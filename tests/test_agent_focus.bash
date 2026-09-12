@@ -40,16 +40,10 @@ check 'snapshot identifies its pinned session' "$session" "$(field "$snapshot" .
 check 'snapshot names the identity' gusgus "$(field "$snapshot" .session.title)"
 check 'snapshot retains active run' "$run" "$(field "$snapshot" .session.run_id)"
 check 'snapshot includes identity-addressed mail via delivery' true "$(jq -r --arg id "$message" '.entries|any(.id==$id)' <<< "$snapshot")"
-check 'snapshot includes exact native plain output' true "$(field "$snapshot" '.entries|any(.text=="first output")')"
+check 'snapshot excludes native plain output' false "$(field "$snapshot" '.entries|any(.text=="first output")')"
 check 'snapshot never exposes capability hashes' false "$(field "$snapshot" 'tostring|contains("capabilityTokenHash")')"
 check 'snapshot alone does not mark mail read' unread "$(@ "$message" status)"
 check 'snapshot never settles deliveries' 1 "$(@ "$session" pendingCount)"
-for i in {1..15}; do printf 'line %s\n' "$i" >> "$directory/stdout.log"; done
-small=$(@ AgentTranscript snapshotFor: "$session" limit: 3)
-large=$(@ AgentTranscript snapshotFor: "$session" limit: 30)
-check 'bounded snapshot reports earlier history' true "$(field "$small" .has_earlier)"
-check 'loading earlier history recovers old log lines' true "$(field "$large" '[.entries[].text]|join(" ")|contains("first output")')"
-check 'recent log IDs remain stable across windows' true "$(jq -n --argjson a "$small" --argjson b "$large" '[$a.entries[].id] - [$b.entries[].id] | length==0')"
 
 # Exercise the actual exact-argv duplex bridge through the public focus method.
 export FOCUS_CAPTURE="$tmp/capture.jsonl"
@@ -101,8 +95,8 @@ check 'closing during an acknowledgement returns dismissed' dismissed "$(@ "$ses
 check 'closing the UI emits no broken-pipe diagnostic' '' "$(cat "$tmp/early-close-errors")"
 check 'closing during an acknowledgement leaves the process alive' true "$(@ "$run" isProcessAlive)"
 unset FOCUS_CLOSE_EARLY
-export FOCUS_VIEW_ONLY=live FOCUS_NATIVE_OUTPUT="$directory/stdout.log"
-check 'attached view catches later native output' dismissed "$(@ "$session" focus)"
+export FOCUS_VIEW_ONLY=1
+check 'attached view is limited to durable chat messages' dismissed "$(@ "$session" focus)"
 export FOCUS_VIEW_ONLY=1 FOCUS_PICK_ID=session FOCUS_PICK_RECORDS="$tmp/picker-records"
 cat > "$tmp/bin/inpick" <<'PICK'
 #!/usr/bin/env bash
