@@ -96,6 +96,10 @@ AgentBrowser subclass: Object
       ].
       (action = 'runs') ifTrue: [ignored := @ self runsFor: session in: dir].
       (action = 'retry') ifTrue: [ignored := @ self retryFor: session in: dir].
+      (action = 'compact') ifTrue: [
+        text := @ self compactResultFor: session.
+        ignored := @ self page: text title: 'Context compaction'
+      ].
       (action = 'pause') ifTrue: [ignored := @ session pause].
       (action = 'resume') ifTrue: [
         ignored := @ session resume.
@@ -135,7 +139,7 @@ AgentBrowser subclass: Object
   ]
 
   classMethod: listedSessions [
-    ^ @ Store query: "class = 'AgentSession' AND coalesce(json_extract(data, '$.lifecycleState'), '') != 'terminated'"
+    ^ @ Store query: "class = 'AgentSession' AND coalesce(json_extract(data, '$.lifecycleState'), '') != 'terminated' ORDER BY CASE WHEN json_extract(data, '$.lifecycleState') IN ('open','paused') THEN 0 ELSE 1 END, json_extract(data, '$.lastActivityAt') DESC, id"
   ]
 
   # Filesystem projection only; session state comes from its public snapshot.
@@ -178,15 +182,31 @@ AgentBrowser subclass: Object
     printf '%s' "$1" | jq -r '"Session: \(.id)\nIdentity: \(.identity)\nWorkspace: \(.workspace)\nLifecycle: \(.lifecycle)\nLatest run state: \(.activity)\nQueued: \(.pending)\nBlocked deliveries / questions: \(.questions)\nNeeds review: \(.stalled)\nLatest run: \(.run)\nLatest failure: \(.error)"'
   ]
 
+  rawClassMethod: compactResultFor: session [
+    @ "$1" compact 2>&1
+  ]
+
   classMethod: actionRecordsFor: session [
-    | state |
-    @ self record: 'attach' label: 'Attach to conversation' detail: 'Live transcript, messages, and run controls' path: 'session.txt'.
+    | state profile live run |
+    state := @ session lifecycleState.
+    live := @ Require contains: state in: '["open","paused"]'.
+    (live = 'true') ifTrue: [
+      @ self record: 'attach' label: 'Attach to conversation' detail: 'Live transcript, messages, and run controls' path: 'session.txt'
+    ].
     @ self record: 'details' label: 'Session details' detail: 'Refresh snapshot' path: 'session.txt'.
     @ self record: 'messages' label: 'Messages and questions' detail: 'Read conversation' path: 'session.txt'.
     @ self record: 'runs' label: 'Runs and logs' detail: 'Inspect failures and output' path: 'session.txt'.
-    @ self record: 'retry' label: 'Retry a stalled delivery' detail: 'Choose a delivery, inspect, then confirm' path: 'session.txt'.
-    state := @ session lifecycleState.
+    (live = 'true') ifTrue: [
+      @ self record: 'retry' label: 'Retry a stalled delivery' detail: 'Choose a delivery, inspect, then confirm' path: 'session.txt'
+    ].
     (state = 'open') ifTrue: [@ self record: 'pause' label: 'Pause new work' detail: 'Active work continues' path: 'session.txt'].
+    profile := @ session backendProfile.
+    (state = 'open') ifTrue: [
+      run := @ session activeRun.
+      (run isEmpty) ifTrue: [
+        (profile = 'jcode') ifTrue: [@ self record: 'compact' label: 'Compact context' detail: 'Summarize provider context; keep the same conversation and history' path: 'session.txt']
+      ]
+    ].
     (state = 'paused') ifTrue: [@ self record: 'resume' label: 'Resume queued work' detail: 'Allow dispatch' path: 'session.txt'].
     @ self record: 'back' label: 'Back' detail: 'Dismiss without stopping work' path: 'session.txt'
   ]

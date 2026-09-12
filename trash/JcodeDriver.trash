@@ -3,7 +3,30 @@
 JcodeDriver subclass: AgentDriver
 
   classMethod: capabilities [
-    ^ '{"schema_version":1,"headless":true,"resume":true,"queued_input":true,"stop":true,"live_input":false,"sandbox":false}'
+    ^ '{"schema_version":1,"headless":true,"resume":true,"queued_input":true,"stop":true,"live_input":true,"sandbox":false}'
+  ]
+
+  # Native history owns the current directory of the conversation proxy.
+  rawClassMethod: workspaceFor: session [
+    local directory ref pattern='^[A-Za-z0-9_-]+$'
+    directory=$(@ AgentDriver runDirFor: "$1")
+    ref=$(@ "$1" lastConversationRef)
+    [[ "$ref" =~ $pattern ]] || return 1
+    source "${TRASHTALK_DIR:-$HOME/.trashtalk}/lib/jcode-context.bash"
+    _jcode_context_value "${directory%/*}/hosts/$1/jcode/sessions/$ref.json" '' working_dir | jq -er 'select(type=="string" and length>0)'
+  ]
+
+  rawClassMethod: awaitInputFor: run [
+    bash "${TRASHTALK_DIR:-$HOME/.trashtalk}/lib/jcode-input.bash" await "$(@ AgentDriver runDirFor: "$1")"
+  ]
+
+  # Use the active adapter's connection, so steering neither creates a second
+  # controller nor replaces the run's capability context.
+  rawClassMethod: input: text run: run [
+    [[ "$(@ "$2" state)" == running && "$(@ "$2" isProcessAlive)" == true ]] || {
+      echo 'The native session connection is unavailable; input was not sent' >&2; return 1;
+    }
+    printf '%s' "$1" | bash "${TRASHTALK_DIR:-$HOME/.trashtalk}/lib/jcode-input.bash" send "$(@ AgentDriver runDirFor: "$2")"
   ]
 
   rawClassMethod: model [
@@ -27,7 +50,7 @@ JcodeDriver subclass: AgentDriver
     [[ -n "$executable" ]] || { echo 'Jcode is missing; see https://jcode.sh' >&2; return 1; }
     directory=$(@ AgentDriver runDirFor: "$run")
     session=$(@ "$run" session)
-    workspace=$(@ "$session" workspace)
+    workspace=$(@ "$run" executionWorkspace)
     home="${directory%/*}/hosts/$session/jcode"
     source_auth="${JCODE_HOME:-$HOME/.jcode}/openai-auth.json"
     codex_auth="${CODEX_HOME:-$HOME/.codex}/auth.json"
@@ -96,7 +119,9 @@ JcodeDriver subclass: AgentDriver
     # Base dispatch uses its receiver for hooks; supply this driver's receipts.
     outcome=$(jq -c --arg ref "$(@ JcodeDriver conversationRefFor: "$1")" \
       --argjson seen "$(@ JcodeDriver resultSeenFor: "$1")" '.conversation_ref=$ref | .result_seen=$seen' <<<"$outcome")
-    if [[ -e "$directory/send-intent" && "$(@ JcodeDriver resultSeenFor: "$1")" != true ]]; then resident=true; fi
+    # Context maintenance has no inbox deliveries or tool execution. Losing its
+    # observer can fail maintenance, but must not stall ordinary conversation.
+    if [[ "$(@ "$1" purpose)" != compact && -e "$directory/send-intent" && ! -e "$directory/request-rejected" && "$(@ JcodeDriver resultSeenFor: "$1")" != true ]]; then resident=true; fi
     jq -c --argjson resident "$resident" '.resident_unconfirmed=$resident' <<<"$outcome"
   ]
 
@@ -113,4 +138,28 @@ JcodeDriver subclass: AgentDriver
     else
       echo false
     fi
+  ]
+
+  # Provider history/CLI boundary. Compaction uses a normal detached run so
+  # the API connection survives dismissal and the worker can reconcile/stop it.
+  rawClassMethod: launchCompaction: run token: token [
+    local run="$1" token="$2" session ref directory host history pattern argv
+    session=$(@ "$run" session) || return 1
+    ref=$(@ "$session" lastConversationRef) || return 1
+    pattern='^[A-Za-z0-9_-]+$'
+    [[ "$ref" =~ $pattern ]] || { echo 'No valid Jcode conversation to compact' >&2; return 1; }
+    directory=$(@ AgentDriver runDirFor: "$run")
+    host="${directory%/*}/hosts/$session/jcode"
+    history="$host/sessions/$ref.json"
+    [[ -s "$history" ]] || { echo 'Native conversation history is missing; compaction was not requested' >&2; return 1; }
+    umask 077
+    mkdir -p "$directory" || return 1
+    cp "$history" "$directory/context-before.json" || return 1
+    if [[ -f "${history%.json}.journal.jsonl" ]]; then
+      cp "${history%.json}.journal.jsonl" "$directory/context-before.journal.jsonl" || return 1
+    fi
+    @ JcodeDriver prepare: "$run" ref: "$ref" || return 1
+    argv=$(jq -cn --arg bash "$(command -v bash)" --arg script "${TRASHTALK_DIR:-$HOME/.trashtalk}/lib/jcode-api.bash" \
+      --arg directory "$directory" '[$bash,$script,"compact",$directory]') || return 1
+    @ JcodeDriver launchArgv: "$argv" promptFile: /dev/null run: "$run" token: "$token" ref: "$ref"
   ]

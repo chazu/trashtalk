@@ -31,6 +31,7 @@ AgentTranscript subclass: Object
         'run_id',coalesce((SELECT r.id FROM instances r WHERE r.class='AgentRun' AND json_extract(r.data,'$.session')=s.id AND json_extract(r.data,'$.state') IN ('starting','running','recovering') ORDER BY json_extract(r.data,'$.started') DESC LIMIT 1),''),
         'activity',coalesce((SELECT json_extract(r.data,'$.state') FROM instances r WHERE r.class='AgentRun' AND json_extract(r.data,'$.session')=s.id ORDER BY json_extract(r.data,'$.started') DESC LIMIT 1),'idle'),
         'pending',(SELECT count(*) FROM instances d WHERE d.class='AgentDelivery' AND json_extract(d.data,'$.session')=s.id AND json_extract(d.data,'$.state')='pending')),
+        'conversation_runs',json(coalesce((SELECT json_group_array(id) FROM (SELECT r.id FROM instances r WHERE r.class='AgentRun' AND json_extract(r.data,'$.session')=s.id ORDER BY json_extract(r.data,'$.started') DESC LIMIT $limit)), '[]')),
         'rows',json(coalesce((SELECT json_group_array(json_object('seq',seq,'id',id,'data',json(data))) FROM (SELECT * FROM history ORDER BY seq DESC,id DESC LIMIT $limit)), '[]')),
         'has_earlier',(SELECT count(*) FROM history)>$limit)
       FROM target s;"
@@ -39,8 +40,9 @@ AgentTranscript subclass: Object
   # OS boundary: logs may be growing or unavailable; the reader leaves their
   # durable contents untouched and reports gaps in the resulting projection.
   rawClassMethod: snapshotFor: session limit: limit [
-    local records
+    local records directory
     records=$(@ AgentTranscript recordsFor: "$1" limit: "$2") || return 1
     [[ -n "$records" ]] || { echo 'Unknown agent session' >&2; return 1; }
-    printf '%s\n' "$records" | bash "${TRASHTALK_DIR:-$HOME/.trashtalk}/lib/agent-transcript.bash" "$2"
+    directory=$(@ AgentDriver runDirFor: "$1")
+    printf '%s\n' "$records" | bash "${TRASHTALK_DIR:-$HOME/.trashtalk}/lib/agent-transcript.bash" "$2" "${directory%/*}"
   ]

@@ -1,0 +1,64 @@
+# Execution directory and authorization are delivery data, not conversation keys.
+# Explicit sends choose a directory; neutral notifications use the recipient's
+# creation workspace. Claim/start revalidate the saved role and policy.
+AgentWorkContext subclass: Object
+  classMethod: prepareDelivery: delivery [
+    ^ @ Store transaction: self sending: 'prepareWithin:' with: delivery
+  ]
+
+  classMethod: prepareWithin: delivery [
+    | session role workspace original state allowed revision policy |
+    @ Store requireTransaction.
+    delivery := @ Store read: delivery class: 'AgentDelivery'.
+    state := @ delivery state.
+    @ Require equal: state to: 'pending'.
+    session := @ delivery session.
+    session := @ Store read: session class: 'AgentSession'.
+    @ AgentSession requireCurrentWithin: session.
+    workspace := @ delivery executionWorkspace.
+    @ Require text: workspace.
+    original := workspace.
+    workspace := @ AgentSession workspaceFor: workspace.
+    @ Require equal: workspace to: original.
+    role := @ session role.
+    role := @ Store read: role class: 'AgentRole'.
+    allowed := @ role allowsWorkspace: workspace.
+    @ Require equal: allowed to: 'true'.
+    revision := @ role revision.
+    policy := @ role workspacePolicy.
+    @ delivery authorizationRole: role.
+    @ delivery authorizationRevision: revision.
+    @ delivery authorizationWorkspacePolicy: policy.
+    @ delivery save.
+    ^ workspace
+  ]
+
+  classMethod: forSession: session messages: messages [
+    | args |
+    args := #{session: session messages: (messages jsonValue)} asJson.
+    ^ @ Store transaction: self sending: 'resolveWithin:' with: args
+  ]
+
+  classMethod: resolveWithin: args [
+    | session role workspace selected message requested allowed revision policy |
+    @ Store requireTransaction.
+    session := @ Store read: (args objectAt: 'session') class: 'AgentSession'.
+    role := @ session role.
+    role := @ Store read: role class: 'AgentRole'.
+    selected := ''.
+    (args jsonAt: 'messages') arrayEach: [:id |
+      message := @ Store read: id class: 'Message'.
+      requested := @ message executionWorkspace.
+      (requested isEmpty) ifTrue: [requested := @ session workspace].
+      workspace := @ AgentSession workspaceFor: requested.
+      @ Require equal: workspace to: requested.
+      (selected isEmpty) ifTrue: [selected := workspace].
+      @ Require equal: selected to: workspace
+    ].
+    @ Require text: selected.
+    allowed := @ role allowsWorkspace: selected.
+    @ Require equal: allowed to: 'true'.
+    revision := @ role revision.
+    policy := @ role workspacePolicy.
+    ^ #{executionWorkspace: selected authorizationRole: role authorizationRevision: revision authorizationWorkspacePolicy: policy} asJson
+  ]

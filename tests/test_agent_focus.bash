@@ -71,7 +71,7 @@ for line in sys.stdin:
     frame=json.loads(line)
     with open(os.environ['FOCUS_CAPTURE'],'a') as log: log.write(json.dumps(frame)+'\n')
     if frame.get('type')=='ack' and frame.get('request_id')==1:
-        assert frame['ok'], frame
+        assert not frame['ok'], frame
         print(json.dumps(request),flush=True) # retransmission must not redeliver
         break
 for line in sys.stdin:
@@ -85,11 +85,7 @@ export PATH="$tmp/bin:$PATH"
 check 'attach/detach returns a clean outcome' dismissed "$(@ "$session" focus)"
 check 'detach leaves the real detached process alive' true "$(@ "$run" isProcessAlive)"
 check 'detach leaves session lifecycle alone' open "$(@ "$session" lifecycleState)"
-check 'composer delivered once through inbox despite retransmission' 2 "$(@ "$session" pendingCount)"
-sent=$(jq -r 'select(.type=="ack")|.result' "$FOCUS_CAPTURE" | head -1)
-check 'composer preserves literal text and trailing newline' true "$(db_get "$sent" | jq '.body == "literal $(touch unexpected); \"quotes\"\nsecond line\n"')"
-check 'composer attributes the human' focus-owner "$(@ "$sent" from)"
-check 'composer targets exactly the attached session' "session:$session" "$(@ "$sent" to)"
+check 'unsupported driver never falls back to inbox on retransmission' 1 "$(@ "$session" pendingCount)"
 export FOCUS_CLOSE_EARLY=1
 check 'closing during an acknowledgement returns dismissed' dismissed "$(@ "$session" focus 2> "$tmp/early-close-errors")"
 check 'closing the UI emits no broken-pipe diagnostic' '' "$(cat "$tmp/early-close-errors")"
@@ -110,20 +106,14 @@ check 'message jump opens the exact current session' dismissed "$(@ AgentBrowser
 check 'message jump passes the session to the applet' "$session" "$(jq -r .session.id "$FOCUS_CAPTURE")"
 
 context=$(jq -cn --arg session "$session" '{session:$session,window:400}')
-# A separate process changes lifecycle while this shell retains an older cache.
-ignored=$(@ Store patch: "$session" with: '{"lifecycleState":"closed"}')
-frame='{"schema_version":1,"request_id":19,"intent":"send_message","body":"must not send into a closed session"}'
-result=$(@ AgentFocus handleFrame: "$frame" context: "$context")
-check 'send refreshes lifecycle changed by another process' false "$(field "$result" .frame.ok)"
-check 'rejected send does not create a delivery' 2 "$(@ "$session" pendingCount)"
-@ "$session" reopen >/dev/null
+# A retained view continues to refer to the same active conversation.
 frame=$(jq -cn --arg id "$message" '{schema_version:1,request_id:20,intent:"mark_viewed",message_ids:[$id]}')
 before_order=$(@ AgentTranscript recordsFor: "$session" limit: 400 | jq -r --arg id "$message" '.rows[]|select(.id==$id)|.seq')
 result=$(@ AgentFocus handleFrame: "$frame" context: "$context")
 check 'displayed message intent marks it read' read "$(@ "$message" status)"
 after_order=$(@ AgentTranscript recordsFor: "$session" limit: 400 | jq -r --arg id "$message" '.rows[]|select(.id==$id)|.seq')
 check 'marking read preserves historical ordering' "$before_order" "$after_order"
-check 'displayed message does not acknowledge processing' 2 "$(@ "$session" pendingCount)"
+check 'displayed message does not acknowledge processing' 1 "$(@ "$session" pendingCount)"
 foreign=$(@ Inbox send: 'unrelated' to: someone-else from: someone-else)
 frame=$(jq -cn --arg id "$foreign" '{schema_version:1,request_id:21,intent:"mark_viewed",message_ids:[$id]}')
 result=$(@ AgentFocus handleFrame: "$frame" context: "$context")
@@ -135,24 +125,7 @@ check 'explicit earlier-history intent expands bounded window' 800 "$(field "$re
 if @ AgentFocus handleFrame: '{"schema_version":1,"request_id":4,"intent":"eval","body":"bad"}' context: "$context" >/dev/null 2>&1; then echo 'FAIL: arbitrary intent accepted'; exit 1; fi
 passed=$((passed+1))
 check 'message resolves its originating current session' "$session" "$(@ "$reply" senderSessions)"
-ignored=$(@ "$session" close)
-next=$(@ Gusgus sessionFor: "$tmp/workspace")
-check 'message jumps to replacement in the same workspace' "$next" "$(@ "$reply" senderSessions)"
-other=$(@ Gusgus sessionFor: "$tmp")
-check 'different workspace does not steal origin jump' "$next" "$(@ "$reply" senderSessions)"
-extra=$(@ AgentSession openFor: "$identity" archetype: "$(@ "$next" archetype)" role: "$(@ "$next" role)" workspace: "$(@ "$next" workspace)" profile: shell)
-export FOCUS_PICK_ID="$extra"
-@ AgentBrowser focusSenderOf: "$reply" in: "$tmp" >/dev/null
-check 'ambiguous replacement sessions use the picker selection' "$extra" "$(jq -r .session.id "$FOCUS_CAPTURE")"
-check 'replacement picker excludes other workspaces' false "$(jq -s --arg id "$other" 'any(.id==$id)' "$FOCUS_PICK_RECORDS")"
-@ "$extra" close >/dev/null
-@ "$next" close >/dev/null
-check 'no current session retains originating history' "$session" "$(@ "$reply" senderSessions)"
-unknown=$(@ Message to: focus-owner from: 'session:not-real' subject: '' body: '' kind: note)
-check 'missing origin offers no fabricated destination' '' "$(@ "$unknown" senderSessions)"
-export FOCUS_PICK_ID=session
-check 'unknown sender menu omits an unusable jump' back "$(@ "$inbox" pickActionFor: "$unknown" in: "$tmp")"
-@ "$session" reopen >/dev/null
+# Stop the real run before exercising closed/replacement history.
 frame=$(jq -cn --arg run invalid '{schema_version:1,request_id:5,intent:"interrupt_run",run_id:$run}')
 result=$(@ AgentFocus handleFrame: "$frame" context: "$context")
 check 'foreign/stale run is rejected' false "$(field "$result" .frame.ok)"
@@ -162,4 +135,23 @@ result=$(@ AgentFocus handleFrame: "$frame" context: "$context")
 check 'explicit stop succeeds through the worker' true "$(field "$result" .frame.ok)"
 check 'explicit stop actually stops the native process' false "$(@ "$run" isProcessAlive)"
 check 'explicit stop retains existing pause semantics' paused "$(@ "$session" lifecycleState)"
+ignored=$(@ "$session" close)
+frame='{"schema_version":1,"request_id":19,"intent":"send_message","body":"must not send into a closed session"}'
+result=$(@ AgentFocus handleFrame: "$frame" context: "$context")
+check 'send refreshes lifecycle changed by another process' false "$(field "$result" .frame.ok)"
+check 'rejected send does not create a delivery' 1 "$(@ "$session" pendingCount)"
+next=$(@ Gusgus sessionFor: "$tmp/workspace")
+check 'message jumps to replacement conversation' "$next" "$(@ "$reply" senderSessions)"
+other=$(@ Gusgus sessionFor: "$tmp")
+check 'another directory resolves the same current session' "$next" "$other"
+@ AgentBrowser focusSenderOf: "$reply" in: "$tmp" >/dev/null
+check 'old message attaches to current identity conversation' "$next" "$(jq -r .session.id "$FOCUS_CAPTURE")"
+check 'focusCurrent attaches without creating a session' dismissed "$(@ Gusgus focusCurrent)"
+check 'focusCurrent selects the replacement' "$next" "$(jq -r .session.id "$FOCUS_CAPTURE")"
+@ "$next" close >/dev/null
+check 'no current session retains originating history' "$session" "$(@ "$reply" senderSessions)"
+unknown=$(@ Message to: focus-owner from: 'session:not-real' subject: '' body: '' kind: note)
+check 'missing origin offers no fabricated destination' '' "$(@ "$unknown" senderSessions)"
+export FOCUS_PICK_ID=session
+check 'unknown sender menu omits an unusable jump' back "$(@ "$inbox" pickActionFor: "$unknown" in: "$tmp")"
 printf '%d agent focus checks passed\n' "$passed"

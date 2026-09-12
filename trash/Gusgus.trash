@@ -1,5 +1,5 @@
 # Gusgus - The persistent low-power assistant behind @@.
-# One AgentSession per workspace (repository root or directory), identity
+# One current AgentSession across workspaces, identity
 # 'gusgus', archetype 'assistant', role 'assistant'. `@@ 'text'` sends a
 # message to the session and returns; Gusgus answers into the user's inbox in
 # the same thread, and replying to that message resumes the conversation.
@@ -37,36 +37,70 @@ Gusgus subclass: Object
   ]
 
   rawClassMethod: identity [
-    local id owner archetype role
+    local id args
     id=$(@ AgentIdentity named: gusgus) || return 1
-    owner=$(@ "$id" owner)
-    if [[ -z "$owner" ]]; then
-      archetype=$(@ "$_RECEIVER" archetype)
-      role=$(@ "$_RECEIVER" role)
-      @ "$id" owner: "$(@ "$_RECEIVER" owner)"
-      @ "$id" displayName: Gusgus
-      @ "$id" defaultArchetype: "$archetype"
-      @ "$id" defaultRole: "$role"
-      @ "$id" save
-    fi
-    printf '%s\n' "$id"
+    args=$(jq -cn --arg id "$id" --arg owner "$(@ Gusgus owner)" --arg archetype "$(@ Gusgus archetype)" --arg role "$(@ Gusgus role)" \
+      '{identity:$id,owner:$owner,archetype:$archetype,role:$role}') || return 1
+    @ Store transaction: Gusgus sending: 'configureIdentityWithin:' with: "$args" replaying: true
   ]
 
-  # The open (or paused) session for the workspace containing dir, created on
-  # first use.
-  rawClassMethod: sessionFor: dir [
-    local identity workspace existing archetype role profile
-    identity=$(@ "$_RECEIVER" identity) || return 1
-    workspace=$(@ AgentSession workspaceFor: "$1")
-    existing=$(@ AgentSession findFor: "$identity" workspace: "$workspace" | head -n 1)
-    if [[ -n "$existing" ]]; then
-      printf '%s\n' "$existing"
-      return 0
-    fi
-    archetype=$(@ "$_RECEIVER" archetype)
-    role=$(@ "$_RECEIVER" role)
-    profile=$(@ "$_RECEIVER" profile)
-    @ AgentSession openFor: "$identity" archetype: "$archetype" role: "$role" workspace: "$workspace" profile: "$profile"
+  classMethod: configureIdentityWithin: args [
+    | identity owner scope |
+    @ Store requireTransaction.
+    identity := @ Store read: (args objectAt: 'identity') class: 'AgentIdentity'.
+    owner := @ identity owner.
+    (owner isEmpty) ifTrue: [
+      @ identity owner: (args objectAt: 'owner').
+      @ identity displayName: 'Gusgus'.
+      @ identity defaultArchetype: (args objectAt: 'archetype').
+      @ identity defaultRole: (args objectAt: 'role').
+      @ identity sessionScope: 'identity'.
+      @ identity sessionPolicyRevision: 1.
+      @ identity save
+    ].
+    scope := @ identity sessionScope.
+    (scope ~= 'identity') ifTrue: [^ @ Require reject: 'Gusgus needs explicit session selection; use selectCurrentSession: on the identity'].
+    ^ @ AgentAccess validateIdentity: identity
+  ]
+
+  # Conversation identity is independent of each delivery's execution workspace.
+  classMethod: sessionFor: dir [
+    | identity workspace archetype role profile current |
+    workspace := @ AgentSession workspaceFor: dir.
+    current := @ self currentFor: workspace.
+    (current notEmpty) ifTrue: [^ current].
+    identity := @ self identity.
+    archetype := @ self archetype.
+    role := @ self role.
+    profile := @ self profile.
+    ^ @ AgentSession ensureFor: identity archetype: archetype role: role workspace: workspace profile: profile
+  ]
+
+  # Existing conversations need only one guarded read; do not rebuild identity,
+  # archetype, and role defaults on every message or focus request.
+  classMethod: currentFor: workspace [
+    ^ @ Store transaction: self sending: 'currentWithinFor:' with: workspace
+  ]
+
+  classMethod: currentWithinFor: workspace [
+    | ids count identity scope |
+    @ Store requireTransaction.
+    ids := @ Store idsOf: 'AgentIdentity' matching: (#{handle: 'gusgus'} asJson).
+    count := ids arrayLength.
+    (count = 0) ifTrue: [^ ''].
+    @ Require equal: count to: 1.
+    identity := ids arrayFirst.
+    identity := @ AgentAccess validateIdentity: identity.
+    scope := @ identity sessionScope.
+    (scope ~= 'identity') ifTrue: [^ @ Require reject: 'Gusgus needs explicit session selection; use selectCurrentSession: on the identity'].
+    ^ @ AgentSession currentWithinFor: identity workspace: workspace
+  ]
+
+  classMethod: focusCurrent [
+    | session |
+    session := @ self currentFor: '.'.
+    (session isEmpty) ifTrue: [^ @ Require reject: 'No current Gusgus conversation; send a message first'].
+    ^ @ session focus
   ]
 
   # Send a question to Gusgus and return immediately with the message id.
@@ -79,34 +113,30 @@ Gusgus subclass: Object
     if [[ -n "$last" ]]; then
       body=$(printf '%s\n[last_result]\n%s' "$body" "${last:0:2000}")
     fi
-    msg=$(@ Inbox send: "$body" to: "$inbox" from: "$owner" subject: "" kind: question) || return 1
+    msg=$(@ Inbox send: "$body" to: "$inbox" from: "$owner" subject: "" kind: question in: "$dir") || return 1
     printf '%s\n' "$msg"
     printf "Gusgus will reply in inbox '%s' (thread %s)\n" "$owner" "$msg" >&2
   ]
 
-  # Close the workspace's current session (if idle) and open a new one.
-  rawClassMethod: fresh: dir [
-    local identity workspace existing run
-    identity=$(@ "$_RECEIVER" identity) || return 1
-    workspace=$(@ AgentSession workspaceFor: "$1")
-    for existing in $(@ AgentSession findFor: "$identity" workspace: "$workspace"); do
-      run=$(@ "$existing" activeRun)
-      if [[ -n "$run" ]]; then
-        _throw "GusgusError" "Session $existing still has active run $run; interrupt it first"
-        return 1
-      fi
-      @ "$existing" close >/dev/null
-    done
-    @ "$_RECEIVER" sessionFor: "$1"
+  # Close only the identity's idle current session and atomically replace it.
+  classMethod: fresh: dir [
+    | identity workspace archetype role profile |
+    identity := @ self identity.
+    workspace := @ AgentSession workspaceFor: dir.
+    archetype := @ self archetype.
+    role := @ self role.
+    profile := @ self profile.
+    ^ @ AgentSession freshFor: identity archetype: archetype role: role workspace: workspace profile: profile
   ]
 
   rawClassMethod: help [
     echo "=== Gusgus - persistent assistant behind @@ ==="
     echo ""
     echo "  @@ 'why did that fail?'      # send; reply lands in your inbox thread"
-    echo "  @@ --fresh 'new topic'       # close this workspace's session, start another"
-    echo "  @@ --one-shot 'question'     # stateless one-shot path (Axe/Codex)"
-    echo "  @@ --dry-run 'question'      # show the one-shot context without a model call"
+    echo "  @@ treats every argument as message text; it has no flags."
+    echo "  Option-U toggles the current conversation view."
+    echo "  @ Gusgus focusCurrent       # open the current conversation"
+    echo "  @ Gusgus fresh: \"\$PWD\"    # explicitly replace an idle conversation"
     echo ""
     echo "  inbox=\$(@ Trash userInbox)"
     echo "  @ \$inbox browse              # Innards UI: read replies, respond in-thread"
@@ -114,6 +144,6 @@ Gusgus subclass: Object
     echo "  @ AgentSession browse        # activity, questions, logs, pause/resume/retry"
     echo "  @ \$msg reply: 'and then?'    # continues the same conversation"
     echo ""
-    echo "  @ Gusgus sessionFor: \"\$PWD\"  # the session id for this workspace"
+    echo "  @ Gusgus sessionFor: \"\$PWD\"  # the current identity session"
     echo "  @ \$session summary"
   ]

@@ -15,6 +15,10 @@ db_init
 PASSED=0
 FAILED=0
 SCRATCH_DIRS=()
+agent_workspace_root=$(mktemp -d)
+agent_workspace_root=$(cd "$agent_workspace_root" && pwd -P)
+SCRATCH_DIRS+=("$agent_workspace_root")
+mkdir -p "$agent_workspace_root"/{ws,t1,t2,term}
 
 pass() {
     echo "  PASS: $1"
@@ -136,7 +140,7 @@ echo ""
 echo "4. AgentSession openFor: snapshots revisions and creates its inbox"
 # ==========================================
 
-session=$(@ AgentSession openFor: $identity archetype: $archetype role: $role workspace: /tmp/ws profile: 'shell')
+session=$(@ AgentSession openFor: $identity archetype: $archetype role: $role workspace: ${agent_workspace_root}/ws profile: 'shell')
 assert_nonempty "session created" "$session"
 assert_contains "session id has class prefix" "agentsession_" "$session"
 assert_eq "identity stored" "$identity" "$(@ $session identity)"
@@ -145,7 +149,7 @@ assert_eq "archetype revision snapshot" "1" "$(@ $session archetypeRevision)"
 assert_eq "instructions hash snapshot" "$(@ $archetype instructionsHash)" "$(@ $session instructionsHash)"
 assert_eq "role revision snapshot" "1" "$(@ $session roleRevision)"
 assert_eq "profile stored" "shell" "$(@ $session backendProfile)"
-assert_eq "workspace stored" "/tmp/ws" "$(@ $session workspace)"
+assert_eq "workspace stored" "${agent_workspace_root}/ws" "$(@ $session workspace)"
 assert_eq "lifecycle open" "open" "$(@ $session lifecycleState)"
 assert_eq "execution policy defaults to single" "single" "$(@ $session executionPolicy)"
 assert_eq "session inbox name" "session:$session" "$(@ $session inbox)"
@@ -160,10 +164,10 @@ rc=$?
 assert_eq "openFor: rejects disallowed workspace" "1" "$rc"
 assert_empty "no session for disallowed workspace" "$denied"
 
-found=$(@ AgentSession findFor: $identity workspace: /tmp/ws)
+found=$(@ AgentSession findFor: $identity workspace: ${agent_workspace_root}/ws)
 assert_eq "findFor: finds the open session" "$session" "$found"
 assert_empty "findFor: misses other workspace" "$(@ AgentSession findFor: $identity workspace: /elsewhere)"
-assert_contains "summary has handle and state" "$session gusgus open ws=/tmp/ws pending=0 run=-" "$(@ $session summary)"
+assert_contains "summary has handle and state" "$session gusgus open ws=${agent_workspace_root}/ws pending=0 run=-" "$(@ $session summary)"
 
 before=$(@ $session lastActivityAt)
 @ $session touch >/dev/null
@@ -181,7 +185,7 @@ assert_eq "closed -> open (reopen)" "open" "$(@ $session reopen)"
 @ $session pause >/dev/null
 assert_eq "paused -> closed" "closed" "$(@ $session close)"
 @ $session reopen >/dev/null
-assert_eq "findFor: still sees reopened session" "$session" "$(@ AgentSession findFor: $identity workspace: /tmp/ws)"
+assert_eq "findFor: still sees reopened session" "$session" "$(@ AgentSession findFor: $identity workspace: ${agent_workspace_root}/ws)"
 
 # Rejected edges
 out=$(@ $session resume 2>/dev/null); rc=$?
@@ -198,12 +202,12 @@ assert_eq "closed -> closed rejected rc" "1" "$rc"
 out=$(@ $session transitionTo: 'bogus' 2>/dev/null); rc=$?
 assert_eq "unknown state rejected rc" "1" "$rc"
 assert_eq "state unchanged after unknown state" "closed" "$(@ $session lifecycleState)"
-assert_empty "findFor: excludes closed session" "$(@ AgentSession findFor: $identity workspace: /tmp/ws)"
+assert_empty "findFor: excludes closed session" "$(@ AgentSession findFor: $identity workspace: ${agent_workspace_root}/ws)"
 
 # terminated from each live state, and terminal
-term1=$(@ AgentSession openFor: $identity archetype: $archetype role: $role workspace: /tmp/t1 profile: 'shell')
+term1=$(@ AgentSession openFor: $identity archetype: $archetype role: $role workspace: ${agent_workspace_root}/t1 profile: 'shell')
 assert_eq "open -> terminated" "terminated" "$(@ $term1 terminate)"
-term2=$(@ AgentSession openFor: $identity archetype: $archetype role: $role workspace: /tmp/t2 profile: 'shell')
+term2=$(@ AgentSession openFor: $identity archetype: $archetype role: $role workspace: ${agent_workspace_root}/t2 profile: 'shell')
 @ $term2 pause >/dev/null
 assert_eq "paused -> terminated" "terminated" "$(@ $term2 terminate)"
 assert_eq "closed -> terminated" "terminated" "$(@ $session terminate)"
@@ -235,7 +239,7 @@ echo ""
 echo "7. AgentDelivery forSession: is idempotent by key"
 # ==========================================
 
-session=$(@ AgentSession openFor: $identity archetype: $archetype role: $role workspace: /tmp/ws profile: 'shell')
+session=$(@ AgentSession openFor: $identity archetype: $archetype role: $role workspace: ${agent_workspace_root}/ws profile: 'shell')
 m1=$(@ Inbox send: 'please help' to: "session:$session" from: 'alice' subject: 'help' kind: 'question')
 hooked=$(@ AgentDelivery pendingFor: $session)
 assert_eq "Inbox hook records one delivery for the message" "1" "$(line_count "$hooked")"
@@ -377,7 +381,7 @@ assert_eq "current fails for unknown run" "1" "$rc"
 export TRASHTALK_RUN_TOKEN="$token"
 
 # terminated session
-tsession=$(@ AgentSession openFor: $identity archetype: $archetype role: $role workspace: /tmp/term profile: 'shell')
+tsession=$(@ AgentSession openFor: $identity archetype: $archetype role: $role workspace: ${agent_workspace_root}/term profile: 'shell')
 mapfile -t tlines < <(@ AgentRun startFor: $tsession profile: 'shell')
 trun="${tlines[0]}"
 @ $trun transitionTo: 'running' >/dev/null

@@ -1,8 +1,10 @@
 # Persistent identities and session scopes
 
-**Status:** stabilized design, awaiting implementation
+**Status:** current-session membership, explicit selection, and per-delivery
+execution workspaces implemented. The staged/reverse migration extensions below
+remain design work.
 
-### Preparatory implementation
+### Implementation status
 
 `AgentAccess` now supplies fresh, typed identity/session ownership checks for
 human conversation views. Focus validates ownership on open, snapshot refresh,
@@ -12,14 +14,39 @@ live view. These checks use the public Store and Require APIs rather than a
 second SQLite adapter. `tests/test_agent_access.bash` covers stale ownership,
 foreign identities, missing records, run-token rejection, and read-only checks.
 
-This is not current-session membership enforcement. Durable membership,
-scope-policy revisions, transactional resolution/admission/claim, migration,
-fencing, and per-delivery execution workspaces remain unimplemented. The
-resolution APIs below and the optional Option-U binding are not yet provided.
+`agent_session_memberships` now uniquely binds an enrolled identity/scope key to
+an open or paused session. Public creation, resolution, fresh/reopen, run start,
+delivery admission/claim, and live focus check current membership and policy
+revision. SQLite triggers reject stale persisted session writes and competing
+active runs. New specialist identities default to workspace scope; new Gusgus
+identities use identity scope. Legacy records remain unenrolled until selection.
+
+`selectCurrentSession:` checks ownership and requires quiescent runs, then
+atomically closes other sessions and publishes the selected membership. It is
+idempotent and retains all historical work and provider references. This bounded
+cutover uses one transaction; staged `migration_pending`, a separate generation
+counter and reverse scope conversion are not implemented. `currentSessionFor:`,
+`ensureCurrentSessionFor:`, and `focusCurrent` are available. The local Bash and
+Ghostty setup binds Option-U to the current conversation view; the same key
+detaches inside the applet. `@@` has no flags.
+
+Messages can carry an explicit `executionWorkspace`; `@@` sets it from their caller's directory. Deliveries retain that directory and an
+authorization snapshot, and the worker rechecks the role policy before dispatch.
+Runs group only matching directories. Run/delivery execution directories are
+immutable after publication. Neutral notifications use the recipient's creation
+workspace; replies preserve explicit originating context. A missing, changed,
+or denied directory fails dispatch visibly instead of falling back. The live
+composer uses direct session input and continues the native working directory;
+it creates no message or delivery.
+
+Jcode's stable attach request cannot change its working directory. A small native
+control exchange sets and verifies the exact idle session's directory before the
+normal API attachment submits model work. A mismatch fails before model input.
+The remaining sections describe the full design, including future extensions.
 
 ## Problem
 
-Trashtalk currently resolves Gusgus sessions by identity and workspace. A
+Trashtalk previously resolved Gusgus sessions by identity and workspace. A
 persistent assistant therefore gets a new long-lived conversation in each
 directory, leaves many plausible sessions, and makes focus shortcuts surprising.
 
@@ -43,10 +70,10 @@ different isolation needs.
 `AgentIdentity` revisions carry a `sessionScope` policy. The stable identity ID,
 not a display name or revision ID, owns the scope key.
 
-| Scope | Scope key | Intended use |
-| --- | --- | --- |
-| `identity` | `(identityId)` | Gusgus and other persistent assistants |
-| `workspace` | `(identityId, canonicalWorkspace)` | Project and task specialists |
+| Scope       | Scope key                          | Intended use                           |
+|-------------|------------------------------------|----------------------------------------|
+| `identity`  | `(identityId)`                     | Gusgus and other persistent assistants |
+| `workspace` | `(identityId, canonicalWorkspace)` | Project and task specialists           |
 
 `AgentSession.workspace` is the creation workspace. Under `identity` scope it
 is provenance only, never the uniqueness key. Every `AgentDelivery` additionally

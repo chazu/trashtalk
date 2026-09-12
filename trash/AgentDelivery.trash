@@ -13,6 +13,7 @@ AgentDelivery subclass: Object
   include: Persistable
   instanceVars: session:'' run:'' messageIds:'[]' deliveryKey:'' state:'pending' attempts:0
                 lastError:'' note:'' created:'' assignment:'' generation:0 dispatchMode:'automatic'
+                executionWorkspace:'' authorizationRole:'' authorizationRevision:'' authorizationWorkspacePolicy:''
 
   # Common transition rule: check the table, set, save, echo the new state.
   method: transitionTo: newState [
@@ -24,7 +25,7 @@ AgentDelivery subclass: Object
     local to="$1" from allowed
     _env_set "$_RECEIVER" "$(db_get "$_RECEIVER")"
     from=$(_ivar state)
-    allowed=" pending:offered offered:processed offered:blocked offered:uncertain offered:pending offered:failed blocked:processed blocked:pending failed:pending failed:skipped uncertain:pending uncertain:processed uncertain:skipped "
+    allowed=" pending:offered pending:failed offered:processed offered:blocked offered:uncertain offered:pending offered:failed blocked:processed blocked:pending failed:pending failed:skipped uncertain:pending uncertain:processed uncertain:skipped "
     if [[ "$allowed" != *" $from:$to "* ]]; then
       _throw "TransitionError" "AgentDelivery $_RECEIVER: $from -> $to rejected"
       return 1
@@ -111,7 +112,7 @@ AgentDelivery subclass: Object
   ]
 
   classMethod: forAssignment: assignment session: session generation: generation message: message [
-    | id d ids key now |
+    | id d ids key now workspace role revision policy |
     @ Store requireTransaction.
     id := 'agentdelivery_' , assignment , '_' , generation.
     d := @ Store create: 'AgentDelivery' id: id.
@@ -126,6 +127,14 @@ AgentDelivery subclass: Object
     @ d assignment: assignment.
     @ d generation: generation.
     @ d dispatchMode: 'manual'.
+    workspace := @ session workspace.
+    role := @ session role.
+    revision := @ role revision.
+    policy := @ role workspacePolicy.
+    @ d executionWorkspace: workspace.
+    @ d authorizationRole: role.
+    @ d authorizationRevision: revision.
+    @ d authorizationWorkspacePolicy: policy.
     @ d save.
     ^ d
   ]

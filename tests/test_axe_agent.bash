@@ -155,20 +155,21 @@ assert_true "dry run exposes only read-only tools" grep -Fq -- 'list_directory, 
 
 export FAKE_AXE_SCENARIO=success
 __=$'previous\noutput'
-false
-@@ --one-shot 'what happened?' > "$TEST_TMP/at-at-output.txt"
+result=$(@ Agent ask: 'what happened?' workingDirectory: "$TEST_TMP/work dir" status: '1' lastResult: "$__")
+@ Agent present: "$(@ Agent answerFromRun: "$result")" > "$TEST_TMP/at-at-output.txt"
 at_status=$?
-assert_eq "@@ returns Axe success status" '0' "$at_status"
-assert_eq "@@ captures previous command status" '1' "$(jq -r .last_status "$FAKE_AXE_STDIN")"
-assert_eq "@@ captures previous result" $'previous\noutput' "$(jq -r .last_result "$FAKE_AXE_STDIN")"
-assert_eq "@@ presents final answer through inpage" $'answer line one\nanswer line two' "$(cat "$FAKE_INPAGE_STDIN")"
-assert_true "@@ leaves final answer in scrollback" grep -Fq -- 'answer line one' "$TEST_TMP/at-at-output.txt"
+assert_eq "Agent returns Axe success status" '0' "$at_status"
+assert_eq "Agent captures previous command status" '1' "$(jq -r .last_status "$FAKE_AXE_STDIN")"
+assert_eq "Agent captures previous result" $'previous\noutput' "$(jq -r .last_result "$FAKE_AXE_STDIN")"
+assert_eq "Agent presents final answer through inpage" $'answer line one\nanswer line two' "$(cat "$FAKE_INPAGE_STDIN")"
+assert_true "Agent leaves final answer in scrollback" grep -Fq -- 'answer line one' "$TEST_TMP/at-at-output.txt"
 
 export FAKE_AXE_SCENARIO=provider
-@@ --one-shot 'network?' > "$TEST_TMP/provider-output.txt"
-at_status=$?
-assert_eq "@@ preserves provider failure status" '3' "$at_status"
-assert_true "@@ explains provider failure" grep -Fq -- 'Axe provider/network error (exit 3)' "$TEST_TMP/provider-output.txt"
+result=$(@ Agent ask: 'network?' workingDirectory: "$TEST_TMP/work dir" status: '0' lastResult: '')
+@ Agent present: "$(@ Agent answerFromRun: "$result")" > "$TEST_TMP/provider-output.txt"
+at_status=$(jq -r .exit_code <<< "$result")
+assert_eq "Agent preserves provider failure status" '3' "$at_status"
+assert_true "Agent explains provider failure" grep -Fq -- 'Axe provider/network error (exit 3)' "$TEST_TMP/provider-output.txt"
 
 PATH="/opt/homebrew/bin:/usr/bin:/bin"
 hash -r

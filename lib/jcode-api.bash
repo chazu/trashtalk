@@ -28,25 +28,50 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-request_id=0 frame='' event='' reply='' event_session=''
+request_id=0 frame='' event='' reply='' event_session='' partial=''
+source "${BASH_SOURCE[0]%/*}/jcode-input.bash"
+chat=false
+[[ ! -s "$directory/system-reminder.txt" ]] || chat=true
+chat_entry() {
+    local kind=$1 field=$2 source=$3
+    if [[ "$field" == raw ]]; then
+        jq -Rsc --arg kind "$kind" --argjson time "${EPOCHREALTIME:-$SECONDS}" \
+            '{kind:$kind,text:.,time:($time*1000|floor)}' "$source"
+    else
+        jq -c --arg kind "$kind" --arg field "$field" --argjson time "${EPOCHREALTIME:-$SECONDS}" \
+            '{kind:$kind,text:.[$field],time:($time*1000|floor)}' "$source"
+    fi >> "$directory/conversation.jsonl"
+}
+
 request() {
+    local fields="${2:-}"
+    [[ -n "$fields" ]] || fields='{}'
     request_id=$((request_id + 1))
-    jq -cn --argjson id "$request_id" --arg req "$1" --argjson fields "${2:-\{\}}" \
+    jq -cn --argjson id "$request_id" --arg req "$1" --argjson fields "$fields" \
         '$fields + {v:1,id:$id,req:$req}' >&"$input"
 }
 receive() {
     # Only control exchanges time out. Model/tool execution may take arbitrarily
     # long; the worker can always stop it through a separate API connection.
-    if ! IFS= read -r -t "$1" frame <&"$output"; then
-        echo 'Jcode API disconnected or control request timed out' >&2
+    local fragment='' rc=0
+    IFS= read -r -t "$1" fragment <&"$output" || rc=$?
+    if (( rc != 0 )); then
+        partial+="$fragment"
+        (( rc <= 128 )) || return 124
+        echo 'Jcode API disconnected' >&2
         return 1
     fi
+    frame="$partial$fragment"
+    partial=''
     local metadata
     metadata=$(jq -er 'select(type=="object" and .v==1 and (.ev|type=="string")) |
         [.ev, (.reply_to // "" | tostring), (.session_id // "")] | join("|")' <<<"$frame") || return 1
     printf '%s\n' "$frame"
     IFS='|' read -r event reply event_session <<<"$metadata"
-    if [[ "$event" == error && ( "$reply" == "$request_id" || -z "$reply" ) ]]; then
+    if [[ "$chat" == true && "$event_session" == "$native_ref" && "$event" == text_delta ]]; then
+        chat_entry assistant_delta text /dev/stdin <<< "$frame"
+    fi
+    if [[ "$event" == error ]]; then
         jq -r '.message // "Jcode API error"' <<<"$frame" >&2
         return 1
     fi
@@ -68,6 +93,47 @@ attach() {
 request hello '{"min_version":1,"max_version":1,"client":"trashtalk/1"}'
 expect hello_ok
 [[ $(jq -r '.version' <<<"$frame") == 1 ]]
+if [[ "$mode" == compact ]]; then
+    source "${BASH_SOURCE[0]%/*}/jcode-context.bash"
+    [[ -n "$native_ref" ]] || { echo 'No native conversation to compact' >&2; exit 1; }
+    attach
+    [[ $(jq -r '.session.status' <<<"$frame") == idle ]] || { echo 'Native conversation is busy; try compaction when idle' >&2; exit 1; }
+    printf '%s\n' "$native_ref" > "$directory/conversation"
+    before=$(_jcode_compaction_state "$directory/context-before.json")
+    after=$(_jcode_compaction_state "$JCODE_HOME/sessions/$native_ref.json")
+    if [[ "$after" != null && "$after" != "$before" ]]; then
+        printf '%s\n' "$native_ref" > "$directory/completed"
+        exit 0
+    fi
+    touch "$directory/send-intent"
+    request compact "$(jq -cn --arg s "$native_ref" '{session_id:$s}')"
+    if ! expect compacted; then
+        if [[ "$event" == error && "$reply" == "$request_id" ]]; then
+            touch "$directory/request-rejected"
+        fi
+        exit 1
+    fi
+    # Native compaction is asynchronous. Keep this attachment alive and check
+    # durable state; an acknowledgement or unchanged history cannot prove success.
+    compact_limit=${TRASHTALK_JCODE_COMPACT_TIMEOUT:-300}
+    [[ "$compact_limit" =~ ^[0-9]+$ && "$compact_limit" -gt 0 ]] || compact_limit=300
+    compact_deadline=$((SECONDS + compact_limit))
+    while :; do
+        after=$(_jcode_compaction_state "$JCODE_HOME/sessions/$native_ref.json")
+        if [[ "$after" != null && "$after" != "$before" ]]; then
+            printf '%s\n' "$native_ref" > "$directory/completed.tmp"
+            mv "$directory/completed.tmp" "$directory/completed"
+            exit 0
+        fi
+        if (( SECONDS >= compact_deadline )); then
+            echo 'Context compaction did not become durable before the timeout; inspect native logs before retrying' >&2
+            exit 1
+        fi
+        sleep 2
+        request ping
+        expect pong
+    done
+fi
 if [[ "$mode" == stop ]]; then
     native_ref=$(cat "$directory/conversation")
     [[ -n "$native_ref" ]]
@@ -97,6 +163,12 @@ if [[ "$mode" == stop ]]; then
 fi
 [[ "$mode" == run ]] || exit 2
 if [[ -n "$native_ref" ]]; then
+    source "${BASH_SOURCE[0]%/*}/jcode-context.bash"
+    recorded_workspace=$(_jcode_context_value "$JCODE_HOME/sessions/$native_ref.json" "" working_dir | jq -r '. // ""')
+    if [[ "$recorded_workspace" != "${settings[3]}" ]]; then
+        real_bash=$(jq -er .bash "$config")
+        "$real_bash" "${BASH_SOURCE[0]%/*}/jcode-workspace.bash" "$JCODE_SOCKET" "$native_ref" "${settings[3]}" > "$directory/workspace-control.json"
+    fi
     attach
 else
     request create_session "$(jq -cn --arg dir "${settings[3]}" '{working_dir:$dir}')"
@@ -111,23 +183,93 @@ if [[ $(jq -r '.session.status' <<<"$frame") != idle ]]; then
     echo 'Jcode conversation is already processing; refusing overlapping input' >&2
     exit 1
 fi
+attached_workspace=$(jq -r '.session.working_dir // ""' <<<"$frame")
+[[ "$attached_workspace" == "${settings[3]}" ]] || { echo 'Jcode attachment has the wrong execution directory; refusing model input' >&2; exit 1; }
 request set_model "$(jq -cn --arg s "$native_ref" --arg m "${settings[4]}" '{session_id:$s,model:$m}')"
 expect ok
 request set_reasoning_effort "$(jq -cn --arg s "$native_ref" '{session_id:$s,effort:"medium"}')"
 expect ok
+mkdir -p "$directory/inputs"
 touch "$directory/send-intent"
-request send_message "$(jq -cn --arg s "$native_ref" --rawfile content "$directory/prompt.txt" '{session_id:$s,content:$content}')"
-accepted=false
-while receive 86400; do
-    [[ "$event_session" == "$native_ref" ]] || continue
-    case "$event" in
-        message_accepted) accepted=true ;;
-        turn_done)
-            if [[ "$accepted" == true ]]; then
-                printf '%s\n' "$native_ref" > "$directory/completed.tmp"
-                mv "$directory/completed.tmp" "$directory/completed"
-                exit 0
-            fi ;;
-    esac
+fields=$(jq -cn --arg s "$native_ref" --rawfile content "$directory/prompt.txt" '{session_id:$s,content:$content}')
+if [[ "$chat" == true ]]; then
+    fields=$(jq -c --rawfile context "$directory/system-reminder.txt" '.system_reminder=$context' <<< "$fields")
+fi
+request send_message "$fields"
+accepted=false pending_input='' turn_finished=false native_idle=false
+
+# Claim requests and close admission under the same lock. This prevents a
+# finishing turn from acknowledging input that its adapter will never send.
+pump_input() {
+    [[ -z "$pending_input" ]] || return 0
+    _jcode_input_lock
+    local candidate
+    for candidate in "$directory"/inputs/*.request; do
+        [[ -f "$candidate" ]] || continue
+        pending_input=${candidate%.request}
+        mv "$candidate" "$pending_input.sent"
+        break
+    done
+    if [[ -z "$pending_input" && "$turn_finished" == true && "$native_idle" == true ]]; then
+        rm -f "$directory/input-open"
+        _jcode_input_unlock
+        return 2
+    fi
+    _jcode_input_unlock
+    [[ -n "$pending_input" ]] || return 0
+    chat=true
+    turn_finished=false
+    native_idle=false
+    request soft_interrupt "$(jq -c --arg s "$native_ref" '. + {session_id:$s,urgent:false}' "$pending_input.sent")"
+}
+
+while :; do
+    rc=0
+    receive .1 || rc=$?
+    if (( rc == 1 )); then
+        if [[ -n "$pending_input" && "$event" == error && "$reply" == "$request_id" ]]; then
+            _jcode_input_ack "$pending_input.ack" false "$(jq -r '.message' <<< "$frame")"
+            pending_input=''
+            continue
+        fi
+        [[ "$accepted" == true ]] || _jcode_input_ack "$directory/first-input.ack" false 'Session rejected the input; inspect its diagnostic'
+        exit 1
+    fi
+    if (( rc == 0 )); then
+        if [[ -n "$pending_input" && "$event" == ok && "$reply" == "$request_id" ]]; then
+            chat_entry user content "$pending_input.sent"
+            _jcode_input_ack "$pending_input.ack" true 'Input sent directly to the session at its next safe point'
+            pending_input=''
+        fi
+        if [[ "$event_session" == "$native_ref" ]]; then
+            case "$event" in
+                message_accepted)
+                    if [[ "$accepted" != true ]]; then
+                        accepted=true
+                        [[ "$chat" != true ]] || chat_entry user raw "$directory/prompt.txt"
+                        touch "$directory/input-open"
+                        _jcode_input_ack "$directory/first-input.ack" true 'Input sent directly to the session'
+                    fi ;;
+                turn_done) [[ "$accepted" != true ]] || turn_finished=true ;;
+            esac
+        fi
+    fi
+    if [[ "$accepted" == true ]]; then
+        if [[ "$turn_finished" == true && -z "$pending_input" ]]; then
+            # A soft interrupt can land as the preceding turn finishes. Its
+            # acknowledgement is not completion of the newly started turn.
+            # Confirm fresh native idle before closing this run's authority.
+            attach
+            native_idle=false
+            [[ $(jq -r '.session.status' <<< "$frame") != idle ]] || native_idle=true
+        fi
+        rc=0
+        pump_input || rc=$?
+        if (( rc == 2 )); then
+            printf '%s\n' "$native_ref" > "$directory/completed.tmp"
+            mv "$directory/completed.tmp" "$directory/completed"
+            exit 0
+        fi
+        (( rc == 0 )) || exit "$rc"
+    fi
 done
-exit 1

@@ -52,8 +52,10 @@ _store_guarded_query() {
     [[ -n ${_STORE_TX:-} ]] || { _db_sql "$1"; return; }
     local query="$1" escaped result
     escaped=$(_db_escape "$query")
-    result=$(_store_tx_sql "SELECT result FROM store_queries WHERE sql='$escaped';") || return
-    if [[ -z "$result" ]]; then
+    result=$(_store_tx_sql "SELECT 'found:' || result FROM store_queries WHERE sql='$escaped';") || return
+    if [[ "$result" == found:* ]]; then
+        result=${result#found:}
+    else
         result=$(SQLITE_JSON_DB="$_STORE_LIVE" _store_tx_sql "$query") || return
         _store_tx_sql "INSERT INTO store_queries VALUES('$escaped','$(_db_escape "$result")');" || return
     fi

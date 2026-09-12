@@ -50,7 +50,7 @@ CodexDriver subclass: AgentDriver
     local prompt_file="$1" run_id="$2" token="$3" codex session workspace tail argv
     codex=$(@ "$_RECEIVER" codexPath) || return 1
     session=$(@ "$run_id" session)
-    workspace=$(@ "$session" workspace)
+    workspace=$(@ "$run_id" executionWorkspace)
     tail=$(@ "$_RECEIVER" tailArgv: "$run_id")
     argv=$(jq -cn --arg codex "$codex" --arg ws "$workspace" --argjson tail "$tail" \
       '[$codex, "exec", "-C", $ws] + $tail')

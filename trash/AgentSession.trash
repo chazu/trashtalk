@@ -14,70 +14,283 @@ AgentSession subclass: Object
   instanceVars: identity:'' archetype:'' archetypeRevision:'' instructionsHash:'' role:''
                 roleRevision:'' backendProfile:'' executionPolicy:'single' workspace:''
                 lifecycleState:'open' inbox:'' lastConversationRef:'' parentSession:''
-                created:'' lastActivityAt:''
+                created:'' lastActivityAt:'' sessionPolicyRevision:0 supersededBy:''
+
+  # Old persisted records predate membership; reads must not enroll them.
+  method: sessionPolicyRevision [
+    | value |
+    value := sessionPolicyRevision.
+    (value isEmpty) ifTrue: [^ 0].
+    ^ value
+  ]
+
+  # SQLite DDL is the persistence boundary, shared by creation and the worker.
+  rawClassMethod: ensureSchema [
+    pragma: direct
+    if [[ "${_AGENT_SESSION_SCHEMA_DB:-}" != "$SQLITE_JSON_DB" ]]; then
+      _db_sql -bail < "${TRASHTALK_DIR:-$HOME/.trashtalk}/lib/agent-session-schema.sql" || return 1
+      _AGENT_SESSION_SCHEMA_DB="$SQLITE_JSON_DB"
+    fi
+  ]
 
   # Common transition rule over lifecycleState.
   method: transitionTo: newState [
     ^ @ self transitionTo: newState with: '{}'
   ]
 
-  # Atomic state transition plus associated fields; rejected transitions write nothing.
-  rawMethod: transitionTo: newState with: patchJson [
-    local to="$1" from allowed
-    _env_set "$_RECEIVER" "$(db_get "$_RECEIVER")"
-    from=$(_ivar lifecycleState)
-    allowed=" open:paused paused:open open:closed paused:closed closed:open open:terminated paused:terminated closed:terminated "
-    if [[ "$allowed" != *" $from:$to "* ]]; then
-      # Pre-durable AgentSession records have no lifecycle. Permit explicit
-      # retirement without treating these incomplete records as open sessions.
-      if [[ -n "$from" || "$to" != terminated ]]; then
-        _throw "TransitionError" "AgentSession $_RECEIVER: $from -> $to rejected"
-        return 1
-      fi
-    fi
-    local eid ef et changed patch
-    printf '%s' "$2" | jq -e 'type == "object"' >/dev/null || return 1
-    patch=$(_db_escape "$2")
-    eid=$(_db_escape "$_RECEIVER"); ef=$(_db_escape "$from"); et=$(_db_escape "$to")
-    # Register the field atomically too: lazy schema loading must not replace
-    # a legacy record's explicit terminal state with the default open state.
-    changed=$(_db_sql "UPDATE instances SET data=json_set(json_patch(data,'$patch'),'$.lifecycleState','$et',
-      '$._vars',json(CASE WHEN EXISTS (SELECT 1 FROM json_each(json_extract(data,'$._vars')) WHERE value='lifecycleState')
-        THEN json_extract(data,'$._vars')
-        ELSE json_insert(coalesce(json_extract(data,'$._vars'),'[]'),'\$[#]','lifecycleState') END))
-      WHERE id='$eid' AND coalesce(json_extract(data,'$.lifecycleState'),'')='$ef'; SELECT changes();") || return 1
-    [[ "$changed" == 1 ]] || { _throw "TransitionError" "Concurrent transition; reload and retry"; return 1; }
-    _env_set "$_RECEIVER" "$(db_get "$_RECEIVER")"
-    echo "$to"
+  method: transitionTo: newState with: patchJson [
+    | args |
+    args := #{session: self state: newState patch: (patchJson jsonValue)} asJson.
+    @ AgentSession ensureSchema.
+    ^ @ Store transaction: 'AgentSession' sending: 'transitionWithin:' with: args
   ]
 
-  # Open a session, snapshotting the archetype and role revisions.
-  rawClassMethod: openFor: identityId archetype: archetypeId role: roleId workspace: path profile: profileName [
-    local identity="$1" archetype="$2" role="$3" ws="$4" profile="$5"
-    local allowed session now inboxName
-    allowed=$(@ "$role" allowsWorkspace: "$ws")
-    if [[ "$allowed" != "true" ]]; then
-      _throw "SessionError" "Role $role does not allow workspace $ws"
-      return 1
-    fi
-    now=$(@ Time nowISO)
-    session=$(@ AgentSession new)
-    inboxName="session:$session"
-    @ "$session" identity: "$identity"
-    @ "$session" archetype: "$archetype"
-    @ "$session" archetypeRevision: "$(@ "$archetype" revision)"
-    @ "$session" instructionsHash: "$(@ "$archetype" instructionsHash)"
-    @ "$session" role: "$role"
-    @ "$session" roleRevision: "$(@ "$role" revision)"
-    @ "$session" backendProfile: "$profile"
-    @ "$session" workspace: "$ws"
-    @ "$session" lifecycleState: open
-    @ "$session" inbox: "$inboxName"
-    @ "$session" created: "$now"
-    @ "$session" lastActivityAt: "$now"
-    @ "$session" save
-    @ Inbox named: "$inboxName" >/dev/null
-    echo "$session"
+  # Lifecycle and identity selection change together. Reopen guards the empty
+  # current-session query, so it cannot race ensure/fresh into a second session.
+  classMethod: transitionWithin: args [
+    | session identity from to pair allowed scope current runs data patch present workspace vars |
+    @ Store requireTransaction.
+    session := @ Store read: (args objectAt: 'session') class: 'AgentSession'.
+    data := @ Store getInstance: session.
+    from := ''.
+    present := data jsonAt: 'lifecycleState' ifAbsent: 'null'.
+    (present ~= 'null') ifTrue: [from := data jsonTextAt: 'lifecycleState'].
+    to := args objectAt: 'state'.
+    pair := from , ':' , to.
+    @ Require member: pair of: '[":terminated","open:paused","paused:open","open:closed","paused:closed","closed:open","open:terminated","paused:terminated","closed:terminated"]'.
+    identity := @ session identity.
+    (identity notEmpty) ifTrue: [
+      identity := @ Store read: identity class: 'AgentIdentity'.
+      scope := @ identity sessionScope.
+      (scope = 'identity') ifTrue: [
+        (to = 'open') ifTrue: [
+          workspace := @ session workspace.
+          current := @ self currentWithinFor: identity workspace: workspace.
+          (current notEmpty) ifTrue: [@ Require equal: current to: session].
+          @ identity currentSession: session.
+          @ identity save
+        ].
+        (to = 'closed') ifTrue: [
+          runs := @ Store idsOf: 'AgentRun' matching: (#{session: session state: #('starting' 'running' 'recovering')} asJson).
+          @ Require equal: runs to: '[]'
+        ].
+        allowed := @ Require contains: to in: '["closed","terminated"]'.
+        (allowed = 'true') ifTrue: [
+          current := @ identity currentSession.
+          (current = session) ifTrue: [
+            @ identity currentSession: ''.
+            @ identity save
+          ]
+        ]
+      ]
+    ].
+    patch := args jsonAt: 'patch'.
+    @ Store patch: session with: patch.
+    vars := data jsonAt: '_vars' ifAbsent: '[]'.
+    present := @ Require contains: 'lifecycleState' in: vars.
+    (present = 'false') ifTrue: [
+      vars := vars arrayPush: 'lifecycleState'.
+      @ Store patch: session with: (#{_vars: (vars jsonValue)} asJson)
+    ].
+    @ session lifecycleState: to.
+    @ session save.
+    ^ to
+  ]
+
+  # All public creation paths use the same guarded transaction.
+  classMethod: openFor: identityId archetype: archetypeId role: roleId workspace: path profile: profileName [
+    | args workspace |
+    workspace := @ self workspaceFor: path.
+    args := #{identity: identityId archetype: archetypeId role: roleId workspace: workspace profile: profileName} asJson.
+    @ self ensureSchema.
+    ^ @ Store transaction: self sending: 'openWithin:' with: args
+  ]
+
+  # Constructor is private to a Store unit of work; session and inbox publish together.
+  classMethod: createWithinFor: identityId archetype: archetypeId role: roleId workspace: path profile: profileName [
+    | allowed session now inboxName box revision hash |
+    @ Store requireTransaction.
+    allowed := @ roleId allowsWorkspace: path.
+    @ Require equal: allowed to: 'true'.
+    now := @ Time nowISO.
+    session := @ AgentSession new.
+    inboxName := 'session:' , session.
+    @ session identity: identityId.
+    revision := @ identityId sessionPolicyRevision.
+    @ session sessionPolicyRevision: revision.
+    @ session archetype: archetypeId.
+    revision := @ archetypeId revision.
+    @ session archetypeRevision: revision.
+    hash := @ archetypeId instructionsHash.
+    @ session instructionsHash: hash.
+    @ session role: roleId.
+    revision := @ roleId revision.
+    @ session roleRevision: revision.
+    @ session backendProfile: profileName.
+    @ session workspace: path.
+    @ session lifecycleState: 'open'.
+    @ session inbox: inboxName.
+    @ session created: now.
+    @ session lastActivityAt: now.
+    @ session save.
+    box := @ Inbox new.
+    @ box name: inboxName.
+    @ box save.
+    ^ session
+  ]
+
+  # Resolution never creates or picks a conversation from ambiguous history.
+  classMethod: currentFor: identityId workspace: path [
+    | args |
+    args := #{identity: identityId workspace: path} asJson.
+    ^ @ Store transaction: self sending: 'resolveWithin:' with: args
+  ]
+
+  classMethod: resolveOwnedWithin: args [
+    | identity workspace |
+    @ Store requireTransaction.
+    identity := @ AgentAccess validateIdentity: (args objectAt: 'identity').
+    workspace := args objectAt: 'workspace'.
+    (@ identity sessionScope = 'workspace') ifTrue: [workspace := @ self workspaceFor: workspace].
+    ^ @ self currentWithinFor: identity workspace: workspace
+  ]
+
+  classMethod: resolveWithin: args [
+    | identityId path |
+    @ Store requireTransaction.
+    identityId := args objectAt: 'identity'.
+    path := args objectAt: 'workspace'.
+    ^ @ self currentWithinFor: identityId workspace: path
+  ]
+
+  classMethod: currentWithinFor: identityId workspace: path [
+    | identity scope fields ids selected valid count revision |
+    @ Store requireTransaction.
+    identity := @ Store read: identityId class: 'AgentIdentity'.
+    scope := @ identity sessionScope.
+    @ Require member: scope of: '["workspace","identity"]'.
+    (scope = 'workspace') ifTrue: [path := @ self workspaceFor: path].
+    revision := @ identity sessionPolicyRevision.
+    (revision > 0) ifTrue: [^ @ self memberFor: identity workspace: path scope: scope revision: revision].
+    fields := #{identity: identityId lifecycleState: #('open' 'paused')} asJson.
+    (scope = 'workspace') ifTrue: [
+      fields := #{identity: identityId workspace: path lifecycleState: #('open' 'paused')} asJson
+    ].
+    ids := @ Store idsOf: 'AgentSession' matching: fields.
+    (scope = 'identity') ifTrue: [
+      selected := @ identity currentSession.
+      valid := @ Require contains: selected in: ids.
+      (valid = 'true') ifTrue: [^ selected]
+    ].
+    count := ids arrayLength.
+    (count > 1) ifTrue: [^ @ Require reject: 'Multiple eligible sessions; select the conversation explicitly before continuing'].
+    ^ ids arrayLast
+  ]
+
+  # Storage lookup is scalar and guarded, including the no-current-session case.
+  rawClassMethod: memberFor: identity workspace: path scope: scope revision: revision [
+    local key="$2"
+    [[ "$3" != identity ]] || key=''
+    _store_guarded_query "SELECT coalesce((SELECT session_id FROM agent_session_memberships
+      WHERE identity_id='$(_db_escape "$1")' AND scope_key='$(_db_escape "$key")'
+      AND policy_revision='$(_db_escape "$4")'),'')"
+  ]
+
+  classMethod: requireCurrentWithin: session [
+    | identity revision current sessionRevision workspace |
+    @ Store requireTransaction.
+    session := @ Store read: session class: 'AgentSession'.
+    identity := @ session identity.
+    identity := @ Store read: identity class: 'AgentIdentity'.
+    revision := @ identity sessionPolicyRevision.
+    (revision > 0) ifTrue: [
+      sessionRevision := @ session sessionPolicyRevision.
+      @ Require equal: sessionRevision to: revision.
+      workspace := @ session workspace.
+      current := @ self currentWithinFor: identity workspace: workspace.
+      @ Require equal: current to: session
+    ].
+  ]
+
+  classMethod: ensureFor: identityId archetype: archetypeId role: roleId workspace: path profile: profileName [
+    | args workspace |
+    workspace := @ self workspaceFor: path.
+    args := #{identity: identityId archetype: archetypeId role: roleId workspace: workspace profile: profileName} asJson.
+    @ self ensureSchema.
+    ^ @ Store transaction: self sending: 'ensureWithin:' with: args replaying: true
+  ]
+
+  # Guarded queries detect competing creation even for an empty result.
+  # Read-only conflict replay can return the winner but cannot create again.
+  classMethod: ensureWithin: args [
+    | identity path current |
+    @ Store requireTransaction.
+    identity := args objectAt: 'identity'.
+    path := args objectAt: 'workspace'.
+    current := @ self currentWithinFor: identity workspace: path.
+    (current notEmpty) ifTrue: [^ current].
+    ^ @ self openWithin: args
+  ]
+
+  classMethod: openWithin: args [
+    | identity path archetype role profile session scope current |
+    @ Store requireTransaction.
+    identity := @ Store read: (args objectAt: 'identity') class: 'AgentIdentity'.
+    path := args objectAt: 'workspace'.
+    scope := @ identity sessionScope.
+    @ Require member: scope of: '["workspace","identity"]'.
+    (scope = 'identity') ifTrue: [
+      current := @ self currentWithinFor: identity workspace: path.
+      (current notEmpty) ifTrue: [^ @ Require reject: 'This identity already has a current session; reuse it or explicitly start fresh']
+    ].
+    archetype := @ Store read: (args objectAt: 'archetype') class: 'AgentArchetype'.
+    role := @ Store read: (args objectAt: 'role') class: 'AgentRole'.
+    profile := args objectAt: 'profile'.
+    session := @ self createWithinFor: identity archetype: archetype role: role workspace: path profile: profile.
+    scope := @ identity sessionScope.
+    (scope = 'identity') ifTrue: [
+      @ identity currentSession: session.
+      @ identity save
+    ].
+    ^ session
+  ]
+
+  classMethod: freshFor: identityId archetype: archetypeId role: roleId workspace: path profile: profileName [
+    | args workspace |
+    workspace := @ self workspaceFor: path.
+    args := #{identity: identityId archetype: archetypeId role: roleId workspace: workspace profile: profileName} asJson.
+    @ self ensureSchema.
+    ^ @ Store transaction: self sending: 'freshWithin:' with: args
+  ]
+
+  # Closing and replacement are atomic. Guard both the current-session query
+  # and active runs so concurrent creation/start cannot invalidate the decision.
+  classMethod: freshWithin: args [
+    | identity path current runs |
+    @ Store requireTransaction.
+    identity := args objectAt: 'identity'.
+    path := args objectAt: 'workspace'.
+    current := @ self currentWithinFor: identity workspace: path.
+    (current notEmpty) ifTrue: [
+      runs := @ Store idsOf: 'AgentRun' matching: (#{session: current state: #('starting' 'running' 'recovering')} asJson).
+      @ Require equal: runs to: '[]'.
+      current := @ Store read: current class: 'AgentSession'.
+      @ current lifecycleState: 'closed'.
+      @ current save
+    ].
+    ^ @ self replaceWithin: args
+  ]
+
+  classMethod: replaceWithin: args [
+    | identity session |
+    @ Store requireTransaction.
+    identity := @ Store read: (args objectAt: 'identity') class: 'AgentIdentity'.
+    session := @ self createWithinFor: identity archetype: (args objectAt: 'archetype') role: (args objectAt: 'role') workspace: (args objectAt: 'workspace') profile: (args objectAt: 'profile').
+    (@ identity sessionScope = 'identity') ifTrue: [
+      @ identity currentSession: session.
+      @ identity save
+    ].
+    ^ session
   ]
 
   # Open or paused sessions for identity + workspace, newest first
@@ -97,7 +310,7 @@ AgentSession subclass: Object
     fi
     top=$(git -C "$dir" "$revparse" "$toplevel" 2>/dev/null)
     if [[ -n "$top" ]]; then
-      echo "$top"
+      (cd "$top" && pwd -P)
       return
     fi
     (cd "$dir" && pwd -P)
@@ -273,5 +486,56 @@ AgentSession subclass: Object
     ^ @ AgentBrowser browseSession: self
   ]
 
+  method: compact [ ^ @ AgentContext compactSession: self ]
+  # Human conversation input is direct session interaction, without inbox mail.
+  method: input: text [
+    ^ @ AgentConversation send: text to: self
+  ]
+
   method: focus [ ^ @ AgentFocus open: self ]
   method: attach [ ^ @ self focus ]
+
+  # Storage migration boundary: guards, retirement, revision, and membership
+  # publication must commit in this order. No deliveries or provider data move.
+  rawClassMethod: select: session forIdentity: identity owner: owner [
+    @ AgentSession ensureSchema || return 1
+    local sid identity owner human
+    human=$(@ AgentFocus human) || return 1
+    [[ "$human" == "$3" ]] || return 1
+    sid=$(_db_escape "$1"); identity=$(_db_escape "$2"); owner=$(_db_escape "$3")
+    @ Store executeBatch: "BEGIN IMMEDIATE;
+      CREATE TEMP TABLE selection_guard(ok INTEGER NOT NULL CHECK(ok=1));
+      CREATE TEMP TABLE selection_change AS SELECT 1 AS needed WHERE NOT EXISTS(
+        SELECT 1 FROM agent_session_memberships m JOIN instances i ON i.id=m.identity_id
+        WHERE i.id='$identity' AND m.session_id='$sid' AND m.scope_key=''
+          AND json_extract(i.data,'$.sessionScope')='identity'
+          AND m.policy_revision=json_extract(i.data,'$.sessionPolicyRevision'));
+      INSERT INTO selection_guard SELECT EXISTS(SELECT 1 FROM instances i JOIN instances s
+        ON json_extract(s.data,'$.identity')=i.id WHERE i.id='$identity' AND i.class='AgentIdentity'
+        AND json_extract(i.data,'$.owner')='$owner' AND json_extract(i.data,'$.enabled') IN (1,'true')
+        AND s.id='$sid' AND s.class='AgentSession' AND json_extract(s.data,'$.lifecycleState') IN ('open','paused'));
+      INSERT INTO selection_guard SELECT NOT EXISTS(SELECT 1 FROM instances r JOIN instances s
+        ON s.id=json_extract(r.data,'$.session') WHERE r.class='AgentRun'
+        AND json_extract(s.data,'$.identity')='$identity'
+        AND json_extract(r.data,'$.state') IN ('starting','running','recovering')) OR NOT EXISTS(SELECT 1 FROM selection_change);
+      UPDATE instances SET data=json_set(data,'$.lifecycleState','closed','$.supersededBy','$sid',
+        '$._vars',json((SELECT json_group_array(DISTINCT value) FROM (SELECT value FROM json_each(json_extract(data,'$._vars')) UNION SELECT 'supersededBy'))))
+        WHERE EXISTS(SELECT 1 FROM selection_change) AND class='AgentSession' AND id!='$sid' AND json_extract(data,'$.identity')='$identity'
+          AND json_extract(data,'$.lifecycleState') IN ('open','paused');
+      DELETE FROM agent_session_memberships WHERE identity_id='$identity' AND EXISTS(SELECT 1 FROM selection_change);
+      INSERT INTO agent_session_policy_changes SELECT '$identity',coalesce(json_extract(data,'$.sessionPolicyRevision'),0),
+        coalesce(json_extract(data,'$.sessionPolicyRevision'),0)+1 FROM instances WHERE id='$identity' AND EXISTS(SELECT 1 FROM selection_change);
+      UPDATE instances SET data=json_set(data,'$.sessionScope','identity','$.currentSession','$sid',
+        '$.sessionPolicyRevision',coalesce(json_extract(data,'$.sessionPolicyRevision'),0)+1,
+        '$._vars',json((SELECT json_group_array(DISTINCT value) FROM (SELECT value FROM json_each(json_extract(data,'$._vars')) UNION SELECT 'sessionScope' UNION SELECT 'currentSession' UNION SELECT 'sessionPolicyRevision'))))
+        WHERE id='$identity' AND EXISTS(SELECT 1 FROM selection_change);
+      UPDATE instances SET data=json_set(data,'$.sessionPolicyRevision',
+        (SELECT json_extract(data,'$.sessionPolicyRevision') FROM instances WHERE id='$identity'),
+        '$.supersededBy','',
+        '$._vars',json((SELECT json_group_array(DISTINCT value) FROM (SELECT value FROM json_each(json_extract(data,'$._vars')) UNION SELECT 'sessionPolicyRevision' UNION SELECT 'supersededBy')))) WHERE id='$sid' AND EXISTS(SELECT 1 FROM selection_change);
+      DELETE FROM agent_session_policy_changes WHERE identity_id='$identity';
+      COMMIT;" || return 1
+    @ "$2" reload >/dev/null || return 1
+    @ "$1" reload >/dev/null || return 1
+    printf '%s\n' "$1"
+  ]

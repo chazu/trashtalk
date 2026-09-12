@@ -97,6 +97,19 @@ Inbox subclass: Object
     ^ @ Inbox send: text to: recipient from: sender subject: '' kind: 'note'
   ]
 
+  classMethod: send: text to: recipient from: sender in: workspace [
+    ^ @ self send: text to: recipient from: sender subject: '' kind: 'note' in: workspace
+  ]
+
+  classMethod: send: text to: recipient from: sender subject: subject kind: kind in: workspace [
+    | msg inbox directory |
+    directory := @ AgentSession workspaceFor: workspace.
+    msg := @ Message to: recipient from: sender subject: subject body: text kind: kind.
+    @ msg executionWorkspace: directory.
+    inbox := @ Inbox named: recipient.
+    ^ @ inbox deliver: msg
+  ]
+
   # A question expects a reply: the recipient answers with `@ msg reply:`.
   classMethod: ask: text to: recipient from: sender [
     ^ @ Inbox send: text to: recipient from: sender subject: '' kind: 'question'

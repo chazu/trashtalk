@@ -424,9 +424,8 @@ when the sender can be resolved. See [session view controls and setup](docs/agen
 
 ## Gusgus: the assistant behind `@@`
 
-`@@` talks to Gusgus, a persistent assistant with one conversation
-per workspace (the git repository root, or the directory itself outside a
-repository). It sends your message and returns immediately; Gusgus works in a
+`@@` talks to Gusgus, a persistent assistant with one current conversation
+across directories. Every argument is message text; `@@` has no flags. It sends your message and returns immediately; Gusgus works in a
 managed Jcode session by default and answers into your inbox, in the same thread as
 your question. Replying to that message continues the same conversation.
 
@@ -441,11 +440,15 @@ inbox=$(@ Trash userInbox)
 @ $msg reply: 'and how do I fix it?'     # resumes the same conversation
 @ $inbox thread: $msg                    # the whole exchange, oldest first
 
-@@ --fresh 'unrelated question'          # close this workspace's session, start another
-@@ --one-shot 'question'                 # stateless one-shot path (below)
-@@ --dry-run 'question'                  # show the one-shot context, no model call
+@ Gusgus focusCurrent                   # Option-U toggles this view
+@ Gusgus fresh: "$PWD"                  # explicitly replace an idle conversation
 @ Gusgus help
 ```
+
+Option-U opens the current conversation and detaches when pressed inside it.
+The composer sends directly to the agent session with C-c C-c, including steering
+at the next safe point while Jcode is working. These inputs create no inbox mail.
+See [the session view](docs/agent-session-view.md) for controls and key setup.
 
 `inbox=$(@ Trash userInbox)` returns your persisted `Inbox` instance, using
 `TRASHTALK_USER` with `$USER` as the fallback. Other inboxes are instances of
@@ -467,7 +470,7 @@ messages. `@ "$inbox" unreadCount` counts only unread messages.
 `@ Inbox count` counts stored inbox instances. The `Inbox` class does not
 implicitly select the current user's inbox.
 
-Each `@@` becomes an `AgentDelivery` on the workspace's `AgentSession`.
+Each `@@` becomes an `AgentDelivery` on Gusgus's current `AgentSession`.
 `AgentWorker` notifies the configured harness with inbox message references;
 the agent reads their contents from Inbox and uses `AgentRun result:forDelivery:`
 and `settle:` to respond and acknowledge work. Every run gets a private launcher
@@ -503,19 +506,17 @@ manual: published work is held from harness dispatch. Follow the
 
 ## One-shot agent questions
 
-`@@ --one-shot` sends one explicit, read-only request through the selected
+`@ Agent ask:workingDirectory:status:lastResult:` sends one explicit, read-only request through the selected
 external agent harness with no memory. Axe is the default; the official Codex
-CLI is also supported. The request includes the question, current working
-directory, previous command status, and `$__` when it is set. The final answer
-opens in `inpage` when available and is also printed into shell scrollback.
+CLI is also supported. Pass the question, working directory, command status, and optional prior result
+explicitly. `Agent present:` displays the answer.
 
 ```bash
-false
-__='the command produced this output'
-@@ --one-shot 'why did that fail?'
+run=$(@ Agent ask: 'why did that fail?' workingDirectory: "$PWD" status: '1' lastResult: '')
+@ Agent present: "$(@ Agent answerFromRun: "$run")"
 
 # Inspect the selected backend's exact context without making an LLM call.
-@@ --dry-run 'what context would you receive?'
+@ Agent dryRun: 'what context would you receive?' workingDirectory: "$PWD" status: '0' lastResult: ''
 ```
 
 Choose the backend in `~/.trashrc`:

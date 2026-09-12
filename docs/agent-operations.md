@@ -1,5 +1,36 @@
 # Reliable agent delivery and session inspection
 
+Gusgus has one current conversation across directories. `@@` sends all arguments
+as one inbox message; it has no flags. Option-U and
+`@ Gusgus focusCurrent` attach to it without creating or resuming work. A paused
+conversation stays paused. `@ Gusgus fresh: "$PWD"` explicitly replaces an idle current
+conversation; the browser retains its history. Workspace-scoped specialist
+identities retain one current conversation per canonical workspace.
+
+To select among legacy Gusgus conversations, inspect their history, wait for
+active runs to finish, then explicitly choose one:
+
+```bash
+identity=$(@ AgentIdentity findByHandle: gusgus)
+@ "$identity" selectCurrentSession: "$chosenSession"
+```
+
+Selection preserves that conversation's provider reference, closes its other
+open conversations, and leaves their deliveries attributed to them. Outstanding
+historical work requires review; selection does not replay or move it. The
+provider conversation may contain context from several workspaces. `@@` retains the caller's canonical directory on each message and
+delivery. Direct composer input continues the native session's current directory. Runs execute there, after checking the current role policy; requests
+from different directories use separate runs in the same conversation.
+Neutral notifications use the recipient session's creation workspace. For an
+explicit message context, use `@ Inbox send: 'text' to: "$address" from: "$sender"
+in: "$workspace"`. Replies retain the original request's context.
+
+For a large Jcode conversation, use **Compact context** in the session browser
+or `@ "$session" compact`. The background run checkpoints the native snapshot
+and journal, waits for durable compaction metadata, and keeps the same session
+and full history. Acknowledgement alone is not completion. Inspect its run state
+and logs as with ordinary work.
+
 Implemented in September 2026. This document describes the current single-host
 worker, snapshot browser, and live Innards attachment. The broader
 headless-session design remains a partially implemented plan.
@@ -111,7 +142,10 @@ conversations, run metadata and the last 100 lines of each log, pause,
 resume, and confirmed retry of a selected failed or uncertain delivery.
 Snapshot menus refresh when returning to an action menu. Choose **Attach to
 conversation**, or send `@ "$session" focus`, for live backlog and harness output.
-The `inagent` composer sends through Inbox with **C-c C-c**; **C-x C-c** detaches.
+The `inagent` composer sends directly to the session with **C-c C-c**.
+**Option-U** toggles the view; **C-x C-c** also detaches. Jcode uses its native
+Harness API: `send_message` for idle input and `soft_interrupt` at the next safe
+point during an active turn. These inputs create no Message or AgentDelivery.
 Pause and stop are explicit actions. Detaching never stops the worker or harness.
 See [the live session view](agent-session-view.md) for navigation and installation.
 
@@ -278,8 +312,9 @@ required by these tests.
 
 ## One-shot requests
 
-`@@ --one-shot 'question'` uses the `Agent` facade, selected by
-`TRASHTALK_AGENT_BACKEND=axe` (default) or `codex`. `@@ --dry-run` previews that
+`@ Agent ask: 'question' workingDirectory: "$PWD" status: '0' lastResult: ''`
+uses the one-shot `Agent` facade, selected by
+`TRASHTALK_AGENT_BACKEND=axe` (default) or `codex`. `@ Agent dryRun:workingDirectory:status:lastResult:` previews that
 request without running a model. These do not join the persistent Gusgus session.
 Codex one-shot requests require ChatGPT CLI login, remove API-key overrides, and
 use ephemeral read-only execution. Proposal application remains a separate

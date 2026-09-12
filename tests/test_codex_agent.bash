@@ -165,21 +165,22 @@ assert_eq "Agent selects Codex backend" 'codex' "$(printf '%s' "$result" | jq -r
 assert_eq "selected backend receives question" 'selected?' "$(jq -r .question "$FAKE_CODEX_STDIN")"
 
 __='previous output'
-false
-@@ --one-shot 'what happened?' > "$TEST_TMP/at-at-output.txt"
+result=$(@ Agent ask: 'what happened?' workingDirectory: "$TEST_TMP/work dir" status: '1' lastResult: "$__")
+@ Agent present: "$(@ Agent answerFromRun: "$result")" > "$TEST_TMP/at-at-output.txt"
 at_status=$?
-assert_eq "@@ returns Codex success status" '0' "$at_status"
-assert_eq "@@ captures previous status" '1' "$(jq -r .last_status "$FAKE_CODEX_STDIN")"
-assert_eq "@@ presents Codex answer through inpage" $'codex answer line one\ncodex answer line two' "$(cat "$FAKE_INPAGE_STDIN")"
+assert_eq "Agent returns Codex success status" '0' "$at_status"
+assert_eq "Agent captures previous status" '1' "$(jq -r .last_status "$FAKE_CODEX_STDIN")"
+assert_eq "Agent presents Codex answer through inpage" $'codex answer line one\ncodex answer line two' "$(cat "$FAKE_INPAGE_STDIN")"
 
 before_calls=$(wc -l < "$FAKE_CODEX_CALLS" | tr -d ' ')
-@@ --dry-run 'show context' > "$TEST_TMP/at-at-dry-output.txt"
+result=$(@ Agent dryRun: 'show context' workingDirectory: "$TEST_TMP/work dir" status: '0' lastResult: '')
+@ Agent present: "$(@ Agent answerFromRun: "$result")" > "$TEST_TMP/at-at-dry-output.txt"
 at_status=$?
 after_calls=$(wc -l < "$FAKE_CODEX_CALLS" | tr -d ' ')
-assert_eq "@@ Codex dry run succeeds" '0' "$at_status"
-assert_eq "@@ Codex dry run does not invoke Codex" "$before_calls" "$after_calls"
-assert_true "@@ Codex dry run displays exact argv" grep -Fq -- '"--sandbox"' "$FAKE_INPAGE_STDIN"
-assert_true "@@ Codex dry run displays context" grep -Fq -- 'show context' "$FAKE_INPAGE_STDIN"
+assert_eq "Agent Codex dry run succeeds" '0' "$at_status"
+assert_eq "Agent Codex dry run does not invoke Codex" "$before_calls" "$after_calls"
+assert_true "Agent Codex dry run displays exact argv" grep -Fq -- '"--sandbox"' "$FAKE_INPAGE_STDIN"
+assert_true "Agent Codex dry run displays context" grep -Fq -- 'show context' "$FAKE_INPAGE_STDIN"
 
 PATH="/opt/homebrew/bin:/usr/bin:/bin"
 hash -r

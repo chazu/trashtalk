@@ -1,0 +1,101 @@
+# Human input goes to the session driver. Runs retain authority and lifecycle;
+# conversation input never creates a Message or an AgentDelivery.
+AgentConversation subclass: Object
+  # Lock acquisition and failure propagation are process boundaries.
+  rawClassMethod: send: text to: session [
+    local path args result attempt
+    @ AgentFocus human >/dev/null || return 1
+    @ Require text: "$1" || return 1
+    path=$(@ AgentWorker lockPath) || return 1
+    args=$(jq -cn --arg session "$2" --arg text "$1" '{session:$session,text:$text}') || return 1
+    for attempt in {1..50}; do
+      if ! result=$(@ Process withLock: "$path" receiver: AgentConversation selector: 'sendOwned:' argument: "$args"); then
+        [[ -z "$result" ]] || printf '%s\n' "$result" >&2
+        return 1
+      fi
+      if [[ -n "$result" ]]; then printf '%s\n' "$result"; return 0; fi
+      sleep .1
+    done
+    echo 'Session control is busy; input was not sent. Try again' >&2
+    return 1
+  ]
+
+  classMethod: sendOwned: args [
+    args jsonUnpack: #('session' 'text') into: [:session :text |
+      @ self sendText: text toSession: session
+    ]
+  ]
+
+  classMethod: sendText: text toSession: session [
+    | state profile driver run purpose workspace role allowed ignored human |
+    human := @ AgentFocus human.
+    (human isEmpty) ifTrue: [^ @ Require reject: 'Human session input required'].
+    session := @ AgentAccess liveSession: session.
+    (session isEmpty) ifTrue: [^ @ Require reject: 'Current session access required'].
+    state := @ session lifecycleState.
+    (state ~= 'open') ifTrue: [^ @ Require reject: 'Resume this session before sending input'].
+    profile := @ session backendProfile.
+    driver := @ AgentWorker driverFor: profile.
+    allowed := (@ driver capabilities) jsonTextAt: 'live_input'.
+    (allowed ~= 'true') ifTrue: [^ @ Require reject: 'This driver does not support direct session input'].
+    run := @ session activeRun.
+    (run notEmpty) ifTrue: [
+      ignored := @ AgentWorker reconcileRun: run.
+      ignored := @ session reload.
+      run := @ session activeRun
+    ].
+    (run notEmpty) ifTrue: [
+      purpose := @ run purpose.
+      (purpose = 'compact') ifTrue: [^ @ Require reject: 'Wait for context compaction to finish before sending input'].
+      workspace := @ run executionWorkspace.
+      role := @ session role.
+      ignored := @ role reload.
+      allowed := @ role allowsWorkspace: workspace.
+      (allowed ~= 'true') ifTrue: [^ @ Require reject: 'Session workspace is no longer authorized'].
+      ^ @ driver input: text run: run
+    ].
+    ^ @ self launch: text session: session driver: driver
+  ]
+
+  # Token plumbing and prompt files are process boundaries. The user text is
+  # a literal native input; execution context is a separate system reminder.
+  rawClassMethod: launch: text session: session driver: driver [
+    local text="$1" session="$2" driver="$3" profile workspace run token directory pid ref
+    profile=$(@ "$session" backendProfile) || return 1
+    workspace=$(@ "$session" workspace) || return 1
+    ref=$(@ "$session" lastConversationRef) || return 1
+    # A view continues the native session's working directory, independently
+    # of the shell directory from which the view was opened.
+    if [[ "$profile" == jcode && -n "$ref" ]]; then
+      workspace=$(@ JcodeDriver workspaceFor: "$session") || return 1
+    fi
+    { read -r run; read -r token; } < <(@ AgentRun startFor: "$session" profile: "$profile" workspace: "$workspace")
+    [[ -n "$run" && -n "$token" ]] || return 1
+    directory=$(@ AgentDriver runDirFor: "$run")
+    if ! {
+      @ Store patch: "$run" with: '{"purpose":"conversation"}' &&
+      @ AgentDriver prepareContextFor: "$run" token: "$token" &&
+      @ AgentConversation writeContextFor: "$run" &&
+      printf '%s' "$text" > "$directory/prompt.txt" &&
+      pid=$(@ "$driver" resume: "$ref" promptFile: "$directory/prompt.txt" run: "$run" token: "$token")
+    }; then
+      @ AgentWorker failRun: "$run" error: 'Direct conversation could not start' >/dev/null
+      return 1
+    fi
+    @ "$driver" awaitInputFor: "$run"
+  ]
+
+  rawClassMethod: writeContextFor: run [
+    local run="$1" session archetype directory launcher
+    session=$(@ "$run" session)
+    archetype=$(@ "$session" archetype)
+    directory=$(@ AgentDriver runDirFor: "$run")
+    printf -v launcher '%q' "$directory/trash-send"
+    {
+      @ "$archetype" instructions
+      printf '\nYou are run %s in session %s. Workspace: %s.\n' "$run" "$session" "$(@ "$run" executionWorkspace)"
+      printf 'The user is speaking directly through the conversation view. Reply directly in this conversation. There is no inbox delivery to read, reply to, or settle for this input.\n'
+      printf 'For Trashtalk commands use this current run launcher: %s. It supplies private authority; never read or print its contents. Older run launchers have expired.\n' "$launcher"
+      printf 'To delegate: %s AgentRun send: %s to: %s\n' "$launcher" "'message'" "'agent:<handle>'"
+    } > "$directory/system-reminder.txt"
+  ]

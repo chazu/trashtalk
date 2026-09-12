@@ -42,5 +42,6 @@ AgentAccess subclass: Object
     current := @ self validateSession: session.
     state := @ current lifecycleState.
     @ Require member: state of: '["open","paused"]'.
+    @ AgentSession requireCurrentWithin: current.
     ^ current
   ]

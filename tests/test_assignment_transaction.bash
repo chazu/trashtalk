@@ -50,7 +50,10 @@ identity=$(must @ AgentIdentity named: proof-specialist)
 arch=$(must @ AgentArchetype define: proof-specialist revision: 1 instructions: 'Manual proof only.' profile: shell)
 role=$(must @ AgentRole define: proof-specialist revision: 1 capabilities: '["inbox.read","message.send","assignment.work"]' workspacePolicy: '[]' runBudget: '{}')
 session=$(must @ AgentSession openFor: "$identity" archetype: "$arch" role: "$role" workspace: "$root" profile: shell)
-requester=$(must @ AgentSession openFor: "$identity" archetype: "$arch" role: "$role" workspace: "$root" profile: shell)
+requester_identity=$(must @ AgentIdentity named: proof-requester)
+@ "$requester_identity" owner: assignment-owner
+@ "$requester_identity" save
+requester=$(must @ AgentSession openFor: "$requester_identity" archetype: "$arch" role: "$role" workspace: "$root" profile: shell)
 origin=$(must @ Inbox send: 'Please investigate' to: assignment-owner from: "session:$requester")
 a=$(must new_work 'Prove atomic completion')
 delivery=$(field "$a" .delivery)

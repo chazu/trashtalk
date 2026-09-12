@@ -65,7 +65,7 @@ MakiDriver subclass: AgentDriver
     model=$(@ "$_RECEIVER" model)
     [[ "${model%%/*}" == openai ]] || { @ "$_RECEIVER" reject: 'MakiDriver currently requires an openai/ model with OAuth'; return 1; }
     session=$(@ "$run" session)
-    workspace=$(@ "$session" workspace)
+    workspace=$(@ "$run" executionWorkspace)
     # Maki 0.5.2 ignores --effort and --strict-mcp-config. Use its supported
     # standard config, excluding ambient project Lua/MCP/env additions.
     for file in 'init.lua' 'mcp.toml' '.env'; do

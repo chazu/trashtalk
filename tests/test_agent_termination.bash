@@ -61,7 +61,7 @@ check 'repeated termination succeeds' terminated "$(@ "$session" terminate)"
 check 'terminated session cannot dispatch another run' 1 "$(@ Store countByClass: AgentRun)"
 
 # A reused PID must never receive the old run's signal.
-other=$(@ AgentSession new)
+other=$(@ Gusgus sessionFor: "$tmp")
 mapfile -t started < <(@ AgentRun startFor: "$other" profile: shell)
 stale_run=${started[0]}
 printf '%s\n' "$$" > "$tmp/stale.pid"

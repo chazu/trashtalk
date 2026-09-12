@@ -30,7 +30,6 @@ identity=$(must @ AgentIdentity named: assignment-specialist)
 arch=$(must @ AgentArchetype define: assignment-specialist revision: 1 instructions: 'Use Assignment and read inbox messages.' profile: shell)
 role=$(must @ AgentRole define: assignment-specialist revision: 1 capabilities: '["inbox.read","message.send","assignment.work"]' workspacePolicy: '[]' runBudget: '{}')
 session=$(must new_session)
-second=$(must new_session)
 foreign=$(must @ AgentIdentity named: foreign)
 foreign_session=$(must @ AgentSession openFor: "$foreign" archetype: "$arch" role: "$role" workspace: "$root" profile: shell)
 
@@ -83,6 +82,7 @@ check 'read/archive does not answer question' '' "$(@ "$q" answerId)"
 reject 'unanswered question prevents completion' @ "$a" complete: premature
 must @ "$session" close >/dev/null
 check 'closing session leaves assignment open' open "$(field "$a" .state)"
+second=$(must new_session)
 must @ "$a" workIn: "$second" >/dev/null
 check 'replacement retains both participations' 2 "$(field "$a" '.history | length')"
 check 'replacement retains progress and question' 2 "$(field "$a" '.events | length')"
@@ -126,8 +126,7 @@ reject 'run cannot create delegated drafts in manual slice' @ Assignment draft: 
 q2=$(must @ "$c" ask: 'Which branch?')
 check 'agent question has session attribution' "session:$session" "$(field "$q2" .from)"
 unset TRASHTALK_RUN_TOKEN
-third=$(must new_session)
-reject 'active execution prevents session replacement' @ "$c" workIn: "$third"
+reject 'active execution prevents opening competing session' new_session
 reject 'operator cannot complete over active execution' @ "$c" complete: premature
 must @ "$first_run" finishWith: waiting_for_user outcome: '{}' error: '' >/dev/null
 wrong=$(must @ Message to: "session:$session" from: someone-else subject: answer body: wrong kind: note)
@@ -141,11 +140,13 @@ followup=$(must @ "$answer2" reply: 'Acknowledged; continuing the manual walkthr
 followup_reply=$(must @ "$followup" reply: 'One more detail for this exchange.')
 check 'manual boundary survives subsequent replies' manual "$(field "$followup_reply" .dispatchMode)"
 check 'subsequent manual reply stays out of automatic routing' 0 "$(@ AgentQueue pending | awk -v id="$followup_reply" '$0==id {n++} END {print n+0}')"
+must @ "$session" close >/dev/null
+third=$(must new_session)
 must @ "$c" workIn: "$third" >/dev/null
 export TRASHTALK_RUN_TOKEN="$first_token"
 reject 'finished predecessor token rejected' @ "$c" complete: stale
 # Even a falsely revived predecessor remains fenced by session and generation.
-@ Store patch: "$first_run" with: '{"state":"running"}' >/dev/null
+reject 'superseded run cannot be resurrected' @ Store patch: "$first_run" with: '{"state":"running"}'
 reject 'superseded running predecessor cannot complete' @ "$c" complete: stale
 @ Store patch: "$first_run" with: '{"state":"waiting_for_user"}' >/dev/null
 unset TRASHTALK_RUN_TOKEN
@@ -173,16 +174,19 @@ must @ "$run" finishWith: succeeded outcome: '{}' error: '' >/dev/null
 unset TRASHTALK_RUN_TOKEN
 
 # Requester session and original conversation survive outcome routing.
-origin=$(must @ Inbox send: 'Investigate for me' to: assignment-owner from: "session:$third")
+second="$third"
+origin_identity=$(must @ AgentIdentity named: conversation-requester)
+origin_session=$(must @ AgentSession openFor: "$origin_identity" archetype: "$arch" role: "$role" workspace: "$root" profile: shell)
+origin=$(must @ Inbox send: 'Investigate for me' to: assignment-owner from: "session:$origin_session")
 r=$(must @ Assignment draft: 'Keep the conversation link' in: "$root")
 must @ "$r" origin: "$origin" >/dev/null
 must @ "$r" assignTo: "$identity" >/dev/null
 must @ "$r" workIn: "$second" >/dev/null
-check 'agent requester records identity' "$identity" "$(field "$r" .requester)"
-check 'requester session is separate context' "$third" "$(field "$r" .requesterSession)"
+check 'agent requester records identity' "$origin_identity" "$(field "$r" .requester)"
+check 'requester session is separate context' "$origin_session" "$(field "$r" .requesterSession)"
 must @ "$r" complete: 'Reported, without accepting or merging work.' >/dev/null
 rmid=$(field "$r" .resultMessage)
-check 'result goes to original requester session' "session:$third" "$(field "$rmid" .to)"
+check 'result goes to original requester session' "session:$origin_session" "$(field "$rmid" .to)"
 check 'result preserves original thread' "$(field "$origin" .thread)" "$(field "$rmid" .thread)"
 check 'result references original request' "$origin" "$(field "$rmid" .replyTo)"
 
@@ -249,7 +253,7 @@ start_run "$session"
 export TRASHTALK_RUN_TOKEN="$token"
 check 'new run resumes answered work in same session' true "$(@ AgentDelivery claim: "$xd" run: "$run")"
 check 'same-session retry keeps both run references' 2 "$(field "$x" '.history[0].runs | length')"
-@ Store patch: "$old_run" with: '{"state":"running"}' >/dev/null
+reject 'predecessor cannot become active beside replacement' @ Store patch: "$old_run" with: '{"state":"running"}'
 export TRASHTALK_RUN_TOKEN="$old_token"
 reject 'old run cannot complete after same-session handoff' @ "$x" complete: stale
 reject 'agent cannot claim on behalf of another run' @ AgentDelivery claim: "$xd" run: "$run"
@@ -267,6 +271,9 @@ check 'operator fixture claims work' true "$(@ AgentDelivery claim: "$ud" run: "
 must @ "$ud" transitionTo: uncertain >/dev/null
 must @ "$run" finishWith: unsettled outcome: '{}' error: 'Needs review' >/dev/null
 check 'uncertainty is derived review activity' 'needs review' "$(@ "$uncertain" snapshot | jq -r .activity)"
+must @ "$session" close >/dev/null
+third=$(must @ AgentSession openFor: "$identity" archetype: "$arch" role: "$role" workspace: "$root" profile: shell)
+second="$third"
 reject 'uncertainty blocks replacement' @ "$uncertain" workIn: "$third"
 reject 'uncertainty blocks inferred completion' @ "$uncertain" complete: done
 must @ "$session" skip: "$ud" note: 'Reviewed effects; safe to continue manually.' >/dev/null

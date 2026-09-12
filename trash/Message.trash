@@ -26,7 +26,7 @@
 Message subclass: Object
   include: Persistable
   instanceVars: to:'' from:'' subject:'' body:'' kind:'note' status:'unread'
-                assignment:'' generation:0 dispatchMode:'automatic'
+                assignment:'' generation:0 dispatchMode:'automatic' executionWorkspace:''
                 thread:'' replyTo:'' created:'' sentAt:0 readAt:''
 
   # Build an undelivered message. Inbox deliver: stamps to/created/sentAt/thread.
@@ -103,10 +103,17 @@ Message subclass: Object
   # Prefer the exact originating conversation while it is current. Otherwise
   # return candidates in that same workspace; a UI must resolve ambiguity.
   method: senderSessions [
-    | origin identity state current workspace |
+    | origin identity state current workspace scope |
     origin := @ self originSession.
     identity := @ self senderIdentity.
     identity isEmpty ifTrue: [^ ''].
+    @ identity reload.
+    scope := @ identity sessionScope.
+    (scope = 'identity') ifTrue: [
+      current := @ AgentSession currentFor: identity workspace: ''.
+      (current notEmpty) ifTrue: [^ current].
+      ^ origin
+    ].
     origin notEmpty ifTrue: [
       @ origin reload.
       state := @ origin lifecycleState.
@@ -133,6 +140,7 @@ Message subclass: Object
     msg := @ Message to: from from: to subject: subject body: text kind: 'note'.
     @ msg thread: thread.
     @ msg replyTo: self.
+    @ msg executionWorkspace: executionWorkspace.
     inbox := @ Inbox named: from.
     ^ @ inbox deliver: msg
   ]

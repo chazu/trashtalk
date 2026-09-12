@@ -19,9 +19,16 @@ AgentRun subclass: Object
   include: Persistable
   instanceVars: session:'' state:'starting' archetypeRevision:'' roleRevision:''
                 backendProfile:'' externalConversationRef:'' ownerGeneration:0 workerId:''
-                capabilityTokenHash:'' processPid:0 pidFile:'' exitFile:'' outputLog:''
+                capabilityTokenHash:'' purpose:'work' processPid:0 pidFile:'' exitFile:'' outputLog:''
                 errorLog:'' promptFile:'' lastMessageFile:'' priorRun:'' started:''
-                heartbeatAt:'' finished:'' outcome:'' error:'' stopRequested:'false'
+                heartbeatAt:'' finished:'' outcome:'' error:'' stopRequested:'false' executionWorkspace:''
+
+  method: executionWorkspace [
+    | value |
+    value := executionWorkspace.
+    (value isEmpty) ifTrue: [^ @ session workspace].
+    ^ value
+  ]
 
   # Common transition rule over state.
   method: transitionTo: newState [
@@ -50,22 +57,50 @@ AgentRun subclass: Object
 
   # Create a run for a session and mint its token. Prints two lines: the run
   # id, then `<runId>:<secret>`. The secret is never stored.
-  rawClassMethod: startFor: sessionId profile: p [
-    local sid="$1" profile="$2" run secret hash now
-    now=$(@ Time nowISO)
-    run=$(@ AgentRun new)
-    @ "$run" session: "$sid"
-    @ "$run" state: starting
-    @ "$run" archetypeRevision: "$(@ "$sid" archetypeRevision)"
-    @ "$run" roleRevision: "$(@ "$sid" roleRevision)"
-    @ "$run" backendProfile: "$profile"
-    @ "$run" started: "$now"
-    secret=$(uuidgen | tr -d '-' | tr 'A-Z' 'a-z')
-    hash=$(printf '%s' "$secret" | shasum -a 256 | cut -d' ' -f1)
-    @ "$run" capabilityTokenHash: "$hash"
-    @ "$run" save
-    echo "$run"
-    echo "$run:$secret"
+  classMethod: startFor: sessionId profile: profile [
+    | workspace |
+    workspace := @ sessionId workspace.
+    ^ @ self startFor: sessionId profile: profile workspace: workspace
+  ]
+
+  rawClassMethod: startFor: sessionId profile: p workspace: workspace [
+    local secret hash args run
+    @ AgentSession ensureSchema || return 1
+    secret=$(uuidgen | tr -d '-' | tr 'A-Z' 'a-z') || return 1
+    hash=$(printf '%s' "$secret" | shasum -a 256 | cut -d' ' -f1) || return 1
+    args=$(jq -cn --arg session "$1" --arg profile "$2" --arg hash "$hash" --arg workspace "$3" '{session:$session,profile:$profile,hash:$hash,workspace:$workspace}') || return 1
+    run=$(@ Store transaction: AgentRun sending: 'startWithin:' with: "$args") || return 1
+    printf '%s\n%s:%s\n' "$run" "$run" "$secret"
+  ]
+
+  classMethod: startWithin: args [
+    | session run active now state revision workspace role allowed |
+    @ Store requireTransaction.
+    session := @ Store read: (args objectAt: 'session') class: 'AgentSession'.
+    state := @ session lifecycleState.
+    @ Require equal: state to: 'open'.
+    @ AgentSession requireCurrentWithin: session.
+    workspace := @ AgentSession workspaceFor: (args objectAt: 'workspace').
+    role := @ session role.
+    role := @ Store read: role class: 'AgentRole'.
+    allowed := @ role allowsWorkspace: workspace.
+    @ Require equal: allowed to: 'true'.
+    active := @ Store idsOf: 'AgentRun' matching: (#{session: session state: #('starting' 'running' 'recovering')} asJson).
+    @ Require equal: active to: '[]'.
+    now := @ Time nowISO.
+    run := @ AgentRun new.
+    @ run session: session.
+    @ run state: 'starting'.
+    revision := @ session archetypeRevision.
+    @ run archetypeRevision: revision.
+    revision := @ session roleRevision.
+    @ run roleRevision: revision.
+    @ run backendProfile: (args objectAt: 'profile').
+    @ run executionWorkspace: workspace.
+    @ run started: now.
+    @ run capabilityTokenHash: (args objectAt: 'hash').
+    @ run save.
+    ^ run
   ]
 
   rawMethod: finishWith: state outcome: o error: e [
@@ -212,6 +247,7 @@ AgentRun subclass: Object
       esac
       seen_threads="$seen_threads$thread "
       msg=$(@ Message to: "$to" from: "$sender" subject: "$subj" body: "$body" kind: result)
+      @ "$msg" executionWorkspace: "$(@ "$first" executionWorkspace)"
       @ "$msg" thread: "$thread"
       @ "$msg" replyTo: "$first"
       inbox=$(@ Inbox named: "$to")
@@ -230,6 +266,7 @@ AgentRun subclass: Object
     [[ -n "$first" ]] || return 1
     sid=$(@ "$run" session)
     msg=$(@ Message to: "$(@ "$first" from)" from: "session:$sid" subject: "$(@ "$first" subject)" body: "$1" kind: result)
+    @ "$msg" executionWorkspace: "$(@ "$first" executionWorkspace)"
     @ "$msg" thread: "$(@ "$first" thread)"
     @ "$msg" replyTo: "$first"
     inbox=$(@ Inbox named: "$(@ "$first" from)")

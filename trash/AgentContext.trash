@@ -1,0 +1,36 @@
+# Context maintenance preserves the logical session and the provider conversation.
+# The driver owns provider-specific history and compaction; the worker lock only
+# serializes request admission with normal launch/stop, not background summarizing.
+AgentContext subclass: Object
+  classMethod: compactSession: session [
+    | path result |
+    path := @ AgentWorker lockPath.
+    result := @ Process withLock: path receiver: self selector: 'compactOwned:' argument: session.
+    (result isEmpty) ifTrue: [^ @ Require reject: 'Compaction did not start; the worker may be busy. Inspect the diagnostic and retry when idle'].
+    ^ result
+  ]
+
+  classMethod: compactOwned: session [
+    | current run profile |
+    current := @ AgentAccess liveSession: session.
+    (current isEmpty) ifTrue: [^ @ Require reject: 'Current session access required'].
+    run := @ current activeRun.
+    (run notEmpty) ifTrue: [^ @ Require reject: 'Wait for the active run to finish before compacting context'].
+    profile := @ current backendProfile.
+    (profile ~= 'jcode') ifTrue: [^ @ Require reject: 'Context compaction is currently supported by Jcode sessions'].
+    ^ @ self launchCompactionFor: current
+  ]
+
+  # Process admission and private token plumbing belong at this OS boundary.
+  rawClassMethod: launchCompactionFor: session [
+    local session="$1" run token pid
+    { read -r run; read -r token; } < <(@ AgentRun startFor: "$session" profile: jcode)
+    [[ -n "$run" && -n "$token" ]] || return 1
+    @ Store patch: "$run" with: '{"purpose":"compact"}' || return 1
+    if pid=$(@ JcodeDriver launchCompaction: "$run" token: "$token"); then
+      printf 'Compacting context in the background (run %s). Your conversation and history are retained.\n' "$run"
+    else
+      @ "$run" transitionTo: failed with: '{"error":"Compaction could not start"}' >/dev/null
+      return 1
+    fi
+  ]

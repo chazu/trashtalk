@@ -4,6 +4,7 @@
 AgentQueue subclass: Object
 
   rawClassMethod: ensureSchema [
+    @ AgentSession ensureSchema || return 1
     _db_sql "CREATE TABLE IF NOT EXISTS agent_outbox (
       message_id TEXT PRIMARY KEY, inbox TEXT NOT NULL,
       session TEXT NOT NULL DEFAULT '', attempted_at INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL DEFAULT (unixepoch()));
@@ -101,16 +102,17 @@ AgentQueue subclass: Object
   # Atomic lookup/create, plus routing acknowledgement and question unblocking.
   # A deterministic id and BEGIN IMMEDIATE make concurrent replay harmless.
   rawClassMethod: assign: sessionId messages: idsJson outbox: messageId [
-    local sid ids key hash id now data esc_key esc_sid esc_id esc_data esc_msg guard
+    local sid ids key hash id now data context esc_key esc_sid esc_id esc_data esc_msg guard
     sid="$1"
     ids=$(printf '%s' "$2" | jq -ce 'select(type == "array" and length > 0 and all(.[]; type == "string"))') || return 1
     @ AgentQueue ensureSchema || return 1
+    context=$(@ AgentWorkContext forSession: "$sid" messages: "$ids") || return 1
     hash=$(printf '%s' "$ids" | shasum -a 256 | cut -d' ' -f1)
     key="$sid:${hash:0:16}"
     id="agentdelivery_$(printf '%s' "$key" | shasum -a 256 | cut -d' ' -f1)"
     now=$(@ Time nowISO)
-    data=$(jq -cn --arg sid "$sid" --argjson ids "$ids" --arg key "$key" --arg now "$now" \
-      '{class:"AgentDelivery",session:$sid,messageIds:$ids,deliveryKey:$key,state:"pending",run:"",attempts:0,lastError:"",note:"",created:$now,created_at:(now|floor)} | ._vars = (keys - ["class"])')
+    data=$(jq -cn --arg sid "$sid" --argjson ids "$ids" --arg key "$key" --arg now "$now" --argjson context "$context" \
+      '{class:"AgentDelivery",session:$sid,messageIds:$ids,deliveryKey:$key,state:"pending",run:"",attempts:0,lastError:"",note:"",created:$now,created_at:(now|floor)} + $context | ._vars = (keys - ["class"])')
     esc_sid=$(_db_escape "$sid"); esc_key=$(_db_escape "$key")
     esc_id=$(_db_escape "$id"); esc_data=$(_db_escape "$data"); esc_msg=$(_db_escape "$3")
     guard="('$esc_msg' = '' OR EXISTS(SELECT 1 FROM agent_outbox WHERE message_id='$esc_msg' AND session=''

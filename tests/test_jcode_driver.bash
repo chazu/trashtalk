@@ -66,6 +66,8 @@ check 'ack and unrelated completion leave run active' running "$(field "$run" st
 msg2=$(@ Inbox send: SECOND_SECRET to: "session:$session" from: jcode-owner)
 check 'busy session gets no overlapping run' '' "$(@ AgentWorker tickSession: "$session")"
 check 'second message stays queued' 1 "$(@ "$session" pendingCount)"
+check 'direct steering can join a run processing inbox mail' 'Input sent directly to the session at its next safe point' "$(@ "$session" input: 'direct steering while reading inbox')"
+check 'steering adds no pending delivery' 1 "$(@ "$session" pendingCount)"
 touch "$JCODE_TEST_GATE"
 settle
 check 'first native run succeeded' succeeded "$(field "$run" state)"
@@ -85,6 +87,40 @@ for reply in $replies; do
 done
 check 'completed launcher loses authority' '' "$("$directory/trash-send" AgentRun current 2>/dev/null)"
 check 'notification contains no message body' 0 "$(grep -c FIRST_SECRET "$directory/prompt.txt")"
+
+# Public context maintenance keeps the session, provider reference, and queue.
+context_result=$(@ "$session" compact)
+check 'compaction reports a background run' true "$([[ "$context_result" == 'Compacting context in the background'* ]] && echo true || echo false)"
+settle
+check 'compaction targets existing native session once' 1 "$(jq -s '[.[]|select(.req=="compact" and .session_id=="jcode-fixture-session")]|length' "$host/fixture-calls.jsonl")"
+check 'compaction keeps its bridge alive through asynchronous summary' true "$(jq -s 'any(.req=="ping")' "$host/fixture-calls.jsonl")"
+check 'compaction preserves logical provider reference' jcode-fixture-session "$(field "$session" lastConversationRef)"
+check 'compaction sends no new delivery' 0 "$(@ "$session" pendingCount)"
+checkpoint=$(rg --files "$TRASHTALK_RUN_DIR" | rg 'context-before.json$' | head -1)
+check 'compaction retains the original history checkpoint' 1 "$(jq '.messages|length' "$checkpoint")"
+# Refusal has no model work to settle; it must remain a visible failed run.
+touch "$host/refuse-compact"
+@ "$session" compact >/dev/null
+compact_run=$(@ "$session" activeRun)
+for i in {1..100}; do
+    @ AgentWorker tickSession: "$session" >/dev/null 2>&1
+    [[ $(field "$compact_run" state) != running ]] && break
+    sleep .1
+done
+check 'native compaction refusal is visible' failed "$(field "$compact_run" state)"
+check 'refused compaction does not pause new work' open "$(field "$session" lifecycleState)"
+rm "$host/refuse-compact"
+touch "$host/lose-compact"
+@ "$session" compact >/dev/null
+compact_run=$(@ "$session" activeRun)
+for i in {1..100}; do
+    @ AgentWorker tickSession: "$session" >/dev/null 2>&1
+    [[ $(field "$compact_run" state) != running ]] && break
+    sleep .1
+done
+check 'lost compaction observer becomes a failed maintenance run' failed "$(field "$compact_run" state)"
+check 'lost compaction observer leaves conversation available' open "$(field "$session" lifecycleState)"
+rm "$host/lose-compact"
 
 # A connection can disappear while a resident daemon still owns the prompt.
 export JCODE_TEST_MODE=lost
@@ -152,7 +188,10 @@ check 'replacement remains active' "$replacement" "$(@ "$session" activeRun)"
 check 'replacement native work remains processing' processing "$(cat "$host/fixture-state")"
 
 denyrole=$(@ AgentRole define: observer revision: 1 capabilities: '["inbox.read"]' workspacePolicy: '[]' runBudget: '{}')
-denysession=$(@ AgentSession openFor: "$identity" archetype: "$(@ "$session" archetype)" role: "$denyrole" workspace: "$tmp" profile: shell)
+observer_identity=$(@ AgentIdentity named: observer)
+@ "$observer_identity" owner: jcode-owner
+@ "$observer_identity" save
+denysession=$(@ AgentSession openFor: "$observer_identity" archetype: "$(@ "$session" archetype)" role: "$denyrole" workspace: "$tmp" profile: shell)
 mapfile -t denied < <(@ AgentRun startFor: "$denysession" profile: shell)
 @ "${denied[0]}" transitionTo: running >/dev/null
 TRASHTALK_RUN_TOKEN="${denied[1]}" @ AgentRun stop: "$replacement" >/dev/null 2>&1; rc=$?

@@ -752,7 +752,7 @@ so a polling worker must batch its queries per tick.
 ## Harness contract, context, and caching
 
 The one-shot `AxeAgent` and `CodexAgent` paths remain valid for
-`@@ --one-shot`. [ClaudeAgent and the tmux session methods were retired](cleanup-2026-09.md).
+`@ Agent ask:workingDirectory:status:lastResult:`. [ClaudeAgent and the tmux session methods were retired](cleanup-2026-09.md).
 Persistent sessions use separate drivers behind `AgentSession`; the Codex
 one-shot path retains ChatGPT authentication and
 stripped API-key environment. The session driver relaxes the one-shot path's
@@ -1105,11 +1105,10 @@ it. It becomes the entry point to a persistent assistant named Gusgus.
   id per driver (Codex: its lowest tier that supports resume; maki:
   `anthropic/claude-sonnet-*` once Anthropic auth is available). Model ids
   live in the profile record, not in code.
-- One session per workspace, where the workspace is the repository root
-  containing the current directory, or the directory itself outside a
-  repository. Identity routing on that workspace finds the session or creates
-  it on first use. Sessions stay `open` indefinitely; `@@ --fresh` closes the
-  current one and opens another.
+- The current implementation gives Gusgus one selected conversation across
+  directories. Specialist identities default to one per canonical workspace.
+  `@ Gusgus fresh: "$PWD"` explicitly replaces an idle current conversation;
+  historical conversations remain inspectable.
 
 `@@ 'text'` persists a message from the user to that session, runs a
 foreground `AgentWorker tick` so no worker daemon is required, prints the
@@ -1137,8 +1136,10 @@ result message are both written by the agent, the answer lands in the inbox
 even if no tick runs afterwards; the worker's uncertain-on-exit fallback
 applies on the next tick, whenever that is.
 
-`@@ --dry-run` still shows the assembled context, `@@ --fresh` starts a new
-session, and `@@ --one-shot` keeps the current stateless path. The existing
+`@@` has no flags. Use `Agent dryRun:workingDirectory:status:lastResult:` for
+context inspection and `Agent ask:workingDirectory:status:lastResult:` for
+one-shot execution. Option-U toggles the current conversation view, whose
+composer sends directly to the native session. The existing
 per-call context (working directory, last status, last result) is appended
 after the stable prefix as delivery context, so caching still applies across
 calls.

@@ -125,7 +125,8 @@ check 'earlier result does not contaminate final diagnostics' '' "$(@ MakiDriver
 rm -rf "$tmp/workspace with spaces/.maki"
 mkdir "$tmp/stop-workspace"
 export MAKI_TEST_MODE=wait
-session=$(@ Gusgus sessionFor: "$tmp/stop-workspace")
+@ "$authrun" transitionTo: failed >/dev/null
+session=$(@ Gusgus fresh: "$tmp/stop-workspace")
 busy_message=$(@ Inbox send: 'long Maki task' to: "session:$session" from: maki-tester)
 busy=$(@ AgentWorker tickSession: "$session")
 for i in {1..100}; do [[ -e "$MAKI_TEST_LOG/$busy.waiting" ]] && break; sleep .1; done

@@ -9,7 +9,22 @@
 AgentIdentity subclass: Object
   include: Persistable
   instanceVars: handle:'' displayName:'' owner:'' enabled:'true' defaultArchetype:''
-                defaultRole:'' inbox:'' created:''
+                defaultRole:'' inbox:'' created:'' sessionScope:'workspace' currentSession:'' sessionPolicyRevision:0
+
+  # Compatibility defaults are read-only; migration remains explicit.
+  method: sessionPolicyRevision [
+    | value |
+    value := sessionPolicyRevision.
+    (value isEmpty) ifTrue: [^ 0].
+    ^ value
+  ]
+
+  method: sessionScope [
+    | value |
+    value := sessionScope.
+    (value isEmpty) ifTrue: [^ 'workspace'].
+    ^ value
+  ]
 
   # Find or create the identity with this handle. Raw: the handle is validated
   # with the same character set as Inbox names and then interpolated into SQL.
@@ -21,20 +36,29 @@ AgentIdentity subclass: Object
       _throw "AgentIdentityError" "Invalid handle '$name' (allowed: letters, digits, _ . : -)"
       return 1
     fi
-    existing=$(@ AgentIdentity findByHandle: "$name")
-    if [[ -n "$existing" ]]; then
-      echo "$existing"
-      return
-    fi
-    esc="agent:$name"
-    now=$(@ Time nowISO)
-    id=$(@ AgentIdentity new)
-    @ "$id" handle: "$name"
-    @ "$id" inbox: "$esc"
-    @ "$id" created: "$now"
-    @ "$id" save
-    @ Inbox named: "$esc" >/dev/null
-    echo "$id"
+    @ AgentSession ensureSchema || return 1
+    @ Store transaction: AgentIdentity sending: 'namedWithin:' with: "$name" replaying: true
+  ]
+
+  classMethod: namedWithin: name [
+    | ids count identity inbox address now |
+    @ Store requireTransaction.
+    ids := @ Store idsOf: 'AgentIdentity' matching: (#{handle: name} asJson).
+    count := ids arrayLength.
+    (count > 1) ifTrue: [^ @ Require reject: 'Identity handle is ambiguous; inspect legacy records'].
+    (count = 1) ifTrue: [^ ids arrayFirst].
+    now := @ Time nowISO.
+    address := 'agent:' , name.
+    identity := @ AgentIdentity new.
+    @ identity handle: name.
+    @ identity inbox: address.
+    @ identity created: now.
+    @ identity sessionPolicyRevision: 1.
+    @ identity save.
+    inbox := @ Inbox new.
+    @ inbox name: address.
+    @ inbox save.
+    ^ identity
   ]
 
   rawClassMethod: findByHandle: handle [
@@ -45,4 +69,30 @@ AgentIdentity subclass: Object
 
   method: inboxObject [
     ^ @ Inbox named: inbox
+  ]
+
+  method: currentSessionFor: path [
+    | args |
+    args := #{identity: self workspace: path} asJson.
+    ^ @ Store transaction: 'AgentSession' sending: 'resolveOwnedWithin:' with: args
+  ]
+
+  method: ensureCurrentSessionFor: path [
+    | identity archetype role profile workspace |
+    identity := @ AgentAccess identity: self.
+    (identity isEmpty) ifTrue: [^ @ Require reject: 'Identity access denied'].
+    workspace := @ AgentSession workspaceFor: path.
+    archetype := @ identity defaultArchetype.
+    role := @ identity defaultRole.
+    profile := @ archetype suggestedBackendProfile.
+    ^ @ AgentSession ensureFor: identity archetype: archetype role: role workspace: workspace profile: profile
+  ]
+
+  # Explicit owner selection preserves one provider conversation and historical work.
+  method: selectCurrentSession: session [
+    | identity human |
+    identity := @ AgentAccess identity: self.
+    (identity isEmpty) ifTrue: [^ @ Require reject: 'Identity access denied'].
+    human := @ AgentFocus human.
+    ^ @ AgentSession select: session forIdentity: identity owner: human
   ]

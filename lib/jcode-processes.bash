@@ -41,6 +41,11 @@ exec perl -MFcntl=:flock -MTime::HiRes=sleep -e '
         open my $f, "<", $file or die $!; chomp(my $birth=<$f>); close $f;
         if (exists $snapshot{$pid} && $snapshot{$pid}[0]==$pid && $snapshot{$pid}[1] eq $birth) {
             push @groups, $pid;
+        } elsif (exists $snapshot{$pid} && $snapshot{$pid}[1] ne $birth
+                 && $birth =~ /^[A-Z][a-z]{2} [A-Z][a-z]{2} [ 0-9][0-9] [0-9:]{8} [0-9]{4}$/) {
+            # POSIX forbids PID reuse while the old process group exists.
+            # A different birth proves this receipt retired; never signal it.
+            unlink $file;
         } elsif (grep { $_->[0]==$pid } values %snapshot) {
             warn "Cannot establish ownership of remaining tool group $pid\n"; $uncertain=1;
         } else { unlink $file; }

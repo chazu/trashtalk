@@ -60,7 +60,10 @@ check 'temporary preview dirs removed' 0 "$(find "$TMPDIR" -maxdepth 1 -type d -
 
 # Pause, select a failed delivery, explicitly confirm retry, then dismiss.
 delivery=$(@ "$session" pendingDeliveries)
-@ AgentDelivery claim: "$delivery" run: "$run" >/dev/null
+mapfile -t lines < <(@ AgentRun startFor: "$session" profile: shell)
+claim_run=${lines[0]}
+@ "$claim_run" transitionTo: running >/dev/null
+@ AgentDelivery claim: "$delivery" run: "$claim_run" >/dev/null
 @ "$delivery" transitionTo: failed >/dev/null
 printf '%s\n' "$session" pause retry "$delivery" retry back '' > "$PICKS"
 @ AgentSession browse >/dev/null
@@ -73,7 +76,7 @@ printf '%s\n' "$session" resume back '' > "$PICKS"
 check 'resume is applied on the session instance' open "$(@ "$session" lifecycleState)"
 
 # Cancel the retry confirmation and reject a forged picker id.
-@ AgentDelivery claim: "$delivery" run: "$run" >/dev/null
+@ AgentDelivery claim: "$delivery" run: "$claim_run" >/dev/null
 @ "$delivery" transitionTo: uncertain >/dev/null
 printf '%s\n' "$session" retry "$delivery" '' back '' > "$PICKS"
 @ AgentSession browse >/dev/null

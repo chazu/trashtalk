@@ -31,19 +31,15 @@ AgentFocus subclass: Object
   ]
 
   classMethod: perform: intent session: session body: body run: run [
-    | result inbox message state allowed recipient sender |
+    | result inbox message state allowed recipient sender workspace |
     session := @ AgentAccess session: session.
     session isEmpty ifTrue: [^ @ Require reject: 'Session access denied'].
     (intent = 'send_message') ifTrue: [
-      state := @ session lifecycleState.
-      allowed := @ Require contains: state in: '["open","paused"]'.
-      (allowed ~= 'true') ifTrue: [^ @ Require reject: 'This session is closed; the message was not sent'].
-      inbox := @ session inboxObject.
-      recipient := @ session inbox.
-      sender := @ self human.
-      message := @ Message to: recipient from: sender subject: '' body: body kind: 'note'.
-      ^ @ inbox deliver: message
+      session := @ AgentAccess liveSession: session.
+      (session isEmpty) ifTrue: [^ @ Require reject: 'This conversation is historical; focus the current session to send'].
+      ^ @ session input: body
     ].
+    (intent = 'compact_session') ifTrue: [^ @ session compact].
     (intent = 'pause_session') ifTrue: [^ @ session pause].
     (intent = 'resume_session') ifTrue: [
       result := @ session resume.
@@ -65,7 +61,7 @@ AgentFocus subclass: Object
     local frame="$1" context="$2" intent sid body run state request window result ok=true
     @ AgentFocus human >/dev/null || return 1
     jq -e 'type=="object" and .schema_version==1 and (.request_id|type=="number" and floor==. and .>0) and
-      (.intent|IN("dismiss","load_older","send_message","mark_viewed","pause_session","resume_session","interrupt_run")) and
+      (.intent|IN("dismiss","load_older","send_message","mark_viewed","pause_session","resume_session","interrupt_run","compact_session")) and
       (if .intent=="mark_viewed" then (.message_ids|type=="array" and length>0 and length<=200 and all(.[];type=="string")) else true end) and
       (if .intent=="send_message" then (.body|type=="string" and length>0 and length<=100000 and (contains("\u0000")|not) and test("\\S")) else true end) and
       (if .intent=="interrupt_run" then (.run_id|type=="string" and length>0) else true end)' <<< "$frame" >/dev/null || return 1
@@ -95,5 +91,5 @@ AgentFocus subclass: Object
     fi
     jq -cn --argjson context "$context" --argjson request "$request" --argjson ok "$ok" --arg text "$result" --arg intent "$intent" \
       '{context:$context,frame:{schema_version:1,type:"ack",request_id:$request,ok:$ok,result:$text,
-        message:(if $ok and $intent=="send_message" then "Message sent to agent inbox" else $text end)}}'
+        message:(if $ok and $intent=="send_message" then "Input sent to agent session" else $text end)}}'
   ]

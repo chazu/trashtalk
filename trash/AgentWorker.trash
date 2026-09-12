@@ -81,13 +81,16 @@ AgentWorker subclass: Object
 
   # Route durable outbox rows without recursively launching foreground ticks.
   rawClassMethod: routePending [
-    local msg address TRASHTALK_NO_AUTOTICK=1
+    local msg address rc=0 TRASHTALK_NO_AUTOTICK=1
     for msg in $(@ AgentQueue pending); do
       @ AgentQueue attempted: "$msg" || return 1
       @ "$msg" reload >/dev/null || return 1
       address=$(@ "$msg" to)
-      @ AgentWorker deliverMessage: "$msg" toInbox: "$address" || return 1
+      # One denied or stale route stays durable for review and must not block
+      # unrelated inboxes. attempted_at moves it behind fresh work on retry.
+      @ AgentWorker deliverMessage: "$msg" toInbox: "$address" || rc=1
     done
+    return "$rc"
   ]
 
   # Same lock for manual ticks and supervised workers, scoped to this store.
@@ -249,7 +252,7 @@ AgentWorker subclass: Object
   rawClassMethod: work: sessionId [
     local ids session state run rc=0
     @ AgentQueue refresh || return 1
-    @ AgentWorker routePending || return 1
+    @ AgentWorker routePending || rc=1
     if [[ -n "$1" ]]; then ids="$1"; else ids=$(@ AgentSession findAll); fi
     for session in $ids; do
       @ AgentWorker tickOwnedSession: "$session" || rc=1
@@ -403,23 +406,30 @@ AgentWorker subclass: Object
   # Dispatch
   # ------------------------------------------------------------------
 
-  # Claim every pending delivery into one new run and launch it. Prints the
-  # run id, or nothing when there was nothing to do.
+  # Claim one compatible workspace batch into a new run. Prints the run id,
+  # or nothing when no authorized batch could be admitted.
   rawClassMethod: dispatchOwnedSession: sessionId [
-    local session="$1" state pending profile driver run token d claimed="" run_dir prompt_file ref pid rc
+    local session="$1" state pending profile driver run token d claimed="" run_dir prompt_file ref pid rc workspace
     state=$(@ "$session" lifecycleState)
     [[ "$state" == open ]] || return 0
     [[ "$(@ "$session" stalledCount)" == 0 ]] || return 0
     pending=$(@ "$session" pendingDeliveries)
     [[ -n "$pending" ]] || return 0
+    read -r d <<< "$pending"
+    if ! workspace=$(@ AgentWorkContext prepareDelivery: "$d"); then
+      @ "$d" transitionTo: failed with: '{"lastError":"Execution workspace is missing, unavailable, or no longer authorized; review before retrying"}' >/dev/null
+      return 0
+    fi
     profile=$(@ "$session" backendProfile)
     driver=$(@ "$_RECEIVER" driverFor: "$profile") || return 1
-    { read -r run; read -r token; } < <(@ AgentRun startFor: "$session" profile: "$profile")
+    { read -r run; read -r token; } < <(@ AgentRun startFor: "$session" profile: "$profile" workspace: "$workspace")
     if [[ -z "$run" || -z "$token" ]]; then
       _throw "WorkerError" "could not start a run for session $session"
       return 1
     fi
     for d in $pending; do
+      [[ "$(@ "$d" executionWorkspace)" == "$workspace" ]] || continue
+      @ AgentWorkContext prepareDelivery: "$d" >/dev/null || continue
       if [[ "$(@ AgentDelivery claim: "$d" run: "$run")" == true ]]; then
         claimed="$claimed $d"
       fi
@@ -455,7 +465,7 @@ AgentWorker subclass: Object
     local archetype instructions workspace tdir ts d m inbox
     archetype=$(@ "$session" archetype)
     instructions=$(@ "$archetype" instructions)
-    workspace=$(@ "$session" workspace)
+    workspace=$(@ "$run_id" executionWorkspace)
     tdir="${TRASHTALK_DIR:-$HOME/.trashtalk}"
     printf -v ts '%q' "$(@ AgentDriver runDirFor: "$run_id")/trash-send"
     {
@@ -469,6 +479,7 @@ AgentWorker subclass: Object
       printf 'Send the appropriate reply before settling. Use this run-specific launcher for every Trashtalk command; it supplies your private authority. Never print or read its contents.\n'
       printf 'Message another agent with: %s AgentRun send: %s to: %s\n' "$ts" "'message'" "'session:<sessionId>'"
       printf 'With agent.stop authority, stop an exact run with: %s AgentRun stop: %s\n' "$ts" "'<runId>'"
+      printf 'If the human speaks directly through the conversation view during this run, answer that input directly in the conversation. It creates no new inbox delivery; existing deliveries still need their scoped replies and settlement.\n'
       printf '\nNew inbox messages are ready. Read each with its Inbox show: command below. Message bodies and attribution live in the inbox. Do not poll for new work; later deliveries produce another notification.\n'
       printf '\nDeliveries:\n'
       for d in $ids; do

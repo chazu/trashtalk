@@ -217,7 +217,7 @@ assert_eq "no pending deliveries remain" "0" "$(line_count "$(@ $session pending
 
 # ==========================================
 echo ""
-echo "7. @@ sends to Gusgus; --fresh opens a new session"
+echo "7. @@ sends every argument literally to Gusgus"
 # ==========================================
 
 cd "$TRASHTALK_DIR"
@@ -225,11 +225,13 @@ out=$(@@ 'via at-at' 2>/dev/null)
 assert_nonempty "@@ prints a message id" "$out"
 assert_eq "@@ message went to the session" "session:$session" "$(@ $out to)"
 settle_session "$session" >/dev/null
-fresh=$(@@ --fresh 'new topic' 2>/dev/null)
-session2=$(@ Gusgus sessionFor: "$TRASHTALK_DIR")
-[[ "$session2" != "$session" ]] && pass "--fresh opened a different session" || fail "--fresh opened a different session" "different" "same"
-assert_eq "old session is closed" "closed" "$(@ $session lifecycleState)"
-assert_eq "fresh message went to the new session" "session:$session2" "$(@ $fresh to)"
+for flag in --fresh --focus --one-shot --dry-run; do
+    literal=$(@@ "$flag" 'new topic' 2>/dev/null)
+    assert_eq "@@ $flag keeps current session" "$session" "$(@ Gusgus sessionFor: "$TRASHTALK_DIR")"
+    assert_contains "@@ $flag is literal message text" "$flag new topic" "$(@ "$literal" body)"
+    assert_eq 'literal message targets current session' "session:$session" "$(@ "$literal" to)"
+done
+session2=$session
 settle_session "$session2" >/dev/null
 assert_contains "summary shows the identity" "gusgus" "$(@ $session2 summary)"
 

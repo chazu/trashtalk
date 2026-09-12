@@ -35,7 +35,9 @@ own=''
 if bash "$helper" shell "$host" "$real_bash" -c 'touch "$1"' tool "$tmp/late"; then rc=0; else rc=$?; fi
 check 'stop gate rejects late tool launches' 125 "$rc"
 check 'late tool never executed' false "$([[ -e "$tmp/late" ]] && echo true || echo false)"
-rm "$host/processes/$foreign"
+echo 'Thu Jan  1 00:00:00 1970' > "$host/processes/$foreign"
 bash "$helper" stop "$host"
-check 'explicitly resolved stop is retryable' true true
+check 'retired birth receipt does not stall stop' true true
+check 'reused PID was not signalled' true "$(kill -0 "$foreign" 2>/dev/null && echo true || echo false)"
+check 'retired birth receipt is removed' false "$([[ -e "$host/processes/$foreign" ]] && echo true || echo false)"
 echo '=== Jcode process ownership checks passed ==='

@@ -123,8 +123,10 @@ carries only the references needed to discover pending messages, such as an
 inbox handle and message handles or a processing cursor. It instructs the
 agent to read those messages through the public Inbox/Message operations.
 Do not substitute a copied body or a generated summary in the harness prompt
-for that inbox read. This applies to initial input, later input, questions,
-answers, and assignment outcomes.
+for that inbox read. This applies to inbox input, inbox questions and answers,
+and assignment outcomes. Human input in the conversation view is direct native
+session interaction and creates no Message or AgentDelivery. `@@` remains inbox
+mail, with every argument treated literally.
 
 The sequence is: persist message and notification obligation; present a wake
 prompt when the harness can accept it; let the agent read the identified
@@ -156,7 +158,8 @@ time without changing its assignee.
 
 Gusgus illustrates the distinction. The `Gusgus` class is a convenience wrapper
 that finds/configures the identity whose handle is `gusgus` and finds or opens
-its workspace sessions. These existing calls return different objects:
+its one identity-scoped current conversation. Workspace-scoped specialists still
+use one current session per canonical workspace. These calls return different objects:
 
 ```bash
 gusgus=$(@ Gusgus identity)                # AgentIdentity instance

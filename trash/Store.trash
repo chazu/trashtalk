@@ -75,7 +75,13 @@ Store subclass: Object
     id=$(_db_escape "$1")
     printf '%s' "$2" | jq -e 'type == "object"' >/dev/null || return 1
     patch=$(_db_escape "$2")
-    _db_sql "UPDATE instances SET data = json_patch(data, '$patch') WHERE id = '$id';" || return 1
+    if [[ -n ${_STORE_TX:-} ]]; then
+      [[ ${_STORE_READONLY:-0} == 0 ]] || { _store_tx_fail 'Conflict replay would write'; return 1; }
+      _store_tx_import "$1" || return 1
+      _store_tx_sql "UPDATE instances SET data = json_patch(data, '$patch') WHERE id = '$id';" || return 1
+    else
+      _db_sql "UPDATE instances SET data = json_patch(data, '$patch') WHERE id = '$id';" || return 1
+    fi
     _env_set "$1" "$(db_get "$1")"
   ]
 
@@ -203,6 +209,9 @@ Store subclass: Object
   ]
 
   rawClassMethod: transaction: receiver sending: selector with: argument replaying: replay [
+    # A shell/view may predate the transaction runtime while loading this newer
+    # compiled class. Load the shared primitive at its boundary in that case.
+    declare -F _store_transaction >/dev/null || source "${TRASHTALK_DIR:-$HOME/.trashtalk}/lib/store-transaction.bash" || return 1
     _store_transaction "$4" "$1" "$2" "$3"
   ]
 

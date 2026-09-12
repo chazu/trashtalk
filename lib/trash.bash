@@ -2427,53 +2427,14 @@ function @ {
   ((rc == 0)) || { _store_tx_fail 'Message send failed'; return "$rc"; }
 }
 
-# @@ syntax - Talk to Gusgus, the persistent assistant for this workspace.
-# Usage: @@ "your message"          send; the reply lands in your inbox thread
-#        @@ --fresh "message"       close this workspace's session, start anew
-#        @@ --one-shot "message"    stateless one-shot backend (Axe/Codex)
-#        @@ --dry-run "message"     show the one-shot context, no model call
+# @@ sends all arguments literally as one inbox message to Gusgus.
 function @@ {
   local previous_status=$?
   local previous_result="${__:-}"
-  local mode="chat"
-  case "${1:-}" in
-    --dry-run) mode="dry-run"; shift ;;
-    --one-shot) mode="run"; shift ;;
-    --fresh) mode="fresh"; shift ;;
-  esac
-
-  # Combine all arguments into a single message
   local message="$*"
-
-  # Validate we have a message
-  if [[ -z "$message" ]]; then
-    echo "Error: @@ requires a message" >&2
-    return 1
-  fi
-
-  local working_directory="$PWD"
-  local run_result answer exit_code
-  if [[ "$mode" == "chat" || "$mode" == "fresh" ]]; then
-    if [[ "$mode" == "fresh" ]]; then
-      @ Gusgus fresh: "$working_directory" >/dev/null || return 1
-    fi
-    @ Gusgus chat: "$message" workingDirectory: "$working_directory" \
-      status: "$previous_status" lastResult: "$previous_result"
-    return $?
-  fi
-  if [[ "$mode" == "dry-run" ]]; then
-    run_result=$(@ Agent dryRun: "$message" workingDirectory: "$working_directory" \
-      status: "$previous_status" lastResult: "$previous_result")
-  else
-    run_result=$(@ Agent ask: "$message" workingDirectory: "$working_directory" \
-      status: "$previous_status" lastResult: "$previous_result")
-  fi
-
-  exit_code=$(printf '%s' "$run_result" | jq -r '.exit_code // 1' 2>/dev/null)
-  answer=$(@ Agent answerFromRun: "$run_result")
-  @ Agent present: "$answer"
-  [[ "$exit_code" =~ ^[0-9]+$ ]] || exit_code=1
-  return "$exit_code"
+  [[ -n "$message" ]] || { echo 'Error: @@ requires a message' >&2; return 1; }
+  @ Gusgus chat: "$message" workingDirectory: "$PWD" \
+    status: "$previous_status" lastResult: "$previous_result"
 }
 
 # Get list of functions defined in $1
