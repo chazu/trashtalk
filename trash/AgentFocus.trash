@@ -4,6 +4,8 @@ AgentFocus subclass: Object
     | available argv context human |
     human := @ self human.
     human isEmpty ifTrue: [^ @ Require reject: 'Session focus requires a human context'].
+    session := @ AgentAccess liveSession: session.
+    session isEmpty ifTrue: [^ @ Require reject: 'Session access denied'].
     available := @ Tools::Inagent isInstalled.
     (available ~= 'true') ifTrue: [^ @ Require reject: 'inagent is not installed; build and install the Innards applet'].
     context := #{session: session window: 400} asJson.
@@ -12,11 +14,16 @@ AgentFocus subclass: Object
   ]
 
   classMethod: frameFor: context [
-    ^ @ AgentTranscript snapshotFor: (context jsonTextAt: 'session') limit: (context jsonTextAt: 'window')
+    | session |
+    session := @ AgentAccess session: (context jsonTextAt: 'session').
+    session isEmpty ifTrue: [^ @ Require reject: 'Session access denied'].
+    ^ @ AgentTranscript snapshotFor: session limit: (context jsonTextAt: 'window')
   ]
 
   classMethod: markViewed: messages inSession: session [
     | included |
+    session := @ AgentAccess session: session.
+    session isEmpty ifTrue: [^ @ Require reject: 'Session access denied'].
     included := @ AgentTranscript includesMessages: messages inSession: session.
     (included ~= 'true') ifTrue: [^ @ Require reject: 'Message does not belong to this conversation'].
     messages arrayEach: [:message | @ message markViewed].
@@ -25,7 +32,8 @@ AgentFocus subclass: Object
 
   classMethod: perform: intent session: session body: body run: run [
     | result inbox message state allowed recipient sender |
-    @ session reload.
+    session := @ AgentAccess session: session.
+    session isEmpty ifTrue: [^ @ Require reject: 'Session access denied'].
     (intent = 'send_message') ifTrue: [
       state := @ session lifecycleState.
       allowed := @ Require contains: state in: '["open","paused"]'.
@@ -68,6 +76,7 @@ AgentFocus subclass: Object
     if [[ "$intent" == dismiss ]]; then
       jq -cn --argjson context "$context" '{context:$context,done:true}'; return
     fi
+    @ AgentAccess session: "$sid" >/dev/null || return 1
     if [[ "$intent" == mark_viewed ]]; then
       result=$(@ AgentFocus markViewed: "$(jq -c .message_ids <<< "$frame")" inSession: "$sid" 2>&1) || ok=false
     elif [[ "$intent" == load_older ]]; then

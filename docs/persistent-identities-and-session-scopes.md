@@ -2,6 +2,21 @@
 
 **Status:** stabilized design, awaiting implementation
 
+### Preparatory implementation
+
+`AgentAccess` now supplies fresh, typed identity/session ownership checks for
+human conversation views. Focus validates ownership on open, snapshot refresh,
+and each non-dismiss UI request. Open and paused sessions may open a live view,
+and validation does not resume paused work. Closed sessions cannot open a new
+live view. These checks use the public Store and Require APIs rather than a
+second SQLite adapter. `tests/test_agent_access.bash` covers stale ownership,
+foreign identities, missing records, run-token rejection, and read-only checks.
+
+This is not current-session membership enforcement. Durable membership,
+scope-policy revisions, transactional resolution/admission/claim, migration,
+fencing, and per-delivery execution workspaces remain unimplemented. The
+resolution APIs below and the optional Option-U binding are not yet provided.
+
 ## Problem
 
 Trashtalk currently resolves Gusgus sessions by identity and workspace. A

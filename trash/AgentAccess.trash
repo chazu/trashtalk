@@ -1,0 +1,46 @@
+# Human-view authority. Guarded Store reads prevent a cached identity/session
+# from authorizing a view. Transactions also propagate failed DSL preconditions
+# and withhold the validated ID on failure. These transactions never mutate.
+AgentAccess subclass: Object
+  classMethod: identity: identity [
+    ^ @ Store transaction: self sending: 'validateIdentity:' with: identity
+  ]
+
+  classMethod: session: session [
+    ^ @ Store transaction: self sending: 'validateSession:' with: session
+  ]
+
+  classMethod: liveSession: session [
+    ^ @ Store transaction: self sending: 'validateLiveSession:' with: session
+  ]
+
+  classMethod: validateIdentity: identity [
+    | current human owner enabled |
+    @ Store requireTransaction.
+    human := @ AgentFocus human.
+    current := @ Store read: identity class: 'AgentIdentity'.
+    owner := @ current owner.
+    @ Require text: owner.
+    @ Require equal: owner to: human.
+    enabled := @ current enabled.
+    @ Require equal: enabled to: 'true'.
+    ^ current
+  ]
+
+  classMethod: validateSession: session [
+    | current identity |
+    @ Store requireTransaction.
+    current := @ Store read: session class: 'AgentSession'.
+    identity := @ current identity.
+    identity := @ self validateIdentity: identity.
+    ^ current
+  ]
+
+  classMethod: validateLiveSession: session [
+    | current state |
+    @ Store requireTransaction.
+    current := @ self validateSession: session.
+    state := @ current lifecycleState.
+    @ Require member: state of: '["open","paused"]'.
+    ^ current
+  ]
