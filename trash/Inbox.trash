@@ -221,6 +221,7 @@ Inbox subclass: Object
 
   # Print unread messages, one line each
   method: list [
+    pragma: stream
     | ids arr count header line |
     ids := @ self unread.
     arr := @ String splitToArray: ids on: '

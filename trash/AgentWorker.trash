@@ -12,39 +12,38 @@
 #   TRASHTALK_RUN_DIR         where per-run prompt/log/pid files live
 AgentWorker subclass: Object
 
-  rawClassMethod: driverFor: profile [
-    case "$1" in
-      shell) echo ShellDriver ;;
-      maki) echo MakiDriver ;;
-      jcode) echo JcodeDriver ;;
-      codex|"assistant-low-power"|"") echo CodexDriver ;;
-      *) _throw "WorkerError" "Unknown backend profile '$1'"; return 1 ;;
-    esac
+  classMethod: driverFor: profile [
+    ^ profile caseOf: {
+      'shell' -> [ 'ShellDriver' ].
+      'maki' -> [ 'MakiDriver' ].
+      'jcode' -> [ 'JcodeDriver' ].
+      #('codex' 'assistant-low-power' '') -> [ 'CodexDriver' ]
+    } otherwise: [ @ WorkerError signal: 'Unknown backend profile ' , profile ]
   ]
 
-  rawClassMethod: handlesInbox: inboxName [
-    local prefix="${1%%:*}"
-    if [[ "$prefix" == session || "$prefix" == agent ]]; then echo true; else echo false; fi
+  classMethod: handlesInbox: inboxName [
+    | prefix |
+    prefix := inboxName upTo: ':'.
+    ^ (prefix = 'session') or: [prefix = 'agent']
   ]
 
-  rawClassMethod: ownerInboxFor: sessionId [
-    local identity owner
-    identity=$(@ "$1" identity)
-    owner=$(@ "$identity" owner)
-    if [[ -z "$owner" ]]; then owner="${TRASHTALK_USER:-$USER}"; fi
-    printf '%s\n' "$owner"
+  classMethod: ownerInboxFor: sessionId [
+    | identity owner |
+    identity := @ sessionId identity.
+    owner := @ identity owner.
+    (owner isEmpty) ifTrue: [ owner := @ Env get: 'TRASHTALK_USER' default: (@ Env get: 'USER') ].
+    ^ owner
   ]
 
-  rawClassMethod: sessionForInbox: inboxName [
-    local esc
-    esc=$(_db_escape "$1")
-    @ Store findByClass: AgentSession where: "json_extract(data, '\$.inbox') = '$esc'" orderBy: 'created_at DESC' limit: 1
+  classMethod: sessionForInbox: inboxName [
+    ^ @ Store findByClass: 'AgentSession' matching: (#{inbox: inboxName} asJson)
+        orderBy: 'created_at DESC' limit: 1
   ]
 
-  rawClassMethod: eligibleSessionsFor: identityId [
-    local esc
-    esc=$(_db_escape "$1")
-    @ Store findByClass: AgentSession where: "json_extract(data, '\$.identity') = '$esc' AND json_extract(data, '\$.lifecycleState') IN ('open','paused')" orderBy: 'created_at DESC' limit: 100
+  classMethod: eligibleSessionsFor: identityId [
+    ^ @ Store findByClass: 'AgentSession'
+        matching: (#{identity: identityId lifecycleState: #('open' 'paused')} asJson)
+        orderBy: 'created_at DESC' limit: 100
   ]
 
   # ------------------------------------------------------------------
@@ -52,10 +51,10 @@ AgentWorker subclass: Object
   # ------------------------------------------------------------------
 
   # Inspection only; reply routing uses the question's persisted delivery links.
-  rawClassMethod: blockedDeliveriesFor: sessionId [
-    local esc
-    esc=$(_db_escape "$1")
-    @ Store findByClass: AgentDelivery where: "json_extract(data, '\$.session') = '$esc' AND json_extract(data, '\$.state') = 'blocked'" orderBy: 'created_at ASC' limit: 100
+  classMethod: blockedDeliveriesFor: sessionId [
+    ^ @ Store findByClass: 'AgentDelivery'
+        matching: (#{session: sessionId state: 'blocked'} asJson)
+        orderBy: 'created_at ASC' limit: 100
   ]
 
   rawClassMethod: deliverMessage: messageId toInbox: inboxName [

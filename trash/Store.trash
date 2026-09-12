@@ -17,9 +17,7 @@
 Store subclass: Object
 
   # Initialize the database
-  rawClassMethod: init [
-    db_init
-  ]
+  classPrimitive: init calls: db_init
 
   # Create a new instance
   # Usage: @ Store createInstance <class_name> <instance_id> <json_data>
@@ -32,9 +30,7 @@ Store subclass: Object
 
   # Get full instance JSON
   # Usage: @ Store getInstance <instance_id>
-  rawClassMethod: getInstance: instance_id [
-    db_get "$instance_id"
-  ]
+  classPrimitive: getInstance: instance_id calls: db_get
 
   # Get a specific field from instance
   # Usage: @ Store getField <instance_id> <field_name>
@@ -87,9 +83,7 @@ Store subclass: Object
 
   # Delete an instance
   # Usage: @ Store deleteInstance <instance_id>
-  rawClassMethod: deleteInstance: instance_id [
-    db_delete "$instance_id"
-  ]
+  classPrimitive: deleteInstance: instance_id calls: db_delete
 
   # Get the class of an instance
   # Usage: @ Store getClass <instance_id>
@@ -107,40 +101,28 @@ Store subclass: Object
 
   # Find all instances of a class
   # Usage: @ Store findByClass <class_name>
-  rawClassMethod: findByClass: class_name [
-    db_find_by_class "$class_name"
-  ]
+  classPrimitive: findByClass: class_name calls: db_find_by_class
 
   # Find instances of a class matching a predicate
   # Usage: @ Store findByClass: 'Counter' where: 'value > 5'
   # Supports: =, !=, >, <, >=, <=
-  rawClassMethod: findByClass: class_name where: predicate [
-    _find_with_predicate "$class_name" "$predicate"
-  ]
+  classPrimitive: findByClass: class_name where: predicate calls: _find_with_predicate
 
   # Count instances of a class
   # Usage: @ Store countByClass <class_name>
-  rawClassMethod: countByClass: class_name [
-    db_count_by_class "$class_name"
-  ]
+  classPrimitive: countByClass: class_name calls: db_count_by_class
 
   # List all distinct classes
   # Usage: @ Store listClasses
-  rawClassMethod: listClasses [
-    db_list_classes
-  ]
+  classPrimitive: listClasses calls: db_list_classes
 
   # Raw query (returns instance IDs)
   # Usage: @ Store query <where_clause>
-  rawClassMethod: query: where_clause [
-    db_query "$where_clause"
-  ]
+  classPrimitive: query: where_clause calls: db_query
 
   # Raw query returning full data
   # Usage: @ Store queryData <where_clause>
-  rawClassMethod: queryData: where_clause [
-    db_query_data "$where_clause"
-  ]
+  classPrimitive: queryData: where_clause calls: db_query_data
 
   # Ensure a virtual column and index exist
   # Usage: @ Store ensureIndex <column_name> <json_path>
@@ -151,21 +133,15 @@ Store subclass: Object
 
   # List all indices
   # Usage: @ Store listIndices
-  rawClassMethod: listIndices [
-    db_list_indices
-  ]
+  classPrimitive: listIndices calls: db_list_indices
 
   # List all columns
   # Usage: @ Store listColumns
-  rawClassMethod: listColumns [
-    db_list_columns
-  ]
+  classPrimitive: listColumns calls: db_list_columns
 
   # Clear all instance data (dangerous!)
   # Usage: @ Store clear
-  rawClassMethod: clear [
-    db_clear
-  ]
+  classPrimitive: clear calls: db_clear
 
   # Find instances of a class, ordered by a column
   # Usage: @ Store findByClass: 'Kube::Resource' orderBy: 'captured_at ASC'
@@ -186,9 +162,7 @@ Store subclass: Object
   # Raw put - stores JSON data without modification
   # Usage: @ Store put: instanceId data: json
   # This is used by Persistable to save instance state directly
-  rawClassMethod: put: instanceId data: json [
-    db_put "$1" "$2"
-  ]
+  classPrimitive: put: instanceId data: json calls: db_put
 
   # Check if an instance exists in the store
   # Usage: @ Store exists: instanceId
@@ -236,9 +210,14 @@ Store subclass: Object
     ^ id
   ]
 
-  rawClassMethod: idsOf: className matching: fields [
-    _store_matching "$1" "$2"
-  ]
+  classPrimitive: idsOf: className matching: fields calls: _store_matching
+
+  # Typed field-map finders. `fields` is a JSON object; a string, number, or
+  # boolean value matches equality and an array matches any member. `orderBy:`
+  # is a SQL ORDER BY fragment written by the caller, never user data.
+  classPrimitive: idsOf: className matching: fields orderBy: order limit: n calls: _store_matching
+  classPrimitive: findByClass: className matching: fields calls: _store_matching_lines
+  classPrimitive: findByClass: className matching: fields orderBy: order limit: n calls: _store_matching_lines
 
   rawClassMethod: insert: row into: table [
     _store_tx_insert "$2" "$1"

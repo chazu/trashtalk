@@ -159,6 +159,8 @@ TestCase subclass: Object
   # ==========================================
 
   method: skip: reason [
+
+    pragma: stream
     | test count |
     test := @ self currentTest.
     count := @ self skipped.
@@ -168,6 +170,8 @@ TestCase subclass: Object
   ]
 
   method: skip [
+
+    pragma: stream
     | test count |
     test := @ self currentTest.
     count := @ self skipped.
@@ -177,6 +181,8 @@ TestCase subclass: Object
   ]
 
   method: pending: description [
+
+    pragma: stream
     | test count |
     test := @ self currentTest.
     count := @ self skipped.
@@ -186,6 +192,8 @@ TestCase subclass: Object
   ]
 
   method: pending [
+
+    pragma: stream
     | test count |
     test := @ self currentTest.
     count := @ self skipped.
@@ -232,6 +240,7 @@ TestCase subclass: Object
 
   # Run all test methods in the class
   classMethod: runAll [
+    pragma: stream
     | instance passed failed skipped total class methods i len method |
     class := self.  # In a classMethod, self is the class
     instance := @ self new.

@@ -21,15 +21,11 @@ Honker subclass: Object
   ]
 
   # Initialize honker tables (idempotent)
-  rawClassMethod: bootstrap [
-    honker_bootstrap
-  ]
+  classPrimitive: bootstrap calls: honker_bootstrap
 
   # --- Ephemeral Pub/Sub ---
 
-  rawClassMethod: notify: channel payload: data [
-    honker_notify "$1" "$2"
-  ]
+  classPrimitive: notify: channel payload: data calls: honker_notify
 
   # Start listening on a channel with a handler block
   # Returns listener PID
@@ -41,27 +37,19 @@ Honker subclass: Object
     honker_listen "$1" "$wrapper"
   ]
 
-  rawClassMethod: unlisten: pid [
-    honker_unlisten "$1"
-  ]
+  classPrimitive: unlisten: pid calls: honker_unlisten
 
   # --- Work Queue ---
 
-  rawClassMethod: enqueue: queue payload: data [
-    honker_enqueue "$1" "$2"
-  ]
+  classPrimitive: enqueue: queue payload: data calls: honker_enqueue
 
-  rawClassMethod: enqueue: queue payload: data priority: pri [
-    honker_enqueue "$1" "$2" "$3"
-  ]
+  classPrimitive: enqueue: queue payload: data priority: pri calls: honker_enqueue
 
   rawClassMethod: enqueue: queue payload: data delay: seconds [
     honker_enqueue "$1" "$2" 0 3 "$3"
   ]
 
-  rawClassMethod: claim: queue [
-    honker_claim "$1"
-  ]
+  classPrimitive: claim: queue calls: honker_claim
 
   rawClassMethod: claim: queue batch: n [
     honker_claim "$1" "worker_$$" "$2"
@@ -71,95 +59,59 @@ Honker subclass: Object
     honker_claim "$1" "worker_$$" 1 "$2"
   ]
 
-  rawClassMethod: ack: jobIds [
-    honker_ack "$1"
-  ]
+  classPrimitive: ack: jobIds calls: honker_ack
 
-  rawClassMethod: sweep: queue [
-    honker_sweep "$1"
-  ]
+  classPrimitive: sweep: queue calls: honker_sweep
 
   # --- Distributed Locks ---
 
-  rawClassMethod: lock: name [
-    honker_lock "$1"
-  ]
+  classPrimitive: lock: name calls: honker_lock
 
   rawClassMethod: lock: name ttl: seconds [
     honker_lock "$1" "$$" "$2"
   ]
 
-  rawClassMethod: unlock: name [
-    honker_unlock "$1"
-  ]
+  classPrimitive: unlock: name calls: honker_unlock
 
   # --- Rate Limiting ---
 
-  rawClassMethod: rateLimit: key limit: n window: seconds [
-    honker_rate_limit "$1" "$2" "$3"
-  ]
+  classPrimitive: rateLimit: key limit: n window: seconds calls: honker_rate_limit
 
   # --- Durable Streams ---
 
-  rawClassMethod: publish: stream key: key payload: data [
-    honker_stream_publish "$1" "$2" "$3"
-  ]
+  classPrimitive: publish: stream key: key payload: data calls: honker_stream_publish
 
   rawClassMethod: publish: stream payload: data [
     honker_stream_publish "$1" "default" "$2"
   ]
 
-  rawClassMethod: readStream: stream offset: offset limit: n [
-    honker_stream_read "$1" "$2" "$3"
-  ]
+  classPrimitive: readStream: stream offset: offset limit: n calls: honker_stream_read
 
-  rawClassMethod: readStream: stream [
-    honker_stream_read "$1"
-  ]
+  classPrimitive: readStream: stream calls: honker_stream_read
 
-  rawClassMethod: saveOffset: consumer stream: stream offset: offset [
-    honker_stream_save_offset "$1" "$2" "$3"
-  ]
+  classPrimitive: saveOffset: consumer stream: stream offset: offset calls: honker_stream_save_offset
 
-  rawClassMethod: getOffset: consumer stream: stream [
-    honker_stream_get_offset "$1" "$2"
-  ]
+  classPrimitive: getOffset: consumer stream: stream calls: honker_stream_get_offset
 
   # --- Scheduler ---
 
-  rawClassMethod: schedule: name task: task cron: expr payload: data [
-    honker_schedule "$1" "$2" "$3" "$4"
-  ]
+  classPrimitive: schedule: name task: task cron: expr payload: data calls: honker_schedule
 
-  rawClassMethod: unschedule: name [
-    honker_unschedule "$1"
-  ]
+  classPrimitive: unschedule: name calls: honker_unschedule
 
-  rawClassMethod: tick [
-    honker_scheduler_tick
-  ]
+  classPrimitive: tick calls: honker_scheduler_tick
 
-  rawClassMethod: soonest [
-    honker_scheduler_soonest
-  ]
+  classPrimitive: soonest calls: honker_scheduler_soonest
 
   # --- Result Storage ---
 
-  rawClassMethod: saveResult: jobId data: result [
-    honker_result_save "$1" "$2"
-  ]
+  classPrimitive: saveResult: jobId data: result calls: honker_result_save
 
-  rawClassMethod: saveResult: jobId data: result ttl: seconds [
-    honker_result_save "$1" "$2" "$3"
-  ]
+  classPrimitive: saveResult: jobId data: result ttl: seconds calls: honker_result_save
 
-  rawClassMethod: getResult: jobId [
-    honker_result_get "$1"
-  ]
+  classPrimitive: getResult: jobId calls: honker_result_get
 
-  rawClassMethod: sweepResults [
-    honker_result_sweep
-  ]
+  classPrimitive: sweepResults calls: honker_result_sweep
 
   # --- Help ---
 

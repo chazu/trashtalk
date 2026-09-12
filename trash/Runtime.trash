@@ -42,21 +42,15 @@ Runtime subclass: Object
 
   # Generate a unique instance ID for a class
   # Usage: id := @ Runtime generateId: 'Counter'
-  rawClassMethod: generateId: className [
-    _generate_instance_id "$1"
-  ]
+  classPrimitive: generateId: className calls: _generate_instance_id
 
   # Create an instance with a given ID and persist its initial defaults
   # Usage: @ Runtime create: 'Counter' id: 'counter_abc123'
-  rawClassMethod: create: className id: instanceId [
-    _create_instance "$1" "$2"
-  ]
+  classPrimitive: create: className id: instanceId calls: _create_instance
 
   # Delete the session cache entry; retain the Store record
   # Usage: @ Runtime delete: instanceId
-  rawClassMethod: delete: instanceId [
-    _delete_instance "$1"
-  ]
+  classPrimitive: delete: instanceId calls: _delete_instance
 
   # ==========================================
   # Instance Data Access
@@ -125,9 +119,7 @@ Runtime subclass: Object
 
   # Get class name from an instance ID
   # Usage: class := @ Runtime classFor: instanceId
-  rawClassMethod: classFor: instanceId [
-    _get_instance_class "$1"
-  ]
+  classPrimitive: classFor: instanceId calls: _get_instance_class
 
   # Get superclass of a class
   # Usage: super := @ Runtime superclassOf: 'Counter'
@@ -204,6 +196,4 @@ Runtime subclass: Object
   ]
 
   # Print stack trace to stderr
-  rawClassMethod: printStackTrace [
-    _print_stack_trace
-  ]
+  classPrimitive: printStackTrace calls: _print_stack_trace

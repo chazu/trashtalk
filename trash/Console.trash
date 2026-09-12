@@ -14,8 +14,8 @@ Console subclass: Object
 
   # Print message to stdout with newline
   # Usage: @ Console print: 'Hello'
-  rawClassMethod: print: message [
-    echo "$1"
+  classMethod: print: message [
+    ^ message
   ]
 
   # Print message to stdout without newline
@@ -81,8 +81,8 @@ Console subclass: Object
   # ==========================================
 
   # Print a blank line
-  rawClassMethod: newline [
-    echo ""
+  classMethod: newline [
+    ^ ''
   ]
 
   # Print a horizontal rule
@@ -119,8 +119,8 @@ Console subclass: Object
   ]
 
   # Print success message (green)
-  rawClassMethod: success: message [
-    @ "$_CLASS" print: "$1" color: "green"
+  classMethod: success: message [
+    ^ @ self print: message color: 'green'
   ]
 
   # Warnings are diagnostics; color only when stderr is a terminal.

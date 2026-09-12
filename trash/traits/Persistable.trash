@@ -90,9 +90,8 @@ Persistable trait
   # Load all persisted instances of this class into memory
   # Usage: @ Counter loadAll
   classMethod: loadAll [
-    | ids arr |
+    | ids |
     ids := @ Store findByClass: self.
-    arr := @ Array fromLines: ids.
-    arr do: [:id | @ id reload]
+    ids linesDo: [:id | @ id reload]
   ]
 

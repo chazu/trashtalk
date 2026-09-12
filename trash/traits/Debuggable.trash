@@ -27,6 +27,7 @@ Debuggable trait
   # Note: Use 'inspect' for instance variable values (from Object)
   # Usage: @ self introspect
   method: introspect [
+    pragma: stream
     | className methods line |
     className := @ Runtime classFor: self.
     methods := @ Runtime methodsFor: className.
@@ -42,6 +43,7 @@ Debuggable trait
   # Show the inheritance chain for this object's class
   # Usage: @ self ancestry
   method: ancestry [
+    pragma: stream
     | className currentClass superclass line |
     className := @ Runtime classFor: self.
     line := "Inheritance chain for " , self.

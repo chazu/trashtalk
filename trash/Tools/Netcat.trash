@@ -103,6 +103,7 @@ Netcat subclass: Tool
   # Usage: @ Tools::Netcat echoServer: 8080
   # Note: This is a blocking, infinite loop server
   classMethod: echoServer: port [
+    pragma: stream
     | cmd |
     @ self ensure
     @ Console print: "Starting echo server on port $port (Ctrl+C to stop)"

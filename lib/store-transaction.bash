@@ -63,8 +63,11 @@ _store_guarded_query() {
 }
 
 # Structured indexed equality/membership query. No domain rules in this layer.
+# Typed field-map query. $3 is an optional ORDER BY fragment (trusted code, not
+# data) and $4 an optional integer LIMIT. Ids come back as a JSON array.
 _store_matching() {
-    local cls="$1" filter="$2" predicates
+    local cls="$1" filter="$2" order="${3:-id}" limit="${4:-}" predicates
+    [[ -z "$limit" || "$limit" =~ ^[0-9]+$ ]] || { _throw StoreError "limit must be a non-negative integer"; return 1; }
     predicates=$(printf '%s' "$filter" | jq -er '
       def quote: "\u0027" + (tostring | gsub("\u0027";"\u0027\u0027")) + "\u0027";
       def literal:
@@ -80,7 +83,14 @@ _store_matching() {
           if ($values | index(null)) != null then "(" + $members + " OR " + $path + " IS NULL)" else $members end
         else error("Invalid field") end) | if length==0 then "1" else join(" AND ") end') || return 1
     _store_guarded_query "SELECT coalesce(json_group_array(id),'[]') FROM
-      (SELECT id FROM instances WHERE class='$(_db_escape "$cls")' AND $predicates ORDER BY id)"
+      (SELECT id FROM instances WHERE class='$(_db_escape "$cls")' AND $predicates ORDER BY $order${limit:+ LIMIT $limit})"
+}
+
+# Same query as newline-separated ids, the shape every Store finder returns.
+_store_matching_lines() {
+    local ids
+    ids=$(_store_matching "$@") || return
+    printf '%s' "$ids" | jq -r '.[]'
 }
 
 # Auxiliary rows are inserts, never replacement/upsert: the live schema owns

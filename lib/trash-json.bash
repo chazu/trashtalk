@@ -32,6 +32,20 @@ _trash_json_unpack() {
 
 # Block bodies are Bash code emitted by the compiler. Name binding and eval
 # belong here; collection traversal continues to use public message sends.
+# String intrinsics that need more than one parameter expansion. The compiler
+# emits these inside one capture; they never dispatch.
+_trash_str_trim() {
+    local __s="$1"
+    if [[ "$__s" =~ ^[[:space:]]*(.*[^[:space:]])[[:space:]]*$ ]]; then
+        printf '%s' "${BASH_REMATCH[1]}"
+    fi
+}
+
+# Newline-separated text as a JSON array of non-empty lines.
+_trash_str_lines() {
+    printf '%s' "$1" | jq -Rsc 'split("\n") | map(select(length > 0))'
+}
+
 _trash_block_invoke() {
     local __tb_data __tb_name __tb_i
     local -a __tb_parts=()

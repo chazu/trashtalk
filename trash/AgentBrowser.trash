@@ -68,6 +68,8 @@ AgentBrowser subclass: Object
   ]
 
   classMethod: terminationRecordsAt: path [
+
+    pragma: stream
     @ self record: 'cancel' label: 'Cancel' detail: 'Keep the session as it is' path: path.
     @ self record: 'terminate' label: 'Terminate session and stop active work' detail: 'Revoke run access; retain messages and logs' path: path
   ]
@@ -187,6 +189,7 @@ AgentBrowser subclass: Object
   ]
 
   classMethod: actionRecordsFor: session [
+    pragma: stream
     | state profile live run |
     state := @ session lifecycleState.
     live := @ Require contains: state in: '["open","paused"]'.

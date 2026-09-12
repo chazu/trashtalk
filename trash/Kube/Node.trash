@@ -26,33 +26,25 @@ Node subclass: Resource
   ]
 
   # All conditions as a JSON array.
-  rawMethod: conditions [
-    local raw
-    raw=$(_ivar rawJson)
-    echo "$raw" | jq -c '.status.conditions // []'
+  method: conditions [
+    ^ rawJson jsonAt: 'status.conditions' ifAbsent: '[]'
   ]
 
   # Taints as a JSON array.
-  rawMethod: taints [
-    local raw
-    raw=$(_ivar rawJson)
-    echo "$raw" | jq -c '.spec.taints // []'
+  method: taints [
+    ^ rawJson jsonAt: 'spec.taints' ifAbsent: '[]'
   ]
 
   # Allocatable resources as a JSON object.
-  rawMethod: allocatable [
-    local raw
-    raw=$(_ivar rawJson)
-    echo "$raw" | jq -c '.status.allocatable // {}'
+  method: allocatable [
+    ^ rawJson jsonAt: 'status.allocatable' ifAbsent: '{}'
   ]
 
   # One-line summary: ready status and schedulability.
-  rawMethod: summary [
-    local rdy unsched
-    rdy=$(_ivar ready)
-    unsched=$(_ivar unschedulable)
-    local label
-    [[ "$rdy" == "True" ]] && label="Ready" || label="NotReady"
-    [[ "$unsched" == "true" ]] && label="$label,SchedulingDisabled"
-    echo "$label"
+  method: summary [
+    | label |
+    label := 'NotReady'.
+    (ready = 'True') ifTrue: [ label := 'Ready' ].
+    (unschedulable = 'true') ifTrue: [ label := label , ',SchedulingDisabled' ].
+    ^ label
   ]

@@ -351,10 +351,10 @@ AgentSession subclass: Object
   ]
 
   # Id of the run in starting|running|recovering for this session, or empty
-  rawMethod: activeRun [
-    local esc
-    esc=$(_db_escape "$_RECEIVER")
-    @ Store findByClass: AgentRun where: "json_extract(data, '\$.session') = '$esc' AND json_extract(data, '\$.state') IN ('starting', 'running', 'recovering')" orderBy: "json_extract(data, '\$.started') DESC, rowid DESC" limit: 1
+  method: activeRun [
+    ^ @ Store findByClass: 'AgentRun'
+        matching: (#{session: self state: #('starting' 'running' 'recovering')} asJson)
+        orderBy: "json_extract(data, '$.started') DESC, rowid DESC" limit: 1
   ]
 
   # Number of pending deliveries. Raw: counts lines without touching stdin.
@@ -379,47 +379,40 @@ AgentSession subclass: Object
 
   # Human-only: put a failed or uncertain delivery back in the queue, e.g. after
   # fixing whatever made it fail. The next tick claims it again.
-  rawMethod: requeue: deliveryId [
-    local d="$1" owner state
-    owner=$(@ "$d" session)
-    if [[ "$owner" != "$_RECEIVER" ]]; then
-      _throw "SessionError" "Delivery $d does not belong to session $_RECEIVER"
-      return 1
-    fi
-    state=$(@ "$d" state)
-    if [[ "$state" != "failed" && "$state" != "uncertain" ]]; then
-      _throw "SessionError" "Delivery $d is $state; only failed or uncertain deliveries can be requeued"
-      return 1
-    fi
-    @ "$d" transitionTo: pending with: '{"attempts":0}' >/dev/null || return 1
-    echo "pending"
+  method: requeue: deliveryId [
+    | owner state |
+    owner := @ deliveryId session.
+    (owner ~= self) ifTrue: [
+      @ SessionError signal: 'Delivery ' , deliveryId , ' does not belong to session ' , self
+    ].
+    state := @ deliveryId state.
+    ((state ~= 'failed') and: [state ~= 'uncertain']) ifTrue: [
+      @ SessionError signal: 'Delivery ' , deliveryId , ' is ' , state , '; only failed or uncertain deliveries can be requeued'
+    ].
+    (@ deliveryId transitionTo: 'pending' with: '{"attempts":0}') ifFailed: [:e | @ e signal ].
+    ^ 'pending'
   ]
 
   # Human-only: give up on a failed or uncertain delivery with a reason.
-  rawMethod: skip: deliveryId note: text [
-    local d="$1" note="$2" state owner inboxName line
-    if [[ -z "$note" ]]; then
-      _throw "SessionError" "skip: requires a non-empty note"
-      return 1
-    fi
-    owner=$(@ "$d" session)
-    if [[ "$owner" != "$_RECEIVER" ]]; then
-      _throw "SessionError" "Delivery $d does not belong to session $_RECEIVER"
-      return 1
-    fi
-    state=$(@ "$d" state)
-    if [[ "$state" != "failed" && "$state" != "uncertain" ]]; then
-      _throw "SessionError" "Delivery $d is $state; only failed or uncertain deliveries can be skipped"
-      return 1
-    fi
-    @ "$d" transitionTo: skipped with: "$(jq -cn --arg note "$note" '{note:$note,lastError:$note}')" >/dev/null || return 1
+  method: skip: deliveryId note: text [
+    | state owner inboxName line |
+    (text isEmpty) ifTrue: [ @ SessionError signal: 'skip: requires a non-empty note' ].
+    owner := @ deliveryId session.
+    (owner ~= self) ifTrue: [
+      @ SessionError signal: 'Delivery ' , deliveryId , ' does not belong to session ' , self
+    ].
+    state := @ deliveryId state.
+    ((state ~= 'failed') and: [state ~= 'uncertain']) ifTrue: [
+      @ SessionError signal: 'Delivery ' , deliveryId , ' is ' , state , '; only failed or uncertain deliveries can be skipped'
+    ].
+    (@ deliveryId transitionTo: 'skipped' with: (#{note: text lastError: text} asJson)) ifFailed: [:e | @ e signal ].
     # Record the skip where the human reads, not in the session inbox: a message
     # to the session would become a new delivery.
-    inboxName=$(@ AgentWorker ownerInboxFor: "$_RECEIVER")
-    [[ -n "$inboxName" ]] || inboxName="${TRASHTALK_USER:-$USER}"
-    line="skipped $d in session $_RECEIVER: $note"
-    @ Inbox send: "$line" to: "$inboxName" from: worker subject: skipped kind: note >/dev/null
-    echo "skipped"
+    inboxName := @ AgentWorker ownerInboxFor: self.
+    (inboxName isEmpty) ifTrue: [ inboxName := @ Env get: 'TRASHTALK_USER' default: (@ Env get: 'USER') ].
+    line := 'skipped ' , deliveryId , ' in session ' , self , ': ' , text.
+    @ Inbox send: line to: inboxName from: 'worker' subject: 'skipped' kind: 'note'.
+    ^ 'skipped'
   ]
 
   # SQL aggregate boundary; presentation and workflow use these public counts.
@@ -460,16 +453,14 @@ AgentSession subclass: Object
     ^ @ AgentBrowser describeSession: data
   ]
 
-  rawMethod: runs [
-    local sid
-    sid=$(_db_escape "$_RECEIVER")
-    @ Store findByClass: AgentRun where: "json_extract(data,'$.session')='$sid'" orderBy: 'rowid DESC' limit: 100
+  method: runs [
+    ^ @ Store findByClass: 'AgentRun' matching: (#{session: self} asJson) orderBy: 'rowid DESC' limit: 100
   ]
 
-  rawMethod: stalledDeliveries [
-    local sid
-    sid=$(_db_escape "$_RECEIVER")
-    @ Store findByClass: AgentDelivery where: "json_extract(data,'$.session')='$sid' AND json_extract(data,'$.state') IN ('failed','uncertain')" orderBy: 'rowid ASC' limit: 100
+  method: stalledDeliveries [
+    ^ @ Store findByClass: 'AgentDelivery'
+        matching: (#{session: self state: #('failed' 'uncertain')} asJson)
+        orderBy: 'rowid ASC' limit: 100
   ]
 
   rawMethod: messageIds [

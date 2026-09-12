@@ -1,6 +1,8 @@
 # String - String manipulation and testing utilities
-# Provides class methods for common string operations that enable
-# converting raw methods to pure DSL.
+# Most of these class methods are thin names over the compiler's string
+# intrinsics (`str startsWith: p`, `str withoutPrefix: p`, `str size`, ...),
+# which lower to Bash parameter expansion with no dispatch. Prefer the
+# intrinsic in DSL code; these selectors remain for callers and raw code.
 #
 # Usage:
 #   (@ String isEmpty: myVar) ifTrue: [ ... ]
@@ -24,23 +26,23 @@ String subclass: Object
   ]
 
   # Test if string contains substring
-  rawClassMethod: contains: str substring: sub [
-    [[ "$str" == *"$sub"* ]] && echo "true" || echo "false"
+  classMethod: contains: str substring: sub [
+    ^ str includes: sub
   ]
 
   # Test if string starts with prefix
-  rawClassMethod: startsWith: str prefix: prefix [
-    [[ "$str" == "$prefix"* ]] && echo "true" || echo "false"
+  classMethod: startsWith: str prefix: prefix [
+    ^ str startsWith: prefix
   ]
 
   # Test if string ends with suffix
-  rawClassMethod: endsWith: str suffix: suffix [
-    [[ "$str" == *"$suffix" ]] && echo "true" || echo "false"
+  classMethod: endsWith: str suffix: suffix [
+    ^ str endsWith: suffix
   ]
 
   # Test if two strings are equal
-  rawClassMethod: equals: a to: b [
-    [[ "$a" == "$b" ]] && echo "true" || echo "false"
+  classMethod: equals: a to: b [
+    ^ a = b
   ]
 
   # ========================================
@@ -48,65 +50,62 @@ String subclass: Object
   # ========================================
 
   # Remove prefix pattern from string (replaces ${str##pattern})
-  rawClassMethod: trimPrefix: pattern from: str [
-    echo "${str##$pattern}"
+  classMethod: trimPrefix: pattern from: str [
+    ^ str withoutPrefix: pattern
   ]
 
   # Remove suffix pattern from string (replaces ${str%%pattern})
-  rawClassMethod: trimSuffix: pattern from: str [
-    echo "${str%%$pattern}"
+  classMethod: trimSuffix: pattern from: str [
+    ^ str withoutSuffix: pattern
   ]
 
   # Remove shortest prefix match (replaces ${str#pattern})
-  rawClassMethod: trimShortPrefix: pattern from: str [
-    echo "${str#$pattern}"
+  classMethod: trimShortPrefix: pattern from: str [
+    ^ str withoutPrefix: pattern
   ]
 
   # Remove shortest suffix match (replaces ${str%pattern})
-  rawClassMethod: trimShortSuffix: pattern from: str [
-    echo "${str%$pattern}"
+  classMethod: trimShortSuffix: pattern from: str [
+    ^ str withoutSuffix: pattern
   ]
 
   # Replace first occurrence (replaces ${str/old/new})
-  rawClassMethod: replace: old with: new in: str [
-    echo "${str/$old/$new}"
+  classMethod: replace: old with: new in: str [
+    ^ str replaceFirst: old with: new
   ]
 
   # Replace all occurrences (replaces ${str//old/new})
-  rawClassMethod: replaceAll: old with: new in: str [
-    echo "${str//$old/$new}"
+  classMethod: replaceAll: old with: new in: str [
+    ^ str replaceAll: old with: new
   ]
 
   # Get substring (replaces ${str:start:length})
-  rawClassMethod: substring: str from: start length: len [
-    echo "${str:$start:$len}"
+  classMethod: substring: str from: start length: len [
+    ^ str copyFrom: start + 1 to: start + len
   ]
 
   # Get string length
-  rawClassMethod: length: str [
-    echo "${#str}"
+  classMethod: length: str [
+    ^ str size
   ]
 
   # Return the last N characters. This keeps compact display identities in
   # ordinary DSL workflows without duplicating Bash slicing at call sites.
-  rawClassMethod: suffix: str length: count [
-    local str="$1" count="$2"
-    if [[ "$count" =~ ^[0-9]+$ ]]; then
-      printf '%s\n' "${str: -count}"
-    else
-      _throw "StringError" "suffix length must be a non-negative integer"
-      return 1
-    fi
+  classMethod: suffix: str length: count [
+    (count =~ '^[0-9]+$') ifFalse: [
+      @ StringError signal: 'suffix length must be a non-negative integer'
+    ].
+    ^ str last: count
   ]
 
   # Convert to uppercase
-  rawClassMethod: uppercase: str [
-    echo "${str^^}"
+  classMethod: uppercase: str [
+    ^ str asUppercase
   ]
 
   # Convert to lowercase
-  rawClassMethod: lowercase: str [
-    echo "${str,,}"
+  classMethod: lowercase: str [
+    ^ str asLowercase
   ]
 
   # ========================================
@@ -141,18 +140,18 @@ String subclass: Object
   ]
 
   # Get part before delimiter (replaces ${str%%delim*})
-  rawClassMethod: before: delim in: str [
-    echo "${str%%$delim*}"
+  classMethod: before: delim in: str [
+    ^ str upTo: delim
   ]
 
   # First line of a multi-line string (replaces ${str%%$'\n'*})
-  rawClassMethod: firstLine: str [
-    printf '%s\n' "${str%%$'\n'*}"
+  classMethod: firstLine: str [
+    ^ str firstLine
   ]
 
   # Get part after delimiter (replaces ${str#*delim})
-  rawClassMethod: after: delim in: str [
-    echo "${str#*$delim}"
+  classMethod: after: delim in: str [
+    ^ str after: delim
   ]
 
   # ========================================
@@ -160,13 +159,13 @@ String subclass: Object
   # ========================================
 
   # Concatenate two strings
-  rawClassMethod: concat: a with: b [
-    echo "${a}${b}"
+  classMethod: concat: a with: b [
+    ^ a , b
   ]
 
   # Concatenate three strings
-  rawClassMethod: concat: a with: b with: c [
-    echo "${a}${b}${c}"
+  classMethod: concat: a with: b with: c [
+    ^ a , b , c
   ]
 
   # Join array elements with delimiter
@@ -284,12 +283,8 @@ String subclass: Object
   # ========================================
 
   # Trim leading and trailing whitespace (using extglob)
-  rawClassMethod: trim: str [
-    shopt -s extglob
-    str="${str##+([[:space:]])}"
-    str="${str%%+([[:space:]])}"
-    shopt -u extglob
-    echo "$str"
+  classMethod: trim: str [
+    ^ str trimmed
   ]
 
   # Trim leading whitespace (using extglob)

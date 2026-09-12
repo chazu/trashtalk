@@ -27,9 +27,7 @@ Scheduler subclass: Object
   ]
 
   # Unregister a scheduled task
-  rawClassMethod: unschedule: name [
-    honker_unschedule "$1"
-  ]
+  classPrimitive: unschedule: name calls: honker_unschedule
 
   # Start the background tick loop
   # Checks for due tasks every second and executes them
@@ -95,14 +93,10 @@ Scheduler subclass: Object
   ]
 
   # Get seconds until the next scheduled task fires
-  rawClassMethod: soonest [
-    honker_scheduler_soonest
-  ]
+  classPrimitive: soonest calls: honker_scheduler_soonest
 
   # Manually tick once (for testing)
-  rawClassMethod: tick [
-    honker_scheduler_tick
-  ]
+  classPrimitive: tick calls: honker_scheduler_tick
 
   rawClassMethod: help [
     echo "=== Scheduler - Cron-Based Periodic Tasks ==="

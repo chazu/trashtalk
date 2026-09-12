@@ -32,11 +32,8 @@ Pod subclass: Resource
   ]
 
   # true if all containers are ready.
-  rawMethod: ready [
-    local r t
-    r=$(_ivar readyCount)
-    t=$(_ivar totalCount)
-    [[ "$r" == "$t" && -n "$r" ]] && echo "true" || echo "false"
+  method: ready [
+    ^ (readyCount notEmpty) and: [readyCount = totalCount]
   ]
 
   # Container names as a JSON array.
@@ -47,13 +44,8 @@ Pod subclass: Resource
   ]
 
   # One-line status summary: phase, ready/total, restart count.
-  rawMethod: summary [
-    local ph r t rc
-    ph=$(_ivar phase)
-    r=$(_ivar readyCount)
-    t=$(_ivar totalCount)
-    rc=$(_ivar restartCount)
-    echo "$ph $r/$t restarts=$rc"
+  method: summary [
+    ^ phase , ' ' , readyCount , '/' , totalCount , ' restarts=' , restartCount
   ]
 
   # Fetch current logs via kubectl (requires cluster context).
