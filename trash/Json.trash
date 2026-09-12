@@ -29,6 +29,35 @@
 Json subclass: Object
   instanceVars: data:'' type:''
 
+  # Stateless JSON projection. Templates use typed field references (_at),
+  # string concatenation (_concat), and escaped constants (_literal). No code
+  # evaluation: record schemas and presentation policy stay in the calling DSL.
+  rawClassMethod: projectEach: records with: template [
+    printf '%s' "$1" | jq -cs --argjson template "$2" \
+      -f "$SCRIPT_DIR/json/project.jq"
+  ]
+
+  # Filesystem boundary for projected {path,text,record} documents. Decode in
+  # one process, validate the whole batch before any writes, and retain JSONL
+  # records on stdout. Paths are private preview basenames, never user paths.
+  rawClassMethod: writeDocuments: documents in: dir [
+    local fields path text record
+    fields=$(mktemp) || return
+    if ! printf '%s' "$1" | jq -js '
+      if all(.[]; (.path|type)=="string" and (.path|test("^[A-Za-z0-9_.-]+$"))
+        and .path!="." and .path!=".." and (.text|type)=="string"
+        and (.record|type)=="object" and (.text|contains("\u0000")|not))
+      then .[] | .path,"\u0000",.text,"\u0000",(.record|tojson),"\u0000"
+      else error("invalid preview documents") end' > "$fields"; then
+      rm -f "$fields"; return 1
+    fi
+    while IFS= read -r -d '' path && IFS= read -r -d '' text && IFS= read -r -d '' record; do
+      printf '%s\n' "$text" > "$2/$path" || { rm -f "$fields"; return 1; }
+      printf '%s\n' "$record"
+    done < "$fields"
+    rm -f "$fields"
+  ]
+
   # ============================================================================
   # Factory Methods
   # ============================================================================

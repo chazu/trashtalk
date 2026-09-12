@@ -227,55 +227,32 @@ String subclass: Object
   # Present persisted instance state as a compact key=value row for one-line
   # pickers such as the fzf fallback.
   rawClassMethod: jsonInstanceSummary: jsonString [
-    printf '%s' "$1" | jq -r '
-      def shown:
-        if type == "string" then .
-        elif type == "null" then "null"
-        else tojson
-        end;
-      if type != "object" then shown
-      elif (._vars | type) == "array" then
-        . as $object
-        | [._vars[] as $key
-           | select($object | has($key))
-           | "\($key)=\($object[$key] | shown)"]
-        | join(" | ")
-      else
-        [to_entries[]
-         | select(.key != "class" and .key != "created_at" and .key != "_vars")
-         | "\(.key)=\(.value | shown)"]
-        | join(" | ")
-      end'
+    printf '%s' "$1" | jq -r -L "$SCRIPT_DIR/json" 'include "instance"; instance_summary'
   ]
 
   # Convert the declared state of a Runtime object into the named cells used by
   # structured pickers.  _vars is deliberate: it preserves the class's
   # declaration order rather than leaking Runtime metadata or jq's key order.
   rawClassMethod: jsonInstanceColumns: jsonString [
-    printf '%s' "$1" | jq -c '
-      def shown:
-        if type == "string" then .
-        elif type == "null" then "null"
-        else tojson
-        end;
-      if type != "object" then []
-      else . as $object
-        | [._vars[]? as $key
-           | select($object | has($key))
-           | {name:$key, value:($object[$key] | shown)}]
-      end'
+    printf '%s' "$1" | jq -c -L "$SCRIPT_DIR/json" 'include "instance"; instance_columns'
   ]
 
   # Project persisted Runtime data to declared instance variables. Class,
   # creation time, and the _vars manifest are implementation metadata rather
   # than editable object state in the inspector.
   rawClassMethod: jsonInstanceView: jsonString [
-    printf '%s' "$1" | jq -c '
-      if type != "object" then {}
-      else . as $object
-        | reduce ($object._vars[]?) as $key
-            ({}; if ($object | has($key)) then .[$key] = $object[$key] else . end)
-      end'
+    printf '%s' "$1" | jq -c -L "$SCRIPT_DIR/json" 'include "instance"; instance_view'
+  ]
+
+  # Batch equivalent of instance view, columns and summary. Structural JSON
+  # processing stays at this boundary; browser record policy lives in Trash.
+  rawClassMethod: jsonInstanceProjections: snapshots [
+    printf '%s' "$1" | jq -c -L "$SCRIPT_DIR/json" '
+      include "instance";
+      to_entries | map(select(.key != "") | .key as $id | .value as $raw
+        | ($raw | instance_view) as $data
+        | {id:$id, shortId:$id[-8:], data:$data,
+           columns:($raw | instance_columns), detail:($data | instance_summary)})[]'
   ]
 
   # ========================================

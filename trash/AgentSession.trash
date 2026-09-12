@@ -420,7 +420,7 @@ AgentSession subclass: Object
     local sid states
     sid=$(_db_escape "$_RECEIVER")
     states=$(_db_escape "$1")
-    _db_sql "SELECT count(*) FROM instances WHERE json_extract(data,'$.class')='AgentDelivery' AND json_extract(data,'$.session')='$sid' AND json_extract(data,'$.state') IN (SELECT value FROM json_each('$states'));"
+    _db_sql "SELECT count(*) FROM instances WHERE class='AgentDelivery' AND json_extract(data,'$.session')='$sid' AND json_extract(data,'$.state') IN (SELECT value FROM json_each('$states'));"
   ]
 
   method: stalledCount [
@@ -431,20 +431,26 @@ AgentSession subclass: Object
     ^ @ self deliveryCountIn: '["blocked"]'
   ]
 
-  # Snapshot in one SQLite read, so a picker never mixes counts from two ticks.
-  rawMethod: snapshot [
-    local sid
-    sid=$(_db_escape "$_RECEIVER")
+  # Single and batch snapshots share one indexed SQL projection. The requested
+  # order is retained and each batch observes one SQLite read snapshot.
+  method: snapshot [
+    ^ @ AgentSession snapshotsFor: self
+  ]
+
+  rawClassMethod: snapshotsFor: sessions [
+    local ids
+    ids=$(printf '%s' "$1" | jq -Rsc 'split("\n") | map(select(length>0))') || return
+    ids=$(_db_escape "$ids")
     _db_sql "SELECT json_object(
       'id',s.id,'identity',json_extract(s.data,'$.identity'),
       'workspace',json_extract(s.data,'$.workspace'),'lifecycle',json_extract(s.data,'$.lifecycleState'),
-      'pending',(SELECT count(*) FROM instances d WHERE json_extract(d.data,'$.class')='AgentDelivery' AND json_extract(d.data,'$.session')=s.id AND json_extract(d.data,'$.state')='pending'),
-      'questions',(SELECT count(*) FROM instances d WHERE json_extract(d.data,'$.class')='AgentDelivery' AND json_extract(d.data,'$.session')=s.id AND json_extract(d.data,'$.state')='blocked'),
-      'stalled',(SELECT count(*) FROM instances d WHERE json_extract(d.data,'$.class')='AgentDelivery' AND json_extract(d.data,'$.session')=s.id AND json_extract(d.data,'$.state') IN ('failed','uncertain')),
-      'run',coalesce((SELECT r.id FROM instances r WHERE json_extract(r.data,'$.class')='AgentRun' AND json_extract(r.data,'$.session')=s.id ORDER BY r.rowid DESC LIMIT 1),''),
-      'activity',coalesce((SELECT json_extract(r.data,'$.state') FROM instances r WHERE json_extract(r.data,'$.class')='AgentRun' AND json_extract(r.data,'$.session')=s.id ORDER BY r.rowid DESC LIMIT 1),'idle'),
-      'error',coalesce((SELECT json_extract(r.data,'$.error') FROM instances r WHERE json_extract(r.data,'$.class')='AgentRun' AND json_extract(r.data,'$.session')=s.id AND coalesce(json_extract(r.data,'$.error'),'')!='' ORDER BY r.rowid DESC LIMIT 1),''))
-      FROM instances s WHERE s.id='$sid';"
+      'pending',(SELECT count(*) FROM instances d WHERE d.class='AgentDelivery' AND json_extract(d.data,'$.session')=s.id AND json_extract(d.data,'$.state')='pending'),
+      'questions',(SELECT count(*) FROM instances d WHERE d.class='AgentDelivery' AND json_extract(d.data,'$.session')=s.id AND json_extract(d.data,'$.state')='blocked'),
+      'stalled',(SELECT count(*) FROM instances d WHERE d.class='AgentDelivery' AND json_extract(d.data,'$.session')=s.id AND json_extract(d.data,'$.state') IN ('failed','uncertain')),
+      'run',coalesce((SELECT r.id FROM instances r WHERE r.class='AgentRun' AND json_extract(r.data,'$.session')=s.id ORDER BY r.rowid DESC LIMIT 1),''),
+      'activity',coalesce((SELECT json_extract(r.data,'$.state') FROM instances r WHERE r.class='AgentRun' AND json_extract(r.data,'$.session')=s.id ORDER BY r.rowid DESC LIMIT 1),'idle'),
+      'error',coalesce((SELECT json_extract(r.data,'$.error') FROM instances r WHERE r.class='AgentRun' AND json_extract(r.data,'$.session')=s.id AND coalesce(json_extract(r.data,'$.error'),'')!='' ORDER BY r.rowid DESC LIMIT 1),''))
+      FROM instances s JOIN json_each('$ids') requested ON requested.value=s.id ORDER BY CAST(requested.key AS INTEGER);"
   ]
 
   method: details [

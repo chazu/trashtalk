@@ -144,21 +144,33 @@ AgentBrowser subclass: Object
     ^ @ Store query: "class = 'AgentSession' AND coalesce(json_extract(data, '$.lifecycleState'), '') != 'terminated' ORDER BY CASE WHEN json_extract(data, '$.lifecycleState') IN ('open','paused') THEN 0 ELSE 1 END, json_extract(data, '$.lastActivityAt') DESC, id"
   ]
 
-  # Filesystem projection only; session state comes from its public snapshot.
-  rawClassMethod: sessionRecordsIn: dir [
-    @ AgentBrowser sessionRecordsFor: "$(@ AgentBrowser listedSessions)" in: "$1"
+  classMethod: sessionRecordsIn: dir [
+    | sessions |
+    sessions := @ self listedSessions.
+    ^ @ self sessionRecordsFor: sessions in: dir
   ]
 
-  rawClassMethod: sessionRecordsFor: sessions in: dir [
-    local session data text label path
-    for session in $1; do
-      data=$(@ "$session" snapshot) || return 1
-      text=$(@ AgentBrowser describeSession: "$data")
-      path="$session.txt"
-      printf '%s\n' "$text" > "$2/$path"
-      label=$(printf '%s' "$data" | jq -r '"\(.workspace) [\(.lifecycle)/\(.activity)] pending=\(.pending) questions=\(.questions) stalled=\(.stalled)"')
-      @ AgentBrowser record: "$session" label: "$label" detail: "$session" path: "$path"
-    done
+  classMethod: sessionRecordsFor: sessions in: dir [
+    | snapshots template documents |
+    snapshots := @ AgentSession snapshotsFor: sessions.
+    template := #{path: #{_concat: #(#{_at: 'id'} '.txt')}
+      text: #{_concat: #('Session: ' #{_at: 'id'} '
+Identity: ' #{_at: 'identity'} '
+Workspace: ' #{_at: 'workspace'} '
+Lifecycle: ' #{_at: 'lifecycle'} '
+Latest run state: ' #{_at: 'activity'} '
+Queued: ' #{_at: 'pending'} '
+Blocked deliveries / questions: ' #{_at: 'questions'} '
+Needs review: ' #{_at: 'stalled'} '
+Latest run: ' #{_at: 'run'} '
+Latest failure: ' #{_at: 'error'})}
+      record: #{schema_version: 1 id: #{_at: 'id'} kind: 'agent' line: 1 column: 1
+        path: #{_concat: #(#{_at: 'id'} '.txt')} detail: #{_at: 'id'}
+        label: #{_concat: #(#{_at: 'workspace'} ' [' #{_at: 'lifecycle'} '/'
+          #{_at: 'activity'} '] pending=' #{_at: 'pending'} ' questions='
+          #{_at: 'questions'} ' stalled=' #{_at: 'stalled'})}}} asJson.
+    documents := @ Json projectEach: snapshots with: template.
+    ^ @ Json writeDocuments: documents in: dir
   ]
 
   classMethod: focusSenderOf: message in: dir [

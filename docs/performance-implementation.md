@@ -8,8 +8,8 @@ message delivery, per-token serialization, redundant read transactions, and
 whole-history transcript refreshes. Implement in this order:
 
 - [x] Batch tokenizer serialization; retain exact token values and positions.
-- [ ] Use indexed session snapshot predicates, then batch session projections.
-- [ ] Add reusable object projection support and batch object browsers.
+- [x] Use indexed session snapshot predicates, then batch session projections.
+- [x] Add reusable object projection support and batch object browsers.
 - [ ] Batch inbox presentation, participant/date lookup, and preview projection.
 - [ ] Consolidate conversation admission and optimize fresh read-only validation.
 - [ ] Cache transcript projections per view and consume appended log records.
@@ -39,3 +39,13 @@ latency and terminal rendering.
 Tokenizer validation: 76 focused checks and all 47 compiler test files passed.
 The batch serializer propagates failures and preserves opaque values (including
 newlines, Unicode and control characters) and numeric source locations.
+
+Browser projection validation: 28 object browser checks, 30 agent browser checks,
+and dedicated batch tests passed. Session snapshots share one indexed query and
+retain request order. `Json projectEach:with:` builds JSONL from data templates
+(`_at`, `_concat`, `_literal`); `Json writeDocuments:in:` validates preview
+basenames and decodes the whole batch before writing. Templates contain no
+executable expressions. Object projections retain the existing Runtime live
+cache overlay and share scalar formatting functions. Tests cover typed and
+opaque values, Unicode, declaration order, empty batches, failure propagation,
+preview parity, lifecycle controls, and all six indexed subqueries.
