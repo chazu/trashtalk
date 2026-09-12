@@ -249,6 +249,24 @@ String subclass: Object
       end'
   ]
 
+  # Convert the declared state of a Runtime object into the named cells used by
+  # structured pickers.  _vars is deliberate: it preserves the class's
+  # declaration order rather than leaking Runtime metadata or jq's key order.
+  rawClassMethod: jsonInstanceColumns: jsonString [
+    printf '%s' "$1" | jq -c '
+      def shown:
+        if type == "string" then .
+        elif type == "null" then "null"
+        else tojson
+        end;
+      if type != "object" then []
+      else . as $object
+        | [._vars[]? as $key
+           | select($object | has($key))
+           | {name:$key, value:($object[$key] | shown)}]
+      end'
+  ]
+
   # Project persisted Runtime data to declared instance variables. Class,
   # creation time, and the _vars manifest are implementation metadata rather
   # than editable object state in the inspector.

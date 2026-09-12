@@ -53,7 +53,7 @@ Inpick subclass: Tool
     [[ -z "$action" ]] || extra=('--expect=ctrl-d' "--header=Ctrl-D $action")
     if command -v fzf >/dev/null 2>&1; then
       selected=$(printf '%s\n' "$records" | jq -r \
-        '[(if .display then (.display.prefix + "  " + .label) else .label end), (if .display then "" else .kind end), (if .display then "" else (.detail // "") end), (tojson | @base64)] | @tsv' | \
+        '[(if .display and ((.display.columns // []) | length == 0) then (.display.prefix + "  " + .label) else .label end), (if .display and ((.display.columns // []) | length == 0) then "" else .kind end), (if .display and ((.display.columns // []) | length == 0) then "" else (.detail // "") end), (tojson | @base64)] | @tsv' | \
         fzf --delimiter=$'\t' --with-nth=1,2,3 --query="$query" --prompt="${title:-browse}> " "${extra[@]}")
       status=$?
       if [[ -n "$action" ]]; then

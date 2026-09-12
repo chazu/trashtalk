@@ -201,6 +201,9 @@ assert_eq "instance label keeps class and a compact identity" \
     "$(printf '%s\n' "$instance_records" | jq -r --arg id "$counter" 'select(.id == $id) | .label')"
 assert_eq "instance detail is a readable state summary" "value=0 | step=1" \
     "$(printf '%s\n' "$instance_records" | jq -r --arg id "$counter" 'select(.id == $id) | .detail')"
+assert_eq "instance record includes declared property columns" \
+    '[{"name":"value","value":"0"},{"name":"step","value":"1"}]' \
+    "$(printf '%s\n' "$instance_records" | jq -c --arg id "$counter" 'select(.id == $id) | .display.columns')"
 
 fallback_instance_result=$(@ Tools::Inpick fallbackSelectRecords: \
     "$(printf '%s\n' "$instance_records" | jq -c --arg id "$counter" 'select(.id == $id)')" \

@@ -1059,7 +1059,7 @@ EOF
   # Build persisted-object candidates in the DSL. Only Store and Runtime own
   # the database boundary; the browser sees ordinary versioned records.
   method: instanceRecordsFor: className [
-    | snapshots records source data shortId label detail record |
+    | snapshots records source data columns shortId label detail record |
     snapshots := @ Runtime dataForClass: className.
     records := ''.
     source := @ self sourceFileFor: className.
@@ -1067,12 +1067,14 @@ EOF
     snapshots objectEach: [:instanceId :rawData |
       instanceId notEmpty ifTrue: [
         data := @ String jsonInstanceView: rawData.
+        columns := @ String jsonInstanceColumns: rawData.
         shortId := @ String suffix: instanceId length: '8'.
         label := className , ' ' , shortId.
         detail := @ String jsonInstanceSummary: data.
         record := #{schema_version: 1 id: instanceId path: source line: 1 column: 1
                     label: label kind: 'instance' detail: detail class_name: className
-                    object_id: instanceId data: (data jsonValue)} asJson.
+                    object_id: instanceId data: (data jsonValue)
+                    display: #{columns: (columns jsonValue)}} asJson.
         records := records , record , '
 '
       ]
