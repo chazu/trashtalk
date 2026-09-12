@@ -10,7 +10,7 @@ whole-history transcript refreshes. Implement in this order:
 - [x] Batch tokenizer serialization; retain exact token values and positions.
 - [x] Use indexed session snapshot predicates, then batch session projections.
 - [x] Add reusable object projection support and batch object browsers.
-- [ ] Batch inbox presentation, participant/date lookup, and preview projection.
+- [x] Batch inbox presentation, participant/date lookup, and preview projection.
 - [ ] Consolidate conversation admission and optimize fresh read-only validation.
 - [ ] Cache transcript projections per view and consume appended log records.
 - [ ] Reduce repeated message field initialization and delivery serialization.
@@ -49,3 +49,12 @@ executable expressions. Object projections retain the existing Runtime live
 cache overlay and share scalar formatting functions. Tests cover typed and
 opaque values, Unicode, declaration order, empty batches, failure propagation,
 preview parity, lifecycle controls, and all six indexed subqueries.
+
+Inbox validation: all 47 compiler test files, 52 inbox interaction checks, 21
+presentation checks and a 200-message regression passed. `jsonRows:into:`
+decodes selected fields across an array once and preserves inline block scope,
+returns, failure propagation, typed text and opaque strings. Inbox loading now
+uses one ordered reload, one query for distinct participants, and shared calendar
+values from Bash strftime. The 200-row test asserts bounded serializer counts,
+full preview text, fresh cache replacement, and unchanged unread state. Calendar
+values match the existing Time API in UTC and New York across DST transitions.

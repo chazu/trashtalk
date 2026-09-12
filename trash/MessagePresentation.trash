@@ -3,43 +3,74 @@
 MessagePresentation subclass: Object
 
   classMethod: dataFor: message [
-    | data sender rowSender recipient timestamp day today shortDate fullDate kind status marker subject body label prefix text search |
+    | data snapshots inputs presented |
     data := @ message asJson.
-    sender := @ self participant: (data jsonTextAt: 'from').
-    recipient := @ self participant: (data jsonTextAt: 'to').
-    timestamp := data jsonTextAt: 'sentAt'.
-    timestamp isEmpty ifTrue: [timestamp := 0].
-    # Message.sentAt is milliseconds; Time.format expects seconds.
-    timestamp := timestamp / 1000.
-    shortDate := data jsonTextAt: 'created'.
-    fullDate := shortDate.
-    (timestamp > 0) ifTrue: [
-      day := @ Time format: timestamp as: '%Y-%m-%d'.
-      today := @ Time nowFormatted: '%Y-%m-%d'.
-      fullDate := @ Time format: timestamp as: '%Y-%m-%d %H:%M %Z'.
-      shortDate := @ Time format: timestamp as: '%Y-%m-%d %H:%M'.
-      (day = today) ifTrue: [
-        shortDate := @ Time format: timestamp as: '%H:%M'.
-        fullDate := 'Today ' , shortDate
-      ]
-    ].
-    kind := data jsonTextAt: 'kind'.
-    status := data jsonTextAt: 'status'.
-    marker := ' '.
-    (status = 'unread') ifTrue: [marker := '●'].
-    (kind = 'question') ifTrue: [marker := marker , '?'].
-    (kind = 'alert') ifTrue: [marker := marker , '!'].
-    subject := @ self singleLine: (data jsonTextAt: 'subject').
-    body := data jsonTextAt: 'body'.
-    label := subject.
-    (label = kind) ifTrue: [label := ''. subject := ''].
-    label isEmpty ifTrue: [label := @ self firstLine: body].
-    label isEmpty ifTrue: [label := '(empty message)'].
-    rowSender := @ self rowName: sender.
-    prefix := marker , ' ' , rowSender , '  ' , shortDate.
-    text := sender , ' → ' , recipient , '  ·  ' , fullDate.
-    search := (data jsonTextAt: 'from') , ' ' , (data jsonTextAt: 'to') , ' ' , status , ' ' , kind , ' ' , body.
-    ^ #{label: label prefix: prefix header: text subject: subject body: body search: search} asJson
+    snapshots := #{id: message data: (data jsonValue)} asJson.
+    inputs := @ self inputsFor: snapshots.
+    presented := @ self present: inputs.
+    ^ presented jsonAt: 'data'
+  ]
+
+  # Presentation policy stays in the language. All input fields across all rows
+  # are decoded once; only the final typed document needs a serializer per row.
+  classMethod: present: inputs [
+    pragma: stream
+    | marker label prefix header search preview |
+    inputs jsonRows: #('id' 'sender' 'rowSender' 'recipient' 'from' 'to' 'kind' 'status'
+      'subject' 'body' 'firstLine' 'day' 'today' 'shortDate' 'fullDate' 'clock')
+      into: [:id :sender :rowSender :recipient :from :to :kind :status
+        :subject :body :firstLine :day :today :shortDate :fullDate :clock |
+      (day = today) ifTrue: [shortDate := clock. fullDate := 'Today ' , clock].
+      marker := ' '.
+      (status = 'unread') ifTrue: [marker := '●'].
+      (kind = 'question') ifTrue: [marker := marker , '?'].
+      (kind = 'alert') ifTrue: [marker := marker , '!'].
+      label := subject.
+      (label = kind) ifTrue: [label := ''. subject := ''].
+      label isEmpty ifTrue: [label := firstLine].
+      label isEmpty ifTrue: [label := '(empty message)'].
+      prefix := marker , ' ' , rowSender , '  ' , shortDate.
+      header := sender , ' → ' , recipient , '  ·  ' , fullDate.
+      search := from , ' ' , to , ' ' , status , ' ' , kind , ' ' , body.
+      preview := header , '
+'.
+      subject notEmpty ifTrue: [preview := preview , subject , '
+'].
+      preview := preview , '
+' , body.
+      @ Console print: (#{id: id kind: kind text: preview
+        data: #{label: label prefix: prefix header: header subject: subject body: body search: search}} asJson)
+    ]
+  ]
+
+  classMethod: documentsFor: snapshots [
+    | inputs presentations template |
+    inputs := @ self inputsFor: snapshots.
+    presentations := @ self present: inputs.
+    template := #{path: #{_concat: #(#{_at: 'id'} '.txt')} text: #{_at: 'text'}
+      record: #{schema_version: 1 id: #{_at: 'id'} label: #{_at: 'data.label'} kind: #{_at: 'kind'}
+        detail: #{_at: 'data.prefix'} path: #{_concat: #(#{_at: 'id'} '.txt')} line: 1 column: 1
+        display: #{prefix: #{_at: 'data.prefix'} preview_title: 'Message' search_text: #{_at: 'data.search'}}}} asJson.
+    ^ @ Json projectEach: presentations with: template
+  ]
+
+  # SQL and text boundary: resolve distinct addresses in one read, normalize
+  # Unicode once for all rows, and reuse calendar values for repeated times.
+  rawClassMethod: inputsFor: snapshots [
+    local addresses names timestamps calendar today
+    addresses=$(printf '%s' "$1" | jq -cs '[.[] | .data | .from,.to] | unique') || return
+    addresses=$(_db_escape "$addresses")
+    names=$(_db_sql "SELECT coalesce(json_group_object(a.value,coalesce((
+      SELECT coalesce(nullif(json_extract(i.data,'$.displayName'),''),json_extract(i.data,'$.handle'))
+      FROM instances i WHERE i.class='AgentIdentity' AND (json_extract(i.data,'$.inbox')=a.value
+      OR i.id=(SELECT json_extract(s.data,'$.identity') FROM instances s
+        WHERE s.class='AgentSession' AND json_extract(s.data,'$.inbox')=a.value LIMIT 1)) LIMIT 1),a.value)),'{}')
+      FROM json_each('$addresses') a;") || return
+    timestamps=$(printf '%s' "$1" | jq -cs '[.[] | .data.sentAt | if .=="" then 0 else tonumber end | ./1000 | floor | select(.>0)] | unique') || return
+    calendar=$(@ Time calendarFor: "$timestamps") || return
+    printf -v today '%(%Y-%m-%d)T' -1
+    printf '%s' "$1" | jq -cs --argjson names "$names" --argjson calendar "$calendar" \
+      --arg today "$today" --arg human "${TRASHTALK_USER:-$USER}" -f "$SCRIPT_DIR/json/message-inputs.jq"
   ]
 
   classMethod: textFor: message [

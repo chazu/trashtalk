@@ -140,6 +140,9 @@ MyClass subclass: Object
 - String work stays in the DSL: `s startsWith: p`, `s withoutPrefix: p`, `s upTo: ':'`,
   `s afterLast: '/'`, `s replaceAll: a with: b`, `s size`, `s asUppercase`, `s trimmed`,
   `s lines`, `s firstLine` compile to parameter expansion with no dispatch
+- `rows jsonRows: #('id' 'name') into: [:id :name | ...]` unpacks fields from
+  an array of JSON objects in one decode, retaining inline block return/failure
+  semantics. Missing fields or NUL text fail before any row is visited.
 - Failure stays in the DSL: `@ SomeError signal: 'msg'` fails the method;
   `(@ x foo) ifFailed: [:e | ...]` guards a send; `@ e signal` re-raises
 - Iteration and dispatch stay in the DSL: `ids linesDo: [:id | ...]` over newline lists,

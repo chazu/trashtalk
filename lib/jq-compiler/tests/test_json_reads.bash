@@ -37,6 +37,18 @@ JsonReads subclass: Object
     data arrayEach: [:row | row arrayEach: [:value | total := total + value] ].
     ^ total
   ]
+  classMethod: rows: data [
+    pragma: stream
+    data jsonRows: #('id' #('nested' 'value')) into: [:id :value |
+      @ Console print: id.
+      @ Console print: value
+    ]
+  ]
+  classMethod: findRow: data [
+    data jsonRows: #('id') into: [:id | (id = 'stop') ifTrue: [^ id] ].
+    ^ 'not found'
+  ]
+
 TRASH
 "$ROOT/lib/jq-compiler/driver.bash" compile "$TRASHDIR/JsonReads.trash" --check > "$TRASHDIR/.compiled/JsonReads" || exit 1
 source "$ROOT/lib/trash.bash" || exit 1
@@ -71,5 +83,18 @@ check test ! -s "$TEST_TMP/missing.out"
 @ JsonReads get: '{} {}' path: flag > "$TEST_TMP/multiple.out" 2>/dev/null
 check test "$?" != 0
 @ JsonReads text: '{"x":"\u0000"}' path: x > "$TEST_TMP/nul.out" 2>/dev/null
+check test "$?" != 0
+
+: > "$TEST_TMP/calls"
+result=$(@ JsonReads rows: '[{"id":"雪\nline","nested":{"value":false}},{"id":"quote '\'' $(touch BAD)","nested":{"value":null}}]')
+check test "$result" = $'雪\nline\nfalse\nquote \' $(touch BAD)\nnull'
+check test "$(wc -l < "$TEST_TMP/calls" | tr -d ' ')" = 1
+check test ! -e BAD
+check test "$(@ JsonReads rows: '[]')" = ''
+check test "$(@ JsonReads findRow: '[{"id":"first"},{"id":"stop"},{"id":"last"}]')" = stop
+@ JsonReads rows: '[{"id":"ok","nested":{"value":1}},{"id":"missing"}]' > "$TEST_TMP/rows.out" 2>/dev/null
+check test "$?" != 0
+check test ! -s "$TEST_TMP/rows.out"
+@ JsonReads rows: '[{"id":"nul","nested":{"value":"\u0000"}}]' >/dev/null 2>&1
 check test "$?" != 0
 exit "$((failed > 0))"

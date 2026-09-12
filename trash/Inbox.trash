@@ -300,12 +300,10 @@ Inbox subclass: Object
     name=$(_ivar name)
     : > "$dir/records.jsonl"
     ids=$(@ "$_RECEIVER" messages: 200)
-    for m in $ids; do
-      @ "$m" reload >/dev/null
-      data=$(@ MessagePresentation dataFor: "$m") || return 1
-      @ MessagePresentation textFrom: "$data" > "$dir/$m.txt"
-      @ MessagePresentation recordFor: "$m" data: "$data" >> "$dir/records.jsonl"
-    done
+    local snapshots documents
+    snapshots=$(@ Runtime reloadDataFor: "$ids") || return 1
+    documents=$(@ MessagePresentation documentsFor: "$snapshots") || return 1
+    @ Json writeDocuments: "$documents" in: "$dir" > "$dir/records.jsonl" || return 1
     if [[ ! -s "$dir/records.jsonl" ]]; then
       printf '%s\n' "Inbox $name is empty" >&2
       jq -cn '{schema_version:1,outcome:"cancelled",selection:null}'

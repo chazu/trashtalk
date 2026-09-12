@@ -31,7 +31,25 @@ Time subclass: Object
     fi
   ]
 
-  # Get current time formatted
+  # Batch local calendar projection for nonnegative Unix seconds. Bash's
+  # strftime builtin avoids spawning date once for each format and timestamp.
+  rawClassMethod: calendarFor: timestamps [
+    local -a stamps=()
+    local stamp fields
+    _trash_json_decode stamps "$1" array || return
+    for stamp in "${stamps[@]}"; do
+      [[ "$stamp" =~ ^[0-9]+$ ]] || return 1
+    done
+    fields=$(
+      for stamp in "${stamps[@]}"; do
+        printf '%s\0' "$stamp"
+        printf '%(%Y-%m-%d)T\0%(%Y-%m-%d %H:%M)T\0%(%Y-%m-%d %H:%M %Z)T\0%(%H:%M)T\0' "$stamp" "$stamp" "$stamp" "$stamp"
+      done | jq -Rsc 'split("\u0000") | .[:-1] | . as $v
+        | [range(0;length;5) as $i | {key:$v[$i],value:{day:$v[$i+1],short:$v[$i+2],full:$v[$i+3],clock:$v[$i+4]}}] | from_entries'
+    ) || return
+    printf '%s\n' "$fields"
+  ]
+
   # Usage: str := @ Time nowFormatted: '%Y-%m-%d %H:%M:%S'
   rawClassMethod: nowFormatted: format [
     date +"$1"

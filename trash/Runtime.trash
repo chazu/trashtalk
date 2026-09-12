@@ -90,6 +90,22 @@ Runtime subclass: Object
     printf '%s' "$snapshot" | jq -cs 'map({key:.id,value:.data}) | from_entries'
   ]
 
+  # Batch equivalent of Persistable.reload: discard cached changes, read only
+  # the requested ids in order, and install the exact persisted JSON in cache.
+  rawClassMethod: reloadDataFor: instances [
+    local ids rows id data
+    ids=$(printf '%s' "$1" | jq -Rsc 'split("\n") | map(select(length>0))') || return
+    ids=$(_db_escape "$ids")
+    rows=$(_db_sql "SELECT i.id || '|' || json(i.data) FROM json_each('$ids') requested
+      JOIN instances i ON i.id=requested.value ORDER BY CAST(requested.key AS INTEGER);") || return
+    while IFS='|' read -r id data; do
+      [[ -n "$id" ]] || continue
+      _db_validate_id "$id" || return 1
+      _env_set "$id" "$data" || return
+      printf '{"id":"%s","data":%s}\n' "$id" "$data"
+    done <<< "$rows"
+  ]
+
   # Set session-cache data from JSON (does not save to Store)
   # Usage: @ Runtime setData: '{"value":42}' for: instanceId
   rawClassMethod: setData: json for: instanceId [

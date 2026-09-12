@@ -39,6 +39,13 @@ if length != 1 then error("expected exactly one JSON document") else .[0] end
     | map(. as $field | $data | lookup($field)
       | if .present then .value | text_value else error("missing JSON field: " + ($field | tojson)) end)
     | @sh
+  elif $operation == "rows" then
+    if type != "array" then error("expected an array of rows") else . end
+    | ($path | fromjson) as $paths
+    | if ($paths|type)!="array" or ($paths|length)==0 then error("expected field paths") else . end
+    | [.[] as $row | $paths[] as $field | $row | lookup($field)
+      | if .present then .value | text_value else error("missing JSON field: " + ($field|tojson)) end]
+    | @sh
   elif $operation == "array" then
     if type != "array" then error("expected an array") else map(legacy_text) | @sh end
   elif $operation == "object" then

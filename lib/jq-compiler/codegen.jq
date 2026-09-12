@@ -733,15 +733,15 @@ def expr_parse_expr(min_bp):
         { state: $parsed.state, result: $node }
         | infix_loop
       elif (.state | expr_peek_type) == "KEYWORD" and
-           ((.state | expr_peek.value) == "jsonUnpack:" or
+           ((.state | expr_peek.value) == "jsonUnpack:" or (.state | expr_peek.value) == "jsonRows:" or
             (.state | expr_peek.value) == "arrayEach:" or (.state | expr_peek.value) == "objectEach:" or
             (.state | expr_peek.value) == "objectKeysEach:" or (.state | expr_peek.value) == "objectValuesEach:") then
         .result as $receiver | (.state | expr_peek) as $token |
         (.state | expr_advance | expr_skip_ws) as $start |
-        (if $token.value == "jsonUnpack:" then
+        (if $token.value == "jsonUnpack:" or $token.value == "jsonRows:" then
           ($start | expr_parse_expr(0)) as $paths |
           ($paths.state | expr_skip_ws) as $after |
-          if ($after | expr_peek.value) != "into:" then error("jsonUnpack: requires into: [block]")
+          if ($after | expr_peek.value) != "into:" then error("\($token.value) requires into: [block]")
           else {state:($after | expr_advance | expr_skip_ws),paths:$paths.result} end
         else {state:$start,paths:null} end) as $args |
         if ($args.state | expr_peek_type) != "LBRACKET" then error("JSON traversal requires an inline block")
@@ -2032,7 +2032,7 @@ def expr_gen($locals; $ivars; $cvars):
     ($locals + $params) as $bound |
     ({tokens:.block.tokens,pos:0} | expr_parse_stmts) as $body |
     ([$body.body[] | expr_gen($bound; $ivars; $cvars)] | join("; ")) as $code |
-    if .operation == "jsonUnpack" then
+    if .operation == "jsonUnpack" or .operation == "jsonRows" then
       def constant:
         if .type == "array_literal" then .elements | map(constant)
         elif .type == "string" or .type == "symbol" then .value
@@ -2041,6 +2041,11 @@ def expr_gen($locals; $ivars; $cvars):
       (.paths | constant) as $paths |
       if ($paths | type) != "array" or ($paths | length) != ($params | length) or ($params | length) == 0
       then error("jsonUnpack: field/binding count mismatch")
+      elif .operation == "jsonRows" then
+        "__json_values_\(.site)" as $values | "__json_i_\(.site)" as $index |
+        ($params | length) as $stride |
+        ([range(0;$stride) as $i | "\($params[$i])=\"${\($values)[\($index)+\($i)]}\""] | join("; ")) as $bindings |
+        "local -a \($values)=(); local \($index) \($params | join(" ")); _trash_json_decode \($values) \($receiver) rows \($paths | tojson | @sh) || return; for ((\($index)=0; \($index)<${#\($values)[@]}; \($index)+=\($stride))); do \($bindings); \($code); done"
       else "local \($params | join(" ")); _trash_json_unpack \($receiver) \($paths | tojson | @sh) \($params | join(" ")) || return; \($code)" end
     else
       (if .operation == "objectEach" then 2 else 1 end) as $stride |
@@ -2408,7 +2413,7 @@ def should_use_expr_parser:
     def is_json_primitive_keyword: . as $v |
       ["arrayPush:", "arrayPushJson:", "arrayAt:", "arrayRemoveAt:",
        "objectAt:", "objectHasKey:", "objectRemoveKey:", "jsonPath:",
-       "jsonAt:", "jsonTextAt:", "jsonHas:", "jsonUnpack:", "arrayEach:", "objectEach:", "objectKeysEach:", "objectValuesEach:",
+       "jsonAt:", "jsonTextAt:", "jsonHas:", "jsonUnpack:", "jsonRows:", "arrayEach:", "objectEach:", "objectKeysEach:", "objectValuesEach:",
        "arrayCollect:", "arraySelect:", "objectCollect:", "objectSelect:"] | index($v) != null;
     # JSON primitive unary identifiers
     def is_json_primitive_unary: . as $v |
