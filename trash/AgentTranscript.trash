@@ -44,5 +44,5 @@ AgentTranscript subclass: Object
     records=$(@ AgentTranscript recordsFor: "$1" limit: "$2") || return 1
     [[ -n "$records" ]] || { echo 'Unknown agent session' >&2; return 1; }
     directory=$(@ AgentDriver runDirFor: "$1")
-    printf '%s\n' "$records" | bash "${TRASHTALK_DIR:-$HOME/.trashtalk}/lib/agent-transcript.bash" "$2" "${directory%/*}"
+    printf '%s\n' "$records" | bash "${TRASHTALK_DIR:-$HOME/.trashtalk}/lib/agent-transcript.bash" "$2" "${directory%/*}" "${TRASHTALK_TRANSCRIPT_CACHE:-}"
   ]

@@ -6,6 +6,11 @@ base=${TRASHTALK_DIR:-${BASH_SOURCE[0]%/lib/*}}
 source "$base/lib/trash.bash" >/dev/null
 jq -e 'type=="array" and length>0 and all(.[]; type=="string" and (contains("\u0000")|not))' <<< "$argv_json" >/dev/null || exit 1
 mapfile -d '' -t argv < <(jq -jr '.[] | ., "\u0000"' <<< "$argv_json")
+# Derived transcript state belongs to this temporary view process. Authorization
+# still runs on every frameFor: call, including when the projection is cached.
+view_cache=$(mktemp -d "${TMPDIR:-/tmp}/trash-view.XXXXXX") || exit 1
+export TRASHTALK_TRANSCRIPT_CACHE="$view_cache"
+trap 'rm -rf "$view_cache"' EXIT
 # Validate/read before the UI owns the terminal. No worker is started on attach.
 snapshot=$(@ "$handler" frameFor: "$context") || exit 1
 [[ -n "$snapshot" ]] || exit 1
@@ -16,6 +21,7 @@ cleanup() {
     exec {input}>&- {output}<&-
     kill -TERM "$surface_pid" 2>/dev/null || true
     wait "$surface_pid" 2>/dev/null || true
+    rm -rf "$view_cache"
 }
 trap cleanup EXIT
 trap 'exit 0' INT TERM HUP

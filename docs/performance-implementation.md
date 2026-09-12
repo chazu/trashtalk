@@ -12,7 +12,7 @@ whole-history transcript refreshes. Implement in this order:
 - [x] Add reusable object projection support and batch object browsers.
 - [x] Batch inbox presentation, participant/date lookup, and preview projection.
 - [x] Consolidate conversation admission and optimize fresh read-only validation.
-- [ ] Cache transcript projections per view and consume appended log records.
+- [x] Cache transcript projections per view and consume appended log records.
 - [ ] Reduce repeated message field initialization and delivery serialization.
 - [ ] Run full compiler/runtime verification and measure public interactions.
 
@@ -68,3 +68,15 @@ membership changes during validation are rejected. Domain mutation validators
 continue to use ordinary tracked transactions. Sending validates under the
 worker lock; UI mark-viewed and controls reuse their own public admission checks.
 Run attribution is checked by the public interrupt control itself.
+
+Transcript cache validation: the original transcript checks, 42 focus checks,
+direct-conversation fixtures, and an independent full-projection differential
+passed. Each temporary duplex view owns and deletes its cache. Cached offsets
+and entries publish together in one atomic file. The file adapter verifies
+previously consumed bytes by hash (including same-size and prefix rewrites),
+then passes only complete new JSONL records to jq. It still reads the prefix for
+integrity; the improvement removes repeated JSON parsing and global sorting.
+Out-of-order entries, changed mail, file replacement/deletion/truncation and
+window changes rebuild. Partial final records are withheld until newline. A
+10,000-chunk fixture confirms one appended record reaches the parser. Perl is
+used only for the existing OS-adapter role: file metadata, byte reads and hashes.
