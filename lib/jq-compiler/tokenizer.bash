@@ -36,8 +36,9 @@ set -uo pipefail
 # ------------------------------------------------------------------------------
 # Token accumulator
 # ------------------------------------------------------------------------------
-# We collect tokens in a bash array, then output as JSON at the end.
-# This is more efficient than calling jo for each token.
+# Collect token fields in a Bash array and serialize the batch once. Bash
+# source/token values cannot contain NUL, so NUL separates fields without
+# confusing embedded newlines, quotes, tabs, or other control characters.
 
 declare -a TOKENS=()
 
@@ -49,18 +50,7 @@ _TOKENIZER_ERRORS=0
 # Add a token to the accumulator
 # Arguments: type value line col
 add_token() {
-    local type="$1"
-    local value="$2"
-    local line="$3"
-    local col="$4"
-
-    # Use jq to create properly escaped JSON
-    # jq handles special characters correctly with --arg
-    local token
-    token=$(jq -nc --arg type "$type" --arg value "$value" \
-                   --argjson line "$line" --argjson col "$col" \
-                   '{type: $type, value: $value, line: $line, col: $col}')
-    TOKENS+=("$token")
+    TOKENS+=("$1" "$2" "$3" "$4")
 }
 
 # Output all tokens as JSON array
@@ -68,9 +58,11 @@ emit_tokens() {
     if [[ ${#TOKENS[@]} -eq 0 ]]; then
         echo "[]"
     else
-        # Join tokens with commas and wrap in array
-        local IFS=','
-        echo "[${TOKENS[*]}]"
+        printf '%s\0' "${TOKENS[@]}" | jq -Rsc '
+          split("\u0000") | .[:-1] | . as $fields |
+          [range(0; length; 4) as $i |
+            {type:$fields[$i], value:$fields[$i+1],
+             line:($fields[$i+2]|tonumber), col:($fields[$i+3]|tonumber)}]'
     fi
 }
 
@@ -975,7 +967,7 @@ main() {
     fi
 
     tokenize "$input"
-    emit_tokens
+    emit_tokens || return
 
     # Fail if any unrecoverable lexical errors were seen, so the driver can
     # report a clear failure rather than compiling a malformed token stream.

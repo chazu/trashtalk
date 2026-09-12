@@ -225,3 +225,26 @@ run_test "empty input" "0" "$(count_tokens '')"
 run_test "whitespace only" "0" "$(count_tokens '   ')"
 run_test "keyword vs identifier" "IDENTIFIER,KEYWORD" \
     "$(get_all_types 'foo bar:')"
+
+# Serialization preserves opaque token values and uses one process regardless
+# of token count. Exercise the boundary directly, independently of lexing.
+batch_dir=$(mktemp -d)
+(
+    source "$TOKENIZER"
+    jq() { printf 'jq\n' >> "$batch_dir/calls"; command jq "$@"; }
+    for ((token_i=0; token_i<100; token_i++)); do
+        add_token STRING $'quote " slash \\ tab\t newline\n雪\001' 12 34
+    done
+    emit_tokens
+) > "$batch_dir/tokens.json"
+run_test "one serializer for 100 tokens" 1 "$(wc -l < "$batch_dir/calls" | tr -d ' ')"
+run_test "batch preserves values and numeric locations" true \
+    "$(jq --arg value $'quote " slash \\ tab\t newline\n雪\001' \
+      'length==100 and all(.[]; .type=="STRING" and .value==$value and .line==12 and .col==34)' "$batch_dir/tokens.json")"
+(
+    source "$TOKENIZER"
+    jq() { return 7; }
+    main <<< 'hello'
+) > /dev/null
+run_test "serialization failure reaches the caller" 7 "$?"
+rm -rf "$batch_dir"
