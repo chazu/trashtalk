@@ -1,0 +1,12 @@
+{"case":"tokenize_Counter","variant":"before","sample":0,"microseconds":432043,"status":0}
+{"case":"tokenize_Counter","variant":"after","sample":0,"microseconds":22576,"status":0}
+{"case":"tokenize_Counter","variant":"before","sample":1,"microseconds":444484,"status":0}
+{"case":"tokenize_Counter","variant":"after","sample":1,"microseconds":21541,"status":0}
+{"case":"tokenize_Counter","variant":"before","sample":2,"microseconds":429726,"status":0}
+{"case":"tokenize_Counter","variant":"after","sample":2,"microseconds":22141,"status":0}
+{"case":"tokenize_AgentSession","variant":"before","sample":0,"microseconds":8740961,"status":0}
+{"case":"tokenize_AgentSession","variant":"after","sample":0,"microseconds":2703007,"status":0}
+{"case":"tokenize_AgentSession","variant":"before","sample":1,"microseconds":8729187,"status":0}
+{"case":"tokenize_AgentSession","variant":"after","sample":1,"microseconds":2658588,"status":0}
+{"case":"tokenize_AgentSession","variant":"before","sample":2,"microseconds":8887818,"status":0}
+{"case":"tokenize_AgentSession","variant":"after","sample":2,"microseconds":2757279,"status":0}

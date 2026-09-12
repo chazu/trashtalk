@@ -66,8 +66,10 @@ Trashtalk uses a **DSL compiler** that transforms Smalltalk-inspired source file
   `brew install bash`, put it first on PATH (`export PATH="$(brew --prefix)/bin:$PATH"`),
   then start it with `exec bash`. Build scripts also resolve `bash` from PATH.
 - Required tools: `jo`, `jq`, `sqlite3`, `uuidgen`; builds also need `make` and `shasum`
+  - Conversation log projection also uses Perl with its core `JSON::PP`,
+    `Digest::SHA`, and `Time::HiRes` modules for file reads and hashes.
   - macOS: `brew install jo jq sqlite` (`uuidgen` is built in)
-  - Debian/Ubuntu: `sudo apt install bash jo jq sqlite3 uuid-runtime make libdigest-sha-perl`
+  - Debian/Ubuntu: `sudo apt install bash jo jq sqlite3 uuid-runtime make perl libdigest-sha-perl`
 
 Clone or copy this repository to `~/.trashtalk`:
 
@@ -939,6 +941,7 @@ External tools (install separately):
 - `jq` - JSON processor
 - `sqlite3` - Database engine
 - `uuidgen` - UUID generation (usually pre-installed)
+- `perl` with `JSON::PP`, `Digest::SHA`, and `Time::HiRes` - conversation log file adapter
 - `libhonker_ext` - Honker SQLite extension (optional — enables EventBus, Actor, Stream, Scheduler)
 
 ## Emacs Integration

@@ -95,6 +95,36 @@ It never makes a model request. `make bench` is the build-and-run convenience
 target. Compare timings on the same machine without concurrent builds; these
 are wall-clock measurements, not guarantees about every host.
 
+### Browser and conversation fixtures
+
+See the [September 12 comparison](performance-2026-09-12.md) for current browser,
+conversation and tokenizer measurements with raw samples.
+
+```bash
+make bash
+bin/trash-bench-interactions 3 > /tmp/trashtalk-interactions.jsonl
+# Or run either group after building:
+bin/trash-bench-interactions 3 browsers
+bin/trash-bench-interactions 3 conversations
+```
+
+`make bench-interactions SAMPLES=3` builds and runs both groups interactively.
+These fixtures cover 1–200 inbox messages, 10–100 objects, 10–50 sessions,
+current-session access, human/session mail delivery, a focus frame containing
+50,000 native chunks, opening a conversation, and first/busy/UI input. Setup
+uses fresh disposable databases. A fake picker stops at the public projection
+boundary, and the repository's Jcode wire fixture handles direct input. No real
+agent or model is contacted. Python is required for that test fixture only.
+The Bash runtime and jq compiler remain canonical.
+
+`TRASHTALK_BENCH_ROOT=/path/to/built/checkout` selects another revision while
+using the same benchmark script. Run revisions sequentially on the same host,
+without concurrent builds/tests. The first direct input is a single cold sample;
+other cases report repeated samples after one warmup. Every collection timing
+also verifies the complete row count, and the long transcript verifies text
+length. The conversation fixture tests transport and admission; it excludes
+model latency and terminal rendering.
+
 ### Measured locally, 2026-09-05
 
 The earlier runtime and JSON-construction changes produced these warm medians

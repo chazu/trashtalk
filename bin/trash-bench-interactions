@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+# Public interaction fixtures. No model requests, real applets, or user-state writes.
+# Build first. TRASHTALK_BENCH_ROOT can select a separately built comparison tree.
+set -euo pipefail
+export LC_ALL=C
+samples=${1:-3} group=${2:-all}
+[[ "$samples" =~ ^[1-9][0-9]*$ && -n ${EPOCHREALTIME:-} ]] || { echo 'Usage: trash-bench-interactions [samples] [all|browsers|conversations] (Bash 5+)' >&2; exit 2; }
+if [[ "$group" == all ]]; then "$0" "$samples" browsers; "$0" "$samples" conversations; exit; fi
+root=${TRASHTALK_BENCH_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
+bench_tmp=$(mktemp -d)
+export TRASHTALK_DIR="$root" TRASHDIR="$root/trash" SQLITE_JSON_DB="$bench_tmp/instances.db"
+export TRASHTALK_RUN_DIR="$bench_tmp/runs" TRASHTALK_USER=bench-owner TRASHTALK_GUSGUS_PROFILE=shell
+export TRASHTALK_SKIP_USER_CONFIG=1 TRASHTALK_NO_AUTOTICK=1 TRASHTALK_PROGRESS=0 TRASHTALK_LOG_LEVEL=error
+unset TRASH_SESSION_ID TRASH_PROFILE TRASHTALK_RUN_TOKEN TRASHTALK_TRANSCRIPT_CACHE
+mkdir -p "$bench_tmp/previews" "$TRASHTALK_RUN_DIR" "$bench_tmp/bin"
+source "$root/lib/trash.bash"
+cleanup() {
+    local file pid
+    for file in "$TRASHTALK_RUN_DIR"/*/pid; do
+        [[ -s "$file" ]] || continue
+        read -r pid < "$file"
+        kill -TERM -- "-$pid" 2>/dev/null || true
+    done
+    _env_cleanup || true
+    rm -rf "$bench_tmp"
+}
+trap cleanup EXIT
+bench() {
+    local name=$1 start end status i; shift
+    "$@" > "$bench_tmp/result"
+    for ((i=0;i<samples;i++)); do
+        start=${EPOCHREALTIME/./}
+        status=0; "$@" > "$bench_tmp/result" || status=$?
+        end=${EPOCHREALTIME/./}
+        printf '{"case":"%s","sample":%d,"microseconds":%d,"status":%d}\n' "$name" "$i" "$((end-start))" "$status"
+        ((status==0)) || return "$status"
+    done
+}
+if [[ "$group" == browsers ]]; then
+    session=$(@ Gusgus sessionFor: "$bench_tmp")
+    box=$(@ Inbox named: bench-owner)
+    bench access_session @ AgentAccess session: "$session"
+    bench access_live @ AgentAccess liveSession: "$session"
+    bench current_session @ Gusgus currentFor: "$bench_tmp"
+    bench send_human @ Inbox send: 'Fixture benchmark message' to: bench-owner from: fixture-sender
+    bench send_session @ Inbox send: 'Fixture benchmark message' to: "session:$session" from: bench-owner
+    @ Tools::Inpick isInstalled >/dev/null
+    __Tools__Inpick__class__isInstalled() { echo true; }
+    __Tools__Inpick__class__selectRecords_root_query_title_controlDAction_previewHook_() {
+        printf '%s\n' "$1" > "$bench_tmp/picker-records"
+        echo '{"schema_version":1,"outcome":"cancelled","selection":null}'
+    }
+    message=$(@ Message new)
+    message_template=$(_db_escape "$(db_get "$message")")
+    for n in 1 10 50 200; do
+        _db_sql "DELETE FROM instances WHERE class='Message' AND json_extract(data,'$.to')='bench-owner';
+          WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<$n)
+          INSERT INTO instances(id,data) SELECT 'message_bench_'||i,json_set('$message_template',
+            '$.to','bench-owner','$.from','fixture-sender','$.subject','Fixture '||i,
+            '$.body','A representative message with details.'||char(10)||'More details.',
+            '$.sentAt',1704202500000+i,'$.created','2024-01-02T13:35:00Z','$.status','unread') FROM n;"
+        bench "inbox_$n" @ "$box" pickMessageIn: "$bench_tmp/previews"
+        jq -se --argjson n "$n" 'length==$n and all(.[]; .kind=="note" and (.label|startswith("Fixture ")))' "$bench_tmp/picker-records" >/dev/null
+    done
+    counter=$(@ Counter new)
+    counter_template=$(_db_escape "$(db_get "$counter")")
+    for n in 10 100; do
+        _db_sql "DELETE FROM instances WHERE class='Counter';
+          WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<$n)
+          INSERT INTO instances(id,data) SELECT 'counter_bench_'||i,json_set('$counter_template','$.value',i) FROM n;"
+        bench "objects_$n" @ Trash instanceRecordsFor: Counter
+        jq -se --argjson n "$n" 'length==$n and ([.[].data.value]|sort)==[range(1;$n+1)]' "$bench_tmp/result" >/dev/null
+    done
+    session_template=$(_db_escape "$(db_get "$session")")
+    for n in 10 50; do
+        _db_sql "DELETE FROM instances WHERE id LIKE 'agentsession_bench_%';
+          WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<$n)
+          INSERT INTO instances(id,data) SELECT 'agentsession_bench_'||i,json_set('$session_template','$.lifecycleState','closed','$.workspace','/fixture/'||i) FROM n;"
+        ids=$(_db_sql "SELECT id FROM instances WHERE id LIKE 'agentsession_bench_%' ORDER BY id;")
+        bench "sessions_$n" @ AgentBrowser sessionRecordsFor: "$ids" in: "$bench_tmp/previews"
+        jq -se --argjson n "$n" 'length==$n' "$bench_tmp/result" >/dev/null
+    done
+    # Public focus refresh with large native history; cache is normally supplied
+    # by Tool.duplex. Supply its private directory directly for repeatable timing.
+    db_put agentrun_bench_history "$(jq -cn --arg session "$session" '{class:"AgentRun",session:$session,state:"succeeded",started:"2026-01-01",purpose:"conversation"}')"
+    mkdir -p "$TRASHTALK_RUN_DIR/agentrun_bench_history" "$bench_tmp/transcript-cache"
+    jq -cn --argjson base "$((EPOCHSECONDS*1000+100000))" 'range(0;50000) | {kind:"assistant_delta",text:"Chunk.",time:($base+.)}' > "$TRASHTALK_RUN_DIR/agentrun_bench_history/conversation.jsonl"
+    export TRASHTALK_TRANSCRIPT_CACHE="$bench_tmp/transcript-cache"
+    context=$(jq -cn --arg s "$session" '{session:$s,window:400}')
+    bench focus_frame_50000 @ AgentFocus frameFor: "$context"
+    jq -e '[.entries[] | select(.kind=="assistant_delta") | .text|length] | add==300000' "$bench_tmp/result" >/dev/null
+elif [[ "$group" == conversations ]]; then
+    export JCODE_HOME="$bench_tmp/auth" JCODE_TEST_GATE="$bench_tmp/native-gate" TRASHTALK_GUSGUS_PROFILE=jcode
+    mkdir "$JCODE_HOME"
+    printf '{}\n' > "$JCODE_HOME/openai-auth.json"
+    cp "$root/tests/fixtures/jcode-api.py" "$bench_tmp/bin/jcode"
+    cat > "$bench_tmp/bin/inagent" <<'SURFACE'
+#!/usr/bin/env bash
+IFS= read -r snapshot || exit
+printf '{"schema_version":1,"request_id":1,"intent":"dismiss"}\n'
+IFS= read -r ack || true
+SURFACE
+    chmod +x "$bench_tmp/bin/jcode" "$bench_tmp/bin/inagent"
+    export PATH="$bench_tmp/bin:$PATH"
+    session=$(@ Gusgus sessionFor: "$bench_tmp")
+    bench open_conversation @ AgentFocus open: "$session"
+    start=${EPOCHREALTIME/./}
+    @ "$session" input: 'First fixture input' > "$bench_tmp/result"
+    end=${EPOCHREALTIME/./}
+    printf '{"case":"first_direct_input","sample":0,"microseconds":%d,"status":0}\n' "$((end-start))"
+    bench busy_direct_input @ "$session" input: 'Busy fixture input'
+    context=$(jq -cn --arg s "$session" '{session:$s,window:400}')
+    request=100
+    ui_send() {
+        request=$((request+1))
+        @ AgentFocus handleFrame: "{\"schema_version\":1,\"request_id\":$request,\"intent\":\"send_message\",\"body\":\"UI fixture input\"}" context: "$context"
+    }
+    bench ui_send ui_send
+    jq -e '.frame.ok==true' "$bench_tmp/result" >/dev/null
+    run=$(@ "$session" activeRun)
+    @ "$run" stop >/dev/null
+else
+    echo 'Unknown benchmark group' >&2; exit 2
+fi

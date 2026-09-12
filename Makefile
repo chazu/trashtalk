@@ -42,7 +42,7 @@ NAMESPACE_SOURCES := $(filter-out $(wildcard $(TRASH_DIR)/traits/*.trash) $(wild
                       $(wildcard $(TRASH_DIR)/*/*.trash))
 ALL_SOURCES := $(SOURCES) $(TRAIT_SOURCES) $(USER_SOURCES) $(NAMESPACE_SOURCES)
 
-.PHONY: all bash test test-serial test-compiler verify test-verbose clean help info single watch doctor bench
+.PHONY: bench-interactions all bash test test-serial test-compiler verify test-verbose clean help info single watch doctor bench
 
 # =============================================================================
 # Main Targets
@@ -54,6 +54,10 @@ all: bash
 # Benchmarks exercise installed/generated classes; build before measuring.
 bench: bash
 	@bash bin/trash-bench
+
+# Browser, mail and direct-conversation fixtures (no model requests).
+bench-interactions: bash
+	@bash bin/trash-bench-interactions $(SAMPLES)
 
 # Diagnose environment/setup issues (bash version, deps, sqlite3, compiled classes)
 doctor: bash

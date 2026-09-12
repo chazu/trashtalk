@@ -1,6 +1,6 @@
 # Performance implementation, September 2026
 
-Status: in progress. Baseline: `e23500b`.
+Status: complete. Baseline: `e23500b`.
 
 The survey measured public operations with disposable databases and fake UI
 and Jcode endpoints. It identified repeated JSON/process work in browsers and
@@ -14,7 +14,7 @@ whole-history transcript refreshes. Implement in this order:
 - [x] Consolidate conversation admission and optimize fresh read-only validation.
 - [x] Cache transcript projections per view and consume appended log records.
 - [x] Reduce repeated message field initialization and delivery serialization.
-- [ ] Run full compiler/runtime verification and measure public interactions.
+- [x] Run full compiler/runtime verification and measure public interactions.
 
 Keep domain behavior in the DSL and use small shared primitives for JSON, SQL,
 filesystem and transport boundaries. Public message results, live object-cache
@@ -59,7 +59,7 @@ values from Bash strftime. The 200-row test asserts bounded serializer counts,
 full preview text, fresh cache replacement, and unchanged unread state. Calendar
 values match the existing Time API in UTC and New York across DST transitions.
 
-Admission validation: 22 access checks, 42 focus checks, 59 identity-session
+Admission validation: 25 access checks, 42 focus checks, 59 identity-session
 checks, direct-conversation fixtures and the new Store snapshot tests passed.
 Read-only admission uses `Store validateSnapshot:using:sending:`; callbacks
 consume a coherent SQL projection, cannot access Store, and publish no result
@@ -89,3 +89,16 @@ exact compiler-generated setters without advice or profiling; other cases use
 ordered public sends. Queue publication reads the final message inside its
 existing atomic message/outbox transaction and installs that result only after
 successful commit, avoiding a second database invocation and address serializer.
+
+Legacy access coverage also verifies revision-zero sessions before the membership
+table exists and the ordinary getter's scalar capture behavior. Admission does
+not install a schema. The committed interaction harness covers the original
+slow interactions and validates complete outputs; measured results and raw
+samples are in [the comparison report](performance-2026-09-12.md).
+
+Final validation on the completed runtime: `LC_ALL=C TRASH_TEST_JOBS=4
+TRASH_TEST_TIMEOUT=240 make verify` passed all 77 runtime test files and all 47
+compiler test files with zero failures/timeouts. The same interaction harness
+completed 18 cases and 52 samples on each revision; all output checks passed.
+Paired tokenizer runs retained identical decoded tokens. Main runtime changes
+were measured at `af93eb3`; subsequent changes document and reproduce that work.
