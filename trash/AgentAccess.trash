@@ -22,12 +22,17 @@ AgentAccess subclass: Object
   # SQL projection boundary. Identity, session and membership values are read
   # together, and Store checks this exact projection again before returning.
   rawClassMethod: snapshotQueryFor: id kind: kind [
-    local id kind members="json('{}')"
+    local id kind has_members members="json('{}')"
     id=$(_db_escape "$1"); kind=$(_db_escape "$2")
     if [[ "$2" == identity ]]; then
       printf "SELECT json_object('kind','identity','id',i.id,'identity',json(i.data),'session',json('{}'),'members',json('{}')) FROM instances i WHERE i.id='%s'" "$id"
     else
       if [[ "$2" == live ]]; then
+        # Legacy revision-zero sessions predate this table. Inspecting them must
+        # neither create a schema nor require a membership they never had.
+        has_members=$(_db_sql "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='agent_session_memberships');") || return
+      fi
+      if [[ "$2" == live && "$has_members" == 1 ]]; then
         members="json(coalesce((SELECT json_group_object(scope_key,json_object('session',session_id,'revision',policy_revision)) FROM
           (SELECT scope_key,session_id,policy_revision FROM agent_session_memberships WHERE identity_id=i.id ORDER BY scope_key)),'{}'))"
       fi
@@ -39,7 +44,7 @@ AgentAccess subclass: Object
   # existing getter convention for booleans and missing/null fields.
   rawClassMethod: snapshotFields: data [
     printf '%s' "$1" | jq -ce '
-      def scalar: if .==null or .==false then "" elif type=="string" then . else tostring end;
+      def scalar: if .==null or .==false then "" elif type=="string" then sub("\n+$";"") else tostring end;
       {id:.id,identityId:(.identityId // .id),kind:.kind,
         identityClass:(.identity.class|scalar),owner:(.identity.owner|scalar),enabled:(.identity.enabled|scalar),
         revision:(.identity.sessionPolicyRevision // 0 | scalar),scope:(.identity.sessionScope|scalar),

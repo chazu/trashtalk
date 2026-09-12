@@ -75,4 +75,15 @@ _db_sql "INSERT INTO agent_session_memberships SELECT json_extract(value,'$.iden
 check 'restored membership admits current session' "$session" "$(@ AgentAccess liveSession: "$session")"
 # The lighter path and ordinary guarded DSL validator agree on the live fixture.
 check 'snapshot admission matches transaction validator' "$(@ Store transaction: AgentAccess sending: validateLiveSession: with: "$session")" "$(@ AgentAccess liveSession: "$session")"
+(
+    export SQLITE_JSON_DB="$tmp/legacy.db"
+    db_init
+    db_put agentidentity_legacy '{"class":"AgentIdentity","owner":"access-owner","enabled":true,"sessionPolicyRevision":0}'
+    db_put agentsession_legacy '{"class":"AgentSession","identity":"agentidentity_legacy","lifecycleState":"open"}'
+    check 'pre-membership session matches transaction validation' "$(@ Store transaction: AgentAccess sending: validateLiveSession: with: agentsession_legacy)" "$(@ AgentAccess liveSession: agentsession_legacy)"
+    db_put agentidentity_legacy '{"class":"AgentIdentity","owner":"access-owner\n","enabled":"true\n","sessionPolicyRevision":0}'
+    check 'legacy scalar capture semantics are retained' "$(@ Store transaction: AgentAccess sending: validateLiveSession: with: agentsession_legacy)" "$(@ AgentAccess liveSession: agentsession_legacy)"
+    check 'legacy admission does not install a schema' 0 "$(_db_sql "SELECT count(*) FROM sqlite_master WHERE name='agent_session_memberships';")"
+)
+passed=$((passed+3))
 printf '%d agent access checks passed\n' "$passed"
