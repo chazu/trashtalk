@@ -19,6 +19,7 @@ CAPTURE_RECORDS="$TEST_TMP/picker-records.jsonl"
 CAPTURE_PICKER_ARGV="$TEST_TMP/picker-argv.txt"
 CAPTURE_EDITOR_ARGV="$TEST_TMP/editor-argv.txt"
 CAPTURE_FZF_ROWS="$TEST_TMP/fzf-rows.txt"
+CAPTURE_INSPECTION_INPUT="$TEST_TMP/inspection-input.json"
 
 cleanup() {
     rm -f "$SOURCE_FILE" "$TRAIT_FILE"
@@ -90,6 +91,16 @@ jq -cn --argjson selection "$selection" \
 FAKE
 chmod +x "$FAKE_BIN/inpick"
 
+cat > "$FAKE_BIN/ininspect" <<'FAKE'
+#!/usr/bin/env bash
+set -uo pipefail
+input=$(cat)
+printf '%s\n' "$input" > "$CAPTURE_INSPECTION_INPUT"
+jq -cn --arg object_id "$(printf '%s' "$input" | jq -r '.object_id')" \
+  '{schema_version:1,outcome:"viewed",object_id:$object_id,proposal:null}'
+FAKE
+chmod +x "$FAKE_BIN/ininspect"
+
 cat > "$FAKE_BIN/inmacs" <<'FAKE'
 #!/usr/bin/env bash
 printf '%s\n' "$@" > "$CAPTURE_EDITOR_ARGV"
@@ -105,7 +116,7 @@ tee "$CAPTURE_FZF_ROWS" | head -1
 FAKE
 chmod +x "$FAKE_BIN/fzf"
 
-export CAPTURE_RECORDS CAPTURE_PICKER_ARGV CAPTURE_EDITOR_ARGV CAPTURE_FZF_ROWS
+export CAPTURE_RECORDS CAPTURE_PICKER_ARGV CAPTURE_EDITOR_ARGV CAPTURE_FZF_ROWS CAPTURE_INSPECTION_INPUT
 export PATH="$FAKE_BIN:$PATH"
 export SQLITE_JSON_DB="$TEST_TMP/instances.db"
 source "$PROJECT_DIR/lib/trash.bash" 2>/dev/null
@@ -215,9 +226,15 @@ assert_eq "readable fallback preserves the full selected object id" "$counter" \
     "$(printf '%s' "$fallback_instance_result" | jq -r '.selection.object_id')"
 
 export PICK_ID="$counter"
+instance_selection=$(@ Trash selectInstanceOf: Counter)
+assert_eq "instance picker returns selected object to API callers" "$counter" \
+    "$(printf '%s' "$instance_selection" | jq -r '.selection.object_id')"
+
 instance_result=$(@ Trash browseInstancesOf: Counter)
-assert_eq "instance browser returns selected object" "$counter" \
-    "$(printf '%s' "$instance_result" | jq -r '.selection.object_id')"
+assert_eq "instance browser opens the selected object inspector" "viewed" \
+    "$(printf '%s' "$instance_result" | jq -r '.outcome')"
+assert_jq "instance browser passes declared values to the inspector" "$CAPTURE_INSPECTION_INPUT" \
+    ".object_id == \"$counter\" and .class_name == \"Counter\" and .data == {value:0,step:1}"
 
 # Multiple Store IDs span lines. Keep current unsaved state in the browser,
 # while retrieving the persisted candidates as a batch.

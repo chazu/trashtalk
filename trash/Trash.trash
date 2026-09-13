@@ -1096,7 +1096,10 @@ EOF
     ^ @ self pickRecords: records query: '' title: 'Classes and traits'
   ]
 
-  method: browseInstancesOf: className [
+  # Selection is kept separately for callers which need the typed picker
+  # result. The user-facing browser below opens the selected object instead of
+  # leaving a selection JSON document on the terminal.
+  method: selectInstanceOf: className [
     | records title |
     records := @ self instanceRecordsFor: className.
     title := 'Instances: ' , className.
@@ -1135,13 +1138,21 @@ EOF
     ^ @ ObjectEditProposal result: 'invalid' phase: 'result' message: 'ininspect returned an unknown outcome' object: objectId data: ''
   ]
 
-  method: inspectInstancesOf: className [
+  # Enter from the instance table means inspect: ininspect presents the
+  # declared values as navigable fields and can return an explicit edit
+  # proposal. It does not merely print the picker record's JSON.
+  method: browseInstancesOf: className [
     | selection outcome objectId |
-    selection := @ self browseInstancesOf: className.
+    selection := @ self selectInstanceOf: className.
     outcome := @ String jsonPath: 'outcome' from: selection.
     (outcome ~= 'selected') ifTrue: [^ selection].
     objectId := @ String jsonPath: 'selection.object_id' from: selection.
     ^ @ self inspectObject: objectId
+  ]
+
+  # Compatibility spelling for the inspector workflow.
+  method: inspectInstancesOf: className [
+    ^ @ self browseInstancesOf: className
   ]
 
   method: openBrowserResult: result [

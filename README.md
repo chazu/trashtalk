@@ -313,15 +313,18 @@ a second index. `fzf` is used as a fallback when Innards is unavailable.
 @ Trash pickMethod: Counter            # return a structured method selection
 @ Trash browseImplementorsOf: 'at:put:'
 @ Trash browseSendersOf: 'at:put:'
-@ Trash browseInstancesOf: Counter     # persisted instances and compact ivar state
-@ Trash inspectInstancesOf: Counter    # choose an instance, then inspect it
+@ Trash browseInstancesOf: Counter     # table of persisted instances, then inspect on Enter
+@ Trash inspectInstancesOf: Counter    # compatibility spelling for the same workflow
+@ Trash selectInstanceOf: Counter      # return a structured picker selection to scripts
 ```
 
 Class, trait, instance-variable, class-variable, instance-method, class-method,
 and test-method records carry exact source positions. Namespaced classes and
-complete multi-keyword selectors remain intact. Browser selection results are
-JSON; commands that open source feed the chosen path and line into the same
-transactional edit/compile/test loop described above.
+complete multi-keyword selectors remain intact. Enter in an instance table
+opens its navigable object inspector with declared values and nested containers,
+rather than printing the selected record JSON. Script-level picker methods
+return JSON; commands that open source feed the chosen path and line into the
+same transactional edit/compile/test loop described above.
 
 ### Object Inspector
 
