@@ -304,3 +304,123 @@ external action is visibly uncertain, not silently retried.
 The first release is successful when this journey is more reliable and less
 interrupting than manually pasting test output into a chat. It is not successful
 merely because it can observe many event sources.
+
+## Adversarial review hardening
+
+The following constraints were added after a repository-grounded adversarial
+review. They are release gates, not implementation suggestions.
+
+### Current security boundary
+
+Current Jcode, Maki, and Codex harnesses have ordinary user-level access and
+are **not** an isolation boundary. Current role checks and ActionRequest policy
+are cooperative controls that constrain public Trashtalk operations; a harness
+can otherwise edit its workspace or invoke local commands. Therefore Phase 4
+must not claim that approval prevents a hostile or compromised model from
+acting. Before an enforced-action product claim, introduce both an
+observation-only harness with no writable Store/policy access and a restricted
+executor channel that alone holds the OS capability. Treat all agent-visible
+output as untrusted evidence, never authorization.
+
+### Concrete receipt source contract
+
+The initial source is an append-only receipt log owned by Trashtalk, with a
+monotonic per-log sequence number and immutable epoch. Sequence, not a UUID or
+run ID, is the cursor position. A receipt is written after the wrapped command
+has a known exit status. An interrupted wrapper writes a terminal `interrupted`
+receipt when it can do so; absence is an explicitly detectable gap, not a
+silent success. Receipt records have a fixed, redacted, size-limited schema.
+
+A subscription stores its initial sequence policy (`from-now` by default), its
+last consumed `(epoch, sequence)`, and a durable pending-debounce record. The
+poller consumes filtered successes as well as matching failures. It never
+advances beyond an unpersisted debounce decision. Retention below the cursor or
+an epoch change creates a visible `source-gap` attention item and pauses normal
+dispatch pending explicit reconciliation.
+
+The wrapper preserves child exit status, signals, stdin/TTY behavior, and does
+not capture arbitrary unbounded output. It records argv only when policy
+allows, renders text defensively, and creates private bounded artifacts only
+after redaction. A failed receipt write is reported separately and never
+masquerades as the wrapped command's result.
+
+### Polling and transactional publication
+
+Source observation runs outside Store transactions and outside the worker lock.
+A new bounded **subscription stage** in `AgentWorker tick` reads candidates,
+then a short transaction validates and accepts each candidate. The stage has
+fair per-subscription batches, per-source error isolation, a public one-shot
+poll command, and persisted last-success/error/gap status. The same worker stage
+processes due snoozes.
+
+Acceptance uses a transaction-only publication selector. It creates or updates
+the event, cursor, attention item, final Message, and routing outbox row with
+Store primitives in one unit of work. It does not call ordinary `Inbox deliver:`
+or start a worker inside that transaction. Post-commit notification is only a
+wake hint. `AgentQueue publishManual:` is a structural precedent, but its
+manual-dispatch semantics are not reused.
+
+Routing must be explicit: resolve the target identity under its session-scope
+policy, canonical event workspace, current membership, and lifecycle state. No
+eligible session, multiple eligible workspace sessions, paused session, or role
+policy rejection leaves a visible pending attention item and does not create or
+resume a session. Each delivery persists its own causal event range and resolved
+session ID. An AttentionItem's session field is only a latest-view convenience,
+never the historical source of truth.
+
+### Attention state and dispatch rules
+
+`EventSubscription` has separate `enabled` and `dispatchState` fields.
+`AttentionItem` has this transition contract:
+
+| Current state | Same-key event | Different-key event |
+|---|---|---|
+| open | append and, if no eligible live delivery, issue one new delivery | separate group |
+| acknowledged | append without re-alerting; explicit reopen re-enables alerting | separate group |
+| snoozed | append, retain silence until due time, then alert once | separate group |
+| resolved | create a new group unless an explicit reopen window applies | separate group |
+| suppressed | record only, never dispatch until policy changes | separate group |
+
+Disable/suspend is checked again at delivery claim and run launch. It does not
+revoke a running harness. Disabling an already queued group marks its unclaimed
+outbox work ineligible; cancellation of active work remains an explicit existing
+session/run operation. Event accumulation, notification suppression, and agent
+dispatch are deliberately independent.
+
+### Causality, budgets, and recursion are Phase 1 prerequisites
+
+Phase 1 is attention-only until it persists causal IDs from event through
+message/outbox/delivery and atomically admits recipient, message, and run
+budgets before routing. Only then may its policy enable automatic agent routing.
+Executor-originated receipts carry origin effect/attempt IDs. Default policy
+forbids an event from automatically routing to an ancestor cause; lineage has a
+small configured depth limit. This prevents a failing agent-launched test from
+recursively waking the same agent.
+
+### Executable effect contract
+
+Separate four identities: immutable ActionRequest, immutable Approval, logical
+EffectRecord, and ExecutionAttempt. An approval binds the exact request revision,
+capability, canonical authorization workspace, actual cwd, normalized argv,
+environment allowlist, resource limits, and configuration/executable digests.
+Changing any execution-relevant input invalidates it. Authorization workspace is
+not silently substituted for cwd.
+
+The restricted executor atomically revalidates authority, expiry, cancellation,
+and budgets while claiming one attempt from `prepared` to `started`. It records
+process ownership before launch. A crash or lost receipt after launch becomes
+`uncertain`. Retrying requires a newly approved ExecutionAttempt linked to that
+uncertain predecessor, not reuse of the original approval. Cancellation before
+launch prevents claim; cancellation after launch follows verified process
+termination and remains uncertain until confirmation. Repository test commands
+are arbitrary code, not low-risk, unless a future sandbox establishes otherwise.
+
+### Additional acceptance tests
+
+In addition to the tests above, Phase 1 must prove out-of-order receipts,
+retention gaps, debounce crashes, duplicate/outbox conflict replay, ambiguous
+session routing, disable-between-publication-and-claim, source lineage loops,
+and no worker lock held during observation. Phase 4 must prove two concurrent
+executors cannot launch the same attempt, approvals expire on config/argv/cwd
+changes, and a detached surviving process is never mistaken for a completed
+effect.
