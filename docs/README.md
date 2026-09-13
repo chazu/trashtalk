@@ -24,6 +24,7 @@ implemented contracts from designs and historical evidence.
 
 ## Designs, research, and partial implementations
 
+- [Workstation event, attention, and delegated-action layer](workstation-event-attention-delegation.md): proposed durable local subscriptions, grouped attention, and safely bounded delegated effects.
 - [Delegation plan](agent-delegation-implementation.md): initial slices implemented;
   specialist dispatch, repository/local-copy/worktree objects, and shared memory remain work.
 - [Headless sessions](headless-agent-sessions-design.md): partial implementation;
