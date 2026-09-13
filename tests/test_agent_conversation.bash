@@ -39,11 +39,26 @@ settle() {
 }
 session=$(@ Gusgus sessionFor: "$tmp/workspace")
 body=$'literal $(touch unexpected); "quotes"\n日本語\n'
+# A routine worker tick can outlast four 100ms retries. Exercise the public
+# input path under a real OS lock, then require exactly one native send.
+source "$root/lib/process-lock.bash"
+(
+    function @() { touch "$tmp/lock-ready"; sleep 1; }
+    _trash_with_process_lock "$SQLITE_JSON_DB.worker.lock" fixture hold ''
+) &
+lock_holder=$!
+for i in {1..200}; do
+    [[ ! -f "$tmp/lock-ready" ]] || break
+    sleep .01
+done
+[[ -f "$tmp/lock-ready" ]] || { echo 'FAIL: lock holder did not start'; exit 1; }
 ack=$(@ "$session" input: "$body")
+wait "$lock_holder"
 check 'native acceptance returned to human' 'Input sent directly to the session' "$ack"
 run=$(@ "$session" activeRun)
 directory="$TRASHTALK_RUN_DIR/$run"
 host=$(jq -r .home "$directory/jcode.json")
+check 'worker lock contention sends input exactly once' 1 "$(jq -s '[.[]|select(.req=="send_message")]|length' "$host/fixture-calls.jsonl")"
 check 'direct turn creates no Message' 0 "$(count Message)"
 check 'direct turn creates no delivery' 0 "$(count AgentDelivery)"
 check 'direct turn keeps a managed run' conversation "$(@ "$run" purpose)"

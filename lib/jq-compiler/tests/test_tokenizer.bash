@@ -86,6 +86,10 @@ run_test "left bracket" "LBRACKET" "$(get_token_type '[')"
 run_test "right bracket" "RBRACKET" "$(get_token_type ']')"
 run_test "double left bracket" "DLBRACKET" "$(get_token_type '[[')"
 run_test "double right bracket" "DRBRACKET" "$(get_token_type ']]')"
+run_test "Bash sequence stays one word" "BASH_SEQUENCE" "$(get_token_type '{1..50}')"
+run_test "signed stepped sequence value" '{-2..2..2}' "$(get_token_value '{-2..2..2}')"
+run_test "ordinary braces remain block tokens" 'LBRACE,NUMBER,DOT,DOT,NUMBER,RBRACE' "$(get_all_types '{ 1 ..50 }')"
+run_test "sequence preserves following source location" '1:8' "$(printf '%s' '{1..50} x' | "$TOKENIZER" | jq -r '.[1] | "\(.line):\(.col)"')"
 
 # ------------------------------------------------------------------------------
 # Operator Tests

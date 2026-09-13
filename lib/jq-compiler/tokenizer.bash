@@ -726,9 +726,20 @@ tokenize() {
             # Curly braces - for dictionary literals and bash blocks
             # ------------------------------------------------------------------
             '{')
-                add_token "LBRACE" "{" "$line" "$col"
-                ((i++))
-                ((col++))
+                # A Bash sequence is one shell word, not a brace-delimited
+                # block. Splitting {1..50} inserts spaces during raw emission
+                # and silently turns fifty retries into four literal words.
+                local sequence_pattern='^\{(-?[0-9]+\.\.-?[0-9]+|[a-zA-Z]\.\.[a-zA-Z])(\.\.-?[0-9]+)?\}'
+                if [[ "${input:i}" =~ $sequence_pattern ]]; then
+                    local sequence="${BASH_REMATCH[0]}"
+                    add_token "BASH_SEQUENCE" "$sequence" "$line" "$col"
+                    ((i += ${#sequence}))
+                    ((col += ${#sequence}))
+                else
+                    add_token "LBRACE" "{" "$line" "$col"
+                    ((i++))
+                    ((col++))
+                fi
                 ;;
 
             '}')

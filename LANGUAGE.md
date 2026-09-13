@@ -1004,6 +1004,10 @@ Unary `skip` and keyword `skip:` are distinct selectors; negative arguments and
 qualified names such as `@ Pkg::Class method` in raw bodies are supported.
 `test_known_issues.bash`, `test_namespaces.bash`, and `test_expr_codegen.bash`
 exercise these formerly broken cases through the production compiler.
+Raw methods preserve standalone Bash sequence words such as `{1..50}`,
+`{-2..2..2}`, and `{a..e..2}`. `test_raw_ranges.bash` executes compiled loops
+to verify their iteration counts; `test_agent_conversation.bash` checks direct
+input while a worker lock is temporarily held.
 See [compiler capabilities](docs/COMPILER_CAPABILITIES.md) for the test map.
 
 ## Development Workflow
