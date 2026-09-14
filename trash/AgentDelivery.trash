@@ -138,3 +138,32 @@ AgentDelivery subclass: Object
     @ d save.
     ^ d
   ]
+
+  # Workstation delegation: automatic dispatch to one resolved session, with a
+  # deterministic id per (attention, delegation revision) so replay is inert.
+  classMethod: forAttention: attention message: message session: session revision: revision [
+    | id d ids key now workspace role roleRevision policy |
+    @ Store requireTransaction.
+    id := 'agentdelivery_' , attention , '_delegation_' , revision.
+    d := @ Store create: 'AgentDelivery' id: id.
+    ids := '[]'.
+    ids := ids arrayPush: message.
+    key := 'attention:' , attention , ':' , revision.
+    now := @ Time nowISO.
+    workspace := @ message executionWorkspace.
+    role := @ session role.
+    role := @ Store read: role class: 'AgentRole'.
+    roleRevision := @ role revision.
+    policy := @ role workspacePolicy.
+    @ d session: session.
+    @ d messageIds: ids.
+    @ d deliveryKey: key.
+    @ d created: now.
+    @ d dispatchMode: 'automatic'.
+    @ d executionWorkspace: workspace.
+    @ d authorizationRole: role.
+    @ d authorizationRevision: roleRevision.
+    @ d authorizationWorkspacePolicy: policy.
+    @ d save.
+    ^ d
+  ]

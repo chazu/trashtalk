@@ -3,12 +3,17 @@
 Phases 0 and 1 are a thin durable model plus one local event journey: a wrapped
 command publishes a receipt, the worker turns matching failures into grouped
 `Attention` and one owner-Inbox Message, and the owner inspects, acknowledges,
-snoozes, resolves, or suppresses it. See the
+snoozes, resolves, or suppresses it. Phase 2 adds
+[guarded agent routing](#phase-2-guarded-agent-routing): an opt-in target
+identity, a dry run that explains eligibility, explicit or automatic delegation
+to an existing session, and loop controls. See the
 [implementation plan](workstation-event-attention-implementation-plan.md) and
-[design](workstation-event-attention-delegation.md) for later phases.
+[design](workstation-event-attention-delegation.md).
 Only `EventSubscription` and `Attention` are new persisted domain classes.
-There is no agent routing, executor, or automatic effect: Phase 1 never creates
-AgentDelivery, AgentRun, AgentSession, AgentIdentity, or outbox rows.
+There is no executor or automatic effect. Phase 1 alone never creates
+AgentDelivery, AgentRun, AgentSession, AgentIdentity, or outbox rows; Phase 2
+creates one Message, one AgentDelivery, and one outbox row per delegation and
+never creates, resumes, replaces, or stops a session.
 
 ## Installation and capability checks
 
@@ -319,3 +324,158 @@ handle is reused, and CUE validation of identical bytes within one runtime is a
 process-local memo (keyed by schema digest, root, and document hash; failures
 are never memoized). A new failing record still runs CUE about three times, so
 budget roughly one second per accepted event on a laptop.
+
+## Phase 2: guarded agent routing
+
+Routing is off until a subscription names a target identity. Subscriptions
+keep consuming the local receipt stream; each receipt's canonical `--cwd`
+becomes the delegated work's execution directory (its Git top level when the
+directory is inside a repository, as for every other delivery). Delegation
+sends existing durable work to an existing eligible session. It never creates,
+resumes, replaces, or stops a session, never broadens a role, and never
+executes anything itself.
+
+### 2A: target configuration and dry-run admission
+
+```bash
+identity=$(@ AgentIdentity named: gusgus)        # or any identity you own
+@ "$sub" target: "$identity" reason: 'route failing test runs'
+@ "$sub" clearTarget: 'stop routing'            # also resets delegation to manual
+@ "$msg" routingStatus                          # dry run; changes nothing
+@ "$attention" routingStatus
+```
+
+`target:reason:` is an audited revision; the identity must exist, be enabled,
+and belong to the current owner. The dry run resolves, without mutation:
+
+| Order | Check | Reason code when it fails |
+| --- | --- | --- |
+| 1 | subscription owner and `enabled` | `owner-mismatch`, `subscription-disabled` |
+| 2 | target named, present, owned, enabled | `no-target`, `target-missing`, `target-unauthorized`, `target-disabled` |
+| 3 | receipt workspace recorded and still present | `workspace-unknown`, `workspace-missing` |
+| 4 | already delegated for the current revision | status `delegated` |
+| 5 | receipt lineage (see loop controls) | `lineage-target`, `lineage-depth` |
+| 6 | one current session for the target and execution workspace | `no-session`, `session-ambiguous` |
+| 7 | that session is open | `session-paused`, `session-closed` |
+| 8 | session role: workspace policy, `inbox.read`, recipient policy | `workspace-unauthorized`, `capability-missing`, `recipient-denied` |
+| 9 | role `messageBudget.count` versus the session's pending, offered, and blocked deliveries (`0` means unlimited) | `budget-exhausted` |
+
+Session resolution follows the identity's own scope policy through the same
+membership rules as `AgentSession currentWithinFor:`: Gusgus resolves its
+identity-scoped current session; a workspace-scoped specialist resolves the
+session for the receipt's execution workspace. The result is JSON with
+`status` (`eligible`, `ineligible`, `delegated`), `reason`, `detail`,
+`session`, `sessionState`, `targetIdentity`, `targetHandle`,
+`receiptWorkspace`, `executionWorkspace`, `lineageDepth`, `lineageLimit`,
+`delegationRevision`, the stream coordinates, `message`/`delivery`/`run` links
+with their states, `routingNote`, and `nextAction` (`configure-target`,
+`delegate`, `focus`, or `inspect`). A dry run creates no Message, outbox row,
+AgentDelivery, AgentRun, or lifecycle change.
+
+Attention records now carry `workspace`, closed `origin`, `lineageDepth`,
+`delegationRevision`, `delegatedMessage`, `delegatedSession`,
+`delegatedIdentity`, and `routingNote`. All are optional in the CUE contract,
+so records written before Phase 2 remain valid and read as unrouted groups.
+
+### 2B: explicit one-attention delegation
+
+```bash
+msg=$(@ "$root" delegateAttention)      # from the owner's root alert Message
+@ "$attention" delegate                 # same operation on the Attention
+@ "$root" redelegateAttention: 'session replaced'
+```
+
+`delegate` runs the dry run, CUE-vets the intended Attention patch, then
+revalidates admission inside one Store transaction that creates one
+agent-facing Message (`message_<attention>_delegation_<revision>`, kind
+`attention`, addressed to `session:<id>`, sent by the owner so the agent's
+reply lands in the owner's inbox thread), one automatic `AgentDelivery`
+(`agentdelivery_<attention>_delegation_<revision>`) with the receipt's
+execution workspace and role snapshot, and one outbox row already assigned to
+the session, through `AgentQueue publishManual:`. The Message carries the
+receipt cwd, first/last stream coordinates, event count, and lineage depth.
+The Attention records the message, session, identity, and revision.
+
+The uniqueness key is `(attention, delegation revision)`: deterministic ids plus
+the transaction's optimistic guard on the Attention row mean a duplicate click,
+worker replay, or crash retry returns the existing message and writes nothing.
+If admission changed between the dry run and the transaction (another session,
+paused, closed, budget), nothing is published and the call fails with the
+reason. Later events in the same group append to the Attention and refresh the
+root alert; they never create a fresh prompt. A supervised worker tick claims
+the delivery like any other automatic delivery; with `TRASHTALK_NO_AUTOTICK`
+unset, `delegate` also ticks the session in the foreground.
+
+`redelegateAttention:` requires a reason, skips the prior delivery only if it
+never started (pending or blocked), clears the assignment, and records
+`redelegated: <reason>` in `routingNote`. The next `delegate` publishes the
+next revision, typically to a replacement session.
+
+### 2C: opt-in automatic routing and loop controls
+
+```bash
+@ "$sub" enableAutomaticDelegation: 'I understand delegated work runs without review' reason: 'opt in'
+@ "$sub" resumeDispatch: 'route automatically'   # dispatchState gates automatic routing only
+@ "$sub" lineageLimit: 1 reason: 'default'
+@ "$sub" disableAutomaticDelegation: 'opt out'
+```
+
+The default is off. Enabling requires a target and a nonblank confirmation
+note; both are recorded in the subscription's closed `delegation` policy
+(`mode`, `maxLineageDepth`, `confirmation`) as an audited revision. While the
+subscription's `dispatchState` is `paused`, automatic routing is withheld and
+the group shows `routingNote: automatic routing withheld: dispatch-paused`.
+
+Inside the acceptance transaction, after the coordinate claim and before the
+root alert, the worker rechecks the full admission for a group that is `open`
+and not yet delegated (on creation and on every later event) and publishes at
+most one delegation. An ineligible group stays local with
+`routingNote: automatic routing withheld: <reason>`; the next event retries, so
+a group withheld for `no-session` routes once a session exists. Acknowledged,
+snoozed, suppressed, resolved, and already-delegated groups are never routed
+automatically. Replay after commit-before-ack finds the claimed coordinate and
+publishes nothing.
+
+**Lineage.** Commands an agent run executes through `bin/trash-command` carry
+a closed `origin: {producer: "agent-run", run: <id>}` when the run's
+`TRASHTALK_RUN_TOKEN` validates; an invalid or missing token yields an ordinary
+human receipt. The worker fixes each group's `lineageDepth` at creation: `0`
+for human receipts, otherwise at least `1`, or one more than the deepest
+delegated Message the origin run held. Routing rejects a receipt whose origin
+run belongs to the target identity (`lineage-target`) or whose depth exceeds
+`maxLineageDepth` (`lineage-depth`, default `1`). Origin is loop-prevention
+metadata, not an authorization boundary.
+
+### 2D: attention-to-conversation operations
+
+The Inbox browser offers **Routing status**, **Delegate to configured agent**,
+**Redelegate**, and **Focus delegated conversation** on workstation alerts next
+to the Phase 1 controls. `focusDelegatedAttention` opens the recorded session
+through `AgentFocus open:`, which checks ownership and liveness and never
+resumes, stops, or replaces it. `routingStatus` shows target, session, reason,
+stream coordinates, message/delivery/run links, and the next action.
+
+Disposable UAT, in a throwaway store:
+
+```bash
+export SQLITE_JSON_DB=$(mktemp -d)/uat.db TRASHTALK_USER=$USER
+source lib/trash.bash; honker_bootstrap
+digest=$(@ WorkstationSchema digest)
+sub=$(@ EventSubscription createFrom: "$(jq -c --arg d "$digest" '.adapterKind="command-receipt"|.streamName="workstation.command-receipts.v1"|.schemaDigest=$d|.filter={exitNot:0}|.debounceSeconds=900|.initialPosition="from-now"' schemas/workstation/v1/fixtures/EventSubscription.valid.json)")
+identity=$(@ Gusgus identity); @ "$sub" target: "$identity" reason: uat
+@ Gusgus sessionFor: "$PWD" >/dev/null           # the existing eligible session
+bin/trash-command --cwd "$PWD" --label 'uat failure' -- false
+bin/trash-worker --once
+root=$(@ "$(@ Trash userInbox)" unread | head -1)
+@ "$root" routingStatus | jq .                   # eligible, nextAction delegate
+@ "$root" delegateAttention                      # one delivery to that session
+@ "$root" routingStatus | jq '{delivery,deliveryState,run,runState}'
+@ "$root" focusDelegatedAttention                # attach without resuming
+```
+
+Regression: `bash tests/test_workstation_routing.bash` covers every reason
+code, replay, changed admission, grouped failures, session replacement,
+recursive origin, lineage depth, redelegation, focus, and the absence of
+created sessions or identities. The receipt adapter now accepts a target
+identity in the subscription policy; everything else in its contract is
+unchanged.

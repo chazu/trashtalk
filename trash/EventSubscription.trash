@@ -4,6 +4,7 @@ EventSubscription subclass: Object
   instanceVars: id:'' owner:'' enabled:'false' dispatchState:'paused' streamName:'' consumerName:''
     adapterKind:'' filter:'{}' debounceSeconds:0 targetIdentity:'' grouping:'' revision:0
     schema_version:1 schemaDigest:'' createdAt:'' updatedAt:'' initialPosition:'' auditNote:''
+    delegation:'{}'
 
   classMethod: new [ @ Require reject: 'Use EventSubscription createFrom: with a closed document' ]
   method: save [ @ Require reject: 'Use EventSubscription updateFrom: with a revision and audit note' ]
@@ -18,7 +19,7 @@ EventSubscription subclass: Object
     ^ @ Store idsOf: 'EventSubscription' matching: (#{owner: owner} asJson)
   ]
   classMethod: validateWithin: document [
-    | human expected adapter target |
+    | human expected adapter target mode confirmation |
     @ WorkstationSchema requireValidated: document.
     human := @ AgentFocus human.
     @ Require equal: (document jsonTextAt: 'owner') to: human.
@@ -29,10 +30,27 @@ EventSubscription subclass: Object
     (adapter = 'CommandReceiptSourceAdapter') ifTrue: [@ CommandReceiptSourceAdapter validatePolicy: document].
     target := document jsonTextAt: 'targetIdentity'.
     (target notEmpty) ifTrue: [@ AgentAccess validateIdentity: target].
+    # Automatic delegation is opt-in: it needs a target and an explicit confirmation note.
+    mode := @ self delegationModeOf: document.
+    (mode = 'automatic') ifTrue: [
+      @ Require text: target.
+      confirmation := document jsonAt: 'delegation.confirmation' ifAbsent: '""'.
+      @ Require text: (confirmation jsonTextAt: '')
+    ].
     @ Require text: (document jsonTextAt: 'auditNote').
     @ WorkstationSchema timestampEpoch: (document jsonTextAt: 'createdAt').
     @ WorkstationSchema timestampEpoch: (document jsonTextAt: 'updatedAt').
     ^ adapter
+  ]
+  classMethod: delegationModeOf: document [
+    | mode |
+    mode := document jsonAt: 'delegation.mode' ifAbsent: '"manual"'.
+    ^ mode jsonTextAt: ''
+  ]
+  classMethod: lineageLimitOf: document [
+    | limit |
+    limit := document jsonAt: 'delegation.maxLineageDepth' ifAbsent: '1'.
+    ^ limit jsonTextAt: ''
   ]
   classMethod: createWithin: document [
     | id matches |
@@ -52,6 +70,7 @@ EventSubscription subclass: Object
     id := document jsonTextAt: 'id'.
     @ Store read: id class: 'EventSubscription'.
     old := @ Store getInstance: id.
+    old := @ WorkstationSchema document: old.
     # Source/filter edits require a future explicit consumer migration, never an offset reset.
     '["id","owner","consumerName","streamName","adapterKind","filter","createdAt","initialPosition","schema_version","schemaDigest"]' arrayEach: [:field |
       @ Require equal: (document jsonAt: field) to: (old jsonAt: field)
@@ -62,37 +81,97 @@ EventSubscription subclass: Object
     @ Store patch: id with: document.
     ^ id
   ]
-  method: changeDispatchTo: state reason: reason [
-    | data patch revision now |
+  # Every policy change is one audited revision built from the current document.
+  method: revise: patch reason: reason [
+    | data revision now |
     data := @ Store getInstance: self.
     data := @ WorkstationSchema document: data.
     revision := data jsonTextAt: 'revision'.
     revision := revision + 1.
     now := @ Time nowISO.
-    @ Require member: state of: '["enabled","paused"]'.
-    ((data jsonTextAt: 'dispatchState') = state) ifTrue: [^ @ Require reject: 'Dispatch already has that state'].
-    patch := #{dispatchState: state revision: (revision jsonValue) updatedAt: now auditNote: reason} asJson.
+    patch := @ WorkstationSchema merge: patch with: (#{revision: (revision jsonValue) updatedAt: now auditNote: reason} asJson).
     data := @ WorkstationSchema merge: data with: patch.
     ^ @ EventSubscription updateFrom: data
+  ]
+  method: changeDispatchTo: state reason: reason [
+    | data |
+    data := @ Store getInstance: self.
+    data := @ WorkstationSchema document: data.
+    @ Require member: state of: '["enabled","paused"]'.
+    ((data jsonTextAt: 'dispatchState') = state) ifTrue: [^ @ Require reject: 'Dispatch already has that state'].
+    ^ @ self revise: (#{dispatchState: state} asJson) reason: reason
   ]
   method: pauseDispatch: reason [ ^ @ self changeDispatchTo: 'paused' reason: reason ]
   method: resumeDispatch: reason [ ^ @ self changeDispatchTo: 'enabled' reason: reason ]
   method: setEnabled: flag reason: reason [
-    | data revision patch now current |
+    | data current |
     @ Require member: flag of: '["true","false"]'.
     data := @ Store getInstance: self.
     data := @ WorkstationSchema document: data.
     current := data jsonTextAt: 'enabled'.
     (current = flag) ifTrue: [^ @ Require reject: 'Subscription already has that enabled state'].
-    revision := data jsonTextAt: 'revision'.
-    revision := revision + 1.
-    now := @ Time nowISO.
-    patch := #{enabled: (flag jsonValue) revision: (revision jsonValue) updatedAt: now auditNote: reason} asJson.
-    data := @ WorkstationSchema merge: data with: patch.
-    ^ @ EventSubscription updateFrom: data
+    ^ @ self revise: (#{enabled: (flag jsonValue)} asJson) reason: reason
   ]
   method: disable: reason [ ^ @ self setEnabled: 'false' reason: reason ]
   method: enable: reason [ ^ @ self setEnabled: 'true' reason: reason ]
+
+  # Phase 2 target configuration. Naming a target delivers nothing by itself;
+  # delegation stays manual until enableAutomaticDelegation: is confirmed.
+  method: target: identity reason: reason [
+    | data current |
+    @ Require text: identity.
+    data := @ Store getInstance: self.
+    data := @ WorkstationSchema document: data.
+    current := data jsonTextAt: 'targetIdentity'.
+    (current = identity) ifTrue: [^ @ Require reject: 'Subscription already targets that identity'].
+    ^ @ self revise: (#{targetIdentity: identity} asJson) reason: reason
+  ]
+  method: clearTarget: reason [
+    | data current limit |
+    data := @ Store getInstance: self.
+    data := @ WorkstationSchema document: data.
+    current := data jsonTextAt: 'targetIdentity'.
+    (current isEmpty) ifTrue: [^ @ Require reject: 'Subscription has no target'].
+    limit := @ EventSubscription lineageLimitOf: data.
+    ^ @ self revise: (#{targetIdentity: '' delegation: #{mode: 'manual' maxLineageDepth: (limit jsonValue) confirmation: ''}} asJson) reason: reason
+  ]
+  method: enableAutomaticDelegation: confirmation reason: reason [
+    | data target limit |
+    @ Require text: confirmation.
+    data := @ Store getInstance: self.
+    data := @ WorkstationSchema document: data.
+    target := data jsonTextAt: 'targetIdentity'.
+    (target isEmpty) ifTrue: [^ @ Require reject: 'Automatic delegation requires a target identity'].
+    ((@ EventSubscription delegationModeOf: data) = 'automatic') ifTrue: [^ @ Require reject: 'Automatic delegation is already enabled'].
+    limit := @ EventSubscription lineageLimitOf: data.
+    ^ @ self revise: (#{delegation: #{mode: 'automatic' maxLineageDepth: (limit jsonValue) confirmation: confirmation}} asJson) reason: reason
+  ]
+  method: disableAutomaticDelegation: reason [
+    | data limit |
+    data := @ Store getInstance: self.
+    data := @ WorkstationSchema document: data.
+    ((@ EventSubscription delegationModeOf: data) = 'automatic') ifFalse: [^ @ Require reject: 'Automatic delegation is not enabled'].
+    limit := @ EventSubscription lineageLimitOf: data.
+    ^ @ self revise: (#{delegation: #{mode: 'manual' maxLineageDepth: (limit jsonValue) confirmation: ''}} asJson) reason: reason
+  ]
+  method: lineageLimit: depth reason: reason [
+    | data mode confirmation |
+    data := @ Store getInstance: self.
+    data := @ WorkstationSchema document: data.
+    mode := @ EventSubscription delegationModeOf: data.
+    confirmation := data jsonAt: 'delegation.confirmation' ifAbsent: '""'.
+    ^ @ self revise: (#{delegation: #{mode: mode maxLineageDepth: (depth jsonValue) confirmation: (confirmation jsonTextAt: '')}} asJson) reason: reason
+  ]
+  method: lineageLimit [
+    | data |
+    data := @ Store getInstance: self.
+    ^ @ EventSubscription lineageLimitOf: data
+  ]
+  method: delegationMode [
+    | data |
+    data := @ Store getInstance: self.
+    ^ @ EventSubscription delegationModeOf: data
+  ]
   method: enabled [
     | data |
     data := @ self asJson.
@@ -100,7 +179,8 @@ EventSubscription subclass: Object
   ]
   method: summary [ ^ @ self display ]
   method: display [
-    | flag |
+    | flag mode |
     flag := @ self enabled.
-    ^ #{id: self owner: owner enabled: (flag jsonValue) dispatchState: dispatchState streamName: streamName revision: (revision jsonValue)} asJson
+    mode := @ self delegationMode.
+    ^ #{id: self owner: owner enabled: (flag jsonValue) dispatchState: dispatchState streamName: streamName revision: (revision jsonValue) targetIdentity: targetIdentity delegationMode: mode} asJson
   ]

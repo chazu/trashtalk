@@ -20,7 +20,7 @@ CommandReceipt subclass: Object
     ^ @ stream publish: document
   ]
   classMethod: publishOutcome: outcome [
-    | id fingerprint label document code |
+    | id fingerprint label document code origin |
     id := @ Runtime generateId: 'CommandReceipt'.
     label := outcome jsonTextAt: 'commandLabel'.
     code := outcome jsonAt: 'exitCode'.
@@ -31,5 +31,16 @@ CommandReceipt subclass: Object
       fingerprint: fingerprint exitCode: (code jsonValue)
       startedAt: (outcome jsonTextAt: 'startedAt') finishedAt: (outcome jsonTextAt: 'finishedAt')
       display: #{title: label summary: (outcome jsonTextAt: 'summary')}} asJson.
+    origin := @ self origin.
+    (origin ~= 'null') ifTrue: [document := @ WorkstationSchema merge: document with: (#{origin: (origin jsonValue)} asJson)].
     ^ @ self publish: document
+  ]
+  # Closed provenance for commands an agent run executes. The run token proves
+  # the run; a missing or invalid token yields a human receipt without origin.
+  # This is loop-prevention metadata for routing, not an authorization boundary.
+  rawClassMethod: origin [
+    local run
+    [[ ${TRASHTALK_RUN_TOKEN+x} ]] || { echo null; return 0; }
+    run=$(@ AgentRun current 2>/dev/null) || { echo null; return 0; }
+    jq -cn --arg run "$run" '{producer:"agent-run",run:$run}'
   ]

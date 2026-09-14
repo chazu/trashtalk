@@ -282,7 +282,7 @@ Inbox subclass: Object
           view) @ "$_RECEIVER" readThreadOf: "$msg" ;;
           details) @ "$_RECEIVER" readDetailsOf: "$msg" ;;
           session) @ AgentBrowser focusSenderOf: "$msg" in: "$preview_dir" >/dev/null ;;
-          acknowledge|snooze|resolve|suppress|reopen) @ "$_RECEIVER" attentionAction: "$action" on: "$msg" ;;
+          acknowledge|snooze|resolve|suppress|reopen|routing|delegate|redelegate|focus) @ "$_RECEIVER" attentionAction: "$action" on: "$msg" ;;
           archive) @ "$msg" archive >/dev/null; break ;;
           *) break ;;
         esac
@@ -368,8 +368,26 @@ Inbox subclass: Object
         if [[ -t 0 && -t 1 ]]; then read -r -p "Note for $1: " note; fi
         [[ -n "$note" ]] || note="${1}d from the inbox"
         if [[ "$1" == resolve ]]; then @ "$2" resolveAttentionWithNote: "$note" >/dev/null; else @ "$2" suppressAttention: "$note" >/dev/null; fi ;;
+      # Phase 2 routing: a dry run shows the structured reason; delegation and
+      # focus are explicit and never create, resume, or stop a session.
+      routing) @ "$_RECEIVER" showRoutingOf: "$2" ;;
+      delegate) @ "$2" delegateAttention >/dev/null ;;
+      redelegate)
+        if [[ -t 0 && -t 1 ]]; then read -r -p "Reason for redelegation: " note; fi
+        [[ -n "$note" ]] || note="redelegated from the inbox"
+        @ "$2" redelegateAttention: "$note" >/dev/null ;;
+      focus) @ "$2" focusDelegatedAttention >/dev/null ;;
       *) return 1 ;;
     esac
+  ]
+
+  method: showRoutingOf: message [
+    | text available ignored |
+    text := @ message routingStatus.
+    available := @ Tools::Inpage isInstalled.
+    (available = 'true') ifTrue: [
+      ignored := @ Tools::Inpage viewText: text title: 'Attention routing'
+    ] ifFalse: [@ Console print: text]
   ]
 
   # Second picker: what to do with the selected message. Every record points
@@ -389,6 +407,10 @@ Inbox subclass: Object
         {schema_version:1,id:"resolve",path:$path,line:1,column:1,label:"Resolve attention",kind:"action",detail:"asks for a note; a later failure opens a new alert"},
         {schema_version:1,id:"suppress",path:$path,line:1,column:1,label:"Suppress attention",kind:"action",detail:"asks for a note; keeps counting silently"},
         {schema_version:1,id:"reopen",path:$path,line:1,column:1,label:"Reopen attention",kind:"action",detail:"after resolve or suppress"},
+        {schema_version:1,id:"routing",path:$path,line:1,column:1,label:"Routing status",kind:"action",detail:"dry run: target, session, reason, links; changes nothing"},
+        {schema_version:1,id:"delegate",path:$path,line:1,column:1,label:"Delegate to configured agent",kind:"action",detail:"one message to the eligible existing session; repeats are inert"},
+        {schema_version:1,id:"redelegate",path:$path,line:1,column:1,label:"Redelegate",kind:"action",detail:"asks for a reason; clears the current assignment for a new delegation"},
+        {schema_version:1,id:"focus",path:$path,line:1,column:1,label:"Focus delegated conversation",kind:"action",detail:"attach to the recorded session without resuming or stopping it"},
         {schema_version:1,id:"view",path:$path,line:1,column:1,label:"View the whole thread",kind:"action",detail:"inpage; leave with Ctrl-X Ctrl-C"},
         {schema_version:1,id:"details",path:$path,line:1,column:1,label:"Message details",kind:"action",detail:"Full addresses, timestamps, and IDs"},
         {schema_version:1,id:"archive",path:$path,line:1,column:1,label:"Archive",kind:"action",detail:"hide it from the inbox; the attention stays open"},
@@ -528,6 +550,8 @@ Inbox subclass: Object
     echo "  @ \$msgId inspectAttention | acknowledgeAttention | reopenAttention"
     echo "  @ \$msgId snoozeAttentionUntil: '2099-01-01T00:00:00Z'"
     echo "  @ \$msgId resolveAttentionWithNote: 'fixed' | suppressAttention: 'noise'"
+    echo "  @ \$msgId routingStatus          # Phase 2 dry run: target, session, reason"
+    echo "  @ \$msgId delegateAttention | redelegateAttention: 'why' | focusDelegatedAttention"
     echo ""
     echo "Other:"
     echo "  @ Inbox names"

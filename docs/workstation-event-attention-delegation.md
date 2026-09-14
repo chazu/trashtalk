@@ -304,9 +304,10 @@ a chat. Restarting the worker or replaying a stream offset does not create
 extra work. That useful, recoverable journey matters more than supporting many
 event sources.
 
-## Implemented Phase 0 operations
+## Implemented operations (Phases 0 to 2)
 
 See [workstation operations](workstation-operations.md) for the thin durable model,
-private coordinate index and recovery. Consumer progress remains Honker Stream
-offsets, not an EventCursor. Production consumption, publication and routing are
-not implemented by Phase 0.
+private coordinate index, command receipts, the worker stage, local attention,
+and guarded routing. Consumer progress remains Honker Stream offsets, not an
+EventCursor. Phase 2 routing sends work only to an existing eligible session
+and records lineage for loop prevention; Phases 3 and 4 remain proposals.

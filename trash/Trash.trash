@@ -149,7 +149,7 @@ Trash subclass: Object
       _d_warn "Workstation CUE unavailable; install explicitly: go install cuelang.org/go/cmd/cue@latest"
     fi
     if [[ $(@ WorkstationSchema streamAvailable) == true ]]; then
-      _d_ok "Workstation Honker Stream capability available (Phase 0 does not consume events)"
+      _d_ok "Workstation Honker Stream capability available (receipts, attention, and routing)"
     else
       _d_warn "Workstation Honker Stream unavailable; run bin/install-honker and use extension-capable TRASH_SQLITE3"
     fi

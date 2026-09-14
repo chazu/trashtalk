@@ -8,7 +8,6 @@ CommandReceiptSourceAdapter subclass: EventSourceAdapter
     (@ Require equal: (subscription jsonTextAt: 'consumerName') to: expected) ifFailed: [:error | @ error signal].
     (@ Require equal: (subscription jsonTextAt: 'adapterKind') to: 'command-receipt') ifFailed: [:error | @ error signal].
     (@ Require equal: (subscription jsonTextAt: 'streamName') to: stream) ifFailed: [:error | @ error signal].
-    (@ Require equal: (subscription jsonTextAt: 'targetIdentity') to: '') ifFailed: [:error | @ error signal].
     (@ Require equal: (subscription jsonTextAt: 'grouping') to: 'opaque') ifFailed: [:error | @ error signal].
     ^ subscription
   ]
@@ -32,8 +31,10 @@ CommandReceiptSourceAdapter subclass: EventSourceAdapter
     records := @ consumer read: limit.
     ^ @ self bounded: records limit: limit
   ]
+  # The envelope carries the receipt's canonical workspace and closed origin so
+  # Phase 2 routing can check workspace policy and lineage without a second read.
   classMethod: normalize: record for: subscription [
-    | decoded receipt coordinate group display envelope excluded status |
+    | decoded receipt coordinate group display envelope excluded status origin |
     (@ self validateSubscription: subscription) ifFailed: [:error | @ error signal].
     decoded := @ self decode: record for: subscription.
     receipt := decoded jsonAt: 'receipt'.
@@ -41,7 +42,10 @@ CommandReceiptSourceAdapter subclass: EventSourceAdapter
     coordinate := decoded jsonAt: 'coordinate'.
     group := @ self groupKeyFor: receipt.
     display := @ self displayFor: receipt.
-    envelope := #{schema_version: 1 coordinate: (coordinate jsonValue) groupKey: group display: (display jsonValue)} asJson.
+    origin := receipt jsonAt: 'origin' ifAbsent: 'null'.
+    envelope := #{schema_version: 1 coordinate: (coordinate jsonValue) groupKey: group display: (display jsonValue)
+      workspace: (receipt jsonTextAt: 'workspace')} asJson.
+    (origin ~= 'null') ifTrue: [envelope := @ WorkstationSchema merge: envelope with: (#{origin: (origin jsonValue)} asJson)].
     (@ WorkstationSchema validate: envelope as: 'Envelope') ifFailed: [:error | @ error signal].
     excluded := subscription jsonAt: 'filter.exitNot' ifAbsent: '0'.
     status := receipt jsonTextAt: 'exitCode'.

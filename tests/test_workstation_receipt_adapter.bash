@@ -25,7 +25,7 @@ for change in '.payload="not-json"' '.offset=-1' '.topic="other"' '.key="bad par
  if @ CommandReceiptSourceAdapter normalize: "$(jq -c "$change" <<<"$record")" for: "$sub" >"$TMPDIR/invalid" 2>&1; then echo "FAIL: accepted invalid record"; exit 1; fi
  ! grep -q dont-echo "$TMPDIR/invalid"
 done
-for change in '.enabled=false' '.streamName="wrong"' '.consumerName="unsafe"' '.filter={unknown:1}' '.filter.exitNot="0"' '.targetIdentity="agentidentity_forbidden"'; do
+for change in '.enabled=false' '.streamName="wrong"' '.consumerName="unsafe"' '.filter={unknown:1}' '.filter.exitNot="0"' '.targetIdentity="not-an-identity"'; do
  if @ CommandReceiptSourceAdapter consumerFor: "$(jq -c "$change" <<<"$sub")" >/dev/null 2>&1; then exit 1; fi
 done
 @ CommandReceipt publish: "$fixture"

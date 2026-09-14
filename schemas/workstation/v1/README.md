@@ -17,7 +17,11 @@ structure only. Store and native validators own identity, uniqueness and state.
 Command receipt and display roots back `CommandReceipt publish:`. Optional
 receiptId, commandLabel, startedAt, and closed origin metadata extend the Phase 0
 fixture contract without invalidating existing fixtures. Real command wrappers
-always supply a stable receipt ID, label and both timestamps.
+always supply a stable receipt ID, label and both timestamps; a receipt produced
+inside an agent run adds closed `origin: {producer, run}`. Phase 2 routing fields
+on `#Attention` (`workspace`, `origin`, `lineageDepth`, `delegationRevision`,
+`delegatedMessage`, `delegatedSession`, `delegatedIdentity`, `routingNote`) and
+`#EventSubscription.delegation` are optional, so Phase 0/1 fixtures stay valid.
 
 See [Phase 0 operations](../../../docs/workstation-operations.md) for installation,
 record APIs, lifecycle recovery, coordinate replay, and browser/doctor integration.

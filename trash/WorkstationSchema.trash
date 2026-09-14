@@ -31,7 +31,7 @@ WorkstationSchema subclass: Object
   # Dynamic scope carries the exact vetted document into a short transaction.
   # This is an internal precondition, not a sandbox against arbitrary Bash.
   rawClassMethod: transact: json as: root sending: selector [
-    case "$2:$3" in 'EventSubscription:createWithin:'|'EventSubscription:updateWithin:'|'Attention:createWithin:'|'Attention:transitionWithin:') ;; *) _throw WorkstationSchemaError 'Unknown workstation mutation'; return 1;; esac
+    case "$2:$3" in 'EventSubscription:createWithin:'|'EventSubscription:updateWithin:'|'Attention:createWithin:'|'Attention:transitionWithin:'|'Attention:delegateWithin:') ;; *) _throw WorkstationSchemaError 'Unknown workstation mutation'; return 1;; esac
     local checked digest
     checked=$(@ "$_RECEIVER" validate: "$1" as: "$2") || return
     digest=$(@ "$_RECEIVER" digest) || return
@@ -52,8 +52,14 @@ WorkstationSchema subclass: Object
   ]
 
   # JSON projection/merge are a reusable serializer boundary, not domain logic.
+  # Phase 2 routing fields are optional: records written before they existed,
+  # or loaded through lazy null defaults, project as an unrouted group.
   rawClassMethod: document: data [
-    printf '%s' "$1" | jq -ce 'del(.class,._vars,.created_at)'
+    printf '%s' "$1" | jq -ce 'del(.class,._vars,.created_at)
+      | if has("state") then (.workspace //= "" | .lineageDepth //= 0 | .delegationRevision //= 0
+          | .delegatedMessage //= "" | .delegatedSession //= "" | .delegatedIdentity //= "" | .routingNote //= ""
+          | .origin = (if .origin == "null" then null else .origin end)) else . end
+      | if has("adapterKind") then .delegation //= {} else . end'
   ]
   rawClassMethod: merge: data with: patch [
     printf '%s' "$1" | jq -ce --argjson patch "$2" '. + $patch'

@@ -1,6 +1,8 @@
 # Workstation event layer: phased implementation plan
 
-**Status:** Proposed task plan, 2026-09-14.
+**Status:** Phases 0, 1, and 2 implemented as of 2026-09-14; Phases 3 and 4
+remain proposed. Operational detail for the implemented phases lives in
+[workstation operations](workstation-operations.md).
 
 This is the execution companion to
 [the workstation event, attention, and delegation design](workstation-event-attention-delegation.md).
@@ -443,6 +445,23 @@ stopping, or otherwise changing it.
 
 Document a disposable UAT: configure a target, run a failing command in a
 chosen cwd, inspect its Attention, manually delegate, observe one delivery in
+the existing session, and focus that conversation. See
+[workstation operations](workstation-operations.md#2d-attention-to-conversation-operations).
+
+### Phase 2 implementation notes
+
+- `WorkstationRouting` owns dry-run admission (`statusFor:`), publication
+  (`delegate:`, `redelegate:reason:`, `autoWithin:subscription:`), and focus.
+  `EventSubscription target:reason:`, `enableAutomaticDelegation:reason:`,
+  `lineageLimit:reason:` and `Attention routingStatus`/`delegate`/
+  `redelegate:`/`focusDelegated` are the DSL entry points; the owner's root
+  Message mirrors them.
+- Manual delegation ignores `dispatchState`; automatic routing requires
+  `dispatchState: enabled` plus the confirmed `delegation.mode: automatic`.
+- The required receive capability is `inbox.read`; budget admission uses the
+  role's `messageBudget.count` against unsettled deliveries.
+- Lineage depth is fixed when a group is created; appended receipts never
+  change it.
 
 ## Phase 3: additional producers
 

@@ -29,7 +29,7 @@ Message subclass: Object
                 assignment:'' generation:0 dispatchMode:'automatic' executionWorkspace:''
                 thread:'' replyTo:'' created:'' sentAt:0 readAt:''
                 attention:'' attentionFirstCoordinate:'null' attentionLastCoordinate:'null'
-                attentionEventCount:0 attentionHintAt:0
+                attentionEventCount:0 attentionHintAt:0 attentionLineageDepth:0
 
   # Build an undelivered message. Inbox deliver: stamps to/created/sentAt/thread.
   classMethod: to: recipient from: sender subject: subj body: text kind: aKind [
@@ -268,12 +268,13 @@ Message subclass: Object
   # Safe local projection factory. All Message and Attention changes commit
   # together through the public Inbox attention: boundary, without AgentQueue.
   classMethod: forAttention: attention display: display to: owner [
-    | data message id title summary count first last body now millis patch human recipient linked |
+    | data message id title summary count first last body now millis patch human recipient linked delegated |
     @ Store requireTransaction.
     human := @ AgentFocus human.
     @ Require equal: owner to: human.
     @ Store read: attention class: 'Attention'.
     data := @ Store getInstance: attention.
+    data := @ WorkstationSchema document: data.
     message := data jsonTextAt: 'message'.
     title := display jsonTextAt: 'title'.
     summary := display jsonTextAt: 'summary'.
@@ -281,6 +282,9 @@ Message subclass: Object
     first := data jsonAt: 'firstCoordinate'.
     last := data jsonAt: 'lastCoordinate'.
     body := 'Attention ' , attention , ': ' , count , ' matching events. ' , summary.
+    delegated := data jsonAt: 'delegatedSession' ifAbsent: '""'.
+    delegated := delegated jsonTextAt: ''.
+    (delegated notEmpty) ifTrue: [body := body , ' Delegated to session ' , delegated , '.'].
     (message isEmpty) ifTrue: [
       id := @ Runtime generateId: 'Message'.
       message := @ Store create: 'Message' id: id.
@@ -364,4 +368,71 @@ Message subclass: Object
     | linked |
     linked := @ self localAttention.
     ^ @ linked reopen
+  ]
+  # Phase 2 routing controls, scoped to the current human owner like the rest.
+  method: routingStatus [
+    | linked |
+    linked := @ self localAttention.
+    ^ @ linked routingStatus
+  ]
+  method: delegateAttention [
+    | linked |
+    linked := @ self localAttention.
+    ^ @ linked delegate
+  ]
+  method: redelegateAttention: reason [
+    | linked |
+    linked := @ self localAttention.
+    ^ @ linked redelegate: reason
+  ]
+  method: focusDelegatedAttention [
+    | linked |
+    linked := @ self localAttention.
+    ^ @ linked focusDelegated
+  ]
+
+  # Agent-facing delegation Message. It is addressed to the resolved session,
+  # sent by the human owner so replies return to that owner's inbox thread,
+  # and carries the receipt cwd, causal coordinates, and lineage depth.
+  classMethod: forDelegatedAttention: attention admission: admission revision: revision [
+    | id msg data human session recipient title summary count first last depth body now millis root workspace execution |
+    @ Store requireTransaction.
+    human := @ AgentFocus human.
+    id := 'message_' , attention , '_delegation_' , revision.
+    @ Store read: attention class: 'Attention'.
+    data := @ Store getInstance: attention.
+    data := @ WorkstationSchema document: data.
+    session := admission jsonTextAt: 'session'.
+    recipient := 'session:' , session.
+    root := data jsonTextAt: 'message'.
+    title := ''. summary := ''.
+    (root notEmpty) ifTrue: [
+      @ Store read: root class: 'Message'.
+      title := @ root subject.
+      summary := @ root body
+    ].
+    (title isEmpty) ifTrue: [title := 'Workstation attention ' , attention].
+    count := data jsonTextAt: 'eventCount'.
+    first := data jsonAt: 'firstCoordinate'.
+    last := data jsonAt: 'lastCoordinate'.
+    depth := data jsonAt: 'lineageDepth' ifAbsent: '0'.
+    depth := depth + 1.
+    workspace := admission jsonTextAt: 'receiptWorkspace'.
+    execution := admission jsonTextAt: 'executionWorkspace'.
+    body := 'Delegated workstation attention ' , attention , ' (delegation ' , revision , ').
+Command: ' , title , '
+Working directory: ' , workspace , '
+Matching events: ' , count , '
+' , summary , '
+Investigate the failure in the working directory, summarize the likely cause, and reply with your findings. Do not treat this as approval to change anything.'.
+    now := @ Time nowISO.
+    millis := @ Time nowMillis.
+    msg := @ Store create: 'Message' id: id.
+    title := 'Attention: ' , title.
+    # One patch: Store patch: reloads the cached object, so setters before it would be lost.
+    @ Store patch: msg with: (#{to: recipient from: human subject: title body: body kind: 'attention'
+      thread: msg created: now sentAt: (millis jsonValue) attention: attention executionWorkspace: execution
+      dispatchMode: 'automatic' attentionFirstCoordinate: (first jsonValue) attentionLastCoordinate: (last jsonValue)
+      attentionEventCount: (count jsonValue) attentionLineageDepth: (depth jsonValue)} asJson).
+    ^ msg
   ]
