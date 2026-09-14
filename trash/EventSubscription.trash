@@ -29,6 +29,8 @@ EventSubscription subclass: Object
     target := document jsonTextAt: 'targetIdentity'.
     (target notEmpty) ifTrue: [@ AgentAccess validateIdentity: target].
     @ Require text: (document jsonTextAt: 'auditNote').
+    @ WorkstationSchema timestampEpoch: (document jsonTextAt: 'createdAt').
+    @ WorkstationSchema timestampEpoch: (document jsonTextAt: 'updatedAt').
     ^ adapter
   ]
   classMethod: createWithin: document [

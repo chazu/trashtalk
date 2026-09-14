@@ -1,0 +1,90 @@
+# User attention lifecycle only. No Message publication or agent/session effects.
+Attention subclass: Object
+  include: Persistable
+  instanceVars: id:'' subscription:'' groupKey:'' state:'open' message:'' firstCoordinate:'null'
+    lastCoordinate:'null' eventCount:0 snoozeUntil:'' note:'' actor:'' createdAt:'' updatedAt:''
+    schema_version:1 schemaDigest:'' lastResolvedSession:''
+
+  classMethod: new [ @ Require reject: 'Use Attention createFrom: with a closed document' ]
+  method: save [ @ Require reject: 'Use Attention lifecycle messages' ]
+  classMethod: read: id [ ^ @ Store read: id class: 'Attention' ]
+  classMethod: createFrom: document [
+    ^ @ WorkstationSchema transact: document as: 'Attention' sending: 'createWithin:'
+  ]
+  classMethod: validateWithin: document [
+    | sub human message session owner |
+    @ WorkstationSchema requireValidated: document.
+    human := @ AgentFocus human.
+    @ Require equal: (document jsonTextAt: 'actor') to: human.
+    sub := @ Store read: (document jsonTextAt: 'subscription') class: 'EventSubscription'.
+    owner := @ sub owner.
+    @ Require equal: owner to: human.
+    @ Require text: (document jsonTextAt: 'groupKey').
+    @ WorkstationSchema timestampEpoch: (document jsonTextAt: 'createdAt').
+    @ WorkstationSchema timestampEpoch: (document jsonTextAt: 'updatedAt').
+    message := document jsonTextAt: 'message'.
+    (message notEmpty) ifTrue: [@ Store read: message class: 'Message'].
+    session := document jsonTextAt: 'lastResolvedSession'.
+    (session notEmpty) ifTrue: [@ Store read: session class: 'AgentSession']
+  ]
+  classMethod: createWithin: document [
+    | id |
+    @ self validateWithin: document.
+    @ Require equal: (document jsonTextAt: 'state') to: 'open'.
+    @ Require equal: (document jsonTextAt: 'eventCount') to: '0'.
+    @ Require equal: (document jsonAt: 'firstCoordinate') to: 'null'.
+    @ Require equal: (document jsonAt: 'lastCoordinate') to: 'null'.
+    @ Require equal: (document jsonTextAt: 'snoozeUntil') to: ''.
+    @ Require equal: (document jsonTextAt: 'createdAt') to: (document jsonTextAt: 'updatedAt').
+    id := document jsonTextAt: 'id'.
+    @ Store create: 'Attention' id: id.
+    @ WorkstationSchema write: document to: id.
+    ^ id
+  ]
+  classMethod: allowedTransitions [
+    ^ '["open:acknowledged","open:snoozed","open:resolved","open:suppressed","acknowledged:open","acknowledged:snoozed","acknowledged:resolved","acknowledged:suppressed","snoozed:open","snoozed:acknowledged","snoozed:resolved","snoozed:suppressed","resolved:open","suppressed:open"]'
+  ]
+  classMethod: transitionWithin: document [
+    | id old from to pair allowed wakeTime now reason |
+    @ self validateWithin: document.
+    id := document jsonTextAt: 'id'.
+    @ Store read: id class: 'Attention'.
+    old := @ Store getInstance: id.
+    '["id","subscription","groupKey","message","firstCoordinate","lastCoordinate","eventCount","createdAt","schema_version","schemaDigest","lastResolvedSession"]' arrayEach: [:field |
+      @ Require equal: (document jsonAt: field) to: (old jsonAt: field)
+    ].
+    from := old jsonTextAt: 'state'.
+    to := document jsonTextAt: 'state'.
+    pair := from , ':' , to.
+    allowed := @ self allowedTransitions.
+    @ Require member: pair of: allowed.
+    reason := document jsonTextAt: 'note'.
+    (to = 'resolved') ifTrue: [@ Require text: reason].
+    (to = 'suppressed') ifTrue: [@ Require text: reason].
+    (to = 'snoozed') ifTrue: [
+      wakeTime := @ WorkstationSchema timestampEpoch: (document jsonTextAt: 'snoozeUntil').
+      now := @ Time now.
+      (wakeTime > now) ifFalse: [^ @ Require reject: 'Snooze requires a future normalized UTC timestamp']
+    ] ifFalse: [@ Require equal: (document jsonTextAt: 'snoozeUntil') to: ''].
+    @ WorkstationSchema write: document to: id.
+    ^ id
+  ]
+  method: transitionTo: state until: wakeTime note: reason [
+    | document patch actor now |
+    document := @ Store getInstance: self.
+    document := @ WorkstationSchema document: document.
+    actor := @ AgentFocus human.
+    now := @ Time nowISO.
+    patch := #{state: state snoozeUntil: wakeTime note: reason actor: actor updatedAt: now} asJson.
+    document := @ WorkstationSchema merge: document with: patch.
+    ^ @ WorkstationSchema transact: document as: 'Attention' sending: 'transitionWithin:'
+  ]
+  method: acknowledge [ ^ @ self transitionTo: 'acknowledged' until: '' note: '' ]
+  method: snoozeUntil: wakeTime [ ^ @ self transitionTo: 'snoozed' until: wakeTime note: '' ]
+  method: resolveWithNote: note [ ^ @ self transitionTo: 'resolved' until: '' note: note ]
+  method: suppress: note [ ^ @ self transitionTo: 'suppressed' until: '' note: note ]
+  method: reopen [ ^ @ self transitionTo: 'open' until: '' note: '' ]
+  method: summary [ ^ @ self display ]
+  method: display [
+    ^ #{id: self subscription: subscription groupKey: groupKey state: state eventCount: eventCount updatedAt: updatedAt} asJson
+  ]

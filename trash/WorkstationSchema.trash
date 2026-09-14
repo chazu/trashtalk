@@ -52,3 +52,18 @@ WorkstationSchema subclass: Object
   rawClassMethod: merge: data with: patch [
     printf '%s' "$1" | jq -ce --argjson patch "$2" '. + $patch'
   ]
+
+  # jq's UTC parser plus round trip rejects impossible and non-normalized dates.
+  rawClassMethod: timestampEpoch: timestamp [
+    printf '%s' "$1" | jq -Rer '. as $s | fromdateiso8601 | select(todateiso8601 == $s)'
+  ]
+
+  # Preserve explicit JSON null coordinates, unlike SQLite json_patch (null deletes).
+  classMethod: write: document to: id [
+    | data |
+    @ Store requireTransaction.
+    data := @ Store getInstance: id.
+    data := @ self merge: data with: document.
+    @ Store put: id data: data.
+    @ Runtime setData: data for: id
+  ]
