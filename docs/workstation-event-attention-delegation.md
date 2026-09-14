@@ -1,669 +1,305 @@
-# Workstation event, attention, and delegated-action layer
+# Workstation event, attention, and delegation layer
 
-**Status:** Proposed design, 2026-09-13.
+**Status:** Proposed design, revised 2026-09-14.
 
 ## Decision
 
-Trashtalk should become a local, durable coordination layer in three deliberate
-steps:
+Trashtalk should use **Honker Stream as the durable eventing layer** for local
+workstation automation. A stream is the append-only event log and Honker's named
+consumer offset is the durable subscription cursor. `EventBus`/pub-sub remains
+an optional lossy wake hint only.
 
-1. **Observe:** persist local events and subscription cursors.
-2. **Orient:** turn meaningful events into grouped, actionable Inbox attention.
-3. **Act safely:** let agents prepare or perform narrowly authorized actions,
-   with explicit approvals and durable effect identity.
+The first release adds only two persisted domain records:
 
-This builds on the implemented single-host AgentIdentity, AgentSession, Inbox,
-AgentWorker, role capability checks, question-to-delivery links, and Innards /
-Whisker surfaces. It does **not** introduce a daemon RPC API, a generic plugin
-host, a distributed scheduler, or a mandatory new terminal applet.
+1. **`EventSubscription`**, the user's typed policy for consuming one Honker
+   stream and routing meaningful records.
+2. **`Attention`**, a grouped, user-visible projection of matching stream
+   records, linked to an existing Inbox `Message` and its ordinary outbox /
+   `AgentDelivery` records.
+
+This deliberately does **not** add `EventCursor`, `WorkstationEvent`,
+`ActionRequest`, `Approval`, `EffectRecord`, or `ExecutionAttempt` yet. Honker
+already persists stream messages and consumer offsets. Inbox, Message,
+AgentDelivery, linked Questions, AgentRun, and the worker already model
+communication and recoverable delegated work. A separately designed, restricted
+executor is a prerequisite for adding approved external effects.
 
 ## Goals
 
-- Let ordinary workstation events produce durable, inspectable work without a
-  user manually copying terminal output into a chat.
-- Make interruptions useful and bounded: an event should become one grouped
-  attention item with a clear next action, not a stream of notifications.
-- Allow a user to delegate preparation and low-risk work while retaining clear
-  attribution, approval, cancellation, and recovery semantics.
-- Preserve the current Bash-only, SQLite-backed, single-host architecture.
-- Keep all decisions and external-effect claims auditable through public
-  messages and persisted objects.
+- Make a local event durable, replayable, inspectable, and attributable.
+- Turn repeated events into one useful attention item, not notification spam.
+- Route configured attention to an existing durable agent session without
+  creating, resuming, or detaching one implicitly.
+- Retain the current Bash-only, SQLite-backed, single-host architecture.
+- Keep the initial object model small by reusing Honker and existing messaging.
 
 ## Non-goals
 
-- Exactly-once execution of arbitrary shell commands or external effects.
-- A general distributed event bus, cloud service, or multi-machine leader
-  election.
-- An always-running model or an agent that can silently act beyond its role.
-- Replacing the shell, terminal multiplexer, desktop notification system, or
-  existing Innards components.
-- A broad plugin ABI. New sources are explicit adapters until repetition proves
-  a stable primitive is needed.
+- A second event log, a custom cursor table, a generic plugin host, or a
+  distributed event bus.
+- Exactly-once arbitrary shell effects, an always-running model, or a claim that
+  current harness permissions are a security sandbox.
+- Replacing Inbox, AgentDelivery, Questions, AgentWorker, Whisker, or Innards.
 
-## Why these are the highest-leverage pieces
+## Why Honker is the right layer
 
-Durable agents already receive messages and can recover from worker failure.
-What they lack is a reliable reason to receive work when the user is not
-actively composing a request. Durable subscriptions provide that reason.
+`Stream` is already a cross-process durable log over Honker: producers publish
+records, named consumers read them from an offset, and acknowledged offsets
+survive a crash. That is the subscription and replay primitive this design
+needs. `EventBus`, by contrast, is ephemeral and is appropriate only to wake an
+already-running worker or refresh a prompt view.
 
-Raw event streams are noisy. An attention model turns repeated failures,
-modified files, and requests for input into a manageable queue visible at the
-prompt and in the existing Inbox/session browser.
+The resulting rule is simple:
 
-Finally, a response that merely describes a repair has limited value. Delegated
-action becomes useful only when the system can answer: which event caused it,
-which role was allowed to do it, whether the user approved it, and whether a
-retry might repeat it.
+> A stream record is authoritative. A named consumer offset records progress.
+> A pub/sub notification may be lost because the worker can always replay the
+> stream.
 
-## Representative applications
-
-| Event source | Subscription | Attention item | Delegated outcome |
-|---|---|---|---|
-| test command exits nonzero | watched command receipt | one failure group per command/workspace/fingerprint | summarize regression, propose patch, ask before edits |
-| Git working tree changes | debounced repository snapshot | review-needed group | summarize changes, run configured checks |
-| a file changes | path snapshot plus debounce | changed-config group | validate format, propose a correction |
-| scheduled local check | interval cursor | overdue or failed-check group | investigate and report |
-| agent asks a question | existing Message/Question | blocking attention item | focus exact conversation and answer it |
-
-The first shipped source must be **a watched command receipt**, especially a
-failed test. It has a bounded payload, clear deduplication key, no filesystem
-watcher portability problem, and immediately exercises observation, attention,
-and delegation.
+A worker reads a bounded Stream batch, creates or updates its Attention and
+Message inside a Store transaction, then acknowledges the Honker offset. A
+crash before acknowledgement produces a duplicate delivery attempt. That is
+safe because the Store transaction uses a uniqueness key of
+`(subscription, streamName, partition, offset)` on the Attention-event link.
+A crash after acknowledgement has already committed the durable projection.
+No transaction spans the external stream read or offset acknowledgement.
 
 ## Domain model
 
 ### `EventSubscription`
 
-A persisted, versioned declaration owned by a local user:
+`EventSubscription` is `Persistable`. It is the only new durable policy object.
+It owns configuration, target identity, grouping policy, and a stable Honker
+consumer name, for example `workstation/subscription_<id>`. Honker owns the
+actual offset.
 
 ```json
 {
-  "id":"subscription_...",
-  "kind":"command-receipt",
-  "workspace":"/canonical/project",
-  "enabled":true,
-  "source":{"commandKey":"test"},
-  "filter":{"exitNot":0},
-  "debounceSeconds":15,
-  "targetIdentity":"agentidentity_...",
-  "attentionPolicy":"group",
-  "createdAt":"...",
-  "revision":1
+  "schema_version": 1,
+  "id": "subscription_...",
+  "owner": "local-user",
+  "enabled": true,
+  "dispatchState": "enabled",
+  "streamName": "workstation.command-receipts.v1",
+  "consumerName": "workstation/subscription_...",
+  "adapterKind": "command-receipt",
+  "filter": {"exitNot": 0},
+  "debounceSeconds": 15,
+  "targetIdentity": "agentidentity_...",
+  "grouping": "workspace-kind-fingerprint",
+  "revision": 1
 }
 ```
 
-`kind` selects a narrow built-in adapter. `source` and `filter` are validated
-JSON for that adapter, never shell text. A subscription has an owner and a
-canonical workspace. It may target only an identity whose current role permits
-that workspace.
+Creating a subscription explicitly chooses `from-now` or `from-start`. The
+adapter converts that choice to a Honker consumer offset once and records that
+setup decision in the subscription. Retention/gap errors are visible
+configuration attention and suspend automatic dispatch until reconciled. Editing
+the stream, adapter kind, or filter creates a new revision and an explicit
+consumer migration, never a silent offset reinterpretation.
 
-### `EventCursor`
+### `Attention`
 
-A cursor is owned by one subscription and records the last *durably accepted*
-source position, not merely the last observed value:
-
-```json
-{"subscription":"...","sourceVersion":"...","acceptedAt":"..."}
-```
-
-The initial source needs only opaque command-receipt IDs. Later file and timer
-adapters may use a snapshot digest or an interval sequence. The adapter must be
-able to replay its source from that cursor or explicitly report a gap.
-
-### `WorkstationEvent`
-
-An immutable normalized fact:
+`Attention` is the only new durable projection. It groups related stream
+records and gives them a state that Message read/archive state does not express.
+It links to, rather than replaces, one root Inbox Message.
 
 ```json
 {
-  "id":"event_...",
-  "subscription":"...",
-  "sourceVersion":"...",
-  "occurredAt":"...",
-  "workspace":"/canonical/project",
-  "kind":"command.failed",
-  "fingerprint":"sha256:...",
-  "payload":{"commandKey":"test","exitStatus":1,"summary":"..."}
+  "schema_version": 1,
+  "id": "attention_...",
+  "subscription": "subscription_...",
+  "groupKey": "canonical workspace + kind + fingerprint",
+  "state": "open",
+  "message": "message_...",
+  "firstStreamOffset": 421,
+  "lastStreamOffset": 429,
+  "eventCount": 3,
+  "lastUpdatedAt": "..."
 }
 ```
 
-The unique key `(subscription, sourceVersion)` makes source replay idempotent.
-A fingerprint is for grouping, not for deduplication of source facts.
+The per-record uniqueness link may be an internal Store table/index rather than
+a third domain object. It exists only to make replay idempotent and to retain the
+stream coordinates behind an Attention. Detailed evidence remains in the Honker
+stream and is fetched by offset when the user chooses **Inspect**.
 
-### `AttentionItem`
+States are `open`, `acknowledged`, `snoozed`, `resolved`, and `suppressed`.
+An acknowledged or snoozed matching event appends to the same Attention without
+a new alert. A resolved item creates a new group unless a stated reopen window
+matches. `enabled` controls source consumption; `dispatchState` controls new
+agent routing; snooze controls presentation only. Changing any of these does
+not stop an active run. Existing run/session controls remain explicit.
 
-A durable projection that represents what the person needs to notice:
+## Event path
 
-```json
-{
-  "id":"attention_...",
-  "groupKey":"workspace + kind + fingerprint",
-  "state":"open",
-  "urgency":"normal",
-  "eventIds":["event_..."],
-  "message":"message_...",
-  "session":"agentsession_...",
-  "snoozedUntil":"",
-  "lastUpdatedAt":"..."
-}
-```
+The first producer is a command wrapper. After a command has a known exit
+status, it publishes a bounded, redacted `command-receipt.v1` JSON record to
+`workstation.command-receipts.v1` through `Stream publish:`. The producer
+preserves the command's exit status, signal, stdin/TTY behavior, and does not
+turn an event-publication error into a false command result. Output capture is
+opt-in, bounded, redacted before persistence, and rendered safely.
 
-The group key is policy-controlled and includes the subscription identity to
-prevent unrelated projects merging. A transaction appends a new event to an
-open group, or creates a group and its Inbox message. A group can be
-`open`, `acknowledged`, `snoozed`, `resolved`, or `suppressed`. It is not the
-same as read/archive state on its message.
+The worker's subscription stage is a normal `AgentWorker tick` stage:
 
-### `ActionRequest` and `EffectRecord`
+1. `EventSourceAdapter` opens the subscription's named Stream consumer and
+   reads a fair, bounded batch outside the Store lock.
+2. It validates, filters, normalizes, and CUE-vets each stream payload.
+3. A short Store transaction idempotently updates Attention, persists the root
+   Message and ordinary routing outbox row when policy requires it, and records
+   the accepted stream coordinate.
+4. After commit, it acknowledges the Honker offset. A Honker pub/sub topic may
+   wake the worker immediately, but polling/replay is the recovery path.
+5. Existing AgentQueue and AgentWorker routing handle the persisted outbox.
+   Resolution includes identity session scope, canonical workspace, current
+   membership, lifecycle, role policy, and budget admission. No eligible or
+   ambiguous session leaves Attention visible and pending. It never creates or
+   resumes a session.
 
-An agent never treats a chat sentence as authorization to make an effect.
-`ActionRequest` names the causal event/attention item, requested capability,
-workspace, normalized parameters, risk class, and required approval. An
-approved request yields an `EffectRecord` with a deterministic idempotency key:
+Attention-to-delivery causality is stored as metadata on the Message/outbox/
+delivery. Each delivery records its exact stream offset range and resolved
+session ID. Thus session replacement cannot rewrite history, and linked
+Questions continue to release only their specific blocked deliveries.
 
-```json
-{
-  "request":"actionrequest_...",
-  "key":"sha256(role revision, capability, workspace, parameters, cause)",
-  "state":"prepared|started|succeeded|uncertain|failed",
-  "receipt":"..."
-}
-```
+## Source adapter hierarchy
 
-The record prevents a second local attempt for the same approved request. It
-cannot make an arbitrary OS effect exactly once. A crash after launch is
-`uncertain`, matching current AgentWorker recovery policy, and requires review
-rather than automatic retry.
-
-## Architecture and transaction boundaries
-
-### Source adapters are a superclass, not persisted plug-ins
-
-Use an abstract `EventSourceAdapter` superclass, with class-side messages and
-an explicit built-in registry. A trait is the wrong primary abstraction here:
-the worker needs one authoritative, closed dispatch point from persisted
-`EventSubscription.kind` to implementation, and source kinds have a coherent
-polymorphic contract. Adapters are stateless code classes, not persisted
-objects. `EventSubscription`, `EventCursor`, `WorkstationEvent`, and
-`AttentionItem` retain all durable data.
-
-The methods below are an interface sketch: concrete production subclasses must
-implement them, while the abstract base returns a normal Trashtalk contract
-error if called directly.
+Use an abstract `EventSourceAdapter` superclass with a closed class-side
+registry. A trait is not the primary abstraction because `adapterKind` needs one
+authoritative mapping to a polymorphic source implementation. Adapters are
+stateless code classes. Stream, Subscription, Attention, Message, and Delivery
+hold state.
 
 ```smalltalk
 EventSourceAdapter subclass: Object
   classMethod: kind [ ^ '' ]
   classMethod: validateSubscription: subscription [ @ EventSourceAdapterError signal: 'abstract adapter selector' ]
-  classMethod: initialCursorFor: subscription [ @ EventSourceAdapterError signal: 'abstract adapter selector' ]
-  classMethod: observe: subscription after: cursor limit: limit [ @ EventSourceAdapterError signal: 'abstract adapter selector' ]
-  classMethod: normalize: candidate for: subscription [ @ EventSourceAdapterError signal: 'abstract adapter selector' ]
-  classMethod: cursorForAccepted: event from: cursor [ @ EventSourceAdapterError signal: 'abstract adapter selector' ]
+  classMethod: consumerFor: subscription [ @ EventSourceAdapterError signal: 'abstract adapter selector' ]
+  classMethod: read: consumer limit: limit [ @ EventSourceAdapterError signal: 'abstract adapter selector' ]
+  classMethod: normalize: streamRecord for: subscription [ @ EventSourceAdapterError signal: 'abstract adapter selector' ]
+  classMethod: groupKeyFor: event [ @ EventSourceAdapterError signal: 'abstract adapter selector' ]
   classMethod: displayFor: event [ @ EventSourceAdapterError signal: 'abstract adapter selector' ]
 
 CommandReceiptSourceAdapter subclass: EventSourceAdapter
-IntervalSourceAdapter subclass: EventSourceAdapter
-GitSnapshotSourceAdapter subclass: EventSourceAdapter
 ```
 
-`EventSourceAdapter forKind:` is an allowlisted DSL registry, for example
-`command-receipt -> CommandReceiptSourceAdapter`. It rejects unknown, disabled,
-or schema-version-incompatible kinds. It never turns a subscription-provided
-class name, shell command, path, CUE import, or JSON selector into dispatch.
-Adding an adapter therefore requires a source file, registry entry, CUE variant,
-migration/default policy, fixtures, and tests in this repository.
+`EventSourceAdapter forKind:` is a DSL allowlist. It never dispatches a
+subscription-provided class name, shell command, path, CUE import, or selector.
+The base class owns registry lookup, bounded batch envelopes, stream-coordinate
+validation, and diagnostics. Subclasses use `rawClassMethod:` only at an actual
+OS boundary. The first adapter only decodes Honker stream records, so it should
+need little raw code.
 
-The common contract has narrow responsibilities:
+Future `IntervalSourceAdapter` or `GitSnapshotSourceAdapter` classes require a
+new producer stream and explicit replay, privacy, portability, and retention
+tests. Traits are allowed later only for proven shared implementation such as
+safe bounded artifact projection. They never own registry dispatch,
+authorization, cursor/offset semantics, or lifecycle.
 
-- `validateSubscription:` checks adapter-specific typed source/filter data after
-  generic CUE vetting. It performs no IO and does not mutate cursor state.
-- `initialCursorFor:` fixes first-install semantics such as `from-now`; it makes
-  a durable cursor value, never a guessed timestamp.
-- `observe:after:limit:` reads an adapter's local source outside Store
-  transactions and returns ordered, bounded, raw candidates plus a source-gap
-  indication. It does not create events, send messages, or advance a cursor.
-- `normalize:for:` maps a candidate to the canonical event input, applies
-  adapter-local redaction and size limits, and provides the stable source
-  version/fingerprint inputs. Generic CUE validation follows normalization.
-- `cursorForAccepted:from:` returns the next cursor only after the worker's
-  acceptance transaction has decided the candidate. This preserves replay and
-  debounce correctness.
-- `displayFor:` returns safe, bounded projection data for Inbox/Innards. It is
-  not allowed to expose source artifacts by default.
+## CUE contracts
 
-The abstract superclass should provide DSL implementations for registry lookup,
-candidate envelope validation, bounded batch/result construction, and standard
-diagnostic conversion. A concrete adapter uses `rawClassMethod:` only at its
-real OS boundary, such as reading the receipt log or invoking a platform
-filesystem API. It immediately returns JSON to the superclass-facing DSL
-contract. Grouping, routing, CUE vetting, Store writes, and notifications stay
-out of adapter subclasses.
+CUE is the declarative structural contract, not a persistence engine or
+permission system. A repository-owned `schemas/workstation/v1` package defines
+closed variants for command receipts, subscriptions, attention projections,
+message/outbox causal metadata, and public Innards records. The same fixtures
+are used by producer, consumer, browser, and tests.
 
-`CommandReceiptSourceAdapter` is the only Phase 1 implementation. It reads the
-append-only Trashtalk receipt log by epoch/sequence, validates ordering and
-retention, and returns receipt candidates. `IntervalSourceAdapter` and
-`GitSnapshotSourceAdapter` remain named design placeholders until their replay,
-portability, privacy, and debounce rules have individual acceptance suites.
+CUE validates shape, variants, ranges, schema versions, and explicit
+constructor defaults. Store transactions, AgentAccess, `Require`, and the
+worker still enforce identity ownership, role authorization, workspace
+canonicalization, uniqueness, lifecycle transitions, budgets, and liveness.
+CUE success never authorizes routing or execution.
 
-The separate, later `EffectExecutor` hierarchy must not inherit from
-`EventSourceAdapter`. It owns approved OS effects and an atomic execution
-claim, whereas source adapters are observation-only. An executor registry has
-the same allowlist discipline but a different capability and approval contract.
-
-Traits may be introduced later only for a demonstrated shared *implementation*
-slice, such as a `BoundedArtifactProjection` trait used by several adapters.
-They must not carry the registry, durable state, authorization, or lifecycle
-semantics. This prevents a mix-in from quietly becoming another source dispatch
-path.
-
-1. A small source adapter reads a local source and proposes normalized event
-   candidates. It performs no agent work and does not advance a cursor.
-2. `EventSubscription pollWithin:` runs in the existing Store transaction.
-   It validates the subscription and role workspace permission, inserts unseen
-   events, updates/creates the attention group, writes an Inbox message/outbox
-   notification if required, and advances the cursor in the same transaction.
-3. Existing Inbox routing and AgentWorker assign the resulting message to the
-   target identity's current session. The event, attention item, message,
-   delivery, session, and run IDs remain linked as causal metadata.
-4. The agent may report, ask a linked Question, or create an ActionRequest.
-   Existing question-to-delivery linkage remains the sole mechanism for
-   resuming blocked delivery work.
-5. Approval and effect execution occur through public, role-checked messages.
-   The executor records `started` before crossing the OS boundary and writes a
-   receipt/result afterwards. Ambiguous launches become `uncertain`.
-
-SQLite remains the only persistence implementation. The new classes use
-`Persistable`, `Store transaction:...`, schema migration helpers, `Require`, and
-AgentAccess validation. Only adapter observation and an approved executor may
-be raw Bash, because they cross OS boundaries.
+Validation occurs before the short acceptance transaction. The CUE CLI is never
+run while holding the Store lock. Schema source is trusted and checked in;
+stream payloads are data, never CUE imports. Missing CUE, schema digest mismatch,
+or invalid schema fails closed for enabled workstation subscriptions while
+leaving existing Stream evidence and Attention records inspectable. Diagnostics
+are bounded and redact payload details.
 
 ## Attention UX
 
-Whisker displays a compact count by state, for example `!2 ?1`, rather than a
-new line per event. The Inbox/browser adds an **Attention** view with actions:
+Whisker shows compact counts such as `!2 ?1`; it does not print every event.
+Inbox and AgentBrowser offer an Attention view with **Inspect**, **Focus**,
+**Acknowledge**, **Snooze**, **Resolve**, and **Suppress**. Inspect reads the
+referenced stream range and causal message/run records. Focus attaches to the
+recorded session only and never starts, resumes, stops, or detaches work.
 
-- **Inspect**: show grouped events, source receipt, causal messages, and runs.
-- **Focus**: attach to the exact existing session without resuming/starting it.
-- **Acknowledge** and **Snooze**: change only AttentionItem state.
-- **Resolve**: requires a note or a linked completed action/effect.
-- **Review uncertain action**: opens its evidence and offers explicit retry or
-  abandonment under the existing uncertainty rules.
+Notifications are hints. Inbox, Attention, and the durable Honker stream remain
+the source of truth. The fallback without Innards retains structured inspection
+and explicit actions.
 
-Quiet hours and desktop notifications are presentation policy, not event
-routing. A notification is a lossy wake hint. The durable attention item is the
-source of truth.
+## Delegated action boundary
 
-## Authorization and privacy
+This design stops at observation, attention, and ordinary agent delegation.
+Current Jcode, Maki, and Codex harnesses have user-level workspace access, so
+role checks are cooperative controls rather than isolation. We will not add
+approval/effect objects or advertise safely enforced local mutation until a
+separate design provides an observation-only harness plus a restricted executor
+channel which alone holds the relevant OS capability.
 
-- Subscription creation/editing requires the local user owner. Agents can
-  propose subscriptions but cannot enable one without an explicit user action.
-- Source adapters use allowlisted kinds and typed configuration. No event
-  payload is evaluated as Bash.
-- Workspace canonicalization and role authorization happen before polling,
-  routing, action request creation, and execution.
-- Recipient policy, capability, run/message budgets, and approval policy are
-  enforced at the corresponding public boundary, not merely stored on
-  `AgentRole`.
-- Event payloads are size-limited, redact configured secrets before persistence,
-  and store file paths/command output only when policy allows. Large output is a
-  bounded artifact with digest and access path, not an Inbox body.
-- An approval identifies the exact immutable normalized parameters and expires
-  when they change. “Approve fixing tests” is never an approval for an arbitrary
-  shell command.
+An agent may summarize, investigate, propose a SourceProposal, or ask a linked
+Question under existing contracts. Agent-originated command receipts carry
+origin delivery/run metadata. Default subscription policy rejects routing an
+event to an ancestor delivery and has a small lineage-depth limit, preventing a
+failing agent-run test from recursively waking the same agent.
 
 ## Phased implementation
 
-### Phase 0: contracts and migrations
-
-Define schemas, invariants, display columns, Store transaction selectors, and
-fixture adapters. Add no OS watcher or model dispatch. Test migrations, invalid
-source config, authorization, replay, and uniqueness.
-
-### Phase 1: command-receipt subscription
-
-Add a public command wrapper that writes a durable receipt after a user-run
-command, plus `command-receipt` subscription polling. Implement event/cursor
-atomicity and attention grouping. Route an inbox notification to an existing
-workspace-scoped specialist or Gusgus only when configured. Demonstrate a
-failed test becoming one inspectable attention group after repeated runs.
-
-### Phase 2: attention surface
-
-Expose AttentionItem in Whisker, Inbox, and AgentBrowser using the existing
-inpick/inpage composition. Add acknowledge, snooze, resolve, and focus. Ensure
-that detaching a conversation changes no session/worker lifecycle state.
-
-### Phase 3: causal links and question handoff
-
-Add explicit event/attention IDs to routed messages, AgentDelivery, and agent
-result metadata. Provide causal timeline inspection. Reuse existing linked
-questions, never reintroduce broad “any message unblocks work” behavior.
-
-### Phase 4: approved local actions
-
-Implement ActionRequest, review UI, immutable approval, EffectRecord, and one
-low-risk executor such as running a named test command. Enforce recipient,
-message, run, and action budgets at public send/execution boundaries. Add
-uncertain-launch review and idempotency tests before any file-mutating action.
-
-### Phase 5: additional narrow adapters
-
-Only after the command-receipt path is reliable, add an interval source and one
-filesystem/git source. Each adapter must state its replay, gap, debounce,
-privacy, and test strategy. Do not add a generic plugin mechanism prematurely.
-
-## Required invariants and tests
-
-- Replaying a source version creates at most one WorkstationEvent.
-- A crash cannot persist a cursor advance without its accepted event and
-  attention projection, nor persist an event without the cursor decision.
-- Ten identical failed test receipts produce one open group with ten linked
-  events, subject to a bounded history policy.
-- A disabled/snoozed subscription never dispatches agent work; a snoozed item
-  may still accumulate events without waking the user.
-- Two workspaces or subscriptions never share a group merely because their
-  output fingerprint matches.
-- A stale role revision, wrong workspace, expired approval, or modified action
-  parameters rejects execution before the OS boundary.
-- A process crash after `started` produces `uncertain`, never automatic retry.
-- Focus, preview, and acknowledgement do not settle deliveries, answer
-  questions, resume paused sessions, or start a harness.
-- All UI actions work without Innards through structured fallback behavior.
-- Tests use fixture sources and shell executors. No test requires a paid model,
-  desktop notification daemon, or live filesystem watcher.
-
-## Measures of success
-
-A person can run a failing test, continue working, see one unobtrusive prompt
-indicator, inspect exactly what failed and which agent was asked, answer a
-question in the retained conversation, and approve a bounded next action. A
-worker restart or duplicate receipt does not create duplicate work. An ambiguous
-external action is visibly uncertain, not silently retried.
-
-The first release is successful when this journey is more reliable and less
-interrupting than manually pasting test output into a chat. It is not successful
-merely because it can observe many event sources.
-
-## Adversarial review hardening
-
-The following constraints were added after a repository-grounded adversarial
-review. They are release gates, not implementation suggestions.
-
-### Current security boundary
-
-Current Jcode, Maki, and Codex harnesses have ordinary user-level access and
-are **not** an isolation boundary. Current role checks and ActionRequest policy
-are cooperative controls that constrain public Trashtalk operations; a harness
-can otherwise edit its workspace or invoke local commands. Therefore Phase 4
-must not claim that approval prevents a hostile or compromised model from
-acting. Before an enforced-action product claim, introduce both an
-observation-only harness with no writable Store/policy access and a restricted
-executor channel that alone holds the OS capability. Treat all agent-visible
-output as untrusted evidence, never authorization.
-
-### Concrete receipt source contract
-
-The initial source is an append-only receipt log owned by Trashtalk, with a
-monotonic per-log sequence number and immutable epoch. Sequence, not a UUID or
-run ID, is the cursor position. A receipt is written after the wrapped command
-has a known exit status. An interrupted wrapper writes a terminal `interrupted`
-receipt when it can do so; absence is an explicitly detectable gap, not a
-silent success. Receipt records have a fixed, redacted, size-limited schema.
-
-A subscription stores its initial sequence policy (`from-now` by default), its
-last consumed `(epoch, sequence)`, and a durable pending-debounce record. The
-poller consumes filtered successes as well as matching failures. It never
-advances beyond an unpersisted debounce decision. Retention below the cursor or
-an epoch change creates a visible `source-gap` attention item and pauses normal
-dispatch pending explicit reconciliation.
-
-The wrapper preserves child exit status, signals, stdin/TTY behavior, and does
-not capture arbitrary unbounded output. It records argv only when policy
-allows, renders text defensively, and creates private bounded artifacts only
-after redaction. A failed receipt write is reported separately and never
-masquerades as the wrapped command's result.
-
-### Polling and transactional publication
-
-Source observation runs outside Store transactions and outside the worker lock.
-A new bounded **subscription stage** in `AgentWorker tick` reads candidates,
-then a short transaction validates and accepts each candidate. The stage has
-fair per-subscription batches, per-source error isolation, a public one-shot
-poll command, and persisted last-success/error/gap status. The same worker stage
-processes due snoozes.
-
-Acceptance uses a transaction-only publication selector. It creates or updates
-the event, cursor, attention item, final Message, and routing outbox row with
-Store primitives in one unit of work. It does not call ordinary `Inbox deliver:`
-or start a worker inside that transaction. Post-commit notification is only a
-wake hint. `AgentQueue publishManual:` is a structural precedent, but its
-manual-dispatch semantics are not reused.
-
-Routing must be explicit: resolve the target identity under its session-scope
-policy, canonical event workspace, current membership, and lifecycle state. No
-eligible session, multiple eligible workspace sessions, paused session, or role
-policy rejection leaves a visible pending attention item and does not create or
-resume a session. Each delivery persists its own causal event range and resolved
-session ID. An AttentionItem's session field is only a latest-view convenience,
-never the historical source of truth.
-
-### Attention state and dispatch rules
-
-`EventSubscription` has separate `enabled` and `dispatchState` fields.
-`AttentionItem` has this transition contract:
-
-| Current state | Same-key event | Different-key event |
-|---|---|---|
-| open | append and, if no eligible live delivery, issue one new delivery | separate group |
-| acknowledged | append without re-alerting; explicit reopen re-enables alerting | separate group |
-| snoozed | append, retain silence until due time, then alert once | separate group |
-| resolved | create a new group unless an explicit reopen window applies | separate group |
-| suppressed | record only, never dispatch until policy changes | separate group |
-
-Disable/suspend is checked again at delivery claim and run launch. It does not
-revoke a running harness. Disabling an already queued group marks its unclaimed
-outbox work ineligible; cancellation of active work remains an explicit existing
-session/run operation. Event accumulation, notification suppression, and agent
-dispatch are deliberately independent.
-
-### Causality, budgets, and recursion are Phase 1 prerequisites
-
-Phase 1 is attention-only until it persists causal IDs from event through
-message/outbox/delivery and atomically admits recipient, message, and run
-budgets before routing. Only then may its policy enable automatic agent routing.
-Executor-originated receipts carry origin effect/attempt IDs. Default policy
-forbids an event from automatically routing to an ancestor cause; lineage has a
-small configured depth limit. This prevents a failing agent-launched test from
-recursively waking the same agent.
-
-### Executable effect contract
-
-Separate four identities: immutable ActionRequest, immutable Approval, logical
-EffectRecord, and ExecutionAttempt. An approval binds the exact request revision,
-capability, canonical authorization workspace, actual cwd, normalized argv,
-environment allowlist, resource limits, and configuration/executable digests.
-Changing any execution-relevant input invalidates it. Authorization workspace is
-not silently substituted for cwd.
-
-The restricted executor atomically revalidates authority, expiry, cancellation,
-and budgets while claiming one attempt from `prepared` to `started`. It records
-process ownership before launch. A crash or lost receipt after launch becomes
-`uncertain`. Retrying requires a newly approved ExecutionAttempt linked to that
-uncertain predecessor, not reuse of the original approval. Cancellation before
-launch prevents claim; cancellation after launch follows verified process
-termination and remains uncertain until confirmation. Repository test commands
-are arbitrary code, not low-risk, unless a future sandbox establishes otherwise.
-
-### Additional acceptance tests
-
-In addition to the tests above, Phase 1 must prove out-of-order receipts,
-retention gaps, debounce crashes, duplicate/outbox conflict replay, ambiguous
-session routing, disable-between-publication-and-claim, source lineage loops,
-and no worker lock held during observation. Phase 4 must prove two concurrent
-executors cannot launch the same attempt, approvals expire on config/argv/cwd
-changes, and a detached surviving process is never mistaken for a completed
-effect.
-
-## CUE schema layer
-
-CUE should be the **declarative structural contract** for this feature, not a
-second persistence engine and not an authority mechanism. The existing
-`Tools::Cue` exact-argv adapter already provides `vet`, unification/defaulting,
-and versioned diagnostic envelopes. Use it to put event, attention, routing, and
-approved-action data shapes in one reviewable place instead of duplicating jq
-predicates across adapter, browser, worker, and tests.
-
-### Schema package and ownership
-
-Add a repository-owned package such as `schemas/workstation/v1/` with one
-closed root definition per persisted or wire record:
-
-```cue
-package workstation
-
-#ID: =~"^(subscription|event|attention|actionrequest|approval|effect|attempt)_[A-Za-z0-9-]+$"
-#ISOTime: string // RFC3339 is additionally checked at the Time boundary.
-
-#CommandReceiptSource: close({
-    commandKey: string & =~"^[A-Za-z0-9._/-]+$"
-})
-
-#Subscription: close({
-    schema_version: 1
-    id:             #ID
-    kind:           "command-receipt"
-    workspace:      string
-    enabled:        bool
-    dispatchState:  "enabled" | "suspended"
-    source:         #CommandReceiptSource
-    filter:         close({exitNot: int & >=0 & <=255})
-    debounceSeconds: int & >=0 & <=3600
-    cursor: close({epoch: string, sequence: int & >=0})
-    targetIdentity: string
-    revision:       int & >=1
-})
-
-#Event: close({
-    schema_version: 1
-    id:             #ID
-    subscription:   string
-    source:         close({epoch: string, sequence: int & >=0})
-    kind:           "command.failed"
-    workspace:      string
-    fingerprint:    string
-    occurredAt:     string
-    payload: close({commandKey: string, exitStatus: int & >=1 & <=255, summary: string})
-})
-```
-
-The checked-in schema source is trusted project code and is versioned with the
-migration that introduces it. Subscriptions and receipts are **data fed to**
-that package. Trashtalk never evaluates a CUE file supplied by an agent, a
-repository being observed, or an event payload. A project may later contribute
-a schema only through an explicit trusted-import workflow, outside automatic
-observation.
-
-The real definitions will use shared `#ID` variants rather than the abbreviated
-example above, close every security-sensitive object, discriminate each adapter
-by `kind`, bound strings/arrays/artifact references, and define public Innards
-projection/result envelopes as well. Closed records catch misspelled policy
-fields that a permissive JSON reader would silently ignore.
-
-### What CUE validates, and what it cannot
-
-CUE owns value shape: required fields, variants, numeric ranges, defaults used
-at creation, and compatibility between a record and its declared schema
-version. It also gives fixtures, tool adapters, browser projections, and
-external helpers a common contract.
-
-CUE does **not** establish identity ownership, canonical path equivalence,
-role authorization, budget admission, uniqueness, transaction isolation,
-transition legality, receipt ordering, process liveness, approval freshness, or
-external-effect safety. Those remain explicit Trashtalk checks using Store
-transactions, AgentAccess, `Require`, and the executor claim protocol. A CUE
-success must never be interpreted as permission to route or execute.
-
-### Validation placement
-
-1. **Authoring and CI:** `cue vet` runs over examples, fixture records, and the
-   generated schema manifest. This is required for schema changes and catches
-   contract drift before runtime.
-2. **Ingress:** subscription create/update, receipt parsing, tool/Innards
-   results, and ActionRequest/Approval proposals are vetted before their
-   transaction starts. Failure produces a bounded structured diagnostic and no
-   durable record or cursor movement.
-3. **Migration:** a migration reads the old version, explicitly transforms it,
-   vets it against the target definition, then writes the result with its new
-   `schema_version` and schema digest in one Store transaction. No read path
-   silently applies CUE defaults to old persisted state.
-4. **Egress:** browser and adapter result records are vetted in tests and at
-   development boundaries. Hot UI paths may trust data already accepted at
-   ingress, but must still use their normal defensive selection validation.
-
-Do not invoke the CUE CLI while holding the Store transaction or the worker
-lock. Source observation, CUE vetting, and diagnostic rendering occur before
-the short acceptance transaction. The transaction repeats lightweight native
-checks for data that may have changed. This avoids external process latency,
-nested transaction hazards, and a lock held across arbitrary parsing work.
-
-### Defaults and canonicalization
-
-CUE defaults are permitted only in explicit constructors and migrations:
-Trashtalk unifies a *partial, typed creation request* with a versioned root,
-exports canonical JSON, then validates it with existing semantic checks before
-saving. It never lets defaults alter a delivered event, approval, or effect
-attempt after it has been reviewed. Fields that participate in an approval or
-idempotency key are canonicalized before hashing and are stored in their full
-post-default form.
-
-Canonical workspace paths, timestamps, identity references, and source sequence
-ordering are deliberately resolved by Trashtalk first. CUE sees their normalized
-string/value representation. This prevents superficially equal but differently
-spelled data from producing different group keys or approval hashes.
-
-### Dependency and failure policy
-
-CUE is a development and controlled-ingress dependency, installed and reported
-by `@ Trash doctor` through the existing tool adapter. Before the feature is
-enabled, the worker stores the schema package digest and required CUE version in
-its policy revision. If the required tool or exact schema digest is unavailable,
-new subscription creation and routing are **fail closed** with a visible
-configuration attention item. Existing records remain inspectable, but the
-worker does not advance cursors or dispatch new agent work under an unknown
-contract.
-
-Validation diagnostics contain field paths and bounded messages only. They do
-not echo raw event payloads, command output, secrets, or full approval
-parameters to prompts, logs, or desktop notifications. The stored record and
-its access policy remain the source for authorized detailed inspection.
-
-### CUE-aware phased delivery
-
-- **Phase 0** gains the `schemas/workstation/v1` package, golden valid/invalid
-  JSON fixtures, schema digest tooling, and a `TestCase` helper around
-  `Tools::Cue vet`. It proves that CUE is optional for unrelated Trashtalk
-  classes and required for this enabled feature.
-- **Phase 1** creates subscriptions, receipts, events, attention items, and
-  routing envelopes only through their CUE-backed ingress constructors. Tests
-  vet both persisted canonical records and `inpick` display records.
-- **Phase 3** adds closed causal-link and question/result schemas, ensuring a
-  missing or forged cause cannot be mistaken for an ordinary agent message.
-- **Phase 4** adds separate closed request, approval, logical-effect, and
-  execution-attempt roots. The executor recomputes and vets its canonical input
-  before its atomic claim, but semantic authorization remains outside CUE.
-
-### Additional CUE acceptance criteria
-
-- Unknown security/policy fields, wrong adapter variants, noncanonical scalar
-  types, and unsupported schema versions fail before persistence.
-- A schema package digest mismatch, missing CUE binary, or invalid schema fails
-  closed for enabled subscriptions without corrupting existing attention state.
-- A migration either commits transformed data plus its target version/digest or
-  leaves both old data and cursor unchanged.
-- CUE defaults never change an already approved action or a persisted event
-  during read/projection.
-- The same valid fixture is accepted by Trashtalk's ingress, CUE directly, and
-  any Innards adapter sharing that public envelope.
-- Tests prove that CUE validation cannot replace authorization or uniqueness:
-  structurally valid but unauthorized, duplicate, stale, and illegal-transition
-  records are still rejected by the normal runtime boundary.
+### Phase 0: prove the thin model
+
+Add CUE schemas and fixtures, `EventSubscription`, `Attention`, Stream
+coordinate idempotency storage, display columns, and migration tests. Reuse
+Honker Stream consumer offsets. Add no watcher and no model dispatch.
+
+### Phase 1: command receipts and attention
+
+Implement the receipt producer, `CommandReceiptSourceAdapter`, worker stage,
+attention grouping, Inbox root message, Whisker count, inspect/focus/snooze
+views, and replay tests. Ship automatic agent routing disabled by default.
+
+### Phase 2: guarded routing
+
+Enable per-subscription routing only after causal metadata, session-scope
+resolution, recipient/message/run budget admission, duplicate suppression, and
+lineage limits are tested. A missing, ambiguous, paused, or unauthorized target
+must remain visible as Attention without creating work.
+
+### Phase 3: additional producers
+
+Add one interval or Git/filesystem producer at a time. Each publishes a versioned
+Honker Stream record and supplies explicit gap, debounce, privacy, and replay
+behavior. Do not create a generic plugin mechanism.
+
+### Phase 4: separately reviewed effect system
+
+Only after a real restricted executor exists, design immutable requested action,
+approval, logical effect, and attempt records. That work is intentionally out of
+scope here.
+
+## Acceptance criteria
+
+- A command receipt survives worker restart and is processed at least once from
+  the same named Honker consumer offset.
+- A crash before ack may replay, but creates no duplicate Message, outbox row,
+  Attention count, or agent delivery for the same stream coordinate.
+- No custom cursor/event table duplicates Honker Stream's message/offset model.
+- Repeated matching failures append to one Attention according to its state
+  transition table. Distinct subscriptions/projects never merge groups.
+- Disabled, snoozed, and routing-suspended states have distinct tested effects.
+- No subscription path holds the worker lock while reading Stream, invoking CUE,
+  or rendering diagnostics.
+- Unknown adapter kinds, invalid closed CUE variants, stream gaps, and schema
+  digest mismatch fail closed without losing inspectable evidence.
+- Focus/preview/acknowledge do not settle a delivery, answer a Question, or
+  change session/worker lifecycle.
+- An agent-generated receipt cannot recursively re-dispatch to its ancestor.
+- Tests use local Honker fixtures and shell commands only. They need no paid
+  model, desktop daemon, or live filesystem watcher.
+
+## Success measure
+
+A person runs a failing test, continues working, notices one compact prompt
+indicator, opens a grouped attention item, sees the exact durable receipt and
+causal session, and can delegate or answer without manually pasting output into
+a chat. Restarting the worker or replaying a stream offset does not create
+extra work. That useful, recoverable journey matters more than supporting many
+event sources.
