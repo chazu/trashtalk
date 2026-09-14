@@ -155,3 +155,36 @@ report an explicit skip if CUE is absent. Migration and missing-capability docto
 tests still run. Replay tests synchronize competing transactions before commit,
 check the database unique constraint, force rollback, and cover staged duplicates,
 adjacent/out-of-order offsets, and subscription/stream separation.
+
+## Phase 1 command producer
+
+```bash
+bin/trash-command --cwd "$PWD" --label 'unit tests' -- make test
+bin/trash-command --cwd "$PWD" --label 'local check' --capture -- ./check 'exact argument'
+bin/trash-receipt --publish "$receiptJson"  # fixture, no command execution
+```
+
+The wrapper never evaluates argv. Its narrow Perl/POSIX supervisor is necessary
+at the OS boundary to distinguish `exit(143)` from SIGTERM, which Bash `$?` alone
+cannot do. The child inherits stdin/stdout/stderr and the foreground terminal
+without a new session or process group. Catchable INT/TERM/HUP/QUIT addressed to
+the wrapper are forwarded to the child. After `waitpid`, the public DSL producer
+publishes once through Stream. The wrapper then returns the exact exit code or
+terminates with the child's signal. SIGKILL, machine loss, and publication failure
+cannot guarantee a receipt. A failed publication prints a separate diagnostic
+and never replaces the known child outcome. There is no hidden receipt spool.
+
+Use an intentionally safe label, never argv containing secrets. Receipt metadata
+contains a generated stable ID, canonical physical working directory (not Git
+root), label, status, start/end timestamps, and an exit-class fingerprint. No
+command arguments, environment, or raw output are persisted. Optional origin is
+closed presentation-only `{producer: "safe-label"}` metadata, never routing.
+
+`--capture` explicitly replaces stdout/stderr with pipes and tees bytes to their
+original destinations. Its conservative redaction policy discards **all output
+content** before publication and retains only a saturated `4096+` byte count in
+the safe summary. This protects arbitrary secrets, not just recognized token
+formats. No raw artifact is created. Default execution does not touch the child
+output descriptors. Capture does not wait for detached descendants holding a
+pipe open. Never use capture when the child requires a TTY. All persisted display
+text is bounded to 256 characters and excludes terminal control characters.

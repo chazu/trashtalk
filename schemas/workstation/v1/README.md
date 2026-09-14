@@ -14,7 +14,10 @@ Package digest, from the repository root:
 `@ WorkstationSchema digest` returns the same digest. It identifies the contract
 on a feature policy revision, not a global runtime switch. CUE enforces closed
 structure only. Store and native validators own identity, uniqueness and state.
-Command receipt and display roots are future contracts, not a producer.
+Command receipt and display roots back `CommandReceipt publish:`. Optional
+receiptId, commandLabel, startedAt, and closed origin metadata extend the Phase 0
+fixture contract without invalidating existing fixtures. Real command wrappers
+always supply a stable receipt ID, label and both timestamps.
 
 See [Phase 0 operations](../../../docs/workstation-operations.md) for installation,
 record APIs, lifecycle recovery, coordinate replay, and browser/doctor integration.

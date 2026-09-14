@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Local fixture producer and the command supervisor's publication boundary.
+set -uo pipefail
+export TRASHTALK_DIR="${TRASHTALK_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+unset TRASH_SESSION_ID
+source "$TRASHTALK_DIR/lib/trash.bash" || exit 1
+case "${1:-}" in
+ --publish) [[ $# == 2 ]] || exit 2; @ CommandReceipt publish: "$2" ;;
+ --outcome) [[ $# == 2 ]] || exit 2; @ CommandReceipt publishOutcome: "$2" ;;
+ *) echo 'Usage: trash-receipt --publish <closed-receipt-json>' >&2; exit 2 ;;
+esac

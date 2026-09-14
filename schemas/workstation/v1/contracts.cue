@@ -52,6 +52,10 @@ import "strings"
 #CommandReceipt: {
  schema_version: 1
  kind: "command-receipt.v1"
+ receiptId?: string & =~"^commandreceipt_[A-Za-z0-9-]{1,64}$"
+ commandLabel?: #Text
+ startedAt?: #Timestamp
+ origin?: {producer: #Text}
  workspace: #Text
  fingerprint: string & =~"^[a-f0-9]{64}$"
  exitCode: int & >=0 & <=255

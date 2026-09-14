@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Exact argv/TTY/signal OS boundary. No runtime is loaded before the child runs.
+set -uo pipefail
+root="${TRASHTALK_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+exec perl "$root/lib/workstation-command.pl" "$root" "$@"

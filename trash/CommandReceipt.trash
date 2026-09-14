@@ -1,0 +1,35 @@
+# Closed local producer. Never executes argv or retains raw output.
+CommandReceipt subclass: Object
+  classMethod: streamName [ ^ 'workstation.command-receipts.v1' ]
+  classMethod: validate: document [
+    (@ WorkstationSchema validate: document as: 'CommandReceipt') ifFailed: [:error | @ error signal].
+    (@ self validateWorkspace: (document jsonTextAt: 'workspace')) ifFailed: [:error | @ error signal].
+    (@ WorkstationSchema timestampEpoch: (document jsonTextAt: 'finishedAt')) ifFailed: [:error | @ error signal].
+    ^ document
+  ]
+  # Lexical canonical-path validation permits replay after a workspace disappears.
+  rawClassMethod: validateWorkspace: path [
+    local parent="/../" dot="/./" double="//"
+    [[ "$1" == /* && "$1" != *"$parent"* && "$1" != *"$dot"* && "$1" != *"$double"* && "$1" != */.. && "$1" != */. && ( "$1" == / || "$1" != */ ) ]] || { _throw EventSourceAdapterError 'Receipt workspace must be canonical absolute text'; return 1; }
+  ]
+  classMethod: publish: document [
+    | stream name |
+    (@ self validate: document) ifFailed: [:error | @ error signal].
+    name := @ self streamName.
+    stream := @ Stream named: name.
+    ^ @ stream publish: document
+  ]
+  classMethod: publishOutcome: outcome [
+    | id fingerprint label document code |
+    id := @ Runtime generateId: 'CommandReceipt'.
+    label := outcome jsonTextAt: 'commandLabel'.
+    code := outcome jsonAt: 'exitCode'.
+    # Raw output and ephemeral counters cannot perturb the failure fingerprint.
+    fingerprint := @ WorkstationSchema hash: (outcome jsonTextAt: 'exitCode').
+    document := #{schema_version: 1 kind: 'command-receipt.v1' receiptId: id
+      workspace: (outcome jsonTextAt: 'workspace') commandLabel: label
+      fingerprint: fingerprint exitCode: (code jsonValue)
+      startedAt: (outcome jsonTextAt: 'startedAt') finishedAt: (outcome jsonTextAt: 'finishedAt')
+      display: #{title: label summary: (outcome jsonTextAt: 'summary')}} asJson.
+    ^ @ self publish: document
+  ]
