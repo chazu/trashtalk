@@ -18,12 +18,13 @@ CommandReceiptSourceAdapter subclass: EventSourceAdapter
     (@ Require equal: (subscription jsonTextAt: 'enabled') to: 'true') ifFailed: [:error | @ error signal].
     ^ subscription
   ]
+  # One durable handle per subscription consumer; never one per tick.
   classMethod: consumerFor: subscription [
     | name consumer |
     (@ self validateSubscription: subscription) ifFailed: [:error | @ error signal].
     name := subscription jsonTextAt: 'streamName'.
     consumer := subscription jsonTextAt: 'consumerName'.
-    ^ @ Stream named: name consumer: consumer
+    ^ @ Stream consumerNamed: name consumer: consumer
   ]
   classMethod: read: consumer limit: limit [
     | records |

@@ -16,7 +16,7 @@ CommandReceipt subclass: Object
     | stream name |
     (@ self validate: document) ifFailed: [:error | @ error signal].
     name := @ self streamName.
-    stream := @ Stream named: name.
+    stream := @ Stream producerNamed: name.
     ^ @ stream publish: document
   ]
   classMethod: publishOutcome: outcome [

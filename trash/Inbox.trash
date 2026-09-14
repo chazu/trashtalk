@@ -486,8 +486,61 @@ Inbox subclass: Object
     echo "  @ \$inbox onMessage: \$handler"
     echo "  @ \$inbox stopListening"
     echo ""
+    echo "Workstation attention (local command receipts, no agent effects):"
+    echo "  @ \$inbox attentionCount     # open or due-snoozed attention for this user"
+    echo "  @ \$msgId inspectAttention | acknowledgeAttention | reopenAttention"
+    echo "  @ \$msgId snoozeAttentionUntil: '2099-01-01T00:00:00Z'"
+    echo "  @ \$msgId resolveAttentionWithNote: 'fixed' | suppressAttention: 'noise'"
+    echo ""
     echo "Other:"
     echo "  @ Inbox names"
     echo "  @ Inbox count               # number of stored Inbox instances"
     echo "  @ Message help"
+  ]
+
+  # A transaction-only human inbox boundary. Unlike deliver:, this cannot
+  # create an outbox row, AgentDelivery, session, or a foreground worker tick.
+  classMethod: localFor: owner [
+    | human inbox id |
+    @ Store requireTransaction.
+    human := @ AgentFocus human.
+    @ Require equal: owner to: human.
+    (owner startsWith: 'session:') ifTrue: [^ @ Require reject: 'Local attention cannot target a session inbox'].
+    (owner startsWith: 'agent:') ifTrue: [^ @ Require reject: 'Local attention cannot target an agent inbox'].
+    inbox := @ Store findByClass: 'Inbox' matching: (#{name: owner} asJson) orderBy: 'created_at ASC' limit: 1.
+    (inbox isEmpty) ifTrue: [
+      id := @ Runtime generateId: 'Inbox'.
+      inbox := @ Store create: 'Inbox' id: id.
+      @ Store patch: inbox with: (#{name: owner} asJson)
+    ].
+    ^ inbox
+  ]
+  method: attention: attention display: display debounce: seconds [
+    | message hint human |
+    @ Store requireTransaction.
+    human := @ AgentFocus human.
+    @ Require equal: name to: human.
+    message := @ Message forAttention: attention display: display to: name.
+    hint := @ message attentionHintDue: seconds.
+    (hint = 'true') ifTrue: [
+      @ message recordAttentionHint.
+      @ Store afterCommit: self sending: 'announceLocal:' with: message
+    ].
+    ^ message
+  ]
+  method: announceLocal: message [
+    | available payload |
+    available := @ Honker isAvailable.
+    (available = 'true') ifTrue: [
+      payload := @ message asJson.
+      @ self emit: 'message' payload: payload
+    ].
+    ^ message
+  ]
+
+  method: attentionCount [
+    | human |
+    human := @ AgentFocus human.
+    (@ Require equal: name to: human) ifFailed: [:error | @ error signal].
+    ^ @ Attention localOpenCount
   ]

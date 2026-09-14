@@ -24,14 +24,14 @@ Stream subclass: Object
   include: Debuggable
   instanceVars: streamName:'' consumerName:'' readerPid:''
 
-  # Create a stream (producer end — no consumer tracking)
+  # Create a stream (producer end — no consumer tracking). Names are stored
+  # through Store so another process can find and reuse the handle; plain
+  # setters would only cache them in this session.
   rawClassMethod: named: name [
     local id
     id=$(_generate_instance_id Stream)
-    _create_instance Stream "$id"
-    @ "$id" streamName: "$1"
-    @ "$id" consumerName: ""
-    @ "$id" readerPid: ""
+    _create_instance Stream "$id" || return 1
+    @ Store patch: "$id" with: "$(jq -cn --arg s "$1" '{streamName:$s,consumerName:"",readerPid:""}')" || return 1
     echo "$id"
   ]
 
@@ -39,11 +39,32 @@ Stream subclass: Object
   rawClassMethod: named: name consumer: consumer [
     local id
     id=$(_generate_instance_id Stream)
-    _create_instance Stream "$id"
-    @ "$id" streamName: "$1"
-    @ "$id" consumerName: "$2"
-    @ "$id" readerPid: ""
+    _create_instance Stream "$id" || return 1
+    @ Store patch: "$id" with: "$(jq -cn --arg s "$1" --arg c "$2" '{streamName:$s,consumerName:$c,readerPid:""}')" || return 1
     echo "$id"
+  ]
+
+  # Find or create the durable producer handle for a stream name, so repeated
+  # publishes from short-lived processes do not each store a new row.
+  rawClassMethod: producerNamed: name [
+    local existing filter
+    [[ -n "$1" ]] || { _throw StreamError 'Stream producerNamed: requires a stream name'; return 1; }
+    filter=$(jq -cn --arg s "$1" '{streamName:$s,consumerName:""}')
+    existing=$(@ Store findByClass: Stream matching: "$filter" orderBy: 'created_at ASC, id ASC' limit: 1) || return 1
+    if [[ -n "$existing" ]]; then echo "$existing"; return 0; fi
+    @ Stream named: "$1"
+  ]
+
+  # Find or create the durable consumer handle for one (stream, consumer)
+  # pair, as Inbox named: does. Honker owns the offset; the instance is only a
+  # reusable handle, so callers must not create and delete one per read.
+  rawClassMethod: consumerNamed: name consumer: consumer [
+    local existing filter
+    [[ -n "$1" && -n "$2" ]] || { _throw StreamError 'Stream consumerNamed:consumer: requires a stream and consumer name'; return 1; }
+    filter=$(jq -cn --arg s "$1" --arg c "$2" '{streamName:$s,consumerName:$c}')
+    existing=$(@ Store findByClass: Stream matching: "$filter" orderBy: 'created_at ASC, id ASC' limit: 1) || return 1
+    if [[ -n "$existing" ]]; then echo "$existing"; return 0; fi
+    @ Stream named: "$1" consumer: "$2"
   ]
 
   # Publish a message to the stream
@@ -221,9 +242,11 @@ Stream subclass: Object
     fi
   ]
 
-  method: destroy [
-    @ self stopConsuming.
-    @ self delete
+  # Remove the stored handle as well as this session's cached copy.
+  rawMethod: destroy [
+    @ "$_RECEIVER" stopConsuming
+    @ Store deleteInstance: "$_INSTANCE" || return 1
+    @ Runtime delete: "$_INSTANCE"
   ]
 
   rawClassMethod: help [

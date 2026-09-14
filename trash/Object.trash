@@ -49,11 +49,10 @@ Object subclass: nil
     _conforms_to "$class" "$1"
   ]
 
-  # Delete this object from memory
+  # Delete this object from memory. A nested class send has no instance, so
+  # read the raw instance context directly.
   rawMethod: delete [
-    local instance
-    instance=$(@ Runtime instance)
-    @ Runtime delete: "$instance"
+    @ Runtime delete: "$_INSTANCE"
   ]
 
   # Return a detailed inspection of this object

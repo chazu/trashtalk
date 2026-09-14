@@ -1,10 +1,14 @@
-# Workstation records: Phase 0 operations
+# Workstation records: operations
 
-Phase 0 is a thin durable model, not an event service. See the
+Phases 0 and 1 are a thin durable model plus one local event journey: a wrapped
+command publishes a receipt, the worker turns matching failures into grouped
+`Attention` and one owner-Inbox Message, and the owner inspects, acknowledges,
+snoozes, resolves, or suppresses it. See the
 [implementation plan](workstation-event-attention-implementation-plan.md) and
 [design](workstation-event-attention-delegation.md) for later phases.
 Only `EventSubscription` and `Attention` are new persisted domain classes.
-There is no producer, worker stage, Inbox publication, agent routing, or effect.
+There is no agent routing, executor, or automatic effect: Phase 1 never creates
+AgentDelivery, AgentRun, AgentSession, AgentIdentity, or outbox rows.
 
 ## Installation and capability checks
 
@@ -191,7 +195,11 @@ text is bounded to 256 characters and excludes terminal control characters.
 
 ## Production adapter and consumer registration
 
-Only `command-receipt` is production-allowlisted. It requires stream
+Only `command-receipt` is production-allowlisted. `consumerFor:` returns one
+durable `Stream consumerNamed:consumer:` handle per subscription (found or
+created by stream and consumer name), and `CommandReceipt publish:` reuses one
+`Stream producerNamed:` handle per stream. Honker owns offsets and records, so
+no handle is created and destroyed per publish or read. It requires stream
 `workstation.command-receipts.v1`, grouping `opaque`, empty `targetIdentity`, and
 closed filter `{exitNot: 0}` (an omitted `exitNot` also means zero). Disabled
 policies, arbitrary consumer names, malformed coordinates, and unknown schemas
@@ -213,3 +221,93 @@ cannot accidentally skip its first receipt. Repeated registration and changes
 to enablement never reset that position. `acknowledgeThrough:` advances it
 monotonically even with competing readers. These narrow Stream/Honker SQL
 boundaries use Honker's own tables, not another event log or cursor table.
+
+## Phase 1 worker stage and local attention
+
+Enable the journey by creating one `command-receipt` subscription for the
+current human owner. The digest, stream, consumer name, adapter, grouping, and
+filter are closed; `debounceSeconds` bounds wake hints, not consumption.
+
+```bash
+digest=$(@ WorkstationSchema digest)
+sub=$(jq -c --arg d "$digest" '.adapterKind="command-receipt"
+  | .streamName="workstation.command-receipts.v1" | .schemaDigest=$d
+  | .filter={exitNot:0} | .debounceSeconds=900 | .initialPosition="from-now"' \
+  schemas/workstation/v1/fixtures/EventSubscription.valid.json)
+@ EventSubscription createFrom: "$sub"
+bin/trash-command --cwd "$PWD" --label 'unit tests' -- make test
+bin/trash-worker --once          # or leave the supervised service running
+inbox=$(@ Trash userInbox)
+@ "$inbox" attentionCount        # compact count for status displays
+@ "$inbox" list                  # the root alert Message per failing group
+```
+
+`AgentWorker tick` runs `WorkstationWorker tick` after agent reconciliation and
+outside the agent OS lock. Each tick visits at most four enabled subscriptions
+in a wrapping keyset order, reads at most four records per subscription through
+its named Honker consumer, and processes each record in one short Store
+transaction: claim the coordinate, find or create the open/acknowledged/snoozed/
+suppressed Attention for the group, extend its count and range, then create or
+update the owner's root Message. Only after commit does the worker acknowledge
+the consumer offset. Replayed coordinates acknowledge without changing anything.
+
+Records that match the filter (an exit code equal to `exitNot`) are validated
+and acknowledged without any domain write. Grouping hashes the workspace, safe
+label, exit-class fingerprint, and stream partition, so the same failing command
+in two workspaces never shares an Attention.
+
+### The root Message
+
+The Message is an ordinary `alert` from `workstation` in the owner's Inbox with
+`dispatchMode: manual`. Its subject and body carry the safe display projection
+and the event count; `attention`, `attentionFirstCoordinate`,
+`attentionLastCoordinate`, and `attentionEventCount` are causal metadata. Later
+events in the same group update that one Message rather than sending another.
+Reading or archiving the Message never acknowledges or resolves the Attention.
+
+A Honker `message` wake hint is emitted at most once per subscription debounce
+window, only after commit, and only while the Attention is open (an expired
+snooze counts as open). Acknowledged and suppressed groups keep counting silently.
+
+Attention controls live on the Message and require the current human owner:
+
+```bash
+@ "$msg" inspectAttention
+@ "$msg" acknowledgeAttention
+@ "$msg" snoozeAttentionUntil: '2099-01-01T00:00:00Z'
+@ "$msg" resolveAttentionWithNote: 'fixed upstream'
+@ "$msg" suppressAttention: 'known noise'
+@ "$msg" reopenAttention
+```
+
+Resolving a group and receiving a later matching failure opens a new Attention
+and a new root Message. `Attention localOpen` and `localOpenCount` list open or
+due-snoozed Attention for the owner's subscriptions without mutating a snooze.
+
+### Recovery
+
+- **A subscription was not advanced past its failed record.** The worker
+  prints this with the subscription ID and leaves the consumer offset where it
+  was; later records for that subscription wait behind it. Inspect the record
+  with `@ "$consumer" read: 1` on `@ CommandReceiptSourceAdapter consumerFor:`,
+  fix the cause (missing CUE, schema digest drift, a rejected owner), and let
+  the next tick retry. To skip a poison record deliberately, acknowledge past it
+  with `@ "$consumer" ack: <offset>`; nothing skips automatically.
+- **Acknowledgement failed after commit.** The transaction is durable; the next
+  tick replays the coordinate, finds the existing claim, and acknowledges it.
+- **Disabled subscription.** Nothing is read or advanced. Re-enable with
+  `enable: reason`; consumption resumes from the stored Honker offset.
+- **Stale worker after a build.** A long-running `bin/trash-worker` loads
+  compiled classes lazily, so a rebuild can leave it calling helpers it never
+  sourced (`_store_matching_lines: command not found` in `run/worker/stderr.log`
+  is the symptom). Restart the service after `make`:
+  `bin/trash-worker-service stop && bin/trash-worker-service start`.
+
+### Cost per tick
+
+An idle tick with no enabled subscriptions is one Store query. With
+subscriptions, the schema is installed once per worker process, the consumer
+handle is reused, and CUE validation of identical bytes within one runtime is a
+process-local memo (keyed by schema digest, root, and document hash; failures
+are never memoized). A new failing record still runs CUE about three times, so
+budget roughly one second per accepted event on a laptop.

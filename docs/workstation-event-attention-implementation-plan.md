@@ -310,6 +310,62 @@ For each normalized matching record, a short Store transaction must:
 Only after commit does the worker acknowledge the named Honker consumer offset.
 Duplicate/replayed coordinates are acknowledged without changing attention,
 message, count, or state. A source error, CUE failure, or Store conflict leaves
+the consumer offset where it was: the record is retried on the next tick, the
+worker reports the subscription ID, and later records for that subscription
+wait behind it. Nothing skips a record automatically; an operator replays or
+acknowledges past a poison record explicitly after inspection.
+
+The stage runs outside the agent OS lock (source reads and CUE never hold it),
+reuses one durable `Stream` consumer handle per subscription, and installs the
+feature schema once per worker process. Repeated CUE validation of identical
+bytes within one runtime is a process-local memo keyed by schema digest, root,
+and document hash; failures are never memoized.
+
+**Tests:** the whole local journey through a supervised `AgentWorker tick`,
+replay after commit-before-ack, acknowledgement failure after commit, rollback
+of a failed projection, malformed records that block later records without
+echoing payload, disabled subscriptions, batch bounds, and the absence of any
+AgentDelivery, AgentRun, session, identity, or outbox side effect.
+
+### Task 1.4: local Inbox projection and attention controls
+
+The root Message is an ordinary `alert` in the owner's human Inbox with
+`dispatchMode: manual`, created through a transaction-only Inbox boundary that
+cannot reach the outbox, AgentQueue, or a foreground worker tick. Its subject
+and body are the safe display projection plus the event count; causal first/last
+stream coordinates and the count are Message metadata. Later events in the same
+group update that one Message instead of sending another. A Honker wake hint is
+emitted at most once per subscription debounce window, only after commit, and
+only while the Attention is open (an expired snooze counts as open); read and
+archive status on the Message never changes Attention state.
+
+The Message exposes `inspectAttention`, `acknowledgeAttention`,
+`snoozeAttentionUntil:`, `resolveAttentionWithNote:`, `suppressAttention:`, and
+`reopenAttention`, each scoped to the current human owner. `Inbox attentionCount`
+(and `Attention localOpenCount`) report open or due-snoozed Attention for the
+owner's subscriptions as the compact count for status displays. Resolving a
+group and receiving a later matching failure opens a new Attention and a new
+root Message; suppressed groups keep counting silently.
+
+**Tests:** count and message identity across acknowledge, snooze, expiry
+inspection, suppress, reopen, and resolve; hint debounce; owner scoping.
+
+### Phase 1 acceptance gate
+
+Phase 1 is complete only when:
+
+1. `bin/trash-command` publishes exact-argv receipts with preserved exit/signal
+   behavior and safe bounded output policy, and `bin/trash-receipt` exercises
+   the same payload path without executing anything.
+2. `CommandReceiptSourceAdapter` is the only production adapter and has no
+   Store, Inbox, offset, or AgentQueue side effects when called directly.
+3. A supervised `AgentWorker tick` turns a failing receipt into exactly one
+   Attention and one owner-Inbox Message, replays are idempotent, and every
+   failure path leaves the consumer offset unacknowledged.
+4. No Phase 1 code path creates AgentDelivery, AgentRun, AgentSession,
+   AgentIdentity, or outbox rows.
+5. Operations documentation covers subscription setup, the worker stage, the
+   Message controls, the count, stuck-record recovery, and worker restarts.
 
 ## Phase 2: guarded agent routing
 
@@ -330,6 +386,15 @@ generic plugin ABI.
 Do not reuse this plan to introduce mutation/approval. A future plan must first
 provide an observation-only harness and a restricted executor that owns the OS
 capability. Current harness role checks are cooperative controls, not a sandbox.
+
+## Task rundown for Phase 1
+
+| Task | Main result | Dependency |
+| --- | --- | --- |
+| 1.1 | `bin/trash-command`, `bin/trash-receipt`, `CommandReceipt` producer | Phase 0 |
+| 1.2 | `CommandReceiptSourceAdapter` and `Stream consumerNamed:consumer:` | 1.1 |
+| 1.3 | `WorkstationWorker tick` stage inside `AgentWorker tick` | 1.2 |
+| 1.4 | Inbox/Message projection, controls, and count | 1.3 |
 
 ## Task rundown for Phase 0
 

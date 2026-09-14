@@ -7,7 +7,12 @@ WorkstationSchema subclass: Object
   rawClassMethod: validate: json as: root [
     [[ -z ${_STORE_TX:-} && ${_STORE_SNAPSHOT_MODE:-0} == 0 ]] || { _throw TransactionError 'CUE validation must precede Store transactions'; return 1; }
     case "$2" in EventSubscription|Attention|Coordinate|CommandReceipt|SafeDisplay|Envelope) ;; *) _throw WorkstationSchemaError 'Unknown schema root'; return 1;; esac
-    local path="${TRASHTALK_DIR:-$HOME/.trashtalk}/schemas/workstation/v1" files result outcome diagnostics
+    local path="${TRASHTALK_DIR:-$HOME/.trashtalk}/schemas/workstation/v1" files result outcome diagnostics digest marker
+    # Process-local success memo: bytes this schema digest already vetted in
+    # this runtime are valid again. Only a hash is stored; failures never are.
+    digest=$(@ "$_RECEIVER" digest) || return
+    marker="${_ENV_DIR:-}/cue-vetted/$(printf '%s\n%s\n%s' "$digest" "$2" "$1" | shasum -a 256 | cut -d ' ' -f 1)"
+    if [[ -n ${_ENV_DIR:-} && -f "$marker" ]]; then printf '%s\n' "$1"; return 0; fi
     files=$(jq -cn --arg a "$path/contracts.cue" --arg b "$path/roots/$2.cue" '[$a,$b]') || return
     result=$(@ Tools::Cue vet: "$files" json: "$1") || return
     outcome=$(printf '%s' "$result" | jq -r .outcome)
@@ -19,6 +24,7 @@ WorkstationSchema subclass: Object
       printf 'Workstation schema rejected (%s): %s\n' "$2" "${diagnostics:-invalid document}" >&2
       return 1
     fi
+    [[ -z ${_ENV_DIR:-} ]] || { mkdir -p "$_ENV_DIR/cue-vetted" && : > "$marker"; } 2>/dev/null
     printf '%s\n' "$1"
   ]
 

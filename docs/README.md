@@ -16,7 +16,7 @@ implemented contracts from designs and historical evidence.
 | Persistent agent use, messages, stop, and recovery | [Agent operations](agent-operations.md) |
 | Attach, backlog, composer, and detach | [Live session view](agent-session-view.md) |
 | Harness contracts | [Jcode](jcode-session-driver.md), [Maki](maki-session-driver.md) |
-| Workstation subscriptions and attention (Phase 0 only) | [Workstation operations](workstation-operations.md) |
+| Workstation subscriptions, command receipts, and local attention (Phases 0 and 1) | [Workstation operations](workstation-operations.md) |
 | Manual durable work | [Assignments](assignments.md) |
 | Code and session search / CLI harness adapters | [Tool adapters](code-and-session-tools.md) |
 | Runtime/build behavior and dated measurements | [Performance](performance.md), [opt-in result passing](result-passing-design.md) |
@@ -25,7 +25,7 @@ implemented contracts from designs and historical evidence.
 
 ## Designs, research, and partial implementations
 
-- [Workstation event implementation plan](workstation-event-attention-implementation-plan.md): detailed phases and Phase 0 task/acceptance gates.
+- [Workstation event implementation plan](workstation-event-attention-implementation-plan.md): detailed phases and Phase 0/1 task and acceptance gates.
 - [Workstation event, attention, and delegated-action layer](workstation-event-attention-delegation.md): proposed durable local subscriptions, grouped attention, and safely bounded delegated effects.
 - [Delegation plan](agent-delegation-implementation.md): initial slices implemented;
   specialist dispatch, repository/local-copy/worktree objects, and shared memory remain work.

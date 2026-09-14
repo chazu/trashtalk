@@ -92,6 +92,10 @@ AgentWorker subclass: Object
     return "$rc"
   ]
 
+  rawClassMethod: tickableSessions [
+    @ Store findByClass: AgentSession where: "json_extract(data,'$.lifecycleState') IN ('open','paused') OR id IN (SELECT json_extract(data,'$.session') FROM instances WHERE class='AgentRun' AND json_extract(data,'$.state') IN ('starting','running','recovering'))" orderBy: 'created_at ASC' limit: 1000
+  ]
+
   # Same lock for manual ticks and supervised workers, scoped to this store.
   rawClassMethod: lockPath [
     local path
@@ -99,10 +103,15 @@ AgentWorker subclass: Object
     printf '%s.worker.lock\n' "$path"
   ]
 
-  classMethod: tick [
-    | path |
-    path := @ self lockPath.
-    ^ @ Process withLock: path receiver: self selector: 'work:' argument: ''
+  # Source reads/CUE must not run under the agent OS lock. The local stage
+  # never routes its Messages. Existing agent reconciliation remains unchanged.
+  rawClassMethod: tick [
+    pragma: direct
+    local path rc=0
+    path=$(@ AgentWorker lockPath) || return 1
+    @ Process withLock: "$path" receiver: AgentWorker selector: 'work:' argument: '' || rc=1
+    @ WorkstationWorker tick || rc=1
+    return "$rc"
   ]
 
   classMethod: tickSession: sessionId [
@@ -135,18 +144,22 @@ AgentWorker subclass: Object
     echo true
   ]
 
+  # Whole seconds a user control operation queues behind a running tick.
+  rawClassMethod: controlWait [
+    local wait="${TRASHTALK_CONTROL_WAIT:-30}"
+    [[ "$wait" =~ ^[0-9]+$ && ${#wait} -le 4 ]] || wait=30
+    printf '%s\n' "$wait"
+  ]
+
   rawClassMethod: stopRun: run [
-    local path result attempt
+    local path result
     path=$(@ AgentWorker lockPath) || return 1
-    for attempt in {1..50}; do
-      result=$(@ Process withLock: "$path" receiver: AgentWorker selector: 'stopOwnedRun:' argument: "$1") || return 1
-      if [[ -n "$result" ]]; then
-        [[ "$result" == interrupted || "$result" == 'already-stopped' ]] || { printf '%s\n' "$result" >&2; return 1; }
-        printf '%s\n' "$result"
-        return 0
-      fi
-      sleep 0.1
-    done
+    result=$(@ Process withLock: "$path" receiver: AgentWorker selector: 'stopOwnedRun:' argument: "$1" waiting: "$(@ AgentWorker controlWait)") || return 1
+    if [[ -n "$result" ]]; then
+      [[ "$result" == interrupted || "$result" == 'already-stopped' ]] || { printf '%s\n' "$result" >&2; return 1; }
+      printf '%s\n' "$result"
+      return 0
+    fi
     _throw 'WorkerError' 'Worker is busy; stop was not applied. Try again.'
     return 1
   ]
@@ -201,20 +214,17 @@ AgentWorker subclass: Object
     ]
   ]
 
-  # Process-lock boundary: wait briefly for an in-progress tick rather than
-  # silently dropping a user control operation when the nonblocking lock is busy.
+  # Process-lock boundary: queue behind an in-progress tick rather than
+  # silently dropping a user control operation when the lock is busy.
   rawClassMethod: terminateSession: sessionId [
-    local path result attempt
+    local path result
     path=$(@ AgentWorker lockPath) || return 1
-    for attempt in {1..50}; do
-      result=$(@ Process withLock: "$path" receiver: AgentWorker selector: 'terminateOwnedSession:' argument: "$1") || return 1
-      if [[ -n "$result" ]]; then
-        [[ "$result" == terminated ]] || { printf '%s\n' "$result" >&2; return 1; }
-        printf '%s\n' "$result"
-        return 0
-      fi
-      sleep 0.1
-    done
+    result=$(@ Process withLock: "$path" receiver: AgentWorker selector: 'terminateOwnedSession:' argument: "$1" waiting: "$(@ AgentWorker controlWait)") || return 1
+    if [[ -n "$result" ]]; then
+      [[ "$result" == terminated ]] || { printf '%s\n' "$result" >&2; return 1; }
+      printf '%s\n' "$result"
+      return 0
+    fi
     _throw 'WorkerError' 'Worker is busy; session termination was not applied. Try again.'
     return 1
   ]
@@ -248,11 +258,13 @@ AgentWorker subclass: Object
   ]
 
   # Work runs only while holding the OS lock; every tick repairs outbox routing.
+  # A full tick visits live sessions plus any session still owning an active
+  # run; terminated sessions with settled runs cost nothing under the lock.
   rawClassMethod: work: sessionId [
     local ids session state run rc=0
     @ AgentQueue refresh || return 1
     @ AgentWorker routePending || rc=1
-    if [[ -n "$1" ]]; then ids="$1"; else ids=$(@ AgentSession findAll); fi
+    if [[ -n "$1" ]]; then ids="$1"; else ids=$(@ AgentWorker tickableSessions); fi
     for session in $ids; do
       @ AgentWorker tickOwnedSession: "$session" || rc=1
     done

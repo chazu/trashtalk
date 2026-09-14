@@ -237,7 +237,15 @@ bin/trash-worker-service status
 bin/trash-worker-service stop
 ```
 
-The default polling interval is one second after each completed tick. macOS
+The default polling interval is one second after each completed tick.
+A tick holds the store lock for its whole duration. Conversation input, stop,
+and terminate queue behind a running tick for up to `TRASHTALK_CONTROL_WAIT`
+whole seconds (default 30) before reporting that session control is busy; a
+full tick over many sessions can take longer than the old polling window.
+The worker only visits open or paused sessions and sessions still owning an
+active run. After `make`, restart a running service so it loads the rebuilt
+classes and helpers (see the stale-worker note in
+[workstation operations](workstation-operations.md#recovery)). macOS
 uses `~/Library/LaunchAgents/org.trashtalk.agent-worker.plist`; Linux uses
 `$XDG_CONFIG_HOME/systemd/user/org.trashtalk.agent-worker.service` (default
 `~/.config/systemd/user`). Installation captures the current executable path,

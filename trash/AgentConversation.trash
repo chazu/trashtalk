@@ -1,21 +1,20 @@
 # Human input goes to the session driver. Runs retain authority and lifecycle;
 # conversation input never creates a Message or an AgentDelivery.
 AgentConversation subclass: Object
-  # Lock acquisition and failure propagation are process boundaries.
+  # Lock acquisition and failure propagation are process boundaries. Queue
+  # behind a running worker tick instead of polling: a tick over many sessions
+  # can hold the store lock longer than any polite retry window.
   rawClassMethod: send: text to: session [
-    local path args result attempt
+    local path args result
     @ AgentFocus human >/dev/null || return 1
     @ Require text: "$1" || return 1
     path=$(@ AgentWorker lockPath) || return 1
     args=$(jq -cn --arg session "$2" --arg text "$1" '{session:$session,text:$text}') || return 1
-    for attempt in {1..50}; do
-      if ! result=$(@ Process withLock: "$path" receiver: AgentConversation selector: 'sendOwned:' argument: "$args"); then
-        [[ -z "$result" ]] || printf '%s\n' "$result" >&2
-        return 1
-      fi
-      if [[ -n "$result" ]]; then printf '%s\n' "$result"; return 0; fi
-      sleep .1
-    done
+    if ! result=$(@ Process withLock: "$path" receiver: AgentConversation selector: 'sendOwned:' argument: "$args" waiting: "$(@ AgentWorker controlWait)"); then
+      [[ -z "$result" ]] || printf '%s\n' "$result" >&2
+      return 1
+    fi
+    if [[ -n "$result" ]]; then printf '%s\n' "$result"; return 0; fi
     echo 'Session control is busy; input was not sent. Try again' >&2
     return 1
   ]

@@ -1,4 +1,4 @@
-# User attention lifecycle only. No Message publication or agent/session effects.
+# Local attention lifecycle and atomic user-Inbox projection. No agent effects.
 Attention subclass: Object
   include: Persistable
   instanceVars: id:'' subscription:'' groupKey:'' state:'open' message:'' firstCoordinate:'null'
@@ -87,4 +87,89 @@ Attention subclass: Object
   method: summary [ ^ @ self display ]
   method: display [
     ^ #{id: self subscription: subscription groupKey: groupKey state: state eventCount: (eventCount jsonValue) updatedAt: updatedAt} asJson
+  ]
+
+  # Preparation and CUE execute outside both Store and the worker OS lock.
+  classMethod: accept: event for: subscription [
+    | candidate now actor id group partition parts digest bundle |
+    (@ WorkstationSchema validate: event as: 'Envelope') ifFailed: [:error | @ error signal].
+    (@ CommandReceiptSourceAdapter validateSubscription: subscription) ifFailed: [:error | @ error signal].
+    id := @ Runtime generateId: 'Attention'.
+    actor := @ AgentFocus human.
+    now := @ Time nowISO.
+    group := event jsonTextAt: 'groupKey'.
+    partition := event jsonTextAt: 'coordinate.partition'.
+    parts := #(group partition) asJson.
+    group := @ WorkstationSchema hash: parts.
+    digest := @ WorkstationSchema digest.
+    candidate := #{schema_version: 1 id: id subscription: (subscription jsonTextAt: 'id')
+      groupKey: group state: 'open' message: '' firstCoordinate: null lastCoordinate: null
+      eventCount: 0 snoozeUntil: '' note: '' actor: actor createdAt: now updatedAt: now
+      schemaDigest: digest lastResolvedSession: ''} asJson.
+    (@ WorkstationSchema validate: candidate as: 'Attention') ifFailed: [:error | @ error signal].
+    bundle := #{event: (event jsonValue) subscription: (subscription jsonValue) candidate: (candidate jsonValue)} asJson.
+    ^ @ self acceptPrepared: bundle
+  ]
+  # Dynamic exact-document capability, following WorkstationSchema.transact:.
+  # Revalidate at this public entry so direct callers cannot forge preparation.
+  rawClassMethod: acceptPrepared: bundle [
+    local event subscription candidate group digest
+    event=$(printf '%s' "$1" | jq -ce .event) || return 1
+    subscription=$(printf '%s' "$1" | jq -ce .subscription) || return 1
+    candidate=$(printf '%s' "$1" | jq -ce .candidate) || return 1
+    @ WorkstationSchema validate: "$event" as: Envelope >/dev/null || return 1
+    @ CommandReceiptSourceAdapter validateSubscription: "$subscription" >/dev/null || return 1
+    @ WorkstationSchema validate: "$candidate" as: Attention >/dev/null || return 1
+    group=$(@ WorkstationSchema hash: "$(printf '%s' "$event" | jq -c '[.groupKey,.coordinate.partition]')") || return 1
+    digest=$(@ WorkstationSchema digest) || return 1
+    printf '%s' "$candidate" | jq -e --arg g "$group" --arg d "$digest" --argjson s "$subscription" '
+      .groupKey==$g and .subscription==$s.id and .schemaDigest==$d and
+      .message=="" and .lastResolvedSession==""' >/dev/null || return 1
+    @ WorkstationSchema ensureSchema || return 1
+    _WORKSTATION_VALIDATED_JSON="$candidate" _WORKSTATION_ACCEPTANCE="$1" @ Store transaction: Attention sending: 'acceptWithin:' with: "$1" replaying: true
+  ]
+  rawClassMethod: requireAcceptance: bundle [
+    @ Store requireTransaction || return 1
+    [[ -n ${_WORKSTATION_ACCEPTANCE:-} && "$1" == "$_WORKSTATION_ACCEPTANCE" ]] || { _throw WorkstationSchemaError 'Attention acceptance requires exact prevalidation'; return 1; }
+  ]
+  classMethod: acceptWithin: bundle [
+    | event subscription candidate coordinate existing id group matches attention message display inbox |
+    @ self requireAcceptance: bundle.
+    event := bundle jsonAt: 'event'.
+    subscription := bundle jsonAt: 'subscription'.
+    candidate := bundle jsonAt: 'candidate'.
+    @ WorkstationWorker filterWithin: subscription.
+    coordinate := event jsonAt: 'coordinate'.
+    id := subscription jsonTextAt: 'id'.
+    @ Require equal: (coordinate jsonTextAt: 'subscription') to: id.
+    @ Require equal: (coordinate jsonTextAt: 'streamName') to: (subscription jsonTextAt: 'streamName').
+    existing := @ Store claimedCoordinate: coordinate.
+    (existing notEmpty) ifTrue: [^ existing].
+    @ WorkstationSchema requireValidated: candidate.
+    @ Require equal: (candidate jsonTextAt: 'subscription') to: id.
+    group := candidate jsonTextAt: 'groupKey'.
+    matches := @ Store findByClass: 'Attention' matching: (#{subscription: id groupKey: group state: #('open' 'acknowledged' 'snoozed' 'suppressed')} asJson) orderBy: 'created_at DESC' limit: 1.
+    attention := matches firstLine.
+    (attention isEmpty) ifTrue: [attention := @ self createWithin: candidate].
+    @ Store recordCoordinate: coordinate forAttention: attention.
+    display := event jsonAt: 'display'.
+    inbox := @ Inbox localFor: (subscription jsonTextAt: 'owner').
+    message := @ inbox attention: attention display: display debounce: (subscription jsonTextAt: 'debounceSeconds').
+    @ Store patch: attention with: (#{message: message} asJson).
+    ^ attention
+  ]
+
+  # UI projection only. An expired snooze is visible without mutating lifecycle
+  # state or manufacturing a new event. SQL joins scope by subscription owner.
+  rawClassMethod: localOpen [
+    local owner
+    owner=$(_db_escape "$(@ AgentFocus human)")
+    @ Store findByClass: Attention where: "json_extract(data,'$.subscription') IN (SELECT id FROM instances WHERE class='EventSubscription' AND json_extract(data,'$.owner')='$owner') AND (json_extract(data,'$.state')='open' OR (json_extract(data,'$.state')='snoozed' AND json_extract(data,'$.snoozeUntil')<=strftime('%Y-%m-%dT%H:%M:%SZ','now')))" orderBy: 'created_at DESC' limit: 1000
+  ]
+  classMethod: localOpenCount [
+    | ids count |
+    ids := @ self localOpen.
+    count := 0.
+    ids linesDo: [:id | count := count + 1].
+    ^ count
   ]

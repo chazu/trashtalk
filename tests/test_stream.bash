@@ -60,6 +60,13 @@ producer=$(@ Stream named: 'metrics')
 consumer=$(@ Stream named: 'metrics' consumer: 'dashboard')
 [[ -n "$consumer" ]] && pass "consumer created" || fail "consumer created" "non-empty" ""
 
+assert_eq "producerNamed: reuses the durable producer handle" "$producer" "$(@ Stream producerNamed: 'metrics')"
+reused=$(@ Stream consumerNamed: 'metrics' consumer: 'dashboard')
+assert_eq "consumerNamed:consumer: reuses the durable handle" "$consumer" "$reused"
+fresh=$(@ Stream consumerNamed: 'metrics' consumer: 'reports')
+[[ -n "$fresh" && "$fresh" != "$consumer" ]] && pass "consumerNamed:consumer: creates a missing handle" || fail "consumerNamed:consumer: creates a missing handle" "new id" "$fresh"
+@ "$fresh" destroy
+
 # ==========================================
 echo ""
 echo "2. Publish and Read"
@@ -133,7 +140,7 @@ echo "7. Destroy Stream"
 @ "$producer" destroy
 @ "$consumer" destroy
 @ "$consumer2" destroy
-pass "streams destroyed"
+assert_eq "destroy removes the stored handle" "0" "$(@ Store countByClass: Stream)"
 
 # ==========================================
 echo ""

@@ -28,6 +28,8 @@ Message subclass: Object
   instanceVars: to:'' from:'' subject:'' body:'' kind:'note' status:'unread'
                 assignment:'' generation:0 dispatchMode:'automatic' executionWorkspace:''
                 thread:'' replyTo:'' created:'' sentAt:0 readAt:''
+                attention:'' attentionFirstCoordinate:'null' attentionLastCoordinate:'null'
+                attentionEventCount:0 attentionHintAt:0
 
   # Build an undelivered message. Inbox deliver: stamps to/created/sentAt/thread.
   classMethod: to: recipient from: sender subject: subj body: text kind: aKind [
@@ -261,4 +263,105 @@ Message subclass: Object
     kind := 'result'.
     (cancelled = 'true') ifTrue: [title := 'Assignment cancelled: ' , objective. kind := 'note'].
     ^ @ self forAssignment: assignment id: id to: recipient sender: sender subject: title body: body kind: kind
+  ]
+
+  # Safe local projection factory. All Message and Attention changes commit
+  # together through the public Inbox attention: boundary, without AgentQueue.
+  classMethod: forAttention: attention display: display to: owner [
+    | data message id title summary count first last body now millis patch human recipient linked |
+    @ Store requireTransaction.
+    human := @ AgentFocus human.
+    @ Require equal: owner to: human.
+    @ Store read: attention class: 'Attention'.
+    data := @ Store getInstance: attention.
+    message := data jsonTextAt: 'message'.
+    title := display jsonTextAt: 'title'.
+    summary := display jsonTextAt: 'summary'.
+    count := data jsonTextAt: 'eventCount'.
+    first := data jsonAt: 'firstCoordinate'.
+    last := data jsonAt: 'lastCoordinate'.
+    body := 'Attention ' , attention , ': ' , count , ' matching events. ' , summary.
+    (message isEmpty) ifTrue: [
+      id := @ Runtime generateId: 'Message'.
+      message := @ Store create: 'Message' id: id.
+      now := @ Time nowISO.
+      millis := @ Time nowMillis.
+      @ Store patch: message with: (#{to: owner from: 'workstation' kind: 'alert' dispatchMode: 'manual'
+        thread: message created: now sentAt: millis attention: attention} asJson)
+    ] ifFalse: [
+      @ Store read: message class: 'Message'.
+      recipient := @ message to.
+      linked := @ message attention.
+      @ Require equal: recipient to: owner.
+      @ Require equal: linked to: attention
+    ].
+    patch := #{subject: title body: body attentionFirstCoordinate: (first jsonValue)
+      attentionLastCoordinate: (last jsonValue) attentionEventCount: (count jsonValue)} asJson.
+    @ Store patch: message with: patch.
+    ^ message
+  ]
+  method: attentionHintDue: seconds [
+    | data state until now last elapsed |
+    @ Store requireTransaction.
+    data := @ Store getInstance: attention.
+    state := data jsonTextAt: 'state'.
+    (state = 'snoozed') ifTrue: [
+      until := @ WorkstationSchema timestampEpoch: (data jsonTextAt: 'snoozeUntil').
+      now := @ Time now.
+      (until > now) ifTrue: [^ 'false'].
+      state := 'open'
+    ].
+    (state ~= 'open') ifTrue: [^ 'false'].
+    now := @ Time now.
+    last := attentionHintAt.
+    elapsed := now - last.
+    (elapsed < seconds) ifTrue: [^ 'false'].
+    ^ 'true'
+  ]
+  method: recordAttentionHint [
+    | now |
+    @ Store requireTransaction.
+    now := @ Time now.
+    @ Store patch: self with: (#{attentionHintAt: (now jsonValue)} asJson)
+  ]
+
+  # These controls deliberately do not reuse reply/archive/session actions.
+  method: localAttention [
+    | human recipient linked |
+    human := @ AgentFocus human.
+    recipient := to.
+    (@ Require equal: recipient to: human) ifFailed: [:error | @ error signal].
+    linked := attention.
+    (@ Require text: linked) ifFailed: [:error | @ error signal].
+    ^ @ Attention read: linked
+  ]
+  method: inspectAttention [
+    | linked |
+    linked := @ self localAttention.
+    ^ @ linked asJson
+  ]
+  method: acknowledgeAttention [
+    | linked |
+    linked := @ self localAttention.
+    ^ @ linked acknowledge
+  ]
+  method: snoozeAttentionUntil: timestamp [
+    | linked |
+    linked := @ self localAttention.
+    ^ @ linked snoozeUntil: timestamp
+  ]
+  method: resolveAttentionWithNote: reason [
+    | linked |
+    linked := @ self localAttention.
+    ^ @ linked resolveWithNote: reason
+  ]
+  method: suppressAttention: reason [
+    | linked |
+    linked := @ self localAttention.
+    ^ @ linked suppress: reason
+  ]
+  method: reopenAttention [
+    | linked |
+    linked := @ self localAttention.
+    ^ @ linked reopen
   ]
