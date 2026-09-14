@@ -33,8 +33,9 @@ declare -A replies=()
 write_frame "$snapshot" || { printf '%s\n' dismissed; exit 0; }
 previous=$snapshot
 partial=''
+previous_token=''
 while kill -0 "$surface_pid" 2>/dev/null; do
-    fragment=''
+    fragment='' token=''
     if IFS= read -r -t 1 fragment <&"$output"; then
         frame="$partial$fragment"
         partial=''
@@ -57,8 +58,13 @@ while kill -0 "$surface_pid" 2>/dev/null; do
         rc=$?
         (( rc > 128 )) || break
         partial+="$fragment"
+        # Idle poll: skip authorization and projection while nothing they read
+        # has changed. A handler without a probe refreshes every second as before.
+        token=$(@ "$handler" changeTokenFor: "$context" 2>/dev/null) || token=''
+        if [[ -n "$token" && "$token" == "$previous_token" ]]; then continue; fi
     fi
     snapshot=$(@ "$handler" frameFor: "$context") || break
+    previous_token=$token
     if [[ "$snapshot" != "$previous" ]]; then
         write_frame "$snapshot" || break
         previous=$snapshot

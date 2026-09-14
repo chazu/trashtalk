@@ -280,6 +280,11 @@ Attention controls live on the Message and require the current human owner:
 @ "$msg" reopenAttention
 ```
 
+The Inbox browser (`@ "$inbox" browse`) shows the same controls on a
+workstation alert instead of Reply: acknowledge, snooze for a day, resolve and
+suppress (each asks for a note on a terminal), and reopen. Replying to the
+`workstation` sender is deliberately not offered; nothing reads that inbox.
+
 Resolving a group and receiving a later matching failure opens a new Attention
 and a new root Message. `Attention localOpen` and `localOpenCount` list open or
 due-snoozed Attention for the owner's subscriptions without mutating a snooze.
@@ -298,9 +303,12 @@ due-snoozed Attention for the owner's subscriptions without mutating a snooze.
 - **Disabled subscription.** Nothing is read or advanced. Re-enable with
   `enable: reason`; consumption resumes from the stored Honker offset.
 - **Stale worker after a build.** A long-running `bin/trash-worker` loads
-  compiled classes lazily, so a rebuild can leave it calling helpers it never
+  compiled classes lazily, so a rebuild could leave it calling helpers it never
   sourced (`_store_matching_lines: command not found` in `run/worker/stderr.log`
-  is the symptom). Restart the service after `make`:
+  was the symptom). The worker now notices files newer than its start under
+  `trash/.compiled` or `lib` on its next idle beat, logs
+  `Trashtalk runtime rebuilt`, and re-executes itself with the same pid. If a
+  worker predates this behavior, restart it once:
   `bin/trash-worker-service stop && bin/trash-worker-service start`.
 
 ### Cost per tick

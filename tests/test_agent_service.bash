@@ -31,4 +31,17 @@ rg -q '^Restart=always$' "$unit"
 rg -q '^--user daemon-reload$' "$SERVICE_CALLS"
 HOME="$tmp/home" XDG_CONFIG_HOME="$tmp/config" "$root/bin/trash-worker-service" start
 rg -q '^--user enable --now org.trashtalk.agent-worker.service$' "$SERVICE_CALLS"
-echo 'PASS: launchd and systemd installation contracts (no host service activated)'
+# A running worker re-executes itself once the runtime is rebuilt, keeping its
+# pid (so a supervisor sees no restart) and loading the new compiled classes.
+PATH=${PATH#$tmp/bin:} TRASHTALK_WORKER_INTERVAL=1 "$root/bin/trash-worker" 2>"$tmp/worker.err" &
+worker=$!
+sleep 2
+touch "$root/trash/.compiled/Counter"
+for _ in $(seq 1 40); do grep -q 'runtime rebuilt' "$tmp/worker.err" && break; sleep 0.5; done
+grep -q 'runtime rebuilt' "$tmp/worker.err"
+kill -0 "$worker"
+sleep 2
+[[ $(grep -c 'runtime rebuilt' "$tmp/worker.err") == 1 ]]
+kill -TERM "$worker"; wait "$worker" || true
+! grep -q 'tick failed' "$tmp/worker.err"
+echo 'PASS: launchd and systemd installation contracts (no host service activated) and rebuild re-exec'

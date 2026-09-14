@@ -109,6 +109,9 @@ AgentWorker subclass: Object
     pragma: direct
     local path rc=0
     path=$(@ AgentWorker lockPath) || return 1
+    # Warm the per-process schema memo here, outside the lock: work: runs in a
+    # lock subshell, so a memo set there would otherwise rerun the DDL every tick.
+    @ AgentSession ensureSchema || return 1
     @ Process withLock: "$path" receiver: AgentWorker selector: 'work:' argument: '' || rc=1
     @ WorkstationWorker tick || rc=1
     return "$rc"

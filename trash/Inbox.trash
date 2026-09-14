@@ -282,6 +282,7 @@ Inbox subclass: Object
           view) @ "$_RECEIVER" readThreadOf: "$msg" ;;
           details) @ "$_RECEIVER" readDetailsOf: "$msg" ;;
           session) @ AgentBrowser focusSenderOf: "$msg" in: "$preview_dir" >/dev/null ;;
+          acknowledge|snooze|resolve|suppress|reopen) @ "$_RECEIVER" attentionAction: "$action" on: "$msg" ;;
           archive) @ "$msg" archive >/dev/null; break ;;
           *) break ;;
         esac
@@ -352,18 +353,54 @@ Inbox subclass: Object
     fi
   ]
 
+  # Attention controls from the browser. Notes are asked for on a terminal;
+  # otherwise a plain default note records that the action came from the inbox.
+  # Failures (an illegal transition, another owner) are shown, never hidden.
+  rawMethod: attentionAction: action on: messageId [
+    local note='' until
+    case "$1" in
+      acknowledge) @ "$2" acknowledgeAttention >/dev/null ;;
+      reopen) @ "$2" reopenAttention >/dev/null ;;
+      snooze)
+        until=$(perl -MPOSIX -e 'print strftime("%Y-%m-%dT%H:%M:%SZ", gmtime(time + 86400))') || return 1
+        @ "$2" snoozeAttentionUntil: "$until" >/dev/null ;;
+      resolve|suppress)
+        if [[ -t 0 && -t 1 ]]; then read -r -p "Note for $1: " note; fi
+        [[ -n "$note" ]] || note="${1}d from the inbox"
+        if [[ "$1" == resolve ]]; then @ "$2" resolveAttentionWithNote: "$note" >/dev/null; else @ "$2" suppressAttention: "$note" >/dev/null; fi ;;
+      *) return 1 ;;
+    esac
+  ]
+
   # Second picker: what to do with the selected message. Every record points
   # at the message's preview file so inpick keeps showing it. Prints reply,
   # view, details, session, archive, or back.
   rawMethod: pickActionFor: messageId in: previewDir [
-    local msg="$1" dir="$2" records result outcome title from sessions selected
+    local msg="$1" dir="$2" records result outcome title from sessions selected attention state count
     from=$(@ MessagePresentation participant: "$(@ "$msg" from)")
+    attention=$(@ "$msg" attention)
+    if [[ -n "$attention" ]]; then
+      # Workstation alerts: attention controls replace reply, which would only
+      # mail a producer inbox nobody reads.
+      state=$(@ "$msg" inspectAttention 2>/dev/null | jq -r '"\(.state), \(.eventCount) events"' 2>/dev/null) || state=''
+      records=$(jq -cn --arg path "$msg.txt" --arg state "${state:-attention unavailable}" '
+        {schema_version:1,id:"acknowledge",path:$path,line:1,column:1,label:"Acknowledge attention",kind:"action",detail:("seen, keeps counting (" + $state + ")")},
+        {schema_version:1,id:"snooze",path:$path,line:1,column:1,label:"Snooze attention for a day",kind:"action",detail:"reappears in the count after 24 hours or on new events"},
+        {schema_version:1,id:"resolve",path:$path,line:1,column:1,label:"Resolve attention",kind:"action",detail:"asks for a note; a later failure opens a new alert"},
+        {schema_version:1,id:"suppress",path:$path,line:1,column:1,label:"Suppress attention",kind:"action",detail:"asks for a note; keeps counting silently"},
+        {schema_version:1,id:"reopen",path:$path,line:1,column:1,label:"Reopen attention",kind:"action",detail:"after resolve or suppress"},
+        {schema_version:1,id:"view",path:$path,line:1,column:1,label:"View the whole thread",kind:"action",detail:"inpage; leave with Ctrl-X Ctrl-C"},
+        {schema_version:1,id:"details",path:$path,line:1,column:1,label:"Message details",kind:"action",detail:"Full addresses, timestamps, and IDs"},
+        {schema_version:1,id:"archive",path:$path,line:1,column:1,label:"Archive",kind:"action",detail:"hide it from the inbox; the attention stays open"},
+        {schema_version:1,id:"back",path:$path,line:1,column:1,label:"Back to inbox",kind:"action",detail:""} | . + {display:{prefix:"",preview_title:"Attention"}}')
+    else
     records=$(jq -cn --arg path "$msg.txt" '
       {schema_version:1,id:"reply",path:$path,line:1,column:1,label:"Reply in this thread",kind:"action",detail:"compose in inmacs; Ctrl-X Ctrl-S saves and sends"},
       {schema_version:1,id:"view",path:$path,line:1,column:1,label:"View the whole thread",kind:"action",detail:"inpage; leave with Ctrl-X Ctrl-C"},
       {schema_version:1,id:"details",path:$path,line:1,column:1,label:"Message details",kind:"action",detail:"Full addresses, timestamps, and IDs"},
       {schema_version:1,id:"archive",path:$path,line:1,column:1,label:"Archive",kind:"action",detail:"hide it from the inbox"},
       {schema_version:1,id:"back",path:$path,line:1,column:1,label:"Back to inbox",kind:"action",detail:""} | . + {display:{prefix:"",preview_title:"Message"}}')
+    fi
     sessions=$(@ "$msg" senderSessions)
     if [[ -n "$sessions" ]]; then
       records=$(printf '%s\n' "$records"; jq -cn --arg path "$msg.txt" '{schema_version:1,id:"session",path:$path,line:1,column:1,label:"Attach to sender session",kind:"action",detail:"Current conversation, or originating history if none is current",display:{prefix:"",preview_title:"Message"}}')

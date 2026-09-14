@@ -246,6 +246,22 @@ hook_status=$?
 assert_eq "foreign preview rejected" "true" "$([[ "$hook_status" != 0 ]] && echo true || echo false)"
 assert_eq "foreign message remains unread" "unread" "$(@ $foreign status)"
 
+# ==========================================
+echo ""
+echo "4. workstation attention alerts get attention actions instead of reply"
+# ==========================================
+: > "$CAPTURE_RECORDS"; : > "$CAPTURE_PICKER_ARGV"
+alert=$(@ Inbox alert: 'Attention attention_missing: 2 matching events.' to: tester from: workstation)
+@ Store patch: "$alert" with: '{"attention":"attention_missing","dispatchMode":"manual"}' >/dev/null
+printf '%s\n' "$alert" "acknowledge" "back" > "$PICK_QUEUE"
+outcome=$(@ $inbox browse 2>/dev/null)
+assert_eq "attention loop ends cleanly when the queue runs out" "cancelled" "$outcome"
+assert_contains "attention picker offers acknowledge" '"id":"acknowledge"' "$(cat "$CAPTURE_RECORDS")"
+assert_contains "attention picker offers snooze" '"id":"snooze"' "$(cat "$CAPTURE_RECORDS")"
+assert_contains "attention picker offers resolve" '"id":"resolve"' "$(cat "$CAPTURE_RECORDS")"
+assert_eq "attention picker offers no reply into the producer inbox" "false" "$(grep -c '"id":"reply"' "$CAPTURE_RECORDS" | sed 's/^0$/false/')"
+assert_eq "missing attention leaves the message untouched" "read" "$(@ $alert status)"
+
 echo ""
 echo "=== Results: $PASSED passed, $FAILED failed ==="
 [[ $FAILED -eq 0 ]]

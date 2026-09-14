@@ -243,9 +243,17 @@ and terminate queue behind a running tick for up to `TRASHTALK_CONTROL_WAIT`
 whole seconds (default 30) before reporting that session control is busy; a
 full tick over many sessions can take longer than the old polling window.
 The worker only visits open or paused sessions and sessions still owning an
-active run. After `make`, restart a running service so it loads the rebuilt
-classes and helpers (see the stale-worker note in
-[workstation operations](workstation-operations.md#recovery)). macOS
+active run. After `make`, a running worker re-executes itself on its next
+idle beat so it loads the rebuilt classes and helpers (see the stale-worker
+note in [workstation operations](workstation-operations.md#recovery)).
+
+The attached conversation view polls once per second. Each poll first asks
+`AgentFocus changeTokenFor:` for a digest of everything the frame authorizes or
+projects (identity, session, memberships, runs, deliveries, session mail, run
+log sizes and mtimes, and the view context). The guarded authorization snapshot
+and transcript projection run only when that digest changes or after a user
+action, so an idle view costs one read-only probe per second instead of a
+write-locked snapshot plus a projection. macOS
 uses `~/Library/LaunchAgents/org.trashtalk.agent-worker.plist`; Linux uses
 `$XDG_CONFIG_HOME/systemd/user/org.trashtalk.agent-worker.service` (default
 `~/.config/systemd/user`). Installation captures the current executable path,

@@ -15,7 +15,7 @@ AgentConversation subclass: Object
       return 1
     fi
     if [[ -n "$result" ]]; then printf '%s\n' "$result"; return 0; fi
-    echo 'Session control is busy; input was not sent. Try again' >&2
+    printf 'Session control stayed busy for %ss; input was not sent. Check the worker (bin/trash-worker-service status) and try again\n' "$(@ AgentWorker controlWait)" >&2
     return 1
   ]
 

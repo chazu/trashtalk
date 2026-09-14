@@ -122,6 +122,22 @@ check 'unrelated message stays unread' unread "$(@ "$foreign" status)"
 frame='{"schema_version":1,"request_id":3,"intent":"load_older"}'
 result=$(@ AgentFocus handleFrame: "$frame" context: "$context")
 check 'explicit earlier-history intent expands bounded window' 800 "$(field "$result" .context.window)"
+# The idle poll probe: identical state yields the same token, and anything the
+# frame authorizes or projects changes it, so a skipped refresh is never stale.
+token=$(@ AgentFocus changeTokenFor: "$context")
+check 'change token is a digest' 64 "${#token}"
+check 'change token is stable while nothing changed' "$token" "$(@ AgentFocus changeTokenFor: "$context")"
+check 'change token follows the view context' true "$([[ $(@ AgentFocus changeTokenFor: "$(field "$result" .context)") != "$token" ]] && echo true)"
+printf 'later native output\n' >> "$directory/stdout.log"
+after_log=$(@ AgentFocus changeTokenFor: "$context")
+check 'change token follows run log growth' true "$([[ $after_log != "$token" ]] && echo true)"
+later=$(@ Inbox send: 'later note' to: focus-owner from: "session:$session")
+after_mail=$(@ AgentFocus changeTokenFor: "$context")
+check 'change token follows session mail' true "$([[ $after_mail != "$after_log" ]] && echo true)"
+@ "$later" markViewed >/dev/null
+check 'change token follows message status' true "$([[ $(@ AgentFocus changeTokenFor: "$context") != "$after_mail" ]] && echo true)"
+if @ AgentFocus changeTokenFor: '{"window":400}' >/dev/null 2>&1; then echo 'FAIL: token without a session'; exit 1; fi
+passed=$((passed+1))
 if @ AgentFocus handleFrame: '{"schema_version":1,"request_id":4,"intent":"eval","body":"bad"}' context: "$context" >/dev/null 2>&1; then echo 'FAIL: arbitrary intent accepted'; exit 1; fi
 passed=$((passed+1))
 check 'message resolves its originating current session' "$session" "$(@ "$reply" senderSessions)"
