@@ -509,6 +509,14 @@ selection, progress, inbox questions, and atomic completion. Its first slice is
 manual: published work is held from harness dispatch. Follow the
 [Assignment walkthrough](docs/assignments.md) to try it from Bash.
 
+## Tracking failing commands and delegating them
+
+Wrap a command with `bin/trash-command --cwd "$PWD" --label 'unit tests' -- make test`
+and the worker turns repeated failures into one durable alert in your inbox,
+with a count for your prompt, acknowledge/snooze/resolve/suppress controls, and
+optional delegation to Gusgus or another agent you already run. See the
+[workstation guide](docs/workstation-guide.md).
+
 ## One-shot agent questions
 
 `@ Agent ask:workingDirectory:status:lastResult:` sends one explicit, read-only request through the selected

@@ -1,5 +1,8 @@
 # Workstation records: operations
 
+New here? Start with the [workstation guide](workstation-guide.md). This page is
+the operator and implementation reference behind it.
+
 Phases 0 and 1 are a thin durable model plus one local event journey: a wrapped
 command publishes a receipt, the worker turns matching failures into grouped
 `Attention` and one owner-Inbox Message, and the owner inspects, acknowledges,
