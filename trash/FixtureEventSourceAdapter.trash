@@ -1,0 +1,52 @@
+# Test-only stateless adapter. read: takes supplied JSON, never a Stream handle.
+FixtureEventSourceAdapter subclass: EventSourceAdapter
+  classMethod: kind [ ^ 'fixture' ]
+  classMethod: validateSubscription: subscription [
+    (@ EventSourceAdapter forKind: 'fixture') ifFailed: [:error | @ error signal].
+    (@ WorkstationSchema validate: subscription as: 'EventSubscription') ifFailed: [:error | @ error signal].
+    (@ Require equal: (subscription jsonTextAt: 'adapterKind') to: 'fixture') ifFailed: [:error | @ error signal].
+    (@ Require equal: (subscription jsonTextAt: 'enabled') to: 'true') ifFailed: [:error | @ error signal].
+    ^ subscription
+  ]
+  classMethod: consumerFor: subscription [
+    (@ self validateSubscription: subscription) ifFailed: [:error | @ error signal].
+    ^ subscription jsonTextAt: 'consumerName'
+  ]
+  classMethod: normalize: record for: subscription [
+    (@ self validateSubscription: subscription) ifFailed: [:error | @ error signal].
+    (@ WorkstationSchema validate: record as: 'Envelope') ifFailed: [:error | @ error signal].
+    (@ Require equal: (record jsonTextAt: 'coordinate.subscription') to: (subscription jsonTextAt: 'id')) ifFailed: [:error | @ error signal].
+    (@ Require equal: (record jsonTextAt: 'coordinate.streamName') to: (subscription jsonTextAt: 'streamName')) ifFailed: [:error | @ error signal].
+    ^ record
+  ]
+  classMethod: groupKeyFor: event [
+    (@ EventSourceAdapter forKind: 'fixture') ifFailed: [:error | @ error signal].
+    (@ WorkstationSchema validate: event as: 'Envelope') ifFailed: [:error | @ error signal].
+    ^ event jsonTextAt: 'groupKey'
+  ]
+  classMethod: displayFor: event [
+    (@ EventSourceAdapter forKind: 'fixture') ifFailed: [:error | @ error signal].
+    (@ WorkstationSchema validate: event as: 'Envelope') ifFailed: [:error | @ error signal].
+    ^ event jsonAt: 'display'
+  ]
+  classMethod: read: supplied limit: limit [
+    | subscription records result |
+    subscription := supplied jsonAt: 'subscription'.
+    (@ self validateSubscription: subscription) ifFailed: [:error | @ error signal].
+    (@ self boundedRecords: supplied limit: limit) ifFailed: [:error | @ error signal].
+    records := @ self boundedRecords: supplied limit: limit.
+    records arrayEach: [:record |
+      (@ self checkRecord: record for: subscription) ifFailed: [:error | @ error signal]
+    ].
+    ^ records
+  ]
+  classMethod: checkRecord: record for: subscription [
+    (@ self normalize: record for: subscription) ifFailed: [:error | @ error signal].
+    ^ ''
+  ]
+  # Bounded JSON array slicing is a serializer boundary, with no OS source read.
+  rawClassMethod: boundedRecords: supplied limit: limit [
+    [[ "$2" =~ ^[1-9][0-9]*$ && ${#2} -le 4 ]] && (( $2 <= 1000 )) || { _throw EventSourceAdapterError 'Fixture limit must be 1..1000'; return 1; }
+    [[ ${#1} -le 1048576 ]] || { _throw EventSourceAdapterError 'Fixture input exceeds 1 MiB'; return 1; }
+    printf '%s' "$1" | jq -ce --argjson n "$2" 'select(keys==["records","subscription"]) | .records | select(type=="array" and length<=1000) | .[:$n]'
+  ]
