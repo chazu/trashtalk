@@ -1,0 +1,103 @@
+# Thin durable policy. All feature writes use CUE before a guarded Store transaction.
+EventSubscription subclass: Object
+  include: Persistable
+  instanceVars: id:'' owner:'' enabled:'false' dispatchState:'paused' streamName:'' consumerName:''
+    adapterKind:'' filter:'{}' debounceSeconds:0 targetIdentity:'' grouping:'' revision:0
+    schema_version:1 schemaDigest:'' createdAt:'' updatedAt:'' initialPosition:'' auditNote:''
+
+  classMethod: new [ @ Require reject: 'Use EventSubscription createFrom: with a closed document' ]
+  method: save [ @ Require reject: 'Use EventSubscription updateFrom: with a revision and audit note' ]
+  classMethod: createFrom: document [
+    ^ @ WorkstationSchema transact: document as: 'EventSubscription' sending: 'createWithin:'
+  ]
+  classMethod: updateFrom: document [
+    ^ @ WorkstationSchema transact: document as: 'EventSubscription' sending: 'updateWithin:'
+  ]
+  classMethod: read: id [ ^ @ Store read: id class: 'EventSubscription' ]
+  classMethod: listByOwner: owner [
+    ^ @ Store idsOf: 'EventSubscription' matching: (#{owner: owner} asJson)
+  ]
+  classMethod: validateWithin: document [
+    | human expected adapter target |
+    @ WorkstationSchema requireValidated: document.
+    human := @ AgentFocus human.
+    @ Require equal: (document jsonTextAt: 'owner') to: human.
+    expected := 'workstation/' , (document jsonTextAt: 'id').
+    @ Require equal: (document jsonTextAt: 'consumerName') to: expected.
+    adapter := @ EventSourceAdapter forKind: (document jsonTextAt: 'adapterKind').
+    @ Require member: (document jsonTextAt: 'grouping') of: '["opaque"]'.
+    target := document jsonTextAt: 'targetIdentity'.
+    (target notEmpty) ifTrue: [@ AgentAccess validateIdentity: target].
+    @ Require text: (document jsonTextAt: 'auditNote').
+    ^ adapter
+  ]
+  classMethod: createWithin: document [
+    | id matches |
+    @ self validateWithin: document.
+    @ Require equal: (document jsonTextAt: 'revision') to: '1'.
+    @ Require equal: (document jsonTextAt: 'createdAt') to: (document jsonTextAt: 'updatedAt').
+    matches := @ Store idsOf: 'EventSubscription' matching: (#{consumerName: (document jsonTextAt: 'consumerName')} asJson).
+    @ Require equal: (matches arrayLength) to: '0'.
+    id := document jsonTextAt: 'id'.
+    @ Store create: 'EventSubscription' id: id.
+    @ Store patch: id with: document.
+    ^ id
+  ]
+  classMethod: updateWithin: document [
+    | id old prior next |
+    @ self validateWithin: document.
+    id := document jsonTextAt: 'id'.
+    @ Store read: id class: 'EventSubscription'.
+    old := @ Store getInstance: id.
+    # Source/filter edits require a future explicit consumer migration, never an offset reset.
+    '["id","owner","consumerName","streamName","adapterKind","filter","createdAt","initialPosition","schema_version","schemaDigest"]' arrayEach: [:field |
+      @ Require equal: (document jsonAt: field) to: (old jsonAt: field)
+    ].
+    prior := old jsonTextAt: 'revision'.
+    next := prior + 1.
+    @ Require equal: (document jsonTextAt: 'revision') to: next.
+    @ Store patch: id with: document.
+    ^ id
+  ]
+  method: changeDispatchTo: state reason: reason [
+    | data patch revision now |
+    data := @ Store getInstance: self.
+    data := @ WorkstationSchema document: data.
+    revision := data jsonTextAt: 'revision'.
+    revision := revision + 1.
+    now := @ Time nowISO.
+    @ Require member: state of: '["enabled","paused"]'.
+    ((data jsonTextAt: 'dispatchState') = state) ifTrue: [^ @ Require reject: 'Dispatch already has that state'].
+    patch := #{dispatchState: state revision: (revision jsonValue) updatedAt: now auditNote: reason} asJson.
+    data := @ WorkstationSchema merge: data with: patch.
+    ^ @ EventSubscription updateFrom: data
+  ]
+  method: pauseDispatch: reason [ ^ @ self changeDispatchTo: 'paused' reason: reason ]
+  method: resumeDispatch: reason [ ^ @ self changeDispatchTo: 'enabled' reason: reason ]
+  method: setEnabled: flag reason: reason [
+    | data revision patch now current |
+    @ Require member: flag of: '["true","false"]'.
+    data := @ Store getInstance: self.
+    data := @ WorkstationSchema document: data.
+    current := data jsonTextAt: 'enabled'.
+    (current = flag) ifTrue: [^ @ Require reject: 'Subscription already has that enabled state'].
+    revision := data jsonTextAt: 'revision'.
+    revision := revision + 1.
+    now := @ Time nowISO.
+    patch := #{enabled: (flag jsonValue) revision: (revision jsonValue) updatedAt: now auditNote: reason} asJson.
+    data := @ WorkstationSchema merge: data with: patch.
+    ^ @ EventSubscription updateFrom: data
+  ]
+  method: disable: reason [ ^ @ self setEnabled: 'false' reason: reason ]
+  method: enable: reason [ ^ @ self setEnabled: 'true' reason: reason ]
+  method: enabled [
+    | data |
+    data := @ self asJson.
+    ^ data jsonTextAt: 'enabled'
+  ]
+  method: summary [ ^ @ self display ]
+  method: display [
+    | flag |
+    flag := @ self enabled.
+    ^ #{id: self owner: owner enabled: (flag jsonValue) dispatchState: dispatchState streamName: streamName revision: revision} asJson
+  ]

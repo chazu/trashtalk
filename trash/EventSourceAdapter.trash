@@ -1,0 +1,18 @@
+# Stateless closed registry. No production adapter exists in Phase 0.
+EventSourceAdapter subclass: Object
+  classMethod: forKind: kind [
+    | isolated enabled |
+    (kind = 'fixture') ifTrue: [
+      isolated := @ Env get: 'TRASHTALK_TEST_ISOLATED'.
+      enabled := @ Env get: 'TRASHTALK_WORKSTATION_FIXTURES'.
+      ((isolated = '1') and: [enabled = '1']) ifTrue: [^ 'FixtureEventSourceAdapter']
+    ].
+    @ EventSourceAdapterError signal: 'Unknown or disabled event adapter kind'
+  ]
+  classMethod: kind [ @ EventSourceAdapterError signal: 'Abstract event adapter selector' ]
+  classMethod: validateSubscription: subscription [ @ EventSourceAdapterError signal: 'Abstract event adapter selector' ]
+  classMethod: consumerFor: subscription [ @ EventSourceAdapterError signal: 'Abstract event adapter selector' ]
+  classMethod: read: consumer limit: limit [ @ EventSourceAdapterError signal: 'Abstract event adapter selector' ]
+  classMethod: normalize: record for: subscription [ @ EventSourceAdapterError signal: 'Abstract event adapter selector' ]
+  classMethod: groupKeyFor: event [ @ EventSourceAdapterError signal: 'Abstract event adapter selector' ]
+  classMethod: displayFor: event [ @ EventSourceAdapterError signal: 'Abstract event adapter selector' ]

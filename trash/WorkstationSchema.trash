@@ -21,3 +21,34 @@ WorkstationSchema subclass: Object
     fi
     printf '%s\n' "$1"
   ]
+
+  # Dynamic scope carries the exact vetted document into a short transaction.
+  # This is an internal precondition, not a sandbox against arbitrary Bash.
+  rawClassMethod: transact: json as: root sending: selector [
+    case "$2:$3" in 'EventSubscription:createWithin:'|'EventSubscription:updateWithin:'|'Attention:createWithin:'|'Attention:transitionWithin:') ;; *) _throw WorkstationSchemaError 'Unknown workstation mutation'; return 1;; esac
+    local checked digest
+    checked=$(@ "$_RECEIVER" validate: "$1" as: "$2") || return
+    digest=$(@ "$_RECEIVER" digest) || return
+    [[ $(printf '%s' "$checked" | jq -r .schemaDigest) == "$digest" ]] || { _throw WorkstationSchemaError 'Workstation schema digest mismatch'; return 1; }
+    @ WorkstationSchema ensureSchema || return
+    _WORKSTATION_VALIDATED_JSON="$checked" @ Store transaction: "$2" sending: "$3" with: "$checked"
+  ]
+
+  rawClassMethod: requireValidated: json [
+    @ Store requireTransaction || return
+    [[ -n ${_WORKSTATION_VALIDATED_JSON:-} && "$1" == "$_WORKSTATION_VALIDATED_JSON" ]] || { _throw WorkstationSchemaError 'Mutation requires the exact prevalidated document'; return 1; }
+  ]
+
+  # Same idempotent DDL installation boundary as AgentSession.ensureSchema.
+  rawClassMethod: ensureSchema [
+    [[ -z ${_STORE_TX:-} ]] || { _throw TransactionError 'Install workstation schema before transactions'; return 1; }
+    _db_sql -bail < "${TRASHTALK_DIR:-$HOME/.trashtalk}/lib/workstation-schema.sql"
+  ]
+
+  # JSON projection/merge are a reusable serializer boundary, not domain logic.
+  rawClassMethod: document: data [
+    printf '%s' "$1" | jq -ce 'del(.class,._vars,.created_at)'
+  ]
+  rawClassMethod: merge: data with: patch [
+    printf '%s' "$1" | jq -ce --argjson patch "$2" '. + $patch'
+  ]
