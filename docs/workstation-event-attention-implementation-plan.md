@@ -239,11 +239,77 @@ Phase 0 is complete only when:
 
 ## Phase 1: command receipts and local attention
 
-Implement the command receipt producer, `CommandReceiptSourceAdapter`, fair
-bounded Stream reads, post-commit offset acknowledgement, grouping, and atomic
-Attention plus root Message publication. Add Inbox/AgentBrowser/Whisker
-inspection, acknowledge/snooze/resolve actions, and replay/gap/debounce tests.
-Automatic agent routing remains disabled.
+### Purpose and boundary
+
+Make one real, local event journey work without starting an agent: a wrapped
+command publishes a bounded receipt to a durable Honker Stream; the worker
+consumes it at least once; matching failures become one grouped Attention and
+one ordinary user-Inbox Message; the user can inspect, acknowledge, snooze,
+resolve, or suppress it. **No Phase 1 code may create AgentDelivery, route to
+an identity/session, start a harness, or resume paused work.**
+
+### Task 1.1: command receipt producer
+
+Add a public exact-argv command wrapper, not an `eval` helper. It executes the
+requested argv in a specified canonical working directory, preserves child exit
+status/signal/stdin/TTY behavior, and publishes one closed
+`command-receipt.v1` record through `@ Stream named: ... publish:` after the
+child has a known outcome.
+
+- Stream name is `workstation.command-receipts.v1`; the payload carries a
+  schema version, stable receipt ID, canonical workspace, safe command label,
+  exit status, timestamps, bounded/redacted summary, and optional origin
+  metadata.
+- Output capture is opt-in, bounded, redacted before persistence, and rendered
+  as plain safe text. The default carries no raw stdout/stderr artifact.
+- Publication failure is reported separately but never changes the child exit
+  status into a false success/failure.
+- A local fixture producer exercises the same public payload path without
+  executing a command.
+
+**Tests:** exact argv preservation, exit/signal preservation, success/failure
+payloads, redaction/size limits, invalid payload rejection, publication failure,
+and no shell interpretation of user-provided argv.
+
+### Task 1.2: production `CommandReceiptSourceAdapter`
+
+Promote only `command-receipt` into `EventSourceAdapter forKind:`. Implement
+its class-side contract using a named `Stream` consumer:
+
+- validate the subscription's closed typed filter and stream name;
+- read a fair bounded batch of Honker records outside the Store lock;
+- reject malformed/unknown-schema payloads with bounded diagnostics;
+- normalize receipt records, apply `exitNot` filtering, create the canonical
+  group key (`workspace + command label + normalized failure fingerprint`), and
+  provide a safe display projection;
+- return stream name, partition, and offset unchanged for idempotency.
+
+It does not write Store records, publish Messages, acknowledge offsets, or
+invoke AgentQueue. Fixture adapter availability remains test-only.
+
+**Tests:** valid/filtering/invalid records, offset/partition preservation,
+bounded batches, stable group keys, cross-workspace non-grouping, and no Store
+or Inbox side effects from direct adapter calls.
+
+### Task 1.3: worker subscription stage and replay-safe acceptance
+
+Add a bounded, fair subscription stage to `AgentWorker tick`, after existing
+recovery work and before any optional agent routing. It lists only enabled
+`command-receipt` subscriptions, reads each named consumer outside the worker
+lock, and processes a capped number of records per tick.
+
+For each normalized matching record, a short Store transaction must:
+
+1. claim its `(subscription, stream, partition, offset)` coordinate;
+2. find/create the applicable Attention and update its count/range according to
+   its state-transition policy;
+3. create the root user-Inbox Message only when the group first requires one,
+   or update its safe summary through a public Message/Inbox boundary;
+4. persist causal stream coordinates on the Attention and Message metadata.
+
+Only after commit does the worker acknowledge the named Honker consumer offset.
+Duplicate/replayed coordinates are acknowledged without changing attention,
+message, count, or state. A source error, CUE failure, or Store conflict leaves
 
 ## Phase 2: guarded agent routing
 
