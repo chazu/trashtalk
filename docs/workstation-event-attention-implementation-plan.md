@@ -369,10 +369,80 @@ Phase 1 is complete only when:
 
 ## Phase 2: guarded agent routing
 
-Add opt-in routing from an accepted Attention to the existing outbox. Enforce
-identity session scope, workspace policy, recipient/message/run budgets,
-causal metadata, no-recursive-lineage policy, and no-session/ambiguous/paused
-outcomes. Test all paths before enabling it by default.
+### Decision and boundary
+
+Phase 2 adds delegation to the local Attention journey in small releases. It
+does **not** add repository-scoped subscriptions. A subscription continues to
+consume the local command-receipt stream. Each receipt's canonical `--cwd` is
+the message/run context and is checked against the eventual role workspace
+policy. This keeps the subscription model simple while still running delegated
+work in the directory that actually produced the receipt.
+
+The user must opt in. Existing subscriptions remain local-only unless they name
+a target identity and enable delegation. Phase 2 sends existing durable work to
+an existing eligible session. It never creates/resumes a session, broadens a
+role, executes an unapproved OS effect, or treats a model harness as a sandbox.
+
+### Phase 2A: target configuration and dry-run admission
+
+**Deliverable:** an `EventSubscription` may name one target `AgentIdentity`,
+but nothing is delivered yet. Add a public factory/configuration message and a
+`routingStatusFor:` projection for an Attention.
+
+The dry run resolves, without mutation: subscription delegation state, target
+identity/session scope, receipt canonical `cwd`, role workspace authorization,
+required receive capability, recipient/message/run budget admission, and an
+eligible current session. Gusgus resolves its identity-scoped current session;
+a specialist follows its own scope policy. Missing, ambiguous, paused, closed,
+unauthorized, or budget-exhausted candidates return a structured reason and
+leave Attention unchanged.
+
+**Acceptance:** identity- and workspace-scoped fixture targets, canonical cwd
+authorization, every ineligible reason, and a valid dry-run result create no
+Message, outbox, AgentDelivery, AgentRun, or lifecycle change.
+
+### Phase 2B: explicit one-attention delegation
+
+**Deliverable:** the user selects one Attention and chooses **Delegate to
+configured agent**. It creates one causal agent-facing Message and outbox row
+through the existing transactional Inbox/AgentQueue publication boundary.
+
+The transaction records Attention ID, exact Honker coordinates, receipt cwd,
+target identity, resolved session, and lineage root/depth. Its uniqueness key
+is `(attention, target identity, delegation revision)`. Duplicate clicks,
+worker replay, and crash retry return the existing durable publication rather
+than creating another delivery. Revalidate dry-run admission in this
+transaction.
+
+**Acceptance:** manual delegation reaches one eligible existing session with
+its receipt cwd, survives worker restart replay, and proves repeated clicks
+create no second outbox/delivery. Changed admission causes no publication.
+
+### Phase 2C: opt-in automatic routing and loop controls
+
+**Deliverable:** an explicitly confirmed subscription may automatically
+delegate newly accepted Attention records. The default remains off.
+
+Before publishing, atomically recheck target identity, workspace/recipient
+policy, message/run budget, subscription enabled state, and delegation dispatch
+state. Preserve origin metadata. Reject a receipt whose lineage contains the
+target/root or exceeds the configured depth. It remains visible locally with a
+loop-prevention reason. More receipts appended to an already assigned Attention
+do not create a fresh prompt without an explicit re-delegate/retry policy.
+
+**Acceptance:** default-off/opt-in, budget races, session replacement, grouped
+failures, recursive origin, lineage depth, and restart replay yield at most one
+eligible delegation.
+
+### Phase 2D: attention-to-conversation operations and UAT
+
+**Deliverable:** Attention details show routing status, target, stream
+coordinates, message/delivery/run links, and the next action. **Focus delegated
+conversation** attaches to the eligible existing session without resuming,
+stopping, or otherwise changing it.
+
+Document a disposable UAT: configure a target, run a failing command in a
+chosen cwd, inspect its Attention, manually delegate, observe one delivery in
 
 ## Phase 3: additional producers
 
