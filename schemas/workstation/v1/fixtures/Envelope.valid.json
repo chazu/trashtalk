@@ -1,0 +1,1 @@
+{"schema_version": 1, "coordinate": {"subscription": "eventsubscription_fixture", "streamName": "workstation.fixture.v1", "partition": "default", "offset": 1}, "groupKey": "fixture", "display": {"title": "Test failed", "summary": "Bounded redacted summary"}}

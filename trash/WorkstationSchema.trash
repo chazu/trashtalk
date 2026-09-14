@@ -1,0 +1,23 @@
+# Trusted CUE process boundary. Never execute CUE in a Store transaction.
+WorkstationSchema subclass: Object
+  rawClassMethod: digest [
+    local root="${TRASHTALK_DIR:-$HOME/.trashtalk}/schemas/workstation/v1"
+    { cat "$root/contracts.cue"; for name in Attention CommandReceipt Coordinate Envelope EventSubscription SafeDisplay; do cat "$root/roots/$name.cue"; done; } | shasum -a 256 | cut -d ' ' -f 1
+  ]
+  rawClassMethod: validate: json as: root [
+    [[ -z ${_STORE_TX:-} && ${_STORE_SNAPSHOT_MODE:-0} == 0 ]] || { _throw TransactionError 'CUE validation must precede Store transactions'; return 1; }
+    case "$2" in EventSubscription|Attention|Coordinate|CommandReceipt|SafeDisplay|Envelope) ;; *) _throw WorkstationSchemaError 'Unknown schema root'; return 1;; esac
+    local path="${TRASHTALK_DIR:-$HOME/.trashtalk}/schemas/workstation/v1" files result outcome diagnostics
+    files=$(jq -cn --arg a "$path/contracts.cue" --arg b "$path/roots/$2.cue" '[$a,$b]') || return
+    result=$(@ Tools::Cue vet: "$files" json: "$1") || return
+    outcome=$(printf '%s' "$result" | jq -r .outcome)
+    [[ "$outcome" != missing_tool ]] || { _throw WorkstationSchemaError 'Workstation CUE unavailable; go install cuelang.org/go/cmd/cue@latest'; return 1; }
+    if [[ "$outcome" != success ]]; then
+      # Only field-path prefixes, never values, source excerpts or filenames.
+      diagnostics=$(printf '%s' "$result" | jq -r '.stderr | split("\n") | map(try capture("^(?<p>[A-Za-z_][A-Za-z0-9_.]{0,100}):").p catch empty) | unique | .[:8] | join(", ")')
+      _throw WorkstationSchemaError "Workstation schema rejected ($2): ${diagnostics:-invalid document}"
+      printf 'Workstation schema rejected (%s): %s\n' "$2" "${diagnostics:-invalid document}" >&2
+      return 1
+    fi
+    printf '%s\n' "$1"
+  ]

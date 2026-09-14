@@ -1,0 +1,1 @@
+{"schema_version": 1, "kind": "command-receipt.v1", "workspace": "/workspace", "fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "exitCode": 1, "finishedAt": "2026-09-14T15:00:00Z", "display": {"title": "Test failed", "summary": "Bounded redacted summary"}}

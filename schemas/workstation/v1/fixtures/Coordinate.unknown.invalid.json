@@ -1,0 +1,1 @@
+{"subscription": "eventsubscription_fixture", "streamName": "workstation.fixture.v1", "partition": "default", "offset": 1, "unexpected": "sensitive-do-not-echo"}

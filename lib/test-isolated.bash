@@ -15,7 +15,7 @@ trap 'if [[ "${TRASH_TEST_KEEP:-0}" == 1 ]]; then echo "Test checkout: $work" >&
 mkdir -p "$work/repo" "$work/tmp"
 tar -C "$root" --exclude='.astcache' --exclude='.symbolcache' \
     --exclude='.buildcache' --exclude='*.db*' --exclude='trash/user' \
-    --exclude='*.dylib' --exclude='*.so' -cf - lib trash tests bin axe Makefile |
+    --exclude='*.dylib' --exclude='*.so' -cf - lib trash tests bin axe schemas Makefile |
     tar -C "$work/repo" -xf -
 # Copy only this compiler's warm caches, never share writable cache entries.
 # A cold browser index in every parallel test otherwise repeats the full parse.
