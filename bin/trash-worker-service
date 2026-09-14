@@ -19,8 +19,14 @@ if [[ "$platform" == Darwin ]]; then
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n<plist version=\"1.0\"><dict>\n<key>Label</key><string>org.trashtalk.agent-worker</string>\n<key>ProgramArguments</key><array><string>\($bash|xml)</string><string>\(($root + "/bin/trash-worker")|xml)</string></array>\n<key>WorkingDirectory</key><string>\($root|xml)</string>\n<key>EnvironmentVariables</key><dict><key>PATH</key><string>\($path|xml)</string><key>TRASHTALK_DIR</key><string>\($root|xml)</string><key>SQLITE_JSON_DB</key><string>\($db|xml)</string><key>TRASHTALK_USER</key><string>\($owner|xml)</string></dict>\n<key>RunAtLoad</key><true/><key>KeepAlive</key><true/><key>ThrottleInterval</key><integer>5</integer>\n<key>AbandonProcessGroup</key><true/>\n<key>StandardOutPath</key><string>\(($logs + "/stdout.log")|xml)</string><key>StandardErrorPath</key><string>\(($logs + "/stderr.log")|xml)</string>\n</dict></plist>"' > "$target"
       plutil -lint "$target"
       ;;
-    start) launchctl print "$domain/$label" >/dev/null 2>&1 || launchctl bootstrap "$domain" "$target" ;;
-    stop) launchctl bootout "$domain/$label" ;;
+    # A bootout is asynchronous: a start issued right after it used to see the
+    # old registration, skip bootstrap, and leave nothing running.
+    start)
+      if launchctl print "$domain/$label" >/dev/null 2>&1; then launchctl kickstart "$domain/$label"
+      else launchctl bootstrap "$domain" "$target"; fi ;;
+    stop)
+      launchctl bootout "$domain/$label"
+      for _ in 1 2 3 4 5 6 7 8 9 10; do launchctl print "$domain/$label" >/dev/null 2>&1 || break; sleep 0.5; done ;;
     status) launchctl print "$domain/$label" ;;
   esac
 elif [[ "$platform" == Linux ]]; then
