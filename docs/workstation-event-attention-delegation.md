@@ -424,3 +424,167 @@ and no worker lock held during observation. Phase 4 must prove two concurrent
 executors cannot launch the same attempt, approvals expire on config/argv/cwd
 changes, and a detached surviving process is never mistaken for a completed
 effect.
+
+## CUE schema layer
+
+CUE should be the **declarative structural contract** for this feature, not a
+second persistence engine and not an authority mechanism. The existing
+`Tools::Cue` exact-argv adapter already provides `vet`, unification/defaulting,
+and versioned diagnostic envelopes. Use it to put event, attention, routing, and
+approved-action data shapes in one reviewable place instead of duplicating jq
+predicates across adapter, browser, worker, and tests.
+
+### Schema package and ownership
+
+Add a repository-owned package such as `schemas/workstation/v1/` with one
+closed root definition per persisted or wire record:
+
+```cue
+package workstation
+
+#ID: =~"^(subscription|event|attention|actionrequest|approval|effect|attempt)_[A-Za-z0-9-]+$"
+#ISOTime: string // RFC3339 is additionally checked at the Time boundary.
+
+#CommandReceiptSource: close({
+    commandKey: string & =~"^[A-Za-z0-9._/-]+$"
+})
+
+#Subscription: close({
+    schema_version: 1
+    id:             #ID
+    kind:           "command-receipt"
+    workspace:      string
+    enabled:        bool
+    dispatchState:  "enabled" | "suspended"
+    source:         #CommandReceiptSource
+    filter:         close({exitNot: int & >=0 & <=255})
+    debounceSeconds: int & >=0 & <=3600
+    cursor: close({epoch: string, sequence: int & >=0})
+    targetIdentity: string
+    revision:       int & >=1
+})
+
+#Event: close({
+    schema_version: 1
+    id:             #ID
+    subscription:   string
+    source:         close({epoch: string, sequence: int & >=0})
+    kind:           "command.failed"
+    workspace:      string
+    fingerprint:    string
+    occurredAt:     string
+    payload: close({commandKey: string, exitStatus: int & >=1 & <=255, summary: string})
+})
+```
+
+The checked-in schema source is trusted project code and is versioned with the
+migration that introduces it. Subscriptions and receipts are **data fed to**
+that package. Trashtalk never evaluates a CUE file supplied by an agent, a
+repository being observed, or an event payload. A project may later contribute
+a schema only through an explicit trusted-import workflow, outside automatic
+observation.
+
+The real definitions will use shared `#ID` variants rather than the abbreviated
+example above, close every security-sensitive object, discriminate each adapter
+by `kind`, bound strings/arrays/artifact references, and define public Innards
+projection/result envelopes as well. Closed records catch misspelled policy
+fields that a permissive JSON reader would silently ignore.
+
+### What CUE validates, and what it cannot
+
+CUE owns value shape: required fields, variants, numeric ranges, defaults used
+at creation, and compatibility between a record and its declared schema
+version. It also gives fixtures, tool adapters, browser projections, and
+external helpers a common contract.
+
+CUE does **not** establish identity ownership, canonical path equivalence,
+role authorization, budget admission, uniqueness, transaction isolation,
+transition legality, receipt ordering, process liveness, approval freshness, or
+external-effect safety. Those remain explicit Trashtalk checks using Store
+transactions, AgentAccess, `Require`, and the executor claim protocol. A CUE
+success must never be interpreted as permission to route or execute.
+
+### Validation placement
+
+1. **Authoring and CI:** `cue vet` runs over examples, fixture records, and the
+   generated schema manifest. This is required for schema changes and catches
+   contract drift before runtime.
+2. **Ingress:** subscription create/update, receipt parsing, tool/Innards
+   results, and ActionRequest/Approval proposals are vetted before their
+   transaction starts. Failure produces a bounded structured diagnostic and no
+   durable record or cursor movement.
+3. **Migration:** a migration reads the old version, explicitly transforms it,
+   vets it against the target definition, then writes the result with its new
+   `schema_version` and schema digest in one Store transaction. No read path
+   silently applies CUE defaults to old persisted state.
+4. **Egress:** browser and adapter result records are vetted in tests and at
+   development boundaries. Hot UI paths may trust data already accepted at
+   ingress, but must still use their normal defensive selection validation.
+
+Do not invoke the CUE CLI while holding the Store transaction or the worker
+lock. Source observation, CUE vetting, and diagnostic rendering occur before
+the short acceptance transaction. The transaction repeats lightweight native
+checks for data that may have changed. This avoids external process latency,
+nested transaction hazards, and a lock held across arbitrary parsing work.
+
+### Defaults and canonicalization
+
+CUE defaults are permitted only in explicit constructors and migrations:
+Trashtalk unifies a *partial, typed creation request* with a versioned root,
+exports canonical JSON, then validates it with existing semantic checks before
+saving. It never lets defaults alter a delivered event, approval, or effect
+attempt after it has been reviewed. Fields that participate in an approval or
+idempotency key are canonicalized before hashing and are stored in their full
+post-default form.
+
+Canonical workspace paths, timestamps, identity references, and source sequence
+ordering are deliberately resolved by Trashtalk first. CUE sees their normalized
+string/value representation. This prevents superficially equal but differently
+spelled data from producing different group keys or approval hashes.
+
+### Dependency and failure policy
+
+CUE is a development and controlled-ingress dependency, installed and reported
+by `@ Trash doctor` through the existing tool adapter. Before the feature is
+enabled, the worker stores the schema package digest and required CUE version in
+its policy revision. If the required tool or exact schema digest is unavailable,
+new subscription creation and routing are **fail closed** with a visible
+configuration attention item. Existing records remain inspectable, but the
+worker does not advance cursors or dispatch new agent work under an unknown
+contract.
+
+Validation diagnostics contain field paths and bounded messages only. They do
+not echo raw event payloads, command output, secrets, or full approval
+parameters to prompts, logs, or desktop notifications. The stored record and
+its access policy remain the source for authorized detailed inspection.
+
+### CUE-aware phased delivery
+
+- **Phase 0** gains the `schemas/workstation/v1` package, golden valid/invalid
+  JSON fixtures, schema digest tooling, and a `TestCase` helper around
+  `Tools::Cue vet`. It proves that CUE is optional for unrelated Trashtalk
+  classes and required for this enabled feature.
+- **Phase 1** creates subscriptions, receipts, events, attention items, and
+  routing envelopes only through their CUE-backed ingress constructors. Tests
+  vet both persisted canonical records and `inpick` display records.
+- **Phase 3** adds closed causal-link and question/result schemas, ensuring a
+  missing or forged cause cannot be mistaken for an ordinary agent message.
+- **Phase 4** adds separate closed request, approval, logical-effect, and
+  execution-attempt roots. The executor recomputes and vets its canonical input
+  before its atomic claim, but semantic authorization remains outside CUE.
+
+### Additional CUE acceptance criteria
+
+- Unknown security/policy fields, wrong adapter variants, noncanonical scalar
+  types, and unsupported schema versions fail before persistence.
+- A schema package digest mismatch, missing CUE binary, or invalid schema fails
+  closed for enabled subscriptions without corrupting existing attention state.
+- A migration either commits transformed data plus its target version/digest or
+  leaves both old data and cursor unchanged.
+- CUE defaults never change an already approved action or a persisted event
+  during read/projection.
+- The same valid fixture is accepted by Trashtalk's ingress, CUE directly, and
+  any Innards adapter sharing that public envelope.
+- Tests prove that CUE validation cannot replace authorization or uniqueness:
+  structurally valid but unauthorized, duplicate, stale, and illegal-transition
+  records are still rejected by the normal runtime boundary.
