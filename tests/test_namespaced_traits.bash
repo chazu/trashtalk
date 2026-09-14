@@ -36,6 +36,9 @@ must @ "$task" save
 check 'global Persistable trait still mixes with qualified traits' 'TraitFixture::Task' "$(db_get "$task" | jq -r .class)"
 check 'namespace trait is listed once' 1 "$(@ Trash listTraits | grep -cx 'TraitFixture::Reporting')"
 check 'namespace trait is excluded from class listing' 0 "$(@ Trash listObjects | grep -cx 'TraitFixture__Reporting')"
+touch "$TRASHDIR/.compiled/TraitFixture__Task.staging42"
+check 'class listing excludes interrupted compiler staging artifacts' 0 "$(@ Trash listObjects | grep -cx 'TraitFixture__Task.staging42')"
+rm -f "$TRASHDIR/.compiled/TraitFixture__Task.staging42"
 check 'namespace trait source is discoverable' "$TRASHDIR/TraitFixture/Reporting.trash" "$(@ Trash sourceFileFor: TraitFixture::Reporting)"
 methods=$(@ Trash methodsFor: TraitFixture::Task)
 check 'consumer inspection names the trait' true "$([[ "$methods" == *'From trait TraitFixture::Reporting:'* ]] && echo true || echo false)"

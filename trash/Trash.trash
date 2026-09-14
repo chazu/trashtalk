@@ -170,10 +170,16 @@ Trash subclass: Object
 
   # List all available objects (compiled classes)
   rawMethod: listObjects [
+    local file name name_pattern='^[A-Za-z_][A-Za-z0-9_]*$'
     find "$TRASHDIR/.compiled" -maxdepth 1 -type f 2>/dev/null | while read -r file; do
+      # build-cache stages artifacts beside their final name (Class.XXXXXX).
+      # A killed/interrupted build can leave one behind; it is neither a class
+      # nor a valid completion candidate.
+      name=${file##*/}
+      [[ "$name" =~ $name_pattern ]] || continue
       # Package traits share this directory with classes.
       if ! grep -Eq '^__[A-Za-z0-9_]+__is_trait="1"$' "$file"; then
-        basename "$file"
+        printf '%s\n' "$name"
       fi
     done | sort
   ]
