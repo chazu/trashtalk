@@ -177,6 +177,85 @@ rather than automatic retry.
 
 ## Architecture and transaction boundaries
 
+### Source adapters are a superclass, not persisted plug-ins
+
+Use an abstract `EventSourceAdapter` superclass, with class-side messages and
+an explicit built-in registry. A trait is the wrong primary abstraction here:
+the worker needs one authoritative, closed dispatch point from persisted
+`EventSubscription.kind` to implementation, and source kinds have a coherent
+polymorphic contract. Adapters are stateless code classes, not persisted
+objects. `EventSubscription`, `EventCursor`, `WorkstationEvent`, and
+`AttentionItem` retain all durable data.
+
+The methods below are an interface sketch: concrete production subclasses must
+implement them, while the abstract base returns a normal Trashtalk contract
+error if called directly.
+
+```smalltalk
+EventSourceAdapter subclass: Object
+  classMethod: kind [ ^ '' ]
+  classMethod: validateSubscription: subscription [ @ EventSourceAdapterError signal: 'abstract adapter selector' ]
+  classMethod: initialCursorFor: subscription [ @ EventSourceAdapterError signal: 'abstract adapter selector' ]
+  classMethod: observe: subscription after: cursor limit: limit [ @ EventSourceAdapterError signal: 'abstract adapter selector' ]
+  classMethod: normalize: candidate for: subscription [ @ EventSourceAdapterError signal: 'abstract adapter selector' ]
+  classMethod: cursorForAccepted: event from: cursor [ @ EventSourceAdapterError signal: 'abstract adapter selector' ]
+  classMethod: displayFor: event [ @ EventSourceAdapterError signal: 'abstract adapter selector' ]
+
+CommandReceiptSourceAdapter subclass: EventSourceAdapter
+IntervalSourceAdapter subclass: EventSourceAdapter
+GitSnapshotSourceAdapter subclass: EventSourceAdapter
+```
+
+`EventSourceAdapter forKind:` is an allowlisted DSL registry, for example
+`command-receipt -> CommandReceiptSourceAdapter`. It rejects unknown, disabled,
+or schema-version-incompatible kinds. It never turns a subscription-provided
+class name, shell command, path, CUE import, or JSON selector into dispatch.
+Adding an adapter therefore requires a source file, registry entry, CUE variant,
+migration/default policy, fixtures, and tests in this repository.
+
+The common contract has narrow responsibilities:
+
+- `validateSubscription:` checks adapter-specific typed source/filter data after
+  generic CUE vetting. It performs no IO and does not mutate cursor state.
+- `initialCursorFor:` fixes first-install semantics such as `from-now`; it makes
+  a durable cursor value, never a guessed timestamp.
+- `observe:after:limit:` reads an adapter's local source outside Store
+  transactions and returns ordered, bounded, raw candidates plus a source-gap
+  indication. It does not create events, send messages, or advance a cursor.
+- `normalize:for:` maps a candidate to the canonical event input, applies
+  adapter-local redaction and size limits, and provides the stable source
+  version/fingerprint inputs. Generic CUE validation follows normalization.
+- `cursorForAccepted:from:` returns the next cursor only after the worker's
+  acceptance transaction has decided the candidate. This preserves replay and
+  debounce correctness.
+- `displayFor:` returns safe, bounded projection data for Inbox/Innards. It is
+  not allowed to expose source artifacts by default.
+
+The abstract superclass should provide DSL implementations for registry lookup,
+candidate envelope validation, bounded batch/result construction, and standard
+diagnostic conversion. A concrete adapter uses `rawClassMethod:` only at its
+real OS boundary, such as reading the receipt log or invoking a platform
+filesystem API. It immediately returns JSON to the superclass-facing DSL
+contract. Grouping, routing, CUE vetting, Store writes, and notifications stay
+out of adapter subclasses.
+
+`CommandReceiptSourceAdapter` is the only Phase 1 implementation. It reads the
+append-only Trashtalk receipt log by epoch/sequence, validates ordering and
+retention, and returns receipt candidates. `IntervalSourceAdapter` and
+`GitSnapshotSourceAdapter` remain named design placeholders until their replay,
+portability, privacy, and debounce rules have individual acceptance suites.
+
+The separate, later `EffectExecutor` hierarchy must not inherit from
+`EventSourceAdapter`. It owns approved OS effects and an atomic execution
+claim, whereas source adapters are observation-only. An executor registry has
+the same allowlist discipline but a different capability and approval contract.
+
+Traits may be introduced later only for a demonstrated shared *implementation*
+slice, such as a `BoundedArtifactProjection` trait used by several adapters.
+They must not carry the registry, durable state, authorization, or lifecycle
+semantics. This prevents a mix-in from quietly becoming another source dispatch
+path.
+
 1. A small source adapter reads a local source and proposes normalized event
    candidates. It performs no agent work and does not advance a cursor.
 2. `EventSubscription pollWithin:` runs in the existing Store transaction.
