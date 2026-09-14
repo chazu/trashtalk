@@ -28,6 +28,8 @@ done
 for edit in '.coordinate.offset=-1' '.coordinate.subscription="eventsubscription_other"' '.payload="secret"'; do
  if @ FixtureEventSourceAdapter normalize: "$(jq -c "$edit" <<<"$event")" for: "$sub" >/dev/null 2>&1; then exit 1; fi
 done
+badinput=$(jq -c '.records[0].coordinate.offset=-1' <<<"$input")
+if @ FixtureEventSourceAdapter read: "$badinput" limit: 1 >/dev/null 2>&1; then exit 1; fi
 export TRASHTALK_WORKSTATION_FIXTURES=0
 if @ FixtureEventSourceAdapter read: "$input" limit: 1 >/dev/null 2>&1; then exit 1; fi
 if @ EventSourceAdapter forKind: '$(touch forbidden)' >/dev/null 2>&1; then exit 1; fi

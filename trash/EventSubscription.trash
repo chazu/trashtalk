@@ -101,5 +101,5 @@ EventSubscription subclass: Object
   method: display [
     | flag |
     flag := @ self enabled.
-    ^ #{id: self owner: owner enabled: (flag jsonValue) dispatchState: dispatchState streamName: streamName revision: revision} asJson
+    ^ #{id: self owner: owner enabled: (flag jsonValue) dispatchState: dispatchState streamName: streamName revision: (revision jsonValue)} asJson
   ]

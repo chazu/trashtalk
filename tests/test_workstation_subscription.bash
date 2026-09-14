@@ -24,12 +24,15 @@ sub=$(@ EventSubscription createFrom: "$doc")
 [[ $(@ "$sub" revision) == 5 ]]
 for op in duplicate owner adapter grouping consumer unknown; do
  bad=$doc
+ if [[ $op != duplicate ]]; then
+  bad=$(jq -c --arg id "eventsubscription_$op" ' .id=$id | .consumerName=("workstation/"+$id)' <<<"$doc")
+ fi
  case $op in
- owner) bad=$(jq -c '.owner="another"' <<<"$doc");;
- adapter) bad=$(jq -c '.adapterKind="$(touch forbidden)"' <<<"$doc");;
- grouping) bad=$(jq -c '.grouping="unknown"' <<<"$doc");;
- consumer) bad=$(jq -c '.consumerName="wrong"' <<<"$doc");;
- unknown) bad=$(jq -c '.secret="not accepted"' <<<"$doc");;
+ owner) bad=$(jq -c '.owner="another"' <<<"$bad");;
+ adapter) bad=$(jq -c '.adapterKind="$(touch forbidden)"' <<<"$bad");;
+ grouping) bad=$(jq -c '.grouping="unknown"' <<<"$bad");;
+ consumer) bad=$(jq -c '.consumerName="wrong"' <<<"$bad");;
+ unknown) bad=$(jq -c '.secret="not accepted"' <<<"$bad");;
  esac
  if @ EventSubscription createFrom: "$bad" >/dev/null 2>&1; then echo "FAIL: $op"; exit 1; fi
 done

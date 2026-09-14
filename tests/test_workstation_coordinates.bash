@@ -18,7 +18,9 @@ __Store__class__fixtureRecord() { @ Store recordCoordinate: "$1" forAttention: "
 __Store__class__fixtureRollback() { @ Store recordCoordinate: "$1" forAttention: "$a" >/dev/null || return; return 1; }
 __Store__class__fixtureTwice() { @ Store recordCoordinate: "$1" forAttention: "$a" >/dev/null || return; @ Store recordCoordinate: "$1" forAttention: "$a"; }
 __Store__class__fixtureRange() { @ Store coordinateRange: "$1" through: 100 limit: 2; }
-for selector in claimedCoordinate: recordCoordinate:; do
+if @ Store recordCoordinate: "$(coordinate 10)" forAttention: "$a" >/dev/null 2>&1; then exit 1; fi
+[[ $(@ Store getInstance: "$a" | jq .eventCount) == 0 ]]
+for selector in claimedCoordinate:; do
  if @ Store "$selector" "$(coordinate 10)" >/dev/null 2>&1; then exit 1; fi
 done
 # Both callbacks stage against the same empty key before either commits.

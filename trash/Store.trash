@@ -246,8 +246,8 @@ Store subclass: Object
     _workstation_claimed "$1"
   ]
   classMethod: recordCoordinate: coordinate forAttention: attention [
-    | existing sub data patch stream owner human |
-    @ self requireTransaction.
+    | existing sub data patch stream owner human now |
+    (@ self requireTransaction) ifFailed: [:error | @ error signal].
     existing := @ self claimedCoordinate: coordinate.
     (existing notEmpty) ifTrue: [^ existing].
     @ self read: attention class: 'Attention'.
@@ -260,6 +260,8 @@ Store subclass: Object
     @ Require equal: stream to: (coordinate jsonTextAt: 'streamName').
     @ Require equal: owner to: human.
     patch := @ WorkstationSchema extend: data coordinate: coordinate.
+    now := @ Time nowISO.
+    patch := @ WorkstationSchema merge: patch with: (#{updatedAt: now} asJson).
     @ self stageCoordinate: coordinate forAttention: attention.
     @ self patch: attention with: patch.
     ^ attention
