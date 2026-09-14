@@ -188,3 +188,28 @@ formats. No raw artifact is created. Default execution does not touch the child
 output descriptors. Capture does not wait for detached descendants holding a
 pipe open. Never use capture when the child requires a TTY. All persisted display
 text is bounded to 256 characters and excludes terminal control characters.
+
+## Production adapter and consumer registration
+
+Only `command-receipt` is production-allowlisted. It requires stream
+`workstation.command-receipts.v1`, grouping `opaque`, empty `targetIdentity`, and
+closed filter `{exitNot: 0}` (an omitted `exitNot` also means zero). Disabled
+policies, arbitrary consumer names, malformed coordinates, and unknown schemas
+fail before acceptance. Display and grouping are stateless. Group keys hash the
+canonical workspace, safe command label (legacy display title fallback), and
+normalized exit-class fingerprint. Worker grouping also scopes the partition.
+
+Adapter reads return at most eight records and 512 KiB per batch. Each envelope
+is at most 64 KiB. Honker `topic`, `key`, and `offset` become stream name,
+partition, and offset without reinterpretation. If a source supplies explicit
+`partition`, that takes precedence over `key`. The adapter never acknowledges,
+creates Attention/Message, or accesses AgentQueue.
+
+`Stream initializeFrom:` atomically registers the **existing Honker consumer**
+with INSERT OR IGNORE. `from-start` starts at zero. `from-now` starts at the high
+water mark on first registration, not at subscription document creation time.
+Registration of an empty stream still writes offset zero, so a later restart
+cannot accidentally skip its first receipt. Repeated registration and changes
+to enablement never reset that position. `acknowledgeThrough:` advances it
+monotonically even with competing readers. These narrow Stream/Honker SQL
+boundaries use Honker's own tables, not another event log or cursor table.

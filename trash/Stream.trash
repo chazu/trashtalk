@@ -246,3 +246,29 @@ Stream subclass: Object
     echo "  @ \$c stopConsuming"
     echo "  @ \$c isConsuming"
   ]
+
+  # Honker-owned consumer registration is atomic and insert-only. From-now is
+  # the high-water mark at first registration, even when the stream is empty.
+  # No domain event/cursor table or receipt payload is accessed here.
+  rawMethod: initializeFrom: position [
+    local stream consumer start
+    [[ -z ${_STORE_TX:-} ]] || { _throw TransactionError 'Initialize Stream outside Store transactions'; return 1; }
+    case "$1" in 'from-start') start=0;; 'from-now') start="coalesce((SELECT max(offset) FROM _honker_stream WHERE topic='%s'),0)";; *) return 1;; esac
+    stream=$(_db_escape "$(_ivar streamName)")
+    consumer=$(_db_escape "$(_ivar consumerName)")
+    [[ -n "$consumer" ]] || return 1
+    [[ "$1" != 'from-now' ]] || printf -v start "$start" "$stream"
+    honker_bootstrap || return 1
+    _db_sql -bail "BEGIN IMMEDIATE; INSERT OR IGNORE INTO _honker_stream_consumers(name,topic,offset) VALUES('$consumer','$stream',$start); COMMIT;"
+  ]
+
+  # Monotonic ack prevents a slower concurrent reader from rewinding a consumer.
+  # Keep ordinary ack: available for explicit operational replay; workers use this.
+  rawMethod: acknowledgeThrough: offset [
+    local stream consumer
+    [[ -z ${_STORE_TX:-} && "$1" =~ ^[0-9]+$ && ${#1} -le 16 ]] && (( $1 <= 9007199254740991 )) || return 1
+    stream=$(_db_escape "$(_ivar streamName)")
+    consumer=$(_db_escape "$(_ivar consumerName)")
+    [[ -n "$consumer" ]] || return 1
+    _db_sql -bail "SELECT honker_stream_save_offset('$consumer','$stream',max(honker_stream_get_offset('$consumer','$stream'),$1));" >/dev/null
+  ]

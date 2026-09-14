@@ -1,0 +1,79 @@
+# Stateless production adapter. Only the worker initializes/acks consumers.
+CommandReceiptSourceAdapter subclass: EventSourceAdapter
+  classMethod: kind [ ^ 'command-receipt' ]
+  classMethod: validatePolicy: subscription [
+    | stream expected |
+    stream := @ CommandReceipt streamName.
+    expected := 'workstation/' , (subscription jsonTextAt: 'id').
+    (@ Require equal: (subscription jsonTextAt: 'consumerName') to: expected) ifFailed: [:error | @ error signal].
+    (@ Require equal: (subscription jsonTextAt: 'adapterKind') to: 'command-receipt') ifFailed: [:error | @ error signal].
+    (@ Require equal: (subscription jsonTextAt: 'streamName') to: stream) ifFailed: [:error | @ error signal].
+    (@ Require equal: (subscription jsonTextAt: 'targetIdentity') to: '') ifFailed: [:error | @ error signal].
+    (@ Require equal: (subscription jsonTextAt: 'grouping') to: 'opaque') ifFailed: [:error | @ error signal].
+    ^ subscription
+  ]
+  classMethod: validateSubscription: subscription [
+    (@ WorkstationSchema validate: subscription as: 'EventSubscription') ifFailed: [:error | @ error signal].
+    (@ self validatePolicy: subscription) ifFailed: [:error | @ error signal].
+    (@ Require equal: (subscription jsonTextAt: 'enabled') to: 'true') ifFailed: [:error | @ error signal].
+    ^ subscription
+  ]
+  classMethod: consumerFor: subscription [
+    | name consumer |
+    (@ self validateSubscription: subscription) ifFailed: [:error | @ error signal].
+    name := subscription jsonTextAt: 'streamName'.
+    consumer := subscription jsonTextAt: 'consumerName'.
+    ^ @ Stream named: name consumer: consumer
+  ]
+  classMethod: read: consumer limit: limit [
+    | records |
+    (@ self validateLimit: limit) ifFailed: [:error | @ error signal].
+    records := @ consumer read: limit.
+    ^ @ self bounded: records limit: limit
+  ]
+  classMethod: normalize: record for: subscription [
+    | decoded receipt coordinate group display envelope excluded status |
+    (@ self validateSubscription: subscription) ifFailed: [:error | @ error signal].
+    decoded := @ self decode: record for: subscription.
+    receipt := decoded jsonAt: 'receipt'.
+    (@ CommandReceipt validate: receipt) ifFailed: [:error | @ error signal].
+    coordinate := decoded jsonAt: 'coordinate'.
+    group := @ self groupKeyFor: receipt.
+    display := @ self displayFor: receipt.
+    envelope := #{schema_version: 1 coordinate: (coordinate jsonValue) groupKey: group display: (display jsonValue)} asJson.
+    (@ WorkstationSchema validate: envelope as: 'Envelope') ifFailed: [:error | @ error signal].
+    excluded := subscription jsonAt: 'filter.exitNot' ifAbsent: '0'.
+    status := receipt jsonTextAt: 'exitCode'.
+    (status = excluded) ifTrue: [^ ''].
+    ^ envelope
+  ]
+  classMethod: groupKeyFor: receipt [
+    | workspace label fingerprint parts |
+    workspace := receipt jsonTextAt: 'workspace'.
+    label := receipt jsonAt: 'commandLabel' ifAbsent: (receipt jsonAt: 'display.title').
+    fingerprint := receipt jsonTextAt: 'fingerprint'.
+    parts := #(workspace label fingerprint) asJson.
+    ^ @ WorkstationSchema hash: parts
+  ]
+  classMethod: displayFor: receipt [ ^ receipt jsonAt: 'display' ]
+
+  # JSON/Honker serialization boundary. Honker calls its stream 'topic' and its
+  # single-log partition tag 'key'. Preserve explicit partition when provided.
+  rawClassMethod: decode: record for: subscription [
+    [[ ${#1} -le 65536 ]] || { _throw EventSourceAdapterError 'Receipt record exceeds 64 KiB'; return 1; }
+    printf '%s' "$1" | jq -ce --argjson s "$2" '
+      select(type=="object" and .topic==$s.streamName) |
+      {coordinate:{subscription:$s.id,streamName:.topic,partition:(.partition // .key // "default"),offset:.offset},
+       receipt:(.payload | if type=="string" then fromjson else . end)}' 2>/dev/null || {
+      _throw EventSourceAdapterError 'Malformed command receipt envelope'; return 1;
+    }
+  ]
+  rawClassMethod: validateLimit: limit [
+    [[ "$1" =~ ^[1-8]$ ]] || { _throw EventSourceAdapterError 'Receipt batch limit must be 1..8'; return 1; }
+  ]
+  rawClassMethod: bounded: records limit: limit [
+    [[ ${#1} -le 524288 ]] || { _throw EventSourceAdapterError 'Receipt batch exceeds 512 KiB'; return 1; }
+    printf '%s' "$1" | jq -ce --argjson n "$2" 'select(type=="array" and length<=$n)' 2>/dev/null || {
+      _throw EventSourceAdapterError 'Malformed receipt batch'; return 1;
+    }
+  ]

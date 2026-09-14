@@ -1,7 +1,8 @@
-# Stateless closed registry. No production adapter exists in Phase 0.
+# Stateless closed registry. Only command receipts are production-enabled.
 EventSourceAdapter subclass: Object
   classMethod: forKind: kind [
     | isolated enabled |
+    (kind = 'command-receipt') ifTrue: [^ 'CommandReceiptSourceAdapter'].
     (kind = 'fixture') ifTrue: [
       isolated := @ Env get: 'TRASHTALK_TEST_ISOLATED'.
       enabled := @ Env get: 'TRASHTALK_WORKSTATION_FIXTURES'.

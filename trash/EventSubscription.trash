@@ -26,6 +26,7 @@ EventSubscription subclass: Object
     @ Require equal: (document jsonTextAt: 'consumerName') to: expected.
     adapter := @ EventSourceAdapter forKind: (document jsonTextAt: 'adapterKind').
     @ Require member: (document jsonTextAt: 'grouping') of: '["opaque"]'.
+    (adapter = 'CommandReceiptSourceAdapter') ifTrue: [@ CommandReceiptSourceAdapter validatePolicy: document].
     target := document jsonTextAt: 'targetIdentity'.
     (target notEmpty) ifTrue: [@ AgentAccess validateIdentity: target].
     @ Require text: (document jsonTextAt: 'auditNote').
