@@ -303,3 +303,10 @@ causal session, and can delegate or answer without manually pasting output into
 a chat. Restarting the worker or replaying a stream offset does not create
 extra work. That useful, recoverable journey matters more than supporting many
 event sources.
+
+## Implemented Phase 0 operations
+
+See [workstation operations](workstation-operations.md) for the thin durable model,
+private coordinate index and recovery. Consumer progress remains Honker Stream
+offsets, not an EventCursor. Production consumption, publication and routing are
+not implemented by Phase 0.

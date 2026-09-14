@@ -16,6 +16,7 @@ implemented contracts from designs and historical evidence.
 | Persistent agent use, messages, stop, and recovery | [Agent operations](agent-operations.md) |
 | Attach, backlog, composer, and detach | [Live session view](agent-session-view.md) |
 | Harness contracts | [Jcode](jcode-session-driver.md), [Maki](maki-session-driver.md) |
+| Workstation subscriptions and attention (Phase 0 only) | [Workstation operations](workstation-operations.md) |
 | Manual durable work | [Assignments](assignments.md) |
 | Code and session search / CLI harness adapters | [Tool adapters](code-and-session-tools.md) |
 | Runtime/build behavior and dated measurements | [Performance](performance.md), [opt-in result passing](result-passing-design.md) |

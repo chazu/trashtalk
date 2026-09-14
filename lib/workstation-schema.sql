@@ -1,3 +1,4 @@
+BEGIN IMMEDIATE;
 -- Optional feature installation. No event log or consumer cursor is created.
 CREATE UNIQUE INDEX IF NOT EXISTS workstation_subscription_consumer
  ON instances(json_extract(data,'$.consumerName'))
@@ -13,3 +14,4 @@ CREATE TABLE IF NOT EXISTS workstation_coordinates (
  PRIMARY KEY(subscription_id,stream_name,partition,offset)
 );
 CREATE INDEX IF NOT EXISTS workstation_coordinates_attention ON workstation_coordinates(attention_id);
+COMMIT;

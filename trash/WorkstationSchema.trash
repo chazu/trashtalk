@@ -77,3 +77,16 @@ WorkstationSchema subclass: Object
        firstCoordinate:(if .firstCoordinate==null or $c.offset<.firstCoordinate.offset then $c else .firstCoordinate end),
        lastCoordinate:(if .lastCoordinate==null or $c.offset>.lastCoordinate.offset then $c else .lastCoordinate end)} end'
   ]
+
+  # Optional capability probe only. No bootstrap, stream read, ack or install.
+  rawClassMethod: streamAvailable [
+    local count
+    count=$(_db_sql "SELECT count(DISTINCT name) FROM pragma_function_list WHERE name IN ('honker_stream_publish','honker_stream_read_since','honker_stream_save_offset','honker_stream_get_offset');" 2>/dev/null) || count=0
+    [[ "$count" == 4 ]] && echo true || echo false
+  ]
+  classMethod: capabilities [
+    | cue stream |
+    cue := @ Tools::Cue isInstalled.
+    stream := @ self streamAvailable.
+    ^ #{cue: (cue jsonValue) stream: (stream jsonValue)} asJson
+  ]

@@ -15,3 +15,6 @@ Package digest, from the repository root:
 on a feature policy revision, not a global runtime switch. CUE enforces closed
 structure only. Store and native validators own identity, uniqueness and state.
 Command receipt and display roots are future contracts, not a producer.
+
+See [Phase 0 operations](../../../docs/workstation-operations.md) for installation,
+record APIs, lifecycle recovery, coordinate replay, and browser/doctor integration.
