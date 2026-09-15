@@ -328,6 +328,27 @@ process-local memo (keyed by schema digest, root, and document hash; failures
 are never memoized). A new failing record still runs CUE about three times, so
 budget roughly one second per accepted event on a laptop.
 
+### The prompt indicator file
+
+`AgentWorkboard indicator` is the compact count: `!N` open or due-snoozed
+Attention for the local human (the same query as `Attention localOpenCount`),
+`?M` rows in `agent_questions` with no answer whose Message is addressed to the
+human, separated by one space, or an empty line when both are zero.
+`publishIndicator` writes that line to `AgentWorkboard indicatorPath`
+(`$TRASHTALK_RUN_DIR/attention`, else `$TRASHTALK_DIR/run/attention`, else
+`~/.trashtalk/run/attention`) through a temporary file and one rename, so a
+reader sees the old line or the new one. `AgentWorker tick` publishes after its
+workstation stage and `Attention transitionTo:until:note:` after its commit;
+both run outside Store transactions and the worker lock. A write failure is
+reported on stderr and never fails the tick or the transition. The file is
+rewritten even when its text is unchanged, so its modification time tells a
+reader whether the worker is alive; Whisker's `max_age` uses exactly that.
+Answering a question refreshes the file on the next tick, at most
+`TRASHTALK_WORKER_MAX_INTERVAL` seconds later. Cost per idle tick: two Store
+queries and one `mv`. `tests/test_attention_indicator.bash` covers the text,
+the path, the failure policy, and liveness; `test_workstation_worker.bash`
+checks it across the lifecycle.
+
 ## Phase 2: guarded agent routing
 
 Routing is off until a subscription names a target identity. Subscriptions

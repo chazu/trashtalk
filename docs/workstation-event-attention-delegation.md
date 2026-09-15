@@ -310,4 +310,7 @@ See [workstation operations](workstation-operations.md) for the thin durable mod
 private coordinate index, command receipts, the worker stage, local attention,
 and guarded routing. Consumer progress remains Honker Stream offsets, not an
 EventCursor. Phase 2 routing sends work only to an existing eligible session
-and records lineage for loop prevention; Phases 3 and 4 remain proposals.
+and records lineage for loop prevention; Phases 3 and 4 remain proposals. The
+compact prompt count described under [Attention UX](#attention-ux) is published
+to `run/attention` by the worker and read by a Whisker file segment; see the
+[guide](workstation-guide.md#in-your-prompt).

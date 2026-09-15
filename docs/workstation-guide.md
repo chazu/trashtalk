@@ -203,6 +203,30 @@ _ws_attn() { local n; n=$(@ Attention localOpenCount 2>/dev/null); [[ ${n:-0} -g
 PS1='$(_ws_attn)\w \$ '
 ```
 
+### In your prompt
+
+The worker also publishes the count as one short line in
+`~/.trashtalk/run/attention` (under `TRASHTALK_RUN_DIR`, or `TRASHTALK_DIR/run`,
+when those are set): `!2` for open or due-snoozed attention, `?1` for questions
+still waiting on your answer, `!2 ?1` for both, and an empty line when nothing
+waits. It is rewritten after every worker tick and after every attention
+lifecycle change, so a prompt can show it without starting a Trashtalk runtime.
+With Whisker, the two-line Bash prompt, its `file` segment reads it:
+
+```toml
+[view.dev]
+segments = ["attention", "directory", "git"]
+
+[segment.attention]
+file = "~/.trashtalk/run/attention"
+atomic = true
+max_age = "1m"
+```
+
+`max_age` hides the segment once the worker has stopped refreshing the file, so
+a stale count never sits on the prompt looking current. Any other prompt can
+read the same file.
+
 ### Wake hints
 
 If Honker is installed, the inbox emits a `message` event at most once per
@@ -516,4 +540,5 @@ Everything durable can be inspected directly:
 | Alert controls | `inspectAttention` `acknowledgeAttention` `snoozeAttentionUntil:` `resolveAttentionWithNote:` `suppressAttention:` `reopenAttention` |
 | Delegation | `routingStatus` `delegateAttention` `redelegateAttention:` `focusDelegatedAttention` |
 | Browser | `@ "$(@ Trash userInbox)" browse` |
+| Prompt indicator | `AgentWorkboard indicator`, `publishIndicator`, `indicatorPath` |
 | Capability check | `@ Trash doctor`, `@ WorkstationSchema capabilities` |

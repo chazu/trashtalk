@@ -6,6 +6,8 @@ set -euo pipefail
 source lib/trash.bash 2>/dev/null
 trap - EXIT
 export TRASHTALK_USER=local-user
+export TRASHTALK_RUN_DIR="$TRASHTALK_DIR/run"
+indicator() { cat "$TRASHTALK_RUN_DIR/attention"; }
 command -v cue >/dev/null || { echo 'SKIP: CUE not installed'; exit 0; }
 honker_available || { echo 'SKIP: Honker not installed'; exit 0; }
 honker_bootstrap
@@ -24,7 +26,7 @@ bin/trash-receipt --publish "$fixture"
 [[ $(@ "$consumer" offset) == 1 && $(count Attention) == 1 && $(count Message) == 1 ]]
 a=$(@ Attention findAll); m=$(data "$a" | jq -r .message)
 inbox=$(@ Inbox named: local-user)
-[[ $(@ "$inbox" attentionCount) == 1 ]]
+[[ $(@ "$inbox" attentionCount) == 1 && $(indicator) == '!1' ]]
 assert_count 1
 data "$m" | jq -e --arg a "$a" '.to=="local-user" and .attention==$a and .kind=="alert" and .dispatchMode=="manual" and .attentionFirstCoordinate.offset==1 and .attentionLastCoordinate.offset==1' >/dev/null
 # Marking read and archiving are not acknowledgements or resolution.
@@ -44,7 +46,7 @@ assert_count 2
 [[ $(count Message) == 1 && $(data "$m" | jq -r .attentionHintAt) == "$hint" ]]
 # Local controls, paused dispatch independent from consumption, no agent effects.
 @ "$m" acknowledgeAttention >/dev/null
-[[ $(@ "$inbox" attentionCount) == 0 ]]
+[[ $(@ "$inbox" attentionCount) == 0 && -z $(indicator) ]]
 publish; @ WorkstationWorker tick >/dev/null || exit 1; assert_count 3
 [[ $(data "$a" | jq -r .state) == acknowledged ]]
 @ "$m" snoozeAttentionUntil: '2099-01-01T00:00:00Z' >/dev/null
@@ -58,7 +60,9 @@ publish; @ WorkstationWorker tick >/dev/null || exit 1; assert_count 4
 publish; @ WorkstationWorker tick >/dev/null || exit 1; assert_count 5
 [[ $(@ "$inbox" attentionCount) == 0 && $(count Attention) == 1 ]]
 @ "$m" reopenAttention >/dev/null
+[[ $(indicator) == '!1' ]]
 @ "$m" resolveAttentionWithNote: fixed >/dev/null
+[[ -z $(indicator) ]]
 publish; @ WorkstationWorker tick >/dev/null || exit 1
 [[ $(count Attention) == 2 && $(count Message) == 2 && $(@ "$inbox" attentionCount) == 1 ]]
 assert_count 5

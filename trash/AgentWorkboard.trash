@@ -74,3 +74,52 @@ AgentWorkboard subclass: Object
       @ Console print: text
     ]
   ]
+
+  # Compact prompt indicator over the same records: open or due-snoozed
+  # attention and unanswered questions addressed to the local human, as
+  # "!N ?M" with a zero part omitted, or empty when nothing waits. A prompt
+  # reads the published file; it never starts a runtime.
+  rawClassMethod: unansweredQuestionCount [
+    local human
+    @ AgentQueue ensureSchema || return 1
+    human=$(_db_escape "$(@ AgentFocus human)")
+    _store_guarded_query "SELECT count(*) FROM agent_questions q JOIN instances m ON m.id=q.message_id
+      WHERE q.answer_id='' AND m.class='Message' AND json_extract(m.data,'\$.to')='$human'"
+  ]
+
+  classMethod: indicator [
+    | attention questions text |
+    attention := @ Attention localOpenCount.
+    questions := @ self unansweredQuestionCount.
+    text := ''.
+    (attention ~= '0') ifTrue: [text := '!' , attention].
+    (questions ~= '0') ifTrue: [
+      (text notEmpty) ifTrue: [text := text , ' '].
+      text := text , '?' , questions
+    ].
+    ^ text
+  ]
+
+  rawClassMethod: indicatorPath [
+    printf '%s\n' "${TRASHTALK_RUN_DIR:-${TRASHTALK_DIR:-$HOME/.trashtalk}/run}/attention"
+  ]
+
+  # Replace the file in one step so a prompt reading now sees the old line or
+  # the new one, never a torn one. The file's modification time is the
+  # liveness signal a reader may check, so it is rewritten even when the text
+  # is unchanged. Failure is reported and never raised: the indicator is a
+  # hint, and a hint must not block delivery or a lifecycle change.
+  rawClassMethod: publishIndicator [
+    local path text dir tmp
+    path=$(@ AgentWorkboard indicatorPath) || return 0
+    text=$(@ AgentWorkboard indicator) || { printf 'Attention indicator was not computed\n' >&2; return 0; }
+    dir=${path%/*}
+    tmp="$path.tmp.$$"
+    if mkdir -p "$dir" 2>/dev/null && printf '%s\n' "$text" > "$tmp" 2>/dev/null && mv -f "$tmp" "$path" 2>/dev/null; then
+      printf '%s\n' "$text"
+    else
+      rm -f "$tmp" 2>/dev/null
+      printf 'Attention indicator %s was not updated\n' "$path" >&2
+    fi
+    return 0
+  ]

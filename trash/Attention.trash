@@ -95,7 +95,13 @@ Attention subclass: Object
     now := @ Time nowISO.
     patch := #{state: state snoozeUntil: wakeTime note: reason actor: actor updatedAt: now} asJson.
     document := @ WorkstationSchema merge: document with: patch.
-    ^ @ WorkstationSchema transact: document as: 'Attention' sending: 'transitionWithin:'
+    # The transaction's failure must reach the caller: an unguarded assignment
+    # from a send would swallow it. Its value is this record's id.
+    (@ WorkstationSchema transact: document as: 'Attention' sending: 'transitionWithin:') ifFailed: [:error | @ error signal].
+    # Lifecycle changes are what a prompt indicator is for; refresh it after
+    # the commit, outside the transaction.
+    @ AgentWorkboard publishIndicator.
+    ^ self
   ]
   classMethod: delegateWithin: candidate [ ^ @ WorkstationRouting delegateWithin: candidate ]
   method: acknowledge [ ^ @ self transitionTo: 'acknowledged' until: '' note: '' ]
