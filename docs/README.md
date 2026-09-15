@@ -19,7 +19,7 @@ implemented contracts from designs and historical evidence.
 | Tracking failing commands, attention alerts, and delegating them to agents | [Workstation guide](workstation-guide.md) (user guide), [Workstation operations](workstation-operations.md) (operator detail) |
 | Manual durable work | [Assignments](assignments.md) |
 | Code and session search / CLI harness adapters | [Tool adapters](code-and-session-tools.md) |
-| Runtime/build behavior and dated measurements | [Performance](performance.md), [opt-in result passing](result-passing-design.md) |
+| Runtime/build behavior and dated measurements | [Performance](performance.md), [opt-in result passing](result-passing-design.md), [first performance tranche, 2026-09-15](performance-first-tranche-trashtalk-2026-09-15.md) |
 | Packages and qualified names | [Namespace implementation/design](namespaces-design.md) |
 | Removed APIs and cleanup evidence | [September cleanup](cleanup-2026-09.md) |
 

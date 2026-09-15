@@ -1,5 +1,36 @@
 # Changelog
 
+## 2026-09-15
+
+### Changed
+
+- The tokenizer splits each source into a character array with one Perl pass
+  and scans the array under `LC_ALL=C`; the substring scan it replaces was
+  quadratic in source size (24 s of CPU for `Trash.trash`, in either locale).
+  Decoded tokens, multibyte values, and character columns are unchanged.
+- `Tool runProcessRequestJson:` validates and decodes a request in one jq
+  pass (two jq processes per capture instead of seven); instance creation no
+  longer spawns `tr` for the identifier prefix or regenerates accessors the
+  compiled artifact already defines.
+- `bin/trash-worker` backs off from `TRASHTALK_WORKER_INTERVAL` to
+  `TRASHTALK_WORKER_MAX_INTERVAL` while idle, exits after
+  `TRASHTALK_WORKER_MAX_FAILURES` consecutive failed ticks, bounds
+  `run/worker/stderr.log`, and prunes compiler caches from its rebuild scan.
+  `AgentQueue ensureSchema` is memoized per process; `AgentQueue refresh`
+  evicts cached worker records instead of reloading every historical row.
+- A successful build keeps the compiler caches for current sources in the
+  current generation plus one previous generation and removes stale staging
+  files. The test runner prepares one checkout per run and clones it per test.
+
+### Fixed
+
+- A `pragma: direct` method sent first from a script running under `set -e`
+  no longer ends the script: the dispatcher's call-depth bookkeeping used
+  `((depth++))`, which returns 1 from depth 0.
+
+See [the first tranche report](docs/performance-first-tranche-trashtalk-2026-09-15.md)
+for measurements.
+
 ## 2026-09-11
 
 ### Added

@@ -244,6 +244,39 @@ Two warm `make bash` runs on 2026-09-05 validated all 64 artifacts in 0.298 and
 0.244 seconds with no recompilation. These are local observations; the earlier
 3.63/3.80-second runs were taken at a different time and host load.
 
+## Tokenizer scan, cache generations, and test checkouts
+
+The tokenizer splits each source into a character array with one Perl pass
+and scans that array under a function-local `LC_ALL=C`. The substring scan it
+replaced (`${input:i:1}`) walked the string on every expansion, so its cost
+grew with the square of the source size in either locale: 27.9 s for the 50 KB
+`Trash.trash` under UTF-8 and 27.9 s under `LC_ALL=C`, against 1.2 s now.
+Decoded tokens are identical for every repository source, including multibyte
+literals and character-based columns; the compiler fingerprint includes the
+tokenizer, so existing AST cache entries are rebuilt once.
+
+Compiler caches (`.astcache`, `.symbolcache`) are keyed by content hash and
+compiler fingerprint. A successful build keeps entries for the current sources
+in the current generation plus the most recently used previous generation and
+removes staging leftovers older than ten minutes. Anything pruned costs one
+re-parse, so out-of-tree parses and reverted edits still work.
+
+`make test` and `make test-compiler` prepare one disposable checkout per run
+and clone it per test file (`cp -c` on APFS, `cp --reflink=auto` elsewhere)
+with the compiler fingerprint computed once; standalone `bash tests/test_x.bash`
+runs prepare their own checkout. Isolation is unchanged: every test owns a
+private copy of `lib`, `bin`, `trash`, the caches, its database, and `TMPDIR`.
+
+`Tool runProcessRequestJson:` validates and decodes a request in one `jq -j`
+pass (two jq processes per captured run instead of seven; stdin that contains
+NUL keeps a separate decoder so the child still receives it byte-for-byte).
+Instance creation lowercases the identifier prefix with Bash and generates
+accessors only for fields the compiled artifact does not define. The worker
+service's idle backoff, failure exit, and log bounding are described in
+[agent operations](agent-operations.md#continuous-operation). Measurements for
+all of these are in the
+[first tranche report](performance-first-tranche-trashtalk-2026-09-15.md).
+
 ## Optional value-send capture optimization
 
 `TRASHTALK_VALUE_SEND=1` enables guarded Option A for compiler-generated assigned
