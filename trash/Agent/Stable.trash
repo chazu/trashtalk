@@ -1,0 +1,88 @@
+package: Agent
+
+# Shared facade behavior for a durable, named agent with stable defaults.
+# The facade is not persisted: AgentIdentity and AgentSession remain the durable
+# authority and conversation records. Including classes supply policy selectors
+# `agentHandle`, `agentDisplayName`, `owner`, `archetype`, `role`, `profile`,
+# and `sessionScope`.
+Stable trait
+  classMethod: identity [
+    | id args handle |
+    handle := @ self agentHandle.
+    id := @ AgentIdentity named: handle.
+    args := #{identity: id owner: (@ self owner) archetype: (@ self archetype)
+      role: (@ self role) displayName: (@ self agentDisplayName) scope: (@ self sessionScope)} asJson.
+    ^ @ Store transaction: self sending: 'configureStableIdentityWithin:' with: args replaying: true
+  ]
+
+  classMethod: configureStableIdentityWithin: args [
+    | identity owner scope |
+    @ Store requireTransaction.
+    identity := @ Store read: (args objectAt: 'identity') class: 'AgentIdentity'.
+    owner := @ identity owner.
+    (owner isEmpty) ifTrue: [
+      @ identity owner: (args objectAt: 'owner').
+      @ identity displayName: (args objectAt: 'displayName').
+      @ identity defaultArchetype: (args objectAt: 'archetype').
+      @ identity defaultRole: (args objectAt: 'role').
+      @ identity sessionScope: (args objectAt: 'scope').
+      @ identity sessionPolicyRevision: 1.
+      @ identity save
+    ].
+    scope := @ identity sessionScope.
+    @ Require equal: scope to: (args objectAt: 'scope').
+    ^ @ AgentAccess validateIdentity: identity
+  ]
+
+  classMethod: configuredIdentityWithin [
+    | ids count identity |
+    @ Store requireTransaction.
+    ids := @ Store idsOf: 'AgentIdentity' matching: (#{handle: (@ self agentHandle)} asJson).
+    count := ids arrayLength.
+    (count = 0) ifTrue: [^ ''].
+    @ Require equal: count to: 1.
+    identity := ids arrayFirst.
+    ^ @ AgentAccess validateIdentity: identity
+  ]
+
+  classMethod: currentFor: workspace [
+    ^ @ Store transaction: self sending: 'currentStableWithinFor:' with: workspace
+  ]
+
+  classMethod: currentStableWithinFor: workspace [
+    | identity |
+    identity := @ self configuredIdentityWithin.
+    (identity isEmpty) ifTrue: [^ ''].
+    ^ @ AgentSession currentWithinFor: identity workspace: workspace
+  ]
+
+  classMethod: sessionFor: dir [
+    | workspace current identity archetype role profile |
+    workspace := @ AgentSession workspaceFor: dir.
+    current := @ self currentFor: workspace.
+    (current notEmpty) ifTrue: [^ current].
+    identity := @ self identity.
+    archetype := @ self archetype.
+    role := @ self role.
+    profile := @ self profile.
+    ^ @ AgentSession ensureFor: identity archetype: archetype role: role workspace: workspace profile: profile
+  ]
+
+  classMethod: focusCurrent [
+    | session |
+    session := @ self currentFor: '.'.
+    (session isEmpty) ifTrue: [^ @ Require reject: 'No current conversation; send a message first'].
+    ^ @ session focus
+  ]
+
+  # Replace only an idle current session. Outstanding work stays on the closed
+  # session and remains inspectable; no work is silently moved or stopped.
+  classMethod: fresh: dir [
+    | identity workspace archetype role profile |
+    identity := @ self identity.
+    workspace := @ AgentSession workspaceFor: dir.
+    archetype := @ self archetype.
+    role := @ self role.
+    profile := @ self profile.
+    ^ @ AgentSession freshFor: identity archetype: archetype role: role workspace: workspace profile: profile
+  ]
