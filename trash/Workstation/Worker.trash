@@ -1,5 +1,7 @@
+package: Workstation
+
 # Bounded local-only subscription stage. No session/identity routing or executor.
-WorkstationWorker subclass: Object
+Worker subclass: Object
   # Process-local keyset rotation is scheduling only, never durable progress.
   # Durable event progress belongs exclusively to each Honker named consumer.
   # Direct: the rotation pivot and the once-per-store schema install persist in
@@ -12,15 +14,15 @@ WorkstationWorker subclass: Object
       _WORKSTATION_FAIR_STORE="$SQLITE_JSON_DB"
       _WORKSTATION_SCHEMA_READY=''
     fi
-    ids=$(@ WorkstationWorker subscriptionsAfter: "${_WORKSTATION_FAIR_AFTER:-}") || return 1
+    ids=$(@ Workstation::Worker subscriptionsAfter: "${_WORKSTATION_FAIR_AFTER:-}") || return 1
     [[ -n "$ids" ]] || return 0
     if [[ ${_WORKSTATION_SCHEMA_READY:-} != 1 ]]; then
-      @ WorkstationSchema ensureSchema || return 1
+      @ Workstation::Schema ensureSchema || return 1
       _WORKSTATION_SCHEMA_READY=1
     fi
     for id in $ids; do
       _WORKSTATION_FAIR_AFTER="$id"
-      if ! @ WorkstationWorker processSubscription: "$id"; then
+      if ! @ Workstation::Worker processSubscription: "$id"; then
         printf 'Workstation subscription %s was not advanced past its failed record; retry after inspection\n' "$id" >&2
         rc=1
       fi
@@ -33,22 +35,22 @@ WorkstationWorker subclass: Object
     local owner pivot
     owner=$(_db_escape "$(@ AgentFocus human)")
     pivot=$(_db_escape "$1")
-    @ Store findByClass: EventSubscription where: "json_extract(data,'$.owner')='$owner' AND json_extract(data,'$.enabled')=1 AND json_extract(data,'$.adapterKind')='command-receipt'" orderBy: "CASE WHEN id>'$pivot' THEN 0 ELSE 1 END,id ASC" limit: 4
+    @ Store findByClass: Workstation::EventSubscription where: "json_extract(data,'$.owner')='$owner' AND json_extract(data,'$.enabled')=1 AND json_extract(data,'$.adapterKind')='command-receipt'" orderBy: "CASE WHEN id>'$pivot' THEN 0 ELSE 1 END,id ASC" limit: 4
   ]
   # The consumer handle is durable and reused; Honker owns its offset.
   classMethod: processSubscription: id [
     | subscription consumer |
     subscription := @ Store getInstance: id.
-    subscription := @ WorkstationSchema document: subscription.
-    consumer := @ CommandReceiptSourceAdapter consumerFor: subscription.
-    (consumer isEmpty) ifTrue: [^ @ EventSourceAdapterError signal: 'Cannot open receipt consumer'].
+    subscription := @ Workstation::Schema document: subscription.
+    consumer := @ Workstation::CommandReceiptSourceAdapter consumerFor: subscription.
+    (consumer isEmpty) ifTrue: [^ @ Workstation::EventSourceAdapterError signal: 'Cannot open receipt consumer'].
     ^ @ self consume: subscription using: consumer
   ]
   classMethod: consume: subscription using: consumer [
     | position records |
     position := subscription jsonTextAt: 'initialPosition'.
     (@ consumer initializeFrom: position) ifFailed: [:error | @ error signal].
-    records := @ CommandReceiptSourceAdapter read: consumer limit: 4.
+    records := @ Workstation::CommandReceiptSourceAdapter read: consumer limit: 4.
     records arrayEach: [:record |
       (@ self consumeRecord: record subscription: subscription consumer: consumer) ifFailed: [:error | @ error signal]
     ]
@@ -57,13 +59,13 @@ WorkstationWorker subclass: Object
   # event only when the send succeeded. Never accept caller-supplied envelopes.
   rawClassMethod: consumeRecord: record subscription: subscription consumer: consumer [
     local event
-    event=$(@ CommandReceiptSourceAdapter normalize: "$1" for: "$2") || return 1
-    @ WorkstationWorker acceptEvent: "$event" subscription: "$2" || return 1
+    event=$(@ Workstation::CommandReceiptSourceAdapter normalize: "$1" for: "$2") || return 1
+    @ Workstation::Worker acceptEvent: "$event" subscription: "$2" || return 1
     @ "$3" acknowledgeThrough: "$(printf '%s' "$1" | jq -er .offset)"
   ]
   classMethod: acceptEvent: event subscription: subscription [
     (event notEmpty) ifTrue: [
-      ^ @ Attention accept: event for: subscription
+      ^ @ Workstation::Attention accept: event for: subscription
     ] ifFalse: [
       ^ @ Store transaction: self sending: 'filterWithin:' with: subscription
     ]
@@ -72,9 +74,9 @@ WorkstationWorker subclass: Object
     | id current human |
     @ Store requireTransaction.
     id := subscription jsonTextAt: 'id'.
-    @ Store read: id class: 'EventSubscription'.
+    @ Store read: id class: 'Workstation::EventSubscription'.
     current := @ Store getInstance: id.
-    current := @ WorkstationSchema document: current.
+    current := @ Workstation::Schema document: current.
     @ Require equal: current to: subscription.
     @ Require equal: (current jsonTextAt: 'enabled') to: 'true'.
     human := @ AgentFocus human.

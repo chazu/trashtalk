@@ -59,5 +59,5 @@ for expected in 0 9; do
  [[ $rc == "$expected" ]]
  grep -q 'publication failed; child outcome is unchanged' "$work/failure"
 done
-[[ $(@ Store countByClass: Attention) == 0 && $(@ Store countByClass: AgentDelivery) == 0 ]]
+[[ $(@ Store countByClass: Workstation::Attention) == 0 && $(@ Store countByClass: AgentDelivery) == 0 ]]
 echo 'PASS: exact argv, stdin, canonical cwd, exits/signals, safe bounded capture, fixtures and publication failure'

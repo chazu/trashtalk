@@ -1,3 +1,5 @@
+package: Workstation
+
 # Thin durable policy. All feature writes use CUE before a guarded Store transaction.
 EventSubscription subclass: Object
   include: Persistable
@@ -9,25 +11,29 @@ EventSubscription subclass: Object
   classMethod: new [ @ Require reject: 'Use EventSubscription createFrom: with a closed document' ]
   method: save [ @ Require reject: 'Use EventSubscription updateFrom: with a revision and audit note' ]
   classMethod: createFrom: document [
-    ^ @ WorkstationSchema transact: document as: 'EventSubscription' sending: 'createWithin:'
+    ^ @ Workstation::Schema transact: document as: 'EventSubscription' sending: 'createWithin:'
   ]
   classMethod: updateFrom: document [
-    ^ @ WorkstationSchema transact: document as: 'EventSubscription' sending: 'updateWithin:'
+    ^ @ Workstation::Schema transact: document as: 'EventSubscription' sending: 'updateWithin:'
   ]
-  classMethod: read: id [ ^ @ Store read: id class: 'EventSubscription' ]
+  classMethod: read: id [
+    @ Workstation::Schema ensureSchema.
+    ^ @ Store read: id class: 'Workstation::EventSubscription'
+  ]
   classMethod: listByOwner: owner [
-    ^ @ Store idsOf: 'EventSubscription' matching: (#{owner: owner} asJson)
+    @ Workstation::Schema ensureSchema.
+    ^ @ Store idsOf: 'Workstation::EventSubscription' matching: (#{owner: owner} asJson)
   ]
   classMethod: validateWithin: document [
     | human expected adapter target mode confirmation |
-    @ WorkstationSchema requireValidated: document.
+    @ Workstation::Schema requireValidated: document.
     human := @ AgentFocus human.
     @ Require equal: (document jsonTextAt: 'owner') to: human.
     expected := 'workstation/' , (document jsonTextAt: 'id').
     @ Require equal: (document jsonTextAt: 'consumerName') to: expected.
-    adapter := @ EventSourceAdapter forKind: (document jsonTextAt: 'adapterKind').
+    adapter := @ Workstation::EventSourceAdapter forKind: (document jsonTextAt: 'adapterKind').
     @ Require member: (document jsonTextAt: 'grouping') of: '["opaque"]'.
-    (adapter = 'CommandReceiptSourceAdapter') ifTrue: [@ CommandReceiptSourceAdapter validatePolicy: document].
+    (adapter = 'Workstation::CommandReceiptSourceAdapter') ifTrue: [@ Workstation::CommandReceiptSourceAdapter validatePolicy: document].
     target := document jsonTextAt: 'targetIdentity'.
     (target notEmpty) ifTrue: [@ AgentAccess validateIdentity: target].
     # Automatic delegation is opt-in: it needs a target and an explicit confirmation note.
@@ -38,8 +44,8 @@ EventSubscription subclass: Object
       @ Require text: (confirmation jsonTextAt: '')
     ].
     @ Require text: (document jsonTextAt: 'auditNote').
-    @ WorkstationSchema timestampEpoch: (document jsonTextAt: 'createdAt').
-    @ WorkstationSchema timestampEpoch: (document jsonTextAt: 'updatedAt').
+    @ Workstation::Schema timestampEpoch: (document jsonTextAt: 'createdAt').
+    @ Workstation::Schema timestampEpoch: (document jsonTextAt: 'updatedAt').
     ^ adapter
   ]
   classMethod: delegationModeOf: document [
@@ -57,10 +63,10 @@ EventSubscription subclass: Object
     @ self validateWithin: document.
     @ Require equal: (document jsonTextAt: 'revision') to: '1'.
     @ Require equal: (document jsonTextAt: 'createdAt') to: (document jsonTextAt: 'updatedAt').
-    matches := @ Store idsOf: 'EventSubscription' matching: (#{consumerName: (document jsonTextAt: 'consumerName')} asJson).
+    matches := @ Store idsOf: 'Workstation::EventSubscription' matching: (#{consumerName: (document jsonTextAt: 'consumerName')} asJson).
     @ Require equal: (matches arrayLength) to: '0'.
     id := document jsonTextAt: 'id'.
-    @ Store create: 'EventSubscription' id: id.
+    @ Store create: 'Workstation::EventSubscription' id: id.
     @ Store patch: id with: document.
     ^ id
   ]
@@ -68,9 +74,9 @@ EventSubscription subclass: Object
     | id old prior next |
     @ self validateWithin: document.
     id := document jsonTextAt: 'id'.
-    @ Store read: id class: 'EventSubscription'.
+    @ Store read: id class: 'Workstation::EventSubscription'.
     old := @ Store getInstance: id.
-    old := @ WorkstationSchema document: old.
+    old := @ Workstation::Schema document: old.
     # Source/filter edits require a future explicit consumer migration, never an offset reset.
     '["id","owner","consumerName","streamName","adapterKind","filter","createdAt","initialPosition","schema_version","schemaDigest"]' arrayEach: [:field |
       @ Require equal: (document jsonAt: field) to: (old jsonAt: field)
@@ -85,18 +91,18 @@ EventSubscription subclass: Object
   method: revise: patch reason: reason [
     | data revision now |
     data := @ Store getInstance: self.
-    data := @ WorkstationSchema document: data.
+    data := @ Workstation::Schema document: data.
     revision := data jsonTextAt: 'revision'.
     revision := revision + 1.
     now := @ Time nowISO.
-    patch := @ WorkstationSchema merge: patch with: (#{revision: (revision jsonValue) updatedAt: now auditNote: reason} asJson).
-    data := @ WorkstationSchema merge: data with: patch.
-    ^ @ EventSubscription updateFrom: data
+    patch := @ Workstation::Schema merge: patch with: (#{revision: (revision jsonValue) updatedAt: now auditNote: reason} asJson).
+    data := @ Workstation::Schema merge: data with: patch.
+    ^ @ Workstation::EventSubscription updateFrom: data
   ]
   method: changeDispatchTo: state reason: reason [
     | data |
     data := @ Store getInstance: self.
-    data := @ WorkstationSchema document: data.
+    data := @ Workstation::Schema document: data.
     @ Require member: state of: '["enabled","paused"]'.
     ((data jsonTextAt: 'dispatchState') = state) ifTrue: [^ @ Require reject: 'Dispatch already has that state'].
     ^ @ self revise: (#{dispatchState: state} asJson) reason: reason
@@ -107,7 +113,7 @@ EventSubscription subclass: Object
     | data current |
     @ Require member: flag of: '["true","false"]'.
     data := @ Store getInstance: self.
-    data := @ WorkstationSchema document: data.
+    data := @ Workstation::Schema document: data.
     current := data jsonTextAt: 'enabled'.
     (current = flag) ifTrue: [^ @ Require reject: 'Subscription already has that enabled state'].
     ^ @ self revise: (#{enabled: (flag jsonValue)} asJson) reason: reason
@@ -121,7 +127,7 @@ EventSubscription subclass: Object
     | data current |
     @ Require text: identity.
     data := @ Store getInstance: self.
-    data := @ WorkstationSchema document: data.
+    data := @ Workstation::Schema document: data.
     current := data jsonTextAt: 'targetIdentity'.
     (current = identity) ifTrue: [^ @ Require reject: 'Subscription already targets that identity'].
     ^ @ self revise: (#{targetIdentity: identity} asJson) reason: reason
@@ -129,48 +135,48 @@ EventSubscription subclass: Object
   method: clearTarget: reason [
     | data current limit |
     data := @ Store getInstance: self.
-    data := @ WorkstationSchema document: data.
+    data := @ Workstation::Schema document: data.
     current := data jsonTextAt: 'targetIdentity'.
     (current isEmpty) ifTrue: [^ @ Require reject: 'Subscription has no target'].
-    limit := @ EventSubscription lineageLimitOf: data.
+    limit := @ Workstation::EventSubscription lineageLimitOf: data.
     ^ @ self revise: (#{targetIdentity: '' delegation: #{mode: 'manual' maxLineageDepth: (limit jsonValue) confirmation: ''}} asJson) reason: reason
   ]
   method: enableAutomaticDelegation: confirmation reason: reason [
     | data target limit |
     @ Require text: confirmation.
     data := @ Store getInstance: self.
-    data := @ WorkstationSchema document: data.
+    data := @ Workstation::Schema document: data.
     target := data jsonTextAt: 'targetIdentity'.
     (target isEmpty) ifTrue: [^ @ Require reject: 'Automatic delegation requires a target identity'].
-    ((@ EventSubscription delegationModeOf: data) = 'automatic') ifTrue: [^ @ Require reject: 'Automatic delegation is already enabled'].
-    limit := @ EventSubscription lineageLimitOf: data.
+    ((@ Workstation::EventSubscription delegationModeOf: data) = 'automatic') ifTrue: [^ @ Require reject: 'Automatic delegation is already enabled'].
+    limit := @ Workstation::EventSubscription lineageLimitOf: data.
     ^ @ self revise: (#{delegation: #{mode: 'automatic' maxLineageDepth: (limit jsonValue) confirmation: confirmation}} asJson) reason: reason
   ]
   method: disableAutomaticDelegation: reason [
     | data limit |
     data := @ Store getInstance: self.
-    data := @ WorkstationSchema document: data.
-    ((@ EventSubscription delegationModeOf: data) = 'automatic') ifFalse: [^ @ Require reject: 'Automatic delegation is not enabled'].
-    limit := @ EventSubscription lineageLimitOf: data.
+    data := @ Workstation::Schema document: data.
+    ((@ Workstation::EventSubscription delegationModeOf: data) = 'automatic') ifFalse: [^ @ Require reject: 'Automatic delegation is not enabled'].
+    limit := @ Workstation::EventSubscription lineageLimitOf: data.
     ^ @ self revise: (#{delegation: #{mode: 'manual' maxLineageDepth: (limit jsonValue) confirmation: ''}} asJson) reason: reason
   ]
   method: lineageLimit: depth reason: reason [
     | data mode confirmation |
     data := @ Store getInstance: self.
-    data := @ WorkstationSchema document: data.
-    mode := @ EventSubscription delegationModeOf: data.
+    data := @ Workstation::Schema document: data.
+    mode := @ Workstation::EventSubscription delegationModeOf: data.
     confirmation := data jsonAt: 'delegation.confirmation' ifAbsent: '""'.
     ^ @ self revise: (#{delegation: #{mode: mode maxLineageDepth: (depth jsonValue) confirmation: (confirmation jsonTextAt: '')}} asJson) reason: reason
   ]
   method: lineageLimit [
     | data |
     data := @ Store getInstance: self.
-    ^ @ EventSubscription lineageLimitOf: data
+    ^ @ Workstation::EventSubscription lineageLimitOf: data
   ]
   method: delegationMode [
     | data |
     data := @ Store getInstance: self.
-    ^ @ EventSubscription delegationModeOf: data
+    ^ @ Workstation::EventSubscription delegationModeOf: data
   ]
   method: enabled [
     | data |

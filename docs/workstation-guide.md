@@ -52,7 +52,7 @@ Check all of it at once:
 
 ```bash
 @ Trash doctor
-@ WorkstationSchema capabilities     # {"cue":true,"stream":true}
+@ Workstation::Schema capabilities     # {"cue":true,"stream":true}
 ```
 
 Missing CUE or Honker only disables this feature. Builds, the inbox, and
@@ -66,7 +66,7 @@ at most once per fifteen minutes per group.
 
 ```bash
 source lib/trash.bash
-digest=$(@ WorkstationSchema digest)
+digest=$(@ Workstation::Schema digest)
 sub=$(jq -c --arg d "$digest" '
   .adapterKind="command-receipt"
   | .streamName="workstation.command-receipts.v1"
@@ -75,7 +75,7 @@ sub=$(jq -c --arg d "$digest" '
   | .debounceSeconds=900
   | .initialPosition="from-now"' \
   schemas/workstation/v1/fixtures/EventSubscription.valid.json)
-sub=$(@ EventSubscription createFrom: "$sub")
+sub=$(@ Workstation::EventSubscription createFrom: "$sub")
 @ "$sub" summary
 ```
 
@@ -193,13 +193,13 @@ many groups are open or have a snooze that expired.
 
 ```bash
 @ "$inbox" attentionCount          # e.g. 2
-@ Attention localOpenCount         # same number, no inbox needed
+@ Workstation::Attention localOpenCount         # same number, no inbox needed
 ```
 
 A prompt snippet that shows `!2` only when something needs you:
 
 ```bash
-_ws_attn() { local n; n=$(@ Attention localOpenCount 2>/dev/null); [[ ${n:-0} -gt 0 ]] && printf '!%s ' "$n"; }
+_ws_attn() { local n; n=$(@ Workstation::Attention localOpenCount 2>/dev/null); [[ ${n:-0} -gt 0 ]] && printf '!%s ' "$n"; }
 PS1='$(_ws_attn)\w \$ '
 ```
 
@@ -468,7 +468,7 @@ by this feature. Gusgus's default role allows any workspace and has no budget.
 ## Managing subscriptions
 
 ```bash
-@ EventSubscription listByOwner: "$TRASHTALK_USER"
+@ Workstation::EventSubscription listByOwner: "$TRASHTALK_USER"
 @ "$sub" summary                               # enabled, dispatch, target, mode, revision
 @ "$sub" disable: 'vacation'                   # stop reading receipts
 @ "$sub" enable: 'back'                        # resume from the stored position
@@ -512,7 +512,7 @@ records with their fields as columns.
 | Commands run but no alert appears | worker not running, subscription disabled, or the exit code equals `exitNot` | `bin/trash-worker --once`; `@ "$sub" summary`; check the exit code |
 | Alert appeared once, then nothing on repeats | that is grouping working | `@ "$msg" inspectAttention` shows the growing `eventCount` |
 | Count is non-zero but the inbox looks empty | the alert was archived | archiving hides the message only; acknowledge, resolve, or suppress the group |
-| Worker prints `subscription ... was not advanced past its failed record` | a record failed validation, CUE is missing, or the schema digest drifted | fix the cause and let the next tick retry; to skip a poison record deliberately: `@ "$consumer" ack: <offset>` where `consumer=$(@ CommandReceiptSourceAdapter consumerFor: "$subDocument")` |
+| Worker prints `subscription ... was not advanced past its failed record` | a record failed validation, CUE is missing, or the schema digest drifted | fix the cause and let the next tick retry; to skip a poison record deliberately: `@ "$consumer" ack: <offset>` where `consumer=$(@ Workstation::CommandReceiptSourceAdapter consumerFor: "$subDocument")` |
 | `Command receipt publication failed` on the wrapper | Honker or the store was unavailable at that moment | the command result is still correct; nothing to repair |
 | `routingStatus` says `no-session` for Gusgus | no current conversation | `@@ 'hi'` or `@ Gusgus sessionFor: "$PWD"` |
 | `routingStatus` says `session-ambiguous` | a legacy identity with several open sessions | `@ "$identity" selectCurrentSession: "$session"` |
@@ -522,7 +522,7 @@ records with their fields as columns.
 Everything durable can be inspected directly:
 
 ```bash
-@ Attention localOpen                         # ids needing you
+@ Workstation::Attention localOpen                         # ids needing you
 @ Store getInstance: "$attention" | jq .
 @ "$msg" show                                 # full message with metadata
 ```
@@ -536,9 +536,9 @@ Everything durable can be inspected directly:
 | One worker tick / supervised service | `bin/trash-worker --once` / `bin/trash-worker-service install\|start\|stop\|status` |
 | Create, list, inspect subscriptions | `EventSubscription createFrom:`, `listByOwner:`, `summary` |
 | Subscription switches | `enable:` `disable:` `pauseDispatch:` `resumeDispatch:` `target:reason:` `clearTarget:` `enableAutomaticDelegation:reason:` `disableAutomaticDelegation:` `lineageLimit:reason:` |
-| Count for prompts | `@ "$inbox" attentionCount`, `@ Attention localOpenCount` |
+| Count for prompts | `@ "$inbox" attentionCount`, `@ Workstation::Attention localOpenCount` |
 | Alert controls | `inspectAttention` `acknowledgeAttention` `snoozeAttentionUntil:` `resolveAttentionWithNote:` `suppressAttention:` `reopenAttention` |
 | Delegation | `routingStatus` `delegateAttention` `redelegateAttention:` `focusDelegatedAttention` |
 | Browser | `@ "$(@ Trash userInbox)" browse` |
 | Prompt indicator | `AgentWorkboard indicator`, `publishIndicator`, `indicatorPath` |
-| Capability check | `@ Trash doctor`, `@ WorkstationSchema capabilities` |
+| Capability check | `@ Trash doctor`, `@ Workstation::Schema capabilities` |

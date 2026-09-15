@@ -1,3 +1,5 @@
+package: Workstation
+
 # Local attention lifecycle and atomic user-Inbox projection. No agent effects.
 Attention subclass: Object
   include: Persistable
@@ -8,21 +10,24 @@ Attention subclass: Object
 
   classMethod: new [ @ Require reject: 'Use Attention createFrom: with a closed document' ]
   method: save [ @ Require reject: 'Use Attention lifecycle messages' ]
-  classMethod: read: id [ ^ @ Store read: id class: 'Attention' ]
+  classMethod: read: id [
+    @ Workstation::Schema ensureSchema.
+    ^ @ Store read: id class: 'Workstation::Attention'
+  ]
   classMethod: createFrom: document [
-    ^ @ WorkstationSchema transact: document as: 'Attention' sending: 'createWithin:'
+    ^ @ Workstation::Schema transact: document as: 'Attention' sending: 'createWithin:'
   ]
   classMethod: validateWithin: document [
     | sub human message session owner |
-    @ WorkstationSchema requireValidated: document.
+    @ Workstation::Schema requireValidated: document.
     human := @ AgentFocus human.
     @ Require equal: (document jsonTextAt: 'actor') to: human.
-    sub := @ Store read: (document jsonTextAt: 'subscription') class: 'EventSubscription'.
+    sub := @ Store read: (document jsonTextAt: 'subscription') class: 'Workstation::EventSubscription'.
     owner := @ sub owner.
     @ Require equal: owner to: human.
     @ Require text: (document jsonTextAt: 'groupKey').
-    @ WorkstationSchema timestampEpoch: (document jsonTextAt: 'createdAt').
-    @ WorkstationSchema timestampEpoch: (document jsonTextAt: 'updatedAt').
+    @ Workstation::Schema timestampEpoch: (document jsonTextAt: 'createdAt').
+    @ Workstation::Schema timestampEpoch: (document jsonTextAt: 'updatedAt').
     message := document jsonTextAt: 'message'.
     (message notEmpty) ifTrue: [@ Store read: message class: 'Message'].
     session := document jsonTextAt: 'lastResolvedSession'.
@@ -54,8 +59,8 @@ Attention subclass: Object
     @ Require equal: (document jsonAt: 'delegatedMessage' ifAbsent: '""') to: '""'.
     @ Require equal: (document jsonAt: 'delegationRevision' ifAbsent: '0') to: '0'.
     id := document jsonTextAt: 'id'.
-    @ Store create: 'Attention' id: id.
-    @ WorkstationSchema write: document to: id.
+    @ Store create: 'Workstation::Attention' id: id.
+    @ Workstation::Schema write: document to: id.
     ^ id
   ]
   classMethod: allowedTransitions [
@@ -65,9 +70,9 @@ Attention subclass: Object
     | id old from to pair allowed wakeTime now reason |
     @ self validateWithin: document.
     id := document jsonTextAt: 'id'.
-    @ Store read: id class: 'Attention'.
+    @ Store read: id class: 'Workstation::Attention'.
     old := @ Store getInstance: id.
-    old := @ WorkstationSchema document: old.
+    old := @ Workstation::Schema document: old.
     '["id","subscription","groupKey","message","firstCoordinate","lastCoordinate","eventCount","createdAt","schema_version","schemaDigest","lastResolvedSession","workspace","origin","lineageDepth","delegationRevision","delegatedMessage","delegatedSession","delegatedIdentity","routingNote"]' arrayEach: [:field |
       @ Require equal: (document jsonAt: field ifAbsent: 'null') to: (old jsonAt: field ifAbsent: 'null')
     ].
@@ -80,30 +85,30 @@ Attention subclass: Object
     (to = 'resolved') ifTrue: [@ Require text: reason].
     (to = 'suppressed') ifTrue: [@ Require text: reason].
     (to = 'snoozed') ifTrue: [
-      wakeTime := @ WorkstationSchema timestampEpoch: (document jsonTextAt: 'snoozeUntil').
+      wakeTime := @ Workstation::Schema timestampEpoch: (document jsonTextAt: 'snoozeUntil').
       now := @ Time now.
       (wakeTime > now) ifFalse: [^ @ Require reject: 'Snooze requires a future normalized UTC timestamp']
     ] ifFalse: [@ Require equal: (document jsonTextAt: 'snoozeUntil') to: ''].
-    @ WorkstationSchema write: document to: id.
+    @ Workstation::Schema write: document to: id.
     ^ id
   ]
   method: transitionTo: state until: wakeTime note: reason [
     | document patch actor now |
     document := @ Store getInstance: self.
-    document := @ WorkstationSchema document: document.
+    document := @ Workstation::Schema document: document.
     actor := @ AgentFocus human.
     now := @ Time nowISO.
     patch := #{state: state snoozeUntil: wakeTime note: reason actor: actor updatedAt: now} asJson.
-    document := @ WorkstationSchema merge: document with: patch.
+    document := @ Workstation::Schema merge: document with: patch.
     # The transaction's failure must reach the caller: an unguarded assignment
     # from a send would swallow it. Its value is this record's id.
-    (@ WorkstationSchema transact: document as: 'Attention' sending: 'transitionWithin:') ifFailed: [:error | @ error signal].
+    (@ Workstation::Schema transact: document as: 'Attention' sending: 'transitionWithin:') ifFailed: [:error | @ error signal].
     # Lifecycle changes are what a prompt indicator is for; refresh it after
     # the commit, outside the transaction.
     @ AgentWorkboard publishIndicator.
     ^ self
   ]
-  classMethod: delegateWithin: candidate [ ^ @ WorkstationRouting delegateWithin: candidate ]
+  classMethod: delegateWithin: candidate [ ^ @ Workstation::Routing delegateWithin: candidate ]
   method: acknowledge [ ^ @ self transitionTo: 'acknowledged' until: '' note: '' ]
   method: snoozeUntil: wakeTime [ ^ @ self transitionTo: 'snoozed' until: wakeTime note: '' ]
   method: resolveWithNote: note [ ^ @ self transitionTo: 'resolved' until: '' note: note ]
@@ -116,36 +121,36 @@ Attention subclass: Object
 
   # Phase 2 routing. The dry run mutates nothing; delegation publishes through
   # WorkstationRouting; focus attaches to the recorded session only.
-  method: routingStatus [ ^ @ WorkstationRouting statusFor: self ]
-  method: delegate [ ^ @ WorkstationRouting delegate: self ]
-  method: redelegate: reason [ ^ @ WorkstationRouting redelegate: self reason: reason ]
-  method: focusDelegated [ ^ @ WorkstationRouting focus: self ]
+  method: routingStatus [ ^ @ Workstation::Routing statusFor: self ]
+  method: delegate [ ^ @ Workstation::Routing delegate: self ]
+  method: redelegate: reason [ ^ @ Workstation::Routing redelegate: self reason: reason ]
+  method: focusDelegated [ ^ @ Workstation::Routing focus: self ]
 
   # Preparation and CUE execute outside both Store and the worker OS lock.
   classMethod: accept: event for: subscription [
     | candidate now actor id group partition parts digest bundle workspace origin depth |
-    (@ WorkstationSchema validate: event as: 'Envelope') ifFailed: [:error | @ error signal].
-    (@ CommandReceiptSourceAdapter validateSubscription: subscription) ifFailed: [:error | @ error signal].
-    id := @ Runtime generateId: 'Attention'.
+    (@ Workstation::Schema validate: event as: 'Envelope') ifFailed: [:error | @ error signal].
+    (@ Workstation::CommandReceiptSourceAdapter validateSubscription: subscription) ifFailed: [:error | @ error signal].
+    id := @ Runtime generateId: 'Workstation::Attention'.
     actor := @ AgentFocus human.
     now := @ Time nowISO.
     group := event jsonTextAt: 'groupKey'.
     partition := event jsonTextAt: 'coordinate.partition'.
     parts := #(group partition) asJson.
-    group := @ WorkstationSchema hash: parts.
-    digest := @ WorkstationSchema digest.
+    group := @ Workstation::Schema hash: parts.
+    digest := @ Workstation::Schema digest.
     # Routing metadata is fixed at group creation: workspace, closed origin, and lineage depth.
     workspace := event jsonAt: 'workspace' ifAbsent: '""'.
     workspace := workspace jsonTextAt: ''.
     origin := event jsonAt: 'origin' ifAbsent: 'null'.
-    depth := @ WorkstationRouting lineageFor: origin.
+    depth := @ Workstation::Routing lineageFor: origin.
     candidate := #{schema_version: 1 id: id subscription: (subscription jsonTextAt: 'id')
       groupKey: group state: 'open' message: '' firstCoordinate: null lastCoordinate: null
       eventCount: 0 snoozeUntil: '' note: '' actor: actor createdAt: now updatedAt: now
       schemaDigest: digest lastResolvedSession: '' workspace: workspace origin: (origin jsonValue)
       lineageDepth: (depth jsonValue) delegationRevision: 0 delegatedMessage: '' delegatedSession: ''
       delegatedIdentity: '' routingNote: ''} asJson.
-    (@ WorkstationSchema validate: candidate as: 'Attention') ifFailed: [:error | @ error signal].
+    (@ Workstation::Schema validate: candidate as: 'Attention') ifFailed: [:error | @ error signal].
     bundle := #{event: (event jsonValue) subscription: (subscription jsonValue) candidate: (candidate jsonValue)} asJson.
     ^ @ self acceptPrepared: bundle
   ]
@@ -156,17 +161,17 @@ Attention subclass: Object
     event=$(printf '%s' "$1" | jq -ce .event) || return 1
     subscription=$(printf '%s' "$1" | jq -ce .subscription) || return 1
     candidate=$(printf '%s' "$1" | jq -ce .candidate) || return 1
-    @ WorkstationSchema validate: "$event" as: Envelope >/dev/null || return 1
-    @ CommandReceiptSourceAdapter validateSubscription: "$subscription" >/dev/null || return 1
-    @ WorkstationSchema validate: "$candidate" as: Attention >/dev/null || return 1
-    group=$(@ WorkstationSchema hash: "$(printf '%s' "$event" | jq -c '[.groupKey,.coordinate.partition]')") || return 1
-    digest=$(@ WorkstationSchema digest) || return 1
+    @ Workstation::Schema validate: "$event" as: Envelope >/dev/null || return 1
+    @ Workstation::CommandReceiptSourceAdapter validateSubscription: "$subscription" >/dev/null || return 1
+    @ Workstation::Schema validate: "$candidate" as: Attention >/dev/null || return 1
+    group=$(@ Workstation::Schema hash: "$(printf '%s' "$event" | jq -c '[.groupKey,.coordinate.partition]')") || return 1
+    digest=$(@ Workstation::Schema digest) || return 1
     printf '%s' "$candidate" | jq -e --arg g "$group" --arg d "$digest" --argjson s "$subscription" --argjson e "$event" '
       .groupKey==$g and .subscription==$s.id and .schemaDigest==$d and
       .message=="" and .lastResolvedSession=="" and .delegatedMessage=="" and .delegationRevision==0 and
       .workspace==($e.workspace // "") and .origin==($e.origin // null)' >/dev/null || return 1
-    @ WorkstationSchema ensureSchema || return 1
-    _WORKSTATION_VALIDATED_JSON="$candidate" _WORKSTATION_ACCEPTANCE="$1" @ Store transaction: Attention sending: 'acceptWithin:' with: "$1" replaying: true
+    @ Workstation::Schema ensureSchema || return 1
+    _WORKSTATION_VALIDATED_JSON="$candidate" _WORKSTATION_ACCEPTANCE="$1" @ Store transaction: Workstation::Attention sending: 'acceptWithin:' with: "$1" replaying: true
   ]
   rawClassMethod: requireAcceptance: bundle [
     @ Store requireTransaction || return 1
@@ -178,23 +183,23 @@ Attention subclass: Object
     event := bundle jsonAt: 'event'.
     subscription := bundle jsonAt: 'subscription'.
     candidate := bundle jsonAt: 'candidate'.
-    @ WorkstationWorker filterWithin: subscription.
+    @ Workstation::Worker filterWithin: subscription.
     coordinate := event jsonAt: 'coordinate'.
     id := subscription jsonTextAt: 'id'.
     @ Require equal: (coordinate jsonTextAt: 'subscription') to: id.
     @ Require equal: (coordinate jsonTextAt: 'streamName') to: (subscription jsonTextAt: 'streamName').
     existing := @ Store claimedCoordinate: coordinate.
     (existing notEmpty) ifTrue: [^ existing].
-    @ WorkstationSchema requireValidated: candidate.
+    @ Workstation::Schema requireValidated: candidate.
     @ Require equal: (candidate jsonTextAt: 'subscription') to: id.
     group := candidate jsonTextAt: 'groupKey'.
-    matches := @ Store findByClass: 'Attention' matching: (#{subscription: id groupKey: group state: #('open' 'acknowledged' 'snoozed' 'suppressed')} asJson) orderBy: 'created_at DESC' limit: 1.
+    matches := @ Store findByClass: 'Workstation::Attention' matching: (#{subscription: id groupKey: group state: #('open' 'acknowledged' 'snoozed' 'suppressed')} asJson) orderBy: 'created_at DESC' limit: 1.
     attention := matches firstLine.
     (attention isEmpty) ifTrue: [attention := @ self createWithin: candidate].
     @ Store recordCoordinate: coordinate forAttention: attention.
     # Opt-in automatic routing commits with the acceptance; the root Message
     # then reflects any assignment. Ineligible groups keep a visible reason.
-    @ WorkstationRouting autoWithin: attention subscription: subscription.
+    @ Workstation::Routing autoWithin: attention subscription: subscription.
     display := event jsonAt: 'display'.
     inbox := @ Inbox localFor: (subscription jsonTextAt: 'owner').
     message := @ inbox attention: attention display: display debounce: (subscription jsonTextAt: 'debounceSeconds').
@@ -207,7 +212,7 @@ Attention subclass: Object
   rawClassMethod: localOpen [
     local owner
     owner=$(_db_escape "$(@ AgentFocus human)")
-    @ Store findByClass: Attention where: "json_extract(data,'$.subscription') IN (SELECT id FROM instances WHERE class='EventSubscription' AND json_extract(data,'$.owner')='$owner') AND (json_extract(data,'$.state')='open' OR (json_extract(data,'$.state')='snoozed' AND json_extract(data,'$.snoozeUntil')<=strftime('%Y-%m-%dT%H:%M:%SZ','now')))" orderBy: 'created_at DESC' limit: 1000
+    @ Store findByClass: Workstation::Attention where: "json_extract(data,'$.subscription') IN (SELECT id FROM instances WHERE class='Workstation::EventSubscription' AND json_extract(data,'$.owner')='$owner') AND (json_extract(data,'$.state')='open' OR (json_extract(data,'$.state')='snoozed' AND json_extract(data,'$.snoozeUntil')<=strftime('%Y-%m-%dT%H:%M:%SZ','now')))" orderBy: 'created_at DESC' limit: 1000
   ]
   classMethod: localOpenCount [
     | ids count |

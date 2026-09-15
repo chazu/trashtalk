@@ -7,11 +7,11 @@ source lib/trash.bash 2>/dev/null
 trap - EXIT
 export TRASHTALK_USER=local-user TRASHTALK_WORKSTATION_FIXTURES=1
 command -v cue >/dev/null || { echo 'SKIP: CUE not installed'; exit 0; }
-digest=$(@ WorkstationSchema digest)
+digest=$(@ Workstation::Schema digest)
 subdoc=$(jq -c --arg d "$digest" '.schemaDigest=$d' schemas/workstation/v1/fixtures/EventSubscription.valid.json)
-@ EventSubscription createFrom: "$subdoc" >/dev/null
+@ Workstation::EventSubscription createFrom: "$subdoc" >/dev/null
 doc=$(jq -c --arg d "$digest" '.schemaDigest=$d' schemas/workstation/v1/fixtures/Attention.valid.json)
-a=$(@ Attention createFrom: "$doc")
+a=$(@ Workstation::Attention createFrom: "$doc")
 @ "$a" acknowledge >/dev/null
 @ "$a" reload
 [[ $(@ "$a" state) == acknowledged ]]
@@ -31,7 +31,7 @@ for state in open acknowledged snoozed resolved suppressed; do
   # Fixture setup only, enumerate every source state without conflating setup and transitions.
   @ Store patch: "$a" with: "{\"state\":\"$state\",\"snoozeUntil\":\"\"}" >/dev/null
   until=''; [[ $target != snoozed ]] || until='2099-01-01T00:00:00Z'
-  allowed=$(@ Attention allowedTransitions | jq -r --arg p "$state:$target" 'index($p)!=null')
+  allowed=$(@ Workstation::Attention allowedTransitions | jq -r --arg p "$state:$target" 'index($p)!=null')
   if @ "$a" transitionTo: "$target" until: "$until" note: test >/dev/null 2>&1; then result=true; else result=false; fi
   [[ $result == "$allowed" ]] || { echo "FAIL transition $state:$target"; exit 1; }
   @ "$a" reload

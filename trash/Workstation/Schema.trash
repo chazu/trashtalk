@@ -1,5 +1,7 @@
+package: Workstation
+
 # Trusted CUE process boundary. Never execute CUE in a Store transaction.
-WorkstationSchema subclass: Object
+Schema subclass: Object
   rawClassMethod: digest [
     local root="${TRASHTALK_DIR:-$HOME/.trashtalk}/schemas/workstation/v1"
     { cat "$root/contracts.cue"; for name in Attention CommandReceipt Coordinate Envelope EventSubscription SafeDisplay; do cat "$root/roots/$name.cue"; done; } | shasum -a 256 | cut -d ' ' -f 1
@@ -32,12 +34,16 @@ WorkstationSchema subclass: Object
   # This is an internal precondition, not a sandbox against arbitrary Bash.
   rawClassMethod: transact: json as: root sending: selector [
     case "$2:$3" in 'EventSubscription:createWithin:'|'EventSubscription:updateWithin:'|'Attention:createWithin:'|'Attention:transitionWithin:'|'Attention:delegateWithin:') ;; *) _throw WorkstationSchemaError 'Unknown workstation mutation'; return 1;; esac
-    local checked digest
+    local checked digest target
     checked=$(@ "$_RECEIVER" validate: "$1" as: "$2") || return
     digest=$(@ "$_RECEIVER" digest) || return
     [[ $(printf '%s' "$checked" | jq -r .schemaDigest) == "$digest" ]] || { _throw WorkstationSchemaError 'Workstation schema digest mismatch'; return 1; }
-    @ WorkstationSchema ensureSchema || return
-    _WORKSTATION_VALIDATED_JSON="$checked" @ Store transaction: "$2" sending: "$3" with: "$checked"
+    @ Workstation::Schema ensureSchema || return
+    case "$2" in
+      EventSubscription) target='Workstation::EventSubscription' ;;
+      Attention) target='Workstation::Attention' ;;
+    esac
+    _WORKSTATION_VALIDATED_JSON="$checked" @ Store transaction: "$target" sending: "$3" with: "$checked"
   ]
 
   rawClassMethod: requireValidated: json [

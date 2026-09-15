@@ -23,8 +23,8 @@ never creates, resumes, replaces, or stops a session.
 ```bash
 make
 source lib/trash.bash
-@ WorkstationSchema ensureSchema
-@ WorkstationSchema capabilities
+@ Workstation::Schema ensureSchema
+@ Workstation::Schema capabilities
 @ Trash doctor
 ```
 
@@ -50,17 +50,17 @@ Phase 0 record operations. Install tools explicitly using the doctor's guidance.
 ## Validation and creation
 
 The [closed CUE package](../schemas/workstation/v1/README.md) documents fixtures,
-validation and the exact digest command. `@ WorkstationSchema digest` returns the
+validation and the exact digest command. `@ Workstation::Schema digest` returns the
 package digest. Set `schemaDigest` on input documents to that value. A digest is
 revision metadata, not a global feature switch.
 
 ```bash
-@ WorkstationSchema validate: "$subscriptionDocument" as: EventSubscription
-sub=$(@ EventSubscription createFrom: "$subscriptionDocument")
-a=$(@ Attention createFrom: "$attentionDocument")
-@ EventSubscription read: "$sub"
-@ EventSubscription listByOwner: "$TRASHTALK_USER"
-@ Attention read: "$a"
+@ Workstation::Schema validate: "$subscriptionDocument" as: EventSubscription
+sub=$(@ Workstation::EventSubscription createFrom: "$subscriptionDocument")
+a=$(@ Workstation::Attention createFrom: "$attentionDocument")
+@ Workstation::EventSubscription read: "$sub"
+@ Workstation::EventSubscription listByOwner: "$TRASHTALK_USER"
+@ Workstation::Attention read: "$a"
 @ "$sub" summary
 @ "$a" summary
 ```
@@ -237,12 +237,12 @@ current human owner. The digest, stream, consumer name, adapter, grouping, and
 filter are closed; `debounceSeconds` bounds wake hints, not consumption.
 
 ```bash
-digest=$(@ WorkstationSchema digest)
+digest=$(@ Workstation::Schema digest)
 sub=$(jq -c --arg d "$digest" '.adapterKind="command-receipt"
   | .streamName="workstation.command-receipts.v1" | .schemaDigest=$d
   | .filter={exitNot:0} | .debounceSeconds=900 | .initialPosition="from-now"' \
   schemas/workstation/v1/fixtures/EventSubscription.valid.json)
-@ EventSubscription createFrom: "$sub"
+@ Workstation::EventSubscription createFrom: "$sub"
 bin/trash-command --cwd "$PWD" --label 'unit tests' -- make test
 bin/trash-worker --once          # or leave the supervised service running
 inbox=$(@ Trash userInbox)
@@ -302,7 +302,7 @@ due-snoozed Attention for the owner's subscriptions without mutating a snooze.
 - **A subscription was not advanced past its failed record.** The worker
   prints this with the subscription ID and leaves the consumer offset where it
   was; later records for that subscription wait behind it. Inspect the record
-  with `@ "$consumer" read: 1` on `@ CommandReceiptSourceAdapter consumerFor:`,
+  with `@ "$consumer" read: 1` on `@ Workstation::CommandReceiptSourceAdapter consumerFor:`,
   fix the cause (missing CUE, schema digest drift, a rejected owner), and let
   the next tick retry. To skip a poison record deliberately, acknowledge past it
   with `@ "$consumer" ack: <offset>`; nothing skips automatically.
@@ -484,8 +484,8 @@ Disposable UAT, in a throwaway store:
 ```bash
 export SQLITE_JSON_DB=$(mktemp -d)/uat.db TRASHTALK_USER=$USER
 source lib/trash.bash; honker_bootstrap
-digest=$(@ WorkstationSchema digest)
-sub=$(@ EventSubscription createFrom: "$(jq -c --arg d "$digest" '.adapterKind="command-receipt"|.streamName="workstation.command-receipts.v1"|.schemaDigest=$d|.filter={exitNot:0}|.debounceSeconds=900|.initialPosition="from-now"' schemas/workstation/v1/fixtures/EventSubscription.valid.json)")
+digest=$(@ Workstation::Schema digest)
+sub=$(@ Workstation::EventSubscription createFrom: "$(jq -c --arg d "$digest" '.adapterKind="command-receipt"|.streamName="workstation.command-receipts.v1"|.schemaDigest=$d|.filter={exitNot:0}|.debounceSeconds=900|.initialPosition="from-now"' schemas/workstation/v1/fixtures/EventSubscription.valid.json)")
 identity=$(@ Gusgus identity); @ "$sub" target: "$identity" reason: uat
 @ Gusgus sessionFor: "$PWD" >/dev/null           # the existing eligible session
 bin/trash-command --cwd "$PWD" --label 'uat failure' -- false

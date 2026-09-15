@@ -272,9 +272,9 @@ Message subclass: Object
     @ Store requireTransaction.
     human := @ AgentFocus human.
     @ Require equal: owner to: human.
-    @ Store read: attention class: 'Attention'.
+    @ Store read: attention class: 'Workstation::Attention'.
     data := @ Store getInstance: attention.
-    data := @ WorkstationSchema document: data.
+    data := @ Workstation::Schema document: data.
     message := data jsonTextAt: 'message'.
     title := display jsonTextAt: 'title'.
     summary := display jsonTextAt: 'summary'.
@@ -310,7 +310,7 @@ Message subclass: Object
     data := @ Store getInstance: attention.
     state := data jsonTextAt: 'state'.
     (state = 'snoozed') ifTrue: [
-      until := @ WorkstationSchema timestampEpoch: (data jsonTextAt: 'snoozeUntil').
+      until := @ Workstation::Schema timestampEpoch: (data jsonTextAt: 'snoozeUntil').
       now := @ Time now.
       (until > now) ifTrue: [^ 'false'].
       state := 'open'
@@ -337,7 +337,7 @@ Message subclass: Object
     (@ Require equal: recipient to: human) ifFailed: [:error | @ error signal].
     linked := attention.
     (@ Require text: linked) ifFailed: [:error | @ error signal].
-    ^ @ Attention read: linked
+    ^ @ Workstation::Attention read: linked
   ]
   method: inspectAttention [
     | linked |
@@ -399,9 +399,9 @@ Message subclass: Object
     @ Store requireTransaction.
     human := @ AgentFocus human.
     id := 'message_' , attention , '_delegation_' , revision.
-    @ Store read: attention class: 'Attention'.
+    @ Store read: attention class: 'Workstation::Attention'.
     data := @ Store getInstance: attention.
-    data := @ WorkstationSchema document: data.
+    data := @ Workstation::Schema document: data.
     session := admission jsonTextAt: 'session'.
     recipient := 'session:' , session.
     root := data jsonTextAt: 'message'.

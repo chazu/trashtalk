@@ -126,7 +126,7 @@ AgentWorker subclass: Object
     # lock subshell, so a memo set there would otherwise rerun the DDL every tick.
     @ AgentQueue ensureSchema || return 1
     @ Process withLock: "$_AGENT_WORKER_LOCK_PATH" receiver: AgentWorker selector: 'work:' argument: '' || rc=1
-    @ WorkstationWorker tick || rc=1
+    @ Workstation::Worker tick || rc=1
     # The prompt indicator follows every tick; it is a hint and never a failure.
     @ AgentWorkboard publishIndicator >/dev/null
     return "$rc"

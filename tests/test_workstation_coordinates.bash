@@ -7,9 +7,9 @@ source lib/trash.bash 2>/dev/null
 trap - EXIT
 export TRASHTALK_USER=local-user TRASHTALK_WORKSTATION_FIXTURES=1
 command -v cue >/dev/null || { echo 'SKIP: CUE not installed'; exit 0; }
-digest=$(@ WorkstationSchema digest)
-@ EventSubscription createFrom: "$(jq -c --arg d "$digest" '.schemaDigest=$d' schemas/workstation/v1/fixtures/EventSubscription.valid.json)" >/dev/null
-a=$(@ Attention createFrom: "$(jq -c --arg d "$digest" '.schemaDigest=$d' schemas/workstation/v1/fixtures/Attention.valid.json)")
+digest=$(@ Workstation::Schema digest)
+@ Workstation::EventSubscription createFrom: "$(jq -c --arg d "$digest" '.schemaDigest=$d' schemas/workstation/v1/fixtures/EventSubscription.valid.json)" >/dev/null
+a=$(@ Workstation::Attention createFrom: "$(jq -c --arg d "$digest" '.schemaDigest=$d' schemas/workstation/v1/fixtures/Attention.valid.json)")
 stream=$(@ eventsubscription_fixture streamName)
 coordinate() { jq -cn --arg s "$stream" --argjson o "$1" '{subscription:"eventsubscription_fixture",streamName:$s,partition:"default",offset:$o}'; }
 # Test-only callbacks use the public Store messages.

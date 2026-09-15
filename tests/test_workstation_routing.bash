@@ -25,15 +25,15 @@ field() { data "$1" | jq -r "$2"; }
 status() { @ "$1" routingStatus | jq -r "$2"; }
 mkdir -p "$TMPDIR/ws" "$TMPDIR/runs"
 ws=$(cd "$TMPDIR/ws" && pwd -P)
-digest=$(@ WorkstationSchema digest)
+digest=$(@ Workstation::Schema digest)
 sub=$(jq -c --arg d "$digest" '.adapterKind="command-receipt"|.streamName="workstation.command-receipts.v1"|.schemaDigest=$d|.filter={exitNot:0}|.debounceSeconds=3600' schemas/workstation/v1/fixtures/EventSubscription.valid.json)
-subscription=$(must @ EventSubscription createFrom: "$sub")
-consumer=$(@ CommandReceiptSourceAdapter consumerFor: "$sub")
+subscription=$(must @ Workstation::EventSubscription createFrom: "$sub")
+consumer=$(@ Workstation::CommandReceiptSourceAdapter consumerFor: "$sub")
 fixture=$(jq -c --arg ws "$ws" '.workspace=$ws' schemas/workstation/v1/fixtures/CommandReceipt.valid.json)
-publish() { @ CommandReceipt publish: "$(jq -c --arg l "$1" '.commandLabel=$l|.display.title=$l' <<<"$fixture")" >/dev/null; }
-publish_origin() { @ CommandReceipt publish: "$(jq -c --arg l "$1" --arg run "$2" '.commandLabel=$l|.display.title=$l|.origin={producer:"agent-run",run:$run}' <<<"$fixture")" >/dev/null; }
-tick() { @ WorkstationWorker tick >/dev/null || { echo 'FAIL: worker tick'; exit 1; }; }
-attention_for() { @ Store findByClass: Attention where: "json_extract(data,'\$.groupKey')!='' AND EXISTS(SELECT 1 FROM instances m WHERE m.class='Message' AND m.id=json_extract(instances.data,'\$.message') AND json_extract(m.data,'\$.subject')='$1')" orderBy: 'created_at DESC' limit: 1; }
+publish() { @ Workstation::CommandReceipt publish: "$(jq -c --arg l "$1" '.commandLabel=$l|.display.title=$l' <<<"$fixture")" >/dev/null; }
+publish_origin() { @ Workstation::CommandReceipt publish: "$(jq -c --arg l "$1" --arg run "$2" '.commandLabel=$l|.display.title=$l|.origin={producer:"agent-run",run:$run}' <<<"$fixture")" >/dev/null; }
+tick() { @ Workstation::Worker tick >/dev/null || { echo 'FAIL: worker tick'; exit 1; }; }
+attention_for() { @ Store findByClass: Workstation::Attention where: "json_extract(data,'\$.groupKey')!='' AND EXISTS(SELECT 1 FROM instances m WHERE m.class='Message' AND m.id=json_extract(instances.data,'\$.message') AND json_extract(m.data,'\$.subject')='$1')" orderBy: 'created_at DESC' limit: 1; }
 inbox=$(@ Inbox named: local-user)
 
 # ---- 2A: target configuration and dry-run admission -------------------------
@@ -92,10 +92,10 @@ b=$(attention_for 'agent tests')
 check 'origin run gives lineage depth one' 1 "$(field "$b" .lineageDepth)"
 check 'target-produced receipt is rejected' lineage-target "$(status "$(field "$b" .message)" .reason)"
 outcome=$(jq -cn --arg ws "$ws" '{workspace:$ws,commandLabel:"token tests",exitCode:3,startedAt:"2026-09-14T15:00:00Z",finishedAt:"2026-09-14T15:00:01Z",summary:"Command exited with status 3"}')
-TRASHTALK_RUN_TOKEN="$token" @ CommandReceipt publishOutcome: "$outcome" >/dev/null
+TRASHTALK_RUN_TOKEN="$token" @ Workstation::CommandReceipt publishOutcome: "$outcome" >/dev/null
 tick
 check 'run token stamps the receipt origin' "$run" "$(field "$(attention_for 'token tests')" .origin.run)"
-TRASHTALK_RUN_TOKEN="$run:bogus" @ CommandReceipt publishOutcome: "$(jq -c '.commandLabel="bogus tests"' <<<"$outcome")" >/dev/null
+TRASHTALK_RUN_TOKEN="$run:bogus" @ Workstation::CommandReceipt publishOutcome: "$(jq -c '.commandLabel="bogus tests"' <<<"$outcome")" >/dev/null
 tick
 check 'an invalid token yields a human receipt' null "$(field "$(attention_for 'bogus tests')" .origin)"
 @ "$run" finishWith: succeeded outcome: "{}" error: "" >/dev/null || { echo "finish failed: $(@ "$run" state)"; @ "$run" finishWith: succeeded outcome: "{}" error: ""; exit 1; }
@@ -128,10 +128,10 @@ check 'delivery records the execution workspace' "$ws" "$(field "$delivery" .exe
 check 'outbox row is assigned to the session' "$session" "$(_db_sql "SELECT session FROM agent_outbox WHERE message_id='$msg';")"
 check 'attention links the delegation' "$msg $session $identity 1" "$(field "$a" '"\(.delegatedMessage) \(.delegatedSession) \(.delegatedIdentity) \(.delegationRevision)"')"
 check 'status reports delegated with links' "delegated $delivery pending focus" "$(status "$root" '"\(.status) \(.delivery) \(.deliveryState) \(.nextAction)"')"
-before=$(_db_sql "SELECT json_group_array(data) FROM instances WHERE class IN ('Attention','Message','AgentDelivery') ORDER BY id;")
+before=$(_db_sql "SELECT json_group_array(data) FROM instances WHERE class IN ('Workstation::Attention','Message','AgentDelivery') ORDER BY id;")
 check 'a repeated click returns the same publication' "$msg" "$(must @ "$root" delegateAttention)"
-check 'direct routing replay is inert' "$msg" "$(must @ WorkstationRouting delegate: "$a")"
-check 'repeats change nothing durable' "$before" "$(_db_sql "SELECT json_group_array(data) FROM instances WHERE class IN ('Attention','Message','AgentDelivery') ORDER BY id;")"
+check 'direct routing replay is inert' "$msg" "$(must @ Workstation::Routing delegate: "$a")"
+check 'repeats change nothing durable' "$before" "$(_db_sql "SELECT json_group_array(data) FROM instances WHERE class IN ('Workstation::Attention','Message','AgentDelivery') ORDER BY id;")"
 check 'one outbox row' 1 "$(_db_sql "SELECT count(*) FROM agent_outbox WHERE message_id='$msg';")"
 publish 'unit tests'; tick
 check 'appended events keep one delegation' "2 $msg" "$(field "$a" '"\(.eventCount) \(.delegatedMessage)"')"
@@ -168,9 +168,9 @@ f=$(attention_for 'auto tests')
 check 'accepted group is delegated automatically' "message_${f}_delegation_1 $session" "$(field "$f" '"\(.delegatedMessage) \(.delegatedSession)"')"
 check 'exactly one delivery' $((deliveries+1)) "$(count AgentDelivery)"
 @ "$consumer" ack: $(( $(@ "$consumer" offset) - 1 )) >/dev/null
-snapshot=$(_db_sql "SELECT json_group_array(data) FROM instances WHERE class IN ('Attention','Message','AgentDelivery') ORDER BY id;")
+snapshot=$(_db_sql "SELECT json_group_array(data) FROM instances WHERE class IN ('Workstation::Attention','Message','AgentDelivery') ORDER BY id;")
 tick
-check 'restart replay creates no second delegation' "$snapshot" "$(_db_sql "SELECT json_group_array(data) FROM instances WHERE class IN ('Attention','Message','AgentDelivery') ORDER BY id;")"
+check 'restart replay creates no second delegation' "$snapshot" "$(_db_sql "SELECT json_group_array(data) FROM instances WHERE class IN ('Workstation::Attention','Message','AgentDelivery') ORDER BY id;")"
 publish 'auto tests'; tick
 check 'grouped failures append without a fresh prompt' "2 $((deliveries+1))" "$(echo "$(field "$f" .eventCount) $(count AgentDelivery)")"
 check 'automatic delegation reaches the outbox once' 1 "$(_db_sql "SELECT count(*) FROM agent_outbox WHERE message_id='message_${f}_delegation_1';")"

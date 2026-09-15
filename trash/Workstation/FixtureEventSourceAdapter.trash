@@ -1,9 +1,11 @@
+package: Workstation
+
 # Test-only stateless adapter. read: takes supplied JSON, never a Stream handle.
 FixtureEventSourceAdapter subclass: EventSourceAdapter
   classMethod: kind [ ^ 'fixture' ]
   classMethod: validateSubscription: subscription [
-    (@ EventSourceAdapter forKind: 'fixture') ifFailed: [:error | @ error signal].
-    (@ WorkstationSchema validate: subscription as: 'EventSubscription') ifFailed: [:error | @ error signal].
+    (@ Workstation::EventSourceAdapter forKind: 'fixture') ifFailed: [:error | @ error signal].
+    (@ Workstation::Schema validate: subscription as: 'EventSubscription') ifFailed: [:error | @ error signal].
     (@ Require equal: (subscription jsonTextAt: 'adapterKind') to: 'fixture') ifFailed: [:error | @ error signal].
     (@ Require equal: (subscription jsonTextAt: 'enabled') to: 'true') ifFailed: [:error | @ error signal].
     ^ subscription
@@ -14,19 +16,19 @@ FixtureEventSourceAdapter subclass: EventSourceAdapter
   ]
   classMethod: normalize: record for: subscription [
     (@ self validateSubscription: subscription) ifFailed: [:error | @ error signal].
-    (@ WorkstationSchema validate: record as: 'Envelope') ifFailed: [:error | @ error signal].
+    (@ Workstation::Schema validate: record as: 'Envelope') ifFailed: [:error | @ error signal].
     (@ Require equal: (record jsonTextAt: 'coordinate.subscription') to: (subscription jsonTextAt: 'id')) ifFailed: [:error | @ error signal].
     (@ Require equal: (record jsonTextAt: 'coordinate.streamName') to: (subscription jsonTextAt: 'streamName')) ifFailed: [:error | @ error signal].
     ^ record
   ]
   classMethod: groupKeyFor: event [
-    (@ EventSourceAdapter forKind: 'fixture') ifFailed: [:error | @ error signal].
-    (@ WorkstationSchema validate: event as: 'Envelope') ifFailed: [:error | @ error signal].
+    (@ Workstation::EventSourceAdapter forKind: 'fixture') ifFailed: [:error | @ error signal].
+    (@ Workstation::Schema validate: event as: 'Envelope') ifFailed: [:error | @ error signal].
     ^ event jsonTextAt: 'groupKey'
   ]
   classMethod: displayFor: event [
-    (@ EventSourceAdapter forKind: 'fixture') ifFailed: [:error | @ error signal].
-    (@ WorkstationSchema validate: event as: 'Envelope') ifFailed: [:error | @ error signal].
+    (@ Workstation::EventSourceAdapter forKind: 'fixture') ifFailed: [:error | @ error signal].
+    (@ Workstation::Schema validate: event as: 'Envelope') ifFailed: [:error | @ error signal].
     ^ event jsonAt: 'display'
   ]
   classMethod: read: supplied limit: limit [

@@ -603,5 +603,5 @@ Inbox subclass: Object
     | human |
     human := @ AgentFocus human.
     (@ Require equal: name to: human) ifFailed: [:error | @ error signal].
-    ^ @ Attention localOpenCount
+    ^ @ Workstation::Attention localOpenCount
   ]

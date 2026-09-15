@@ -1,10 +1,12 @@
+package: Workstation
+
 # Closed local producer. Never executes argv or retains raw output.
 CommandReceipt subclass: Object
   classMethod: streamName [ ^ 'workstation.command-receipts.v1' ]
   classMethod: validate: document [
-    (@ WorkstationSchema validate: document as: 'CommandReceipt') ifFailed: [:error | @ error signal].
+    (@ Workstation::Schema validate: document as: 'CommandReceipt') ifFailed: [:error | @ error signal].
     (@ self validateWorkspace: (document jsonTextAt: 'workspace')) ifFailed: [:error | @ error signal].
-    (@ WorkstationSchema timestampEpoch: (document jsonTextAt: 'finishedAt')) ifFailed: [:error | @ error signal].
+    (@ Workstation::Schema timestampEpoch: (document jsonTextAt: 'finishedAt')) ifFailed: [:error | @ error signal].
     ^ document
   ]
   # Lexical canonical-path validation permits replay after a workspace disappears.
@@ -25,14 +27,14 @@ CommandReceipt subclass: Object
     label := outcome jsonTextAt: 'commandLabel'.
     code := outcome jsonAt: 'exitCode'.
     # Raw output and ephemeral counters cannot perturb the failure fingerprint.
-    fingerprint := @ WorkstationSchema hash: (outcome jsonTextAt: 'exitCode').
+    fingerprint := @ Workstation::Schema hash: (outcome jsonTextAt: 'exitCode').
     document := #{schema_version: 1 kind: 'command-receipt.v1' receiptId: id
       workspace: (outcome jsonTextAt: 'workspace') commandLabel: label
       fingerprint: fingerprint exitCode: (code jsonValue)
       startedAt: (outcome jsonTextAt: 'startedAt') finishedAt: (outcome jsonTextAt: 'finishedAt')
       display: #{title: label summary: (outcome jsonTextAt: 'summary')}} asJson.
     origin := @ self origin.
-    (origin ~= 'null') ifTrue: [document := @ WorkstationSchema merge: document with: (#{origin: (origin jsonValue)} asJson)].
+    (origin ~= 'null') ifTrue: [document := @ Workstation::Schema merge: document with: (#{origin: (origin jsonValue)} asJson)].
     ^ @ self publish: document
   ]
   # Closed provenance for commands an agent run executes. The run token proves

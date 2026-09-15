@@ -10,10 +10,10 @@ AgentWorkboard subclass: Object
   classMethod: statusWithin: unused [
     | human attentionIds attentionItems assignmentIds assignmentItems id attention assignment snapshot execution row activity running waiting review manual |
     human := @ AgentFocus human.
-    attentionIds := @ Attention localOpen.
+    attentionIds := @ Workstation::Attention localOpen.
     attentionItems := '[]'.
     attentionIds linesDo: [:id |
-      attention := @ Attention read: id.
+      attention := @ Workstation::Attention read: id.
       row := @ attention display.
       attentionItems := attentionItems arrayPushJson: row
     ].
@@ -89,7 +89,7 @@ AgentWorkboard subclass: Object
 
   classMethod: indicator [
     | attention questions text |
-    attention := @ Attention localOpenCount.
+    attention := @ Workstation::Attention localOpenCount.
     questions := @ self unansweredQuestionCount.
     text := ''.
     (attention ~= '0') ifTrue: [text := '!' , attention].

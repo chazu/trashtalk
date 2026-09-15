@@ -1,9 +1,11 @@
+package: Workstation
+
 # Stateless production adapter. Only the worker initializes/acks consumers.
 CommandReceiptSourceAdapter subclass: EventSourceAdapter
   classMethod: kind [ ^ 'command-receipt' ]
   classMethod: validatePolicy: subscription [
     | stream expected |
-    stream := @ CommandReceipt streamName.
+    stream := @ Workstation::CommandReceipt streamName.
     expected := 'workstation/' , (subscription jsonTextAt: 'id').
     (@ Require equal: (subscription jsonTextAt: 'consumerName') to: expected) ifFailed: [:error | @ error signal].
     (@ Require equal: (subscription jsonTextAt: 'adapterKind') to: 'command-receipt') ifFailed: [:error | @ error signal].
@@ -12,7 +14,7 @@ CommandReceiptSourceAdapter subclass: EventSourceAdapter
     ^ subscription
   ]
   classMethod: validateSubscription: subscription [
-    (@ WorkstationSchema validate: subscription as: 'EventSubscription') ifFailed: [:error | @ error signal].
+    (@ Workstation::Schema validate: subscription as: 'EventSubscription') ifFailed: [:error | @ error signal].
     (@ self validatePolicy: subscription) ifFailed: [:error | @ error signal].
     (@ Require equal: (subscription jsonTextAt: 'enabled') to: 'true') ifFailed: [:error | @ error signal].
     ^ subscription
@@ -38,15 +40,15 @@ CommandReceiptSourceAdapter subclass: EventSourceAdapter
     (@ self validateSubscription: subscription) ifFailed: [:error | @ error signal].
     decoded := @ self decode: record for: subscription.
     receipt := decoded jsonAt: 'receipt'.
-    (@ CommandReceipt validate: receipt) ifFailed: [:error | @ error signal].
+    (@ Workstation::CommandReceipt validate: receipt) ifFailed: [:error | @ error signal].
     coordinate := decoded jsonAt: 'coordinate'.
     group := @ self groupKeyFor: receipt.
     display := @ self displayFor: receipt.
     origin := receipt jsonAt: 'origin' ifAbsent: 'null'.
     envelope := #{schema_version: 1 coordinate: (coordinate jsonValue) groupKey: group display: (display jsonValue)
       workspace: (receipt jsonTextAt: 'workspace')} asJson.
-    (origin ~= 'null') ifTrue: [envelope := @ WorkstationSchema merge: envelope with: (#{origin: (origin jsonValue)} asJson)].
-    (@ WorkstationSchema validate: envelope as: 'Envelope') ifFailed: [:error | @ error signal].
+    (origin ~= 'null') ifTrue: [envelope := @ Workstation::Schema merge: envelope with: (#{origin: (origin jsonValue)} asJson)].
+    (@ Workstation::Schema validate: envelope as: 'Envelope') ifFailed: [:error | @ error signal].
     excluded := subscription jsonAt: 'filter.exitNot' ifAbsent: '0'.
     status := receipt jsonTextAt: 'exitCode'.
     (status = excluded) ifTrue: [^ ''].
@@ -58,7 +60,7 @@ CommandReceiptSourceAdapter subclass: EventSourceAdapter
     label := receipt jsonAt: 'commandLabel' ifAbsent: (receipt jsonAt: 'display.title').
     fingerprint := receipt jsonTextAt: 'fingerprint'.
     parts := #(workspace label fingerprint) asJson.
-    ^ @ WorkstationSchema hash: parts
+    ^ @ Workstation::Schema hash: parts
   ]
   classMethod: displayFor: receipt [ ^ receipt jsonAt: 'display' ]
 

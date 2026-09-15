@@ -1,0 +1,21 @@
+package: Workstation
+
+# Stateless closed registry. Only command receipts are production-enabled.
+EventSourceAdapter subclass: Object
+  classMethod: forKind: kind [
+    | isolated enabled |
+    (kind = 'command-receipt') ifTrue: [^ 'Workstation::CommandReceiptSourceAdapter'].
+    (kind = 'fixture') ifTrue: [
+      isolated := @ Env get: 'TRASHTALK_TEST_ISOLATED'.
+      enabled := @ Env get: 'TRASHTALK_WORKSTATION_FIXTURES'.
+      ((isolated = '1') and: [enabled = '1']) ifTrue: [^ 'Workstation::FixtureEventSourceAdapter']
+    ].
+    @ Workstation::EventSourceAdapterError signal: 'Unknown or disabled event adapter kind'
+  ]
+  classMethod: kind [ @ Workstation::EventSourceAdapterError signal: 'Abstract event adapter selector' ]
+  classMethod: validateSubscription: subscription [ @ Workstation::EventSourceAdapterError signal: 'Abstract event adapter selector' ]
+  classMethod: consumerFor: subscription [ @ Workstation::EventSourceAdapterError signal: 'Abstract event adapter selector' ]
+  classMethod: read: consumer limit: limit [ @ Workstation::EventSourceAdapterError signal: 'Abstract event adapter selector' ]
+  classMethod: normalize: record for: subscription [ @ Workstation::EventSourceAdapterError signal: 'Abstract event adapter selector' ]
+  classMethod: groupKeyFor: event [ @ Workstation::EventSourceAdapterError signal: 'Abstract event adapter selector' ]
+  classMethod: displayFor: event [ @ Workstation::EventSourceAdapterError signal: 'Abstract event adapter selector' ]

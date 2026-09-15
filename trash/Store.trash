@@ -250,18 +250,18 @@ Store subclass: Object
     (@ self requireTransaction) ifFailed: [:error | @ error signal].
     existing := @ self claimedCoordinate: coordinate.
     (existing notEmpty) ifTrue: [^ existing].
-    @ self read: attention class: 'Attention'.
+    @ self read: attention class: 'Workstation::Attention'.
     data := @ self getInstance: attention.
     @ Require equal: (data jsonTextAt: 'subscription') to: (coordinate jsonTextAt: 'subscription').
-    sub := @ self read: (coordinate jsonTextAt: 'subscription') class: 'EventSubscription'.
+    sub := @ self read: (coordinate jsonTextAt: 'subscription') class: 'Workstation::EventSubscription'.
     stream := @ sub streamName.
     owner := @ sub owner.
     human := @ AgentFocus human.
     @ Require equal: stream to: (coordinate jsonTextAt: 'streamName').
     @ Require equal: owner to: human.
-    patch := @ WorkstationSchema extend: data coordinate: coordinate.
+    patch := @ Workstation::Schema extend: data coordinate: coordinate.
     now := @ Time nowISO.
-    patch := @ WorkstationSchema merge: patch with: (#{updatedAt: now} asJson).
+    patch := @ Workstation::Schema merge: patch with: (#{updatedAt: now} asJson).
     @ self stageCoordinate: coordinate forAttention: attention.
     @ self patch: attention with: patch.
     ^ attention
