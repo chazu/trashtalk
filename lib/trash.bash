@@ -230,9 +230,9 @@ function _to_func_prefix {
 # Usage: _to_instance_prefix "MyApp::Counter" -> "myapp_counter"
 #        _to_instance_prefix "Counter" -> "counter"
 function _to_instance_prefix {
-  local name="$1"
-  # Replace :: with _, lowercase
-  echo "${name//::/_}" | tr '[:upper:]' '[:lower:]'
+  # Replace :: with _, lowercase. Bash case conversion avoids a tr process.
+  local name="${1//::/_}"
+  echo "${name,,}"
 }
 
 # Convert qualified name to compiled file name
@@ -1104,7 +1104,14 @@ function _create_instance {
     fi
     templates+=("${!defaults_var}")
     vars_var="__${current//::/__}__instanceNames"
-    for spec in ${!vars_var:-}; do _generate_accessor "${spec%%:*}" "$class_name"; done
+    # Generated accessors persist in this shell, so a second creation here
+    # (loops, workers, methods building several objects) must not re-evaluate
+    # them. The unary setter is the marker: compiled artifacts define only the
+    # keyword form (setFoo_), and raw methods still send the unary one.
+    for spec in ${!vars_var:-}; do
+      spec=${spec%%:*}
+      declare -F "${accessor_prefix}set${spec^}" >/dev/null || _generate_accessor "$spec" "$class_name"
+    done
     super_var="__${current//::/__}__superclass"
     current=${!super_var:-}
     [[ "$current" != Object ]] || break
@@ -1116,6 +1123,7 @@ function _create_instance {
       | .values = ($schema.values + .values))
     | {class:$class,created_at:$created,_vars:.vars} + .values') || return
   _env_set "$instance_id" "$data" || return
+  local accessor_prefix="__${1//::/__}__"
   if ! _env_persist "$instance_id"; then
     _env_delete "$instance_id" 2>/dev/null
     return 1
@@ -1343,9 +1351,8 @@ export -f _find_with_predicate
 # Generate a unique instance ID for a class
 # Handles namespaced classes: MyApp::Counter -> myapp_counter_abc123
 function _generate_instance_id {
-  local class_name="$1"
-  local prefix=$(_to_instance_prefix "$class_name")
-  echo "${prefix}_$(uuidgen 2>/dev/null || echo "$$_$(date +%s)")"
+  local prefix="${1//::/_}"
+  echo "${prefix,,}_$(uuidgen 2>/dev/null || echo "$$_$(date +%s)")"
 }
 
 # Ensure instance is loaded into memory (auto-loads from Store if needed)

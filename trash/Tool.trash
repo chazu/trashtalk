@@ -189,32 +189,51 @@ Tool subclass: Object
   rawClassMethod: runProcessRequestJson: requestJson [
     pragma: direct
     local request_json="$1" status stdout_file stderr_file progress directory
-    local -a argv
+    local argc capture stdin_mode stdin_text
+    local -a argv fields
 
-    if ! printf '%s' "$request_json" | jq -e '
-      type == "object" and
-      (.argv | type == "array" and all(.[]; type == "string" and (contains("\u0000") | not))) and
-      (.stdin == null or (.stdin | type == "string")) and
-      (.capture == null or (.capture | type == "boolean")) and
-      (.progress == null or (.progress | type == "string")) and
-      (.working_directory == null or (.working_directory | type == "string" and (contains("\u0000") | not)))
-    ' >/dev/null; then
+    # One decoder validates the request and emits every field NUL-separated:
+    # the argv count, each argv entry, the working directory, the capture flag,
+    # the stdin mode (0 absent, 1 inline in the last field, 2 contains NUL and
+    # is decoded separately so the child still receives it byte-for-byte), and
+    # the progress label. Validation rejects NUL in every other string, so the
+    # field count is exact; a rejected request emits nothing.
+    mapfile -d '' -t fields < <(
+      printf '%s' "$request_json" | jq -j '
+        ([0] | implode) as $nul |
+        if type == "object" and
+          (.argv | type == "array" and all(.[]; type == "string" and (contains($nul) | not))) and
+          (.stdin == null or (.stdin | type == "string")) and
+          (.capture == null or (.capture | type == "boolean")) and
+          (.progress == null or (.progress | type == "string" and (contains($nul) | not))) and
+          (.working_directory == null or (.working_directory | type == "string" and (contains($nul) | not)))
+        then
+          (.argv | length | tostring), $nul,
+          (.argv[] | ., $nul),
+          (.working_directory // ""), $nul,
+          (if .capture == true then "1" else "0" end), $nul,
+          (if .stdin == null then "0" elif (.stdin | contains($nul)) then "2" else "1" end), $nul,
+          (.progress // ""), $nul,
+          (if (.stdin | type) == "string" and (.stdin | contains($nul) | not) then .stdin else "" end), $nul
+        else empty end'
+    )
+    argc=${fields[0]:-}
+    if [[ ! "$argc" =~ ^[0-9]+$ || ${#fields[@]} -ne $((argc + 6)) ]]; then
       _throw "ToolError" "Invalid process request JSON"
       return 1
     fi
-
-    mapfile -d '' -t argv < <(
-      printf '%s' "$request_json" | jq -jr '.argv[] | ., "\u0000"'
-    )
-    if [[ ${#argv[@]} -eq 0 ]]; then
+    if [[ "$argc" -eq 0 ]]; then
       _throw "ToolError" "Invalid or empty argv JSON"
       return 1
     fi
+    argv=("${fields[@]:1:argc}")
+    # NUL-delimited fields preserve legal path-ending newlines.
+    directory=${fields[argc+1]}
+    capture=${fields[argc+2]}
+    stdin_mode=${fields[argc+3]}
+    progress=${fields[argc+4]}
+    stdin_text=${fields[argc+5]}
 
-    # NUL-delimited extraction preserves legal path-ending newlines.
-    IFS= read -r -d '' directory < <(
-      printf '%s' "$request_json" | jq -jr '(.working_directory // ""), "\u0000"'
-    )
     if [[ -n "$directory" ]]; then
       # All caller values remain argv entries. A fixed script handles the OS
       # cwd operation; neither paths nor arguments are evaluated as shell code.
@@ -222,11 +241,15 @@ Tool subclass: Object
         'trashtalk-tool' "$directory" "${argv[@]}")
     fi
 
-    if printf '%s' "$request_json" | jq -e '.capture == true' >/dev/null; then
-      progress=$(printf '%s' "$request_json" | jq -r '.progress // empty')
+    if [[ "$capture" == 1 ]]; then
       stdout_file=$(mktemp "${TMPDIR:-/tmp}/trash-process-stdout.XXXXXX")
       stderr_file=$(mktemp "${TMPDIR:-/tmp}/trash-process-stderr.XXXXXX")
-      if printf '%s' "$request_json" | jq -e '.stdin != null' >/dev/null; then
+      if [[ "$stdin_mode" == 1 ]]; then
+        printf '%s' "$stdin_text" | \
+          _trash_with_progress "$progress" "${argv[@]}" >"$stdout_file" 2>"$stderr_file"
+        # The pipeline is printf | child, so the child is entry 1.
+        status=${PIPESTATUS[1]}
+      elif [[ "$stdin_mode" == 2 ]]; then
         printf '%s' "$request_json" | jq -jr '.stdin' | \
           _trash_with_progress "$progress" "${argv[@]}" >"$stdout_file" 2>"$stderr_file"
         # The pipeline is printf | jq | child, so the child is entry 2.
@@ -242,7 +265,13 @@ Tool subclass: Object
       return 0
     fi
 
-    if printf '%s' "$request_json" | jq -e '.stdin != null' >/dev/null; then
+    if [[ "$stdin_mode" == 1 ]]; then
+      printf '%s' "$stdin_text" | "${argv[@]}"
+      # The pipeline is printf | child, so preserve the child's status.
+      status=${PIPESTATUS[1]}
+      return "$status"
+    fi
+    if [[ "$stdin_mode" == 2 ]]; then
       printf '%s' "$request_json" | jq -jr '.stdin' | "${argv[@]}"
       # The pipeline is printf | jq | child, so preserve the child's status.
       status=${PIPESTATUS[2]}
