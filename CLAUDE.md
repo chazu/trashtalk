@@ -282,7 +282,9 @@ Use for methods that need to modify shell state.
 
 ## External Dependencies
 
-Required: Bash 4.4+, `jo`, `jq`, `sqlite3`, `uuidgen`; builds also need `make` and `shasum`.
+Required: Bash 4.4+, `jo`, `jq`, `sqlite3`, `uuidgen`; builds also need `make`,
+`shasum`, and Perl (the tokenizer splits each source into characters in one
+Perl pass, then scans the array in Bash; see `docs/performance.md`).
 Conversation log projection uses Perl with core `JSON::PP`, `Digest::SHA`, and
 `Time::HiRes` modules at the file-read/hash boundary.
 

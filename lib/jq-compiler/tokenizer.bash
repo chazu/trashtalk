@@ -27,6 +27,7 @@
 #
 # Dependencies:
 #   - jq (JSON processor)
+#   - perl (splits the source into characters once; see tokenize)
 # ==============================================================================
 
 set -uo pipefail
@@ -67,19 +68,53 @@ emit_tokens() {
 }
 
 # ------------------------------------------------------------------------------
+# Character access
+# ------------------------------------------------------------------------------
+# Bash resolves ${string:offset:1} by walking the whole string on every
+# expansion, so scanning a source with substring expansions costs O(n^2): the
+# 50 KB Trash.trash spent 20-29 s of CPU in that loop. The scan below indexes
+# an array of characters instead, which is constant time per access. The split
+# is one Perl pass that groups UTF-8 sequences (lead byte plus continuation
+# bytes) and passes every byte through unchanged, so token values, character
+# columns, and multibyte LITERAL tokens are exactly what the substring scan
+# produced. The scan runs under LC_ALL=C so identifier, number, and symbol
+# classes are ASCII in every environment; the serializer never depends on the
+# locale.
+
+# Split $1 into the global array `chars`, one character per element.
+_split_chars() {
+    mapfile -d '' -t chars < <(printf '%s' "$1" | perl -0777 -ne \
+        'print "$_\0" for /[\x00-\x7F]|[\xC0-\xFF][\x80-\xBF]*|[\x80-\xBF]/g')
+}
+
+# Set `ahead` to at most $2 characters of `chars` starting at index $1.
+_chars_ahead() {
+    local IFS=
+    ahead="${chars[*]:$1:$2}"
+}
+
+# ------------------------------------------------------------------------------
 # Tokenizer
 # ------------------------------------------------------------------------------
 
 tokenize() {
     local input="$1"
-    local len=${#input}
-    local i=0
-    local line=1
-    local col=0
+    local LC_ALL=C
+    local -a chars=()
+    local len i=0 line=1 col=0 char next ahead
+    if [[ -n "$input" ]]; then
+        _split_chars "$input"
+        if [[ ${#chars[@]} -eq 0 ]]; then
+            echo "Tokenizer error: could not split the source into characters (perl is required)" >&2
+            ((_TOKENIZER_ERRORS++)) || true
+            return 1
+        fi
+    fi
+    len=${#chars[@]}
 
     while ((i < len)); do
-        local char="${input:i:1}"
-        local next="${input:i+1:1}"
+        char="${chars[i]}"
+        next="${chars[i+1]-}"
 
         case "$char" in
             # ------------------------------------------------------------------
@@ -114,26 +149,27 @@ tokenize() {
                     add_token "HASH_LBRACE" "#{" "$line" "$col"
                     ((i += 2))
                     ((col += 2))
-                elif [[ "$next" =~ [a-zA-Z_] ]]; then
+                elif [[ "$next" == [a-zA-Z_] ]]; then
                     # Symbol: #symbolName
-                    local sym_start=$((i + 1))
+                    local sym_start_col=$col
+                    local symbol=""
                     ((i++))  # skip #
                     ((col++))
-                    while ((i < len)) && [[ "${input:i:1}" =~ [a-zA-Z0-9_] ]]; do
+                    while ((i < len)) && [[ "${chars[i]}" == [a-zA-Z0-9_] ]]; do
+                        symbol+="${chars[i]}"
                         ((i++))
                         ((col++))
                     done
-                    local symbol="${input:$sym_start:$((i - sym_start))}"
-                    add_token "SYMBOL" "$symbol" "$line" "$((col - ${#symbol} - 1))"
+                    add_token "SYMBOL" "$symbol" "$line" "$sym_start_col"
                 else
                     # Comment - capture as COMMENT token
-                    local comment_start=$i
+                    local comment=""
                     local comment_start_col=$col
-                    while ((i < len)) && [[ "${input:i:1}" != $'\n' ]]; do
+                    while ((i < len)) && [[ "${chars[i]}" != $'\n' ]]; do
+                        comment+="${chars[i]}"
                         ((i++))
                         ((col++))
                     done
-                    local comment="${input:$comment_start:$((i - comment_start))}"
                     add_token "COMMENT" "$comment" "$line" "$comment_start_col"
                     # Don't consume the newline - let it be tokenized
                 fi
@@ -215,7 +251,7 @@ tokenize() {
                     ((col += 2))
                 elif [[ "$next" == ">" ]]; then
                     # &> or &>> redirection
-                    if [[ "${input:i+2:1}" == ">" ]]; then
+                    if [[ "${chars[i+2]-}" == ">" ]]; then
                         add_token "REDIRECT" "&>>" "$line" "$col"
                         ((i += 3))
                         ((col += 3))
@@ -261,14 +297,13 @@ tokenize() {
             '<')
                 if [[ "$next" == "<" ]]; then
                     # Check for here-string (<<<)
-                    local next2="${input:$((i+2)):1}"
+                    local next2="${chars[i+2]-}"
                     if [[ "$next2" == "<" ]]; then
                         add_token "HERESTRING" "<<<" "$line" "$col"
                         ((i += 3))
                         ((col += 3))
                     else
                         # Heredoc: capture delimiter and body as single token
-                        local heredoc_start=$i
                         local heredoc_start_col=$col
                         local heredoc_start_line=$line
                         ((i += 2))  # skip <<
@@ -276,28 +311,28 @@ tokenize() {
 
                         # Skip optional - for <<- (strip leading tabs)
                         local strip_tabs=""
-                        if [[ "${input:i:1}" == "-" ]]; then
+                        if [[ "${chars[i]-}" == "-" ]]; then
                             strip_tabs="-"
                             ((i++))
                             ((col++))
                         fi
 
                         # Skip whitespace before delimiter
-                        while ((i < len)) && [[ "${input:i:1}" == " " || "${input:i:1}" == $'\t' ]]; do
+                        while ((i < len)) && [[ "${chars[i]}" == " " || "${chars[i]}" == $'\t' ]]; do
                             ((i++))
                             ((col++))
                         done
 
                         # Extract delimiter (may be quoted or unquoted)
                         local delim=""
-                        local delim_char="${input:i:1}"
+                        local delim_char="${chars[i]-}"
                         if [[ "$delim_char" == "'" || "$delim_char" == '"' ]]; then
                             # Quoted delimiter - find closing quote
                             local quote_char="$delim_char"
                             ((i++))
                             ((col++))
-                            while ((i < len)) && [[ "${input:i:1}" != "$quote_char" ]]; do
-                                delim+="${input:i:1}"
+                            while ((i < len)) && [[ "${chars[i]}" != "$quote_char" ]]; do
+                                delim+="${chars[i]}"
                                 ((i++))
                                 ((col++))
                             done
@@ -305,21 +340,21 @@ tokenize() {
                             ((col++))
                         else
                             # Unquoted delimiter - read until whitespace/newline
-                            while ((i < len)) && [[ "${input:i:1}" =~ [a-zA-Z0-9_] ]]; do
-                                delim+="${input:i:1}"
+                            while ((i < len)) && [[ "${chars[i]}" == [a-zA-Z0-9_] ]]; do
+                                delim+="${chars[i]}"
                                 ((i++))
                                 ((col++))
                             done
                         fi
 
                         # Skip to end of line (heredoc body starts on next line)
-                        while ((i < len)) && [[ "${input:i:1}" != $'\n' ]]; do
+                        while ((i < len)) && [[ "${chars[i]}" != $'\n' ]]; do
                             ((i++))
                             ((col++))
                         done
 
                         # Skip the newline
-                        if ((i < len)) && [[ "${input:i:1}" == $'\n' ]]; then
+                        if ((i < len)) && [[ "${chars[i]}" == $'\n' ]]; then
                             ((i++))
                             ((line++))
                             col=0
@@ -327,13 +362,11 @@ tokenize() {
 
                         # Read heredoc body until we find delimiter on its own line
                         local body=""
-                        local body_start=$i
                         while ((i < len)); do
                             # Check if this line is the delimiter
-                            local line_start=$i
                             local current_line=""
-                            while ((i < len)) && [[ "${input:i:1}" != $'\n' ]]; do
-                                current_line+="${input:i:1}"
+                            while ((i < len)) && [[ "${chars[i]}" != $'\n' ]]; do
+                                current_line+="${chars[i]}"
                                 ((i++))
                                 ((col++))
                             done
@@ -347,7 +380,7 @@ tokenize() {
                             if [[ "$trimmed_line" == "$delim" ]]; then
                                 # Found end delimiter - don't include it in body
                                 # Skip the newline after delimiter if present
-                                if ((i < len)) && [[ "${input:i:1}" == $'\n' ]]; then
+                                if ((i < len)) && [[ "${chars[i]}" == $'\n' ]]; then
                                     ((i++))
                                     ((line++))
                                     col=0
@@ -356,7 +389,7 @@ tokenize() {
                             else
                                 # Add line to body (including newline)
                                 body+="$current_line"
-                                if ((i < len)) && [[ "${input:i:1}" == $'\n' ]]; then
+                                if ((i < len)) && [[ "${chars[i]}" == $'\n' ]]; then
                                     body+=$'\n'
                                     ((i++))
                                     ((line++))
@@ -427,16 +460,15 @@ tokenize() {
                     add_token "NAMESPACE_SEP" "::" "$line" "$col"
                     ((i += 2))
                     ((col += 2))
-                elif [[ "$next" =~ ^[a-zA-Z_] ]]; then
+                elif [[ "$next" == [a-zA-Z_] ]]; then
                     # Block parameter like :x or :each
-                    local param_start=$((i + 1))
                     local param_col=$col
                     ((i++))  # skip the colon
                     ((col++))
                     # Consume the identifier
                     local param_name=""
-                    while ((i < len)) && [[ "${input:i:1}" =~ ^[a-zA-Z0-9_]$ ]]; do
-                        param_name+="${input:i:1}"
+                    while ((i < len)) && [[ "${chars[i]}" == [a-zA-Z0-9_] ]]; do
+                        param_name+="${chars[i]}"
                         ((i++))
                         ((col++))
                     done
@@ -459,7 +491,7 @@ tokenize() {
                 local str_start_line=$line
 
                 # Check for triple-quoted string '''...'''
-                if [[ "${input:i:3}" == "'''" ]]; then
+                if [[ "${chars[i]}${chars[i+1]-}${chars[i+2]-}" == "'''" ]]; then
                     local str=""
                     local found_close=0
                     ((i += 3))
@@ -467,14 +499,14 @@ tokenize() {
 
                     # Consume until closing '''
                     while ((i < len)); do
-                        if [[ "${input:i:3}" == "'''" ]]; then
+                        if [[ "${chars[i]}${chars[i+1]-}${chars[i+2]-}" == "'''" ]]; then
                             # Found closing delimiter
                             ((i += 3))
                             ((col += 3))
                             found_close=1
                             break
                         fi
-                        local c="${input:i:1}"
+                        local c="${chars[i]}"
                         if [[ "$c" == $'\n' ]]; then
                             ((line++))
                             col=0
@@ -498,8 +530,8 @@ tokenize() {
                     ((col++))
 
                     # Consume until closing quote
-                    while ((i < len)) && [[ "${input:i:1}" != "'" ]]; do
-                        local c="${input:i:1}"
+                    while ((i < len)) && [[ "${chars[i]}" != "'" ]]; do
+                        local c="${chars[i]}"
                         if [[ "$c" == $'\n' ]]; then
                             # String spans multiple lines - track position
                             ((line++))
@@ -535,20 +567,20 @@ tokenize() {
                 ((col++))
 
                 # Consume digits
-                while ((i < len)) && [[ "${input:i:1}" =~ [0-9] ]]; do
-                    num+="${input:i:1}"
+                while ((i < len)) && [[ "${chars[i]}" == [0-9] ]]; do
+                    num+="${chars[i]}"
                     ((i++))
                     ((col++))
                 done
 
                 # Check for decimal point followed by digit (true floating point)
-                if ((i < len)) && [[ "${input:i:1}" == "." ]] && [[ "${input:$((i+1)):1}" =~ [0-9] ]]; then
-                    num+="${input:i:1}"  # consume the dot
+                if ((i < len)) && [[ "${chars[i]}" == "." ]] && [[ "${chars[i+1]-}" == [0-9] ]]; then
+                    num+="${chars[i]}"  # consume the dot
                     ((i++))
                     ((col++))
                     # Consume remaining digits
-                    while ((i < len)) && [[ "${input:i:1}" =~ [0-9] ]]; do
-                        num+="${input:i:1}"
+                    while ((i < len)) && [[ "${chars[i]}" == [0-9] ]]; do
+                        num+="${chars[i]}"
                         ((i++))
                         ((col++))
                     done
@@ -559,27 +591,27 @@ tokenize() {
 
             '-')
                 # Check if this is a negative number (minus followed by digit with no space)
-                if [[ "$next" =~ [0-9] ]]; then
+                if [[ "$next" == [0-9] ]]; then
                     local num_start_col=$col
                     local num="-"
                     ((i++))
                     ((col++))
 
                     # Consume digits
-                    while ((i < len)) && [[ "${input:i:1}" =~ [0-9] ]]; do
-                        num+="${input:i:1}"
+                    while ((i < len)) && [[ "${chars[i]}" == [0-9] ]]; do
+                        num+="${chars[i]}"
                         ((i++))
                         ((col++))
                     done
 
                     # Check for decimal point followed by digit (true floating point)
-                    if ((i < len)) && [[ "${input:i:1}" == "." ]] && [[ "${input:$((i+1)):1}" =~ [0-9] ]]; then
-                        num+="${input:i:1}"  # consume the dot
+                    if ((i < len)) && [[ "${chars[i]}" == "." ]] && [[ "${chars[i+1]-}" == [0-9] ]]; then
+                        num+="${chars[i]}"  # consume the dot
                         ((i++))
                         ((col++))
                         # Consume remaining digits
-                        while ((i < len)) && [[ "${input:i:1}" =~ [0-9] ]]; do
-                            num+="${input:i:1}"
+                        while ((i < len)) && [[ "${chars[i]}" == [0-9] ]]; do
+                            num+="${chars[i]}"
                             ((i++))
                             ((col++))
                         done
@@ -599,14 +631,14 @@ tokenize() {
             # ------------------------------------------------------------------
             '$')
                 local sub_start_col=$col
-                if [[ "${input:i+1:2}" == "((" ]]; then
+                if [[ "${chars[i+1]-}${chars[i+2]-}" == "((" ]]; then
                     # Arithmetic $((...)) - must check before subshell
                     local arith="\$(("
                     ((i += 3))
                     ((col += 3))
                     local paren_depth=2
                     while ((i < len)) && ((paren_depth > 0)); do
-                        local c="${input:i:1}"
+                        local c="${chars[i]}"
                         arith+="$c"
                         if [[ "$c" == "(" ]]; then
                             ((paren_depth++))
@@ -624,7 +656,7 @@ tokenize() {
                     ((col += 2))
                     local paren_depth=1
                     while ((i < len)) && ((paren_depth > 0)); do
-                        local c="${input:i:1}"
+                        local c="${chars[i]}"
                         sub+="$c"
                         if [[ "$c" == "(" ]]; then
                             ((paren_depth++))
@@ -642,7 +674,7 @@ tokenize() {
                     ((col += 2))
                     local brace_depth=1
                     while ((i < len)) && ((brace_depth > 0)); do
-                        local c="${input:i:1}"
+                        local c="${chars[i]}"
                         var+="$c"
                         if [[ "$c" == "{" ]]; then
                             ((brace_depth++))
@@ -665,8 +697,8 @@ tokenize() {
                     ((i++))
                     ((col++))
                     # Consume variable name
-                    while ((i < len)) && [[ "${input:i:1}" =~ [a-zA-Z0-9_] ]]; do
-                        var+="${input:i:1}"
+                    while ((i < len)) && [[ "${chars[i]}" == [a-zA-Z0-9_] ]]; do
+                        var+="${chars[i]}"
                         ((i++))
                         ((col++))
                     done
@@ -687,7 +719,7 @@ tokenize() {
                     ((col += 2))
                     local paren_depth=2
                     while ((i < len)) && ((paren_depth > 0)); do
-                        local c="${input:i:1}"
+                        local c="${chars[i]}"
                         arith+="$c"
                         if [[ "$c" == "(" ]]; then
                             ((paren_depth++))
@@ -729,8 +761,10 @@ tokenize() {
                 # A Bash sequence is one shell word, not a brace-delimited
                 # block. Splitting {1..50} inserts spaces during raw emission
                 # and silently turns fifty retries into four literal words.
+                # A sequence is a handful of characters; 256 bounds the lookahead.
                 local sequence_pattern='^\{(-?[0-9]+\.\.-?[0-9]+|[a-zA-Z]\.\.[a-zA-Z])(\.\.-?[0-9]+)?\}'
-                if [[ "${input:i}" =~ $sequence_pattern ]]; then
+                _chars_ahead "$i" 256
+                if [[ "$ahead" =~ $sequence_pattern ]]; then
                     local sequence="${BASH_REMATCH[0]}"
                     add_token "BASH_SEQUENCE" "$sequence" "$line" "$col"
                     ((i += ${#sequence}))
@@ -758,8 +792,8 @@ tokenize() {
                 ((col++))
                 local subshell_depth=0
                 while ((i < len)); do
-                    local c="${input:i:1}"
-                    local next="${input:$((i+1)):1}"
+                    local c="${chars[i]}"
+                    next="${chars[i+1]-}"
 
                     # Escaped quotes/dollars belong to this token; they must
                     # not close the string or open a command substitution.
@@ -815,25 +849,25 @@ tokenize() {
                 ((col++))
 
                 # Consume identifier characters
-                while ((i < len)) && [[ "${input:i:1}" =~ [a-zA-Z0-9_] ]]; do
-                    word+="${input:i:1}"
+                while ((i < len)) && [[ "${chars[i]}" == [a-zA-Z0-9_] ]]; do
+                    word+="${chars[i]}"
                     ((i++))
                     ((col++))
                 done
 
                 # Check if followed by colon (making it a keyword)
                 # But NOT := (assignment) or :: (namespace separator)
-                if [[ "${input:i:1}" == ":" && "${input:i+1:1}" != "=" && "${input:i+1:1}" != ":" ]]; then
+                if [[ "${chars[i]-}" == ":" && "${chars[i+1]-}" != "=" && "${chars[i+1]-}" != ":" ]]; then
                     word+=":"
                     ((i++))
                     ((col++))
                     # Check if immediately followed by a number (no whitespace) for varspec default
                     # e.g., value:42 should be a single token
                     # String defaults must use quotes: fieldC:'defaultValue'
-                    if [[ "${input:i:1}" =~ [0-9] ]]; then
+                    if [[ "${chars[i]-}" == [0-9] ]]; then
                         # Consume the numeric default value
-                        while ((i < len)) && [[ "${input:i:1}" =~ [0-9] ]]; do
-                            word+="${input:i:1}"
+                        while ((i < len)) && [[ "${chars[i]}" == [0-9] ]]; do
+                            word+="${chars[i]}"
                             ((i++))
                             ((col++))
                         done
@@ -851,16 +885,14 @@ tokenize() {
             # ------------------------------------------------------------------
             '/')
                 # Check if this is an absolute path (e.g., /dev/null, /tmp/file)
-                local next="${input:$((i+1)):1}"
-                if [[ "$next" =~ [a-zA-Z0-9_] ]]; then
+                if [[ "$next" == [a-zA-Z0-9_] ]]; then
                     # Looks like an absolute path - consume until whitespace or special char
-                    local path_start=$i
                     local path_start_col=$col
                     local path=""
-                    while [[ $i -lt $len ]]; do
-                        local pc="${input:$i:1}"
+                    while ((i < len)); do
+                        local pc="${chars[i]}"
                         # Path can contain: alphanumeric, underscore, slash, dot, dash
-                        if [[ "$pc" =~ [a-zA-Z0-9_/.\-] ]]; then
+                        if [[ "$pc" == [a-zA-Z0-9_/.-] ]]; then
                             path+="$pc"
                             ((i++))
                             ((col++))
@@ -956,6 +988,9 @@ tokenize() {
                 ;;
         esac
     done
+    # The loop's own status is incidental (a trailing ((col++)) from 0 is 1);
+    # only the character split above can fail the scan.
+    return 0
 }
 
 # ------------------------------------------------------------------------------
@@ -964,6 +999,11 @@ tokenize() {
 
 main() {
     local input=""
+
+    if ! command -v perl >/dev/null 2>&1; then
+        echo "Tokenizer error: perl is required to split source into characters" >&2
+        return 1
+    fi
 
     if [[ $# -gt 0 && -f "$1" ]]; then
         # Read from file
@@ -977,7 +1017,7 @@ main() {
         exit 1
     fi
 
-    tokenize "$input"
+    tokenize "$input" || return 1
     emit_tokens || return
 
     # Fail if any unrecoverable lexical errors were seen, so the driver can
