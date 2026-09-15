@@ -52,9 +52,14 @@ fi
 
 echo "Running ${#test_files[@]} test files..."
 
-# Results directory
+# Results directory, plus one prepared checkout that every test clones. The
+# compiler fingerprint is computed once here instead of once per test file.
 RESULTS_DIR=$(mktemp -d)
 trap 'rm -rf "$RESULTS_DIR"' EXIT
+TRASH_TEST_FINGERPRINT=$(TRASHTALK_DIR="$RUNNER_DIR/.." bash "$RUNNER_DIR/jq-compiler/driver.bash" fingerprint)
+export TRASH_TEST_FINGERPRINT
+bash "$RUNNER_DIR/test-isolated.bash" --prepare-base "$RESULTS_DIR/base"
+export TRASH_TEST_BASE="$RESULTS_DIR/base"
 
 # Run a single test file with timeout and isolated temp dir
 run_one_test() {

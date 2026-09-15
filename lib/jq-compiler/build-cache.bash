@@ -66,6 +66,47 @@ cmd_build_metadata() {
     _parse_single_file "$1" | jq -c '{name,package,parent,parentPackage,traits}' > "$2"
 }
 
+# Cache entries are keyed by content hash and compiler fingerprint, so every
+# edit and every compiler change adds an entry that is never reused. After a
+# successful build keep entries for the current sources in the current
+# generation plus the most recently used previous generation (a quick revert),
+# and remove staging files an interrupted build left behind. Never fails the
+# build; a concurrent build's live staging file is younger than the ten-minute
+# threshold and is kept, and a pruned entry only costs one re-parse.
+_build_prune_caches() {
+    local cache_root="$TRASHTALK_DIR/trash/.compiled" dir name generation content previous='' file i
+    local -a stale=() roots=()
+    local -A known=()
+    if [[ -f "$build_work/hashes.json" ]]; then
+        while IFS= read -r content; do known[$content]=1; done < <(jq -r '.[]' "$build_work/hashes.json")
+    fi
+    for dir in "$cache_root/.astcache" "$cache_root/.symbolcache"; do
+        [[ -d "$dir" ]] || continue
+        # ls -t lists newest first, so the first foreign generation seen is the
+        # most recently used previous one.
+        while IFS= read -r name; do
+            [[ "$name" =~ ^([0-9a-f]{64})-([0-9a-f]{16})(-[0-9a-f]{64})?\.json$ ]] || continue
+            content=${BASH_REMATCH[1]}; generation=${BASH_REMATCH[2]}
+            if [[ "$generation" != "$_COMPILER_VERSION" ]]; then
+                [[ -n "$previous" ]] || previous=$generation
+                [[ "$generation" == "$previous" ]] || { stale+=("$dir/$name"); continue; }
+            fi
+            [[ ${#known[@]} -eq 0 || -n "${known[$content]:-}" ]] || stale+=("$dir/$name")
+        done < <(ls -t "$dir" 2>/dev/null)
+    done
+    roots=("$TRASHTALK_COMPILED_DIR" "$TRASHTALK_COMPILED_DIR/traits"
+        "$TRASHTALK_COMPILED_DIR/.buildcache" "$TRASHTALK_COMPILED_DIR/traits/.buildcache"
+        "$cache_root/.astcache" "$cache_root/.symbolcache")
+    while IFS= read -r -d '' file; do
+        name=${file##*/}
+        if [[ "$name" =~ \.[A-Za-z0-9]{6}$ || "$name" == *.tmp ]]; then stale+=("$file"); fi
+    done < <(find "${roots[@]}" -maxdepth 1 -type f \( -name '*.??????' -o -name '*.tmp' \) -mmin +10 -print0 2>/dev/null)
+    for ((i=0; i<${#stale[@]}; i+=200)); do
+        rm -f -- "${stale[@]:i:200}" 2>/dev/null || true
+    done
+    return 0
+}
+
 cmd_build_worker() {
     local request="$1" source_file output_file source_hash before candidate
     local -a fields=() inputs=()
@@ -137,6 +178,7 @@ cmd_compile_many() (
     max_level=$(jq '[.[]|select(.dirty)|.level] | max // -1' "$build_work/plan.json")
     if [[ "$max_level" == -1 ]]; then
         printf '  = %s artifacts unchanged\n' "$(jq length "$build_work/plan.json")"
+        _build_prune_caches
         return 0
     fi
     # Each level contains independent classes; a dependent starts only after
@@ -172,6 +214,7 @@ cmd_compile_many() (
         printf '%s\n' "$body" > "$tmp"
         mv -f "$tmp" "$receipt"
     done < "$build_work/receipts.nul"
+    _build_prune_caches
 )
 
 cmd_compile_cached() {
