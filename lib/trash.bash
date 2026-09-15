@@ -334,6 +334,32 @@ function _env_list {
   done
 }
 
+# Drop cached copies whose ids start with any given prefix. Durable records are
+# untouched; the next read loads current data (AgentQueue refresh uses this
+# between worker ticks). Cheap when nothing matches: one directory glob.
+# Usage: _env_evict_prefix <prefix>...
+function _env_evict_prefix {
+  local prefix path
+  [[ -d "$_ENV_DIR" ]] || return 0
+  for prefix in "$@"; do
+    for path in "$_ENV_DIR/$prefix"*; do
+      [[ ! -f "$path" ]] || rm -f "$path" 2>/dev/null
+    done
+  done
+  return 0
+}
+
+# List cached instance ids that start with a prefix, one per line.
+# Usage: _env_ids_prefix <prefix>
+function _env_ids_prefix {
+  local path
+  [[ -d "$_ENV_DIR" ]] || return 0
+  for path in "$_ENV_DIR/$1"*; do
+    [[ ! -f "$path" ]] || printf '%s\n' "${path##*/}"
+  done
+  return 0
+}
+
 # Persist an instance from memory to the Store (SQLite)
 # Usage: _env_persist <instance_id>
 # Returns: 0 on success, 1 if instance not in memory
@@ -394,7 +420,7 @@ function _env_cleanup {
   [[ -d "$_ENV_DIR" ]] && rm -rf "$_ENV_DIR"
 }
 
-export -f _env_init _env_get _env_set _env_exists _env_delete _env_list _env_persist _env_load _env_is_persisted _env_cleanup
+export -f _env_init _env_get _env_set _env_exists _env_delete _env_list _env_evict_prefix _env_ids_prefix _env_persist _env_load _env_is_persisted _env_cleanup
 
 # Wipe the ephemeral env dir when the owning shell exits, so /tmp/trashtalk_*
 # dirs don't accumulate across sessions. Three guards keep this from deleting a
@@ -1090,6 +1116,7 @@ function _generate_accessor {
 function _create_instance {
   if [[ -n ${_STORE_TX:-} ]]; then _store_tx_new "$2" || return; fi
   local class_name="$1" instance_id="$2" current="$1" defaults_var vars_var super_var spec data created_at
+  local accessor_prefix="__${1//::/__}__"
   local -a templates=()
   local -A visited=()
   while [[ -n "$current" && "$current" != nil ]]; do
@@ -1123,7 +1150,6 @@ function _create_instance {
       | .values = ($schema.values + .values))
     | {class:$class,created_at:$created,_vars:.vars} + .values') || return
   _env_set "$instance_id" "$data" || return
-  local accessor_prefix="__${1//::/__}__"
   if ! _env_persist "$instance_id"; then
     _env_delete "$instance_id" 2>/dev/null
     return 1
@@ -1971,7 +1997,9 @@ function send {
 
   # Push to call stack for debugging (lightweight, always on)
   _CALL_STACK[_CALL_DEPTH]="$_CLASS.$_SELECTOR"
-  ((_CALL_DEPTH++))
+  # Plain assignment: ((_CALL_DEPTH++)) from 0 returns 1, which would end a
+  # caller running under set -e when a pragma: direct method is its first send.
+  _CALL_DEPTH=$((_CALL_DEPTH + 1))
 
   # Profiling: record start time and initialize route tracking
   local _profile_start_ms="" _profile_route=""
@@ -2250,7 +2278,7 @@ _send_cleanup() {
   fi
 
   # Pop call stack
-  ((_CALL_DEPTH--))
+  _CALL_DEPTH=$((_CALL_DEPTH - 1))
 }
 
 # Export send helper for subshells

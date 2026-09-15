@@ -314,10 +314,10 @@ due-snoozed Attention for the owner's subscriptions without mutating a snooze.
   compiled classes lazily, so a rebuild could leave it calling helpers it never
   sourced (`_store_matching_lines: command not found` in `run/worker/stderr.log`
   was the symptom). The worker now notices files newer than its start under
-  `trash/.compiled` or `lib` on its next idle beat, logs
-  `Trashtalk runtime rebuilt`, and re-executes itself with the same pid. If a
-  worker predates this behavior, restart it once:
-  `bin/trash-worker-service stop && bin/trash-worker-service start`.
+  `trash/.compiled` or `lib` (the compiler cache directories are pruned from
+  that scan) on its next beat, logs `Trashtalk runtime rebuilt`, and
+  re-executes itself with the same pid. If a worker predates this behavior,
+  restart it once: `bin/trash-worker-service stop && bin/trash-worker-service start`.
 
 ### Cost per tick
 

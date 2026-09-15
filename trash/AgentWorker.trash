@@ -96,6 +96,15 @@ AgentWorker subclass: Object
     @ Store findByClass: AgentSession where: "json_extract(data,'$.lifecycleState') IN ('open','paused') OR id IN (SELECT json_extract(data,'$.session') FROM instances WHERE class='AgentRun' AND json_extract(data,'$.state') IN ('starting','running','recovering'))" orderBy: 'created_at ASC' limit: 1000
   ]
 
+  # Supervisor probe: an active run still needs prompt reconciliation, so
+  # bin/trash-worker keeps its base polling interval while one exists and backs
+  # off otherwise. One indexed query; foreground delivery never waits on it.
+  rawClassMethod: hasActiveRuns [
+    local count
+    count=$(_db_sql "SELECT count(*) FROM instances WHERE class='AgentRun' AND json_extract(data,'$.state') IN ('starting','running','recovering');") || return 1
+    if [[ "$count" == 0 ]]; then echo false; else echo true; fi
+  ]
+
   # Same lock for manual ticks and supervised workers, scoped to this store.
   rawClassMethod: lockPath [
     local path
@@ -107,12 +116,16 @@ AgentWorker subclass: Object
   # never routes its Messages. Existing agent reconciliation remains unchanged.
   rawClassMethod: tick [
     pragma: direct
-    local path rc=0
-    path=$(@ AgentWorker lockPath) || return 1
-    # Warm the per-process schema memo here, outside the lock: work: runs in a
+    local rc=0
+    # The lock path is one Perl process per store; resolve it once per process.
+    if [[ "${_AGENT_WORKER_LOCK_DB:-}" != "$SQLITE_JSON_DB:$PWD" || -z "${_AGENT_WORKER_LOCK_PATH:-}" ]]; then
+      _AGENT_WORKER_LOCK_PATH=$(@ AgentWorker lockPath) || return 1
+      _AGENT_WORKER_LOCK_DB="$SQLITE_JSON_DB:$PWD"
+    fi
+    # Warm the per-process schema memos here, outside the lock: work: runs in a
     # lock subshell, so a memo set there would otherwise rerun the DDL every tick.
-    @ AgentSession ensureSchema || return 1
-    @ Process withLock: "$path" receiver: AgentWorker selector: 'work:' argument: '' || rc=1
+    @ AgentQueue ensureSchema || return 1
+    @ Process withLock: "$_AGENT_WORKER_LOCK_PATH" receiver: AgentWorker selector: 'work:' argument: '' || rc=1
     @ WorkstationWorker tick || rc=1
     return "$rc"
   ]

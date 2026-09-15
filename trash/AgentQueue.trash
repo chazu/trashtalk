@@ -3,7 +3,12 @@
 # the worker can route these rows after any crash, without a second logical send.
 AgentQueue subclass: Object
 
+  # The DDL is idempotent. Direct execution keeps a per-process memo, keyed by
+  # store path, in the caller's shell: a long-running worker or an interactive
+  # shell pays the round trip once instead of on every pending/persist/refresh.
   rawClassMethod: ensureSchema [
+    pragma: direct
+    if [[ "${_AGENT_QUEUE_SCHEMA_DB:-}" == "$SQLITE_JSON_DB" ]]; then return 0; fi
     @ AgentSession ensureSchema || return 1
     _db_sql "CREATE TABLE IF NOT EXISTS agent_outbox (
       message_id TEXT PRIMARY KEY, inbox TEXT NOT NULL,
@@ -16,7 +21,8 @@ AgentQueue subclass: Object
       CREATE INDEX IF NOT EXISTS agent_questions_session_run ON agent_questions(session,run);
       CREATE VIEW IF NOT EXISTS agent_manual_messages AS
         SELECT m.id FROM instances m LEFT JOIN instances origin ON origin.id=json_extract(m.data,'$.replyTo')
-        WHERE m.class='Message' AND (json_extract(m.data,'$.dispatchMode')='manual' OR json_extract(origin.data,'$.dispatchMode')='manual');"
+        WHERE m.class='Message' AND (json_extract(m.data,'$.dispatchMode')='manual' OR json_extract(origin.data,'$.dispatchMode')='manual');" || return 1
+    _AGENT_QUEUE_SCHEMA_DB="$SQLITE_JSON_DB"
   ]
 
   classMethod: persist: message [
@@ -141,16 +147,23 @@ AgentQueue subclass: Object
       SELECT id FROM instances WHERE json_extract(data,'$.class')='AgentDelivery' AND json_extract(data,'$.deliveryKey')='$esc_key' LIMIT 1;"
   ]
 
-  # Session caches are snapshots; refresh worker-owned records between ticks.
-  # Only cache messages whose final snapshot and outbox row have committed;
+  # Session caches are snapshots. Between ticks, drop the cached copies of
+  # worker-owned records (sessions, runs, deliveries) and of messages whose
+  # final snapshot and outbox row have committed; later reads load durable
+  # state on demand, so a tick costs what it touches rather than all history.
+  # A Message draft still being published by this shell keeps its cache entry:
   # Message new persists an empty draft before its sender fills local fields.
   rawClassMethod: refresh [
-    local id data
+    local id ids=''
     @ AgentQueue ensureSchema || return 1
-    while IFS='|' read -r id data; do
-      [[ -z "$id" ]] || _env_set "$id" "$data"
-    done < <(_db_sql "SELECT id || '|' || json(data) FROM instances WHERE class IN ('AgentSession','AgentRun','AgentDelivery')
-      OR (class='Message' AND EXISTS(SELECT 1 FROM agent_outbox WHERE message_id=instances.id));")
+    _env_evict_prefix agentsession_ agentrun_ agentdelivery_
+    for id in $(_env_ids_prefix message_); do
+      ids="$ids'$(_db_escape "$id")',"
+    done
+    [[ -n "$ids" ]] || return 0
+    for id in $(_db_sql "SELECT message_id FROM agent_outbox WHERE message_id IN (${ids%,});"); do
+      _env_delete "$id"
+    done
   ]
 
   # Move unresolved identity routes to the back so they cannot starve new mail.

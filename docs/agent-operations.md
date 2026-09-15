@@ -237,15 +237,30 @@ bin/trash-worker-service status
 bin/trash-worker-service stop
 ```
 
-The default polling interval is one second after each completed tick.
+The service polls every `TRASHTALK_WORKER_INTERVAL` seconds (default 1) while
+any run is active (a tick that starts one leaves it active). When no run is
+active, the delay doubles up to `TRASHTALK_WORKER_MAX_INTERVAL` (default 8
+seconds) and drops back to the base interval as soon as a run exists again.
+Message delivery still ticks immediately in the sender's shell, so backoff
+only affects how quickly the service notices a finished run or routes outbox
+rows written by a process that does not tick. After
+`TRASHTALK_WORKER_MAX_FAILURES` consecutive failed ticks (default 5) the
+worker logs the streak once and exits non-zero so the supervisor's restart
+throttle applies instead of a hot retry loop. When its stderr is
+`run/worker/stderr.log` and that file exceeds `TRASHTALK_WORKER_LOG_MAX_BYTES`
+(default 1 MiB), the worker keeps the previous contents once as
+`stderr.log.1` and retains only the newest quarter of the limit in place.
 A tick holds the store lock for its whole duration. Conversation input, stop,
 and terminate queue behind a running tick for up to `TRASHTALK_CONTROL_WAIT`
 whole seconds (default 30) before reporting that session control is busy; a
 full tick over many sessions can take longer than the old polling window.
 The worker only visits open or paused sessions and sessions still owning an
-active run. After `make`, a running worker re-executes itself on its next
-idle beat so it loads the rebuilt classes and helpers (see the stale-worker
-note in [workstation operations](workstation-operations.md#recovery)).
+active run. Between ticks it drops its cached session, run, delivery, and
+routed-message records instead of reloading every historical row, so a tick
+costs what it touches. After `make`, a running worker re-executes itself on
+its next beat (at most the backoff cap later) so it loads the rebuilt classes
+and helpers (see the stale-worker note in
+[workstation operations](workstation-operations.md#recovery)).
 
 The attached conversation view polls once per second. Each poll first asks
 `AgentFocus changeTokenFor:` for a digest of everything the frame authorizes or

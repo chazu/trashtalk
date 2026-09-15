@@ -11,25 +11,108 @@ case "${1:-run}" in
   run) ;;
   *) printf '%s\n' 'Usage: trash-worker [run|--once]' >&2; exit 2 ;;
 esac
+# Polling: TRASHTALK_WORKER_INTERVAL seconds while any run is active (a tick
+# that starts one leaves it active); otherwise the delay doubles up to
+# TRASHTALK_WORKER_MAX_INTERVAL. Message delivery ticks immediately in the
+# sender's shell, so backoff only delays reconciliation of finished runs and
+# rows routed for processes that do not tick. After
+# TRASHTALK_WORKER_MAX_FAILURES consecutive failed ticks the worker exits
+# non-zero so the supervisor's restart throttle applies instead of a hot loop.
 interval=${TRASHTALK_WORKER_INTERVAL:-1}
-# Compiled classes and helpers load lazily, so a rebuild would leave this
-# process half old and half new. Re-exec on the next idle beat instead.
-stamp=$(mktemp "${TMPDIR:-/tmp}/trash-worker-stamp.XXXXXX") || exit 1
-rebuilt() {
-  [[ -n $(find "$TRASHTALK_DIR/trash/.compiled" "$TRASHTALK_DIR/lib" -type f \
-    -not -path '*/.astcache/*' -not -path '*/.symbolcache/*' -not -path '*/.buildcache/*' \
-    -newer "$stamp" -print -quit 2>/dev/null) ]]
+max_interval=${TRASHTALK_WORKER_MAX_INTERVAL:-8}
+max_failures=${TRASHTALK_WORKER_MAX_FAILURES:-5}
+seconds_valid() { [[ "$1" =~ ^[0-9]+([.][0-9]+)?$ && "$1" == *[1-9]* ]]; }
+seconds_valid "$interval" || { echo 'Invalid worker interval' >&2; exit 2; }
+seconds_valid "$max_interval" || { echo 'Invalid worker maximum interval' >&2; exit 2; }
+[[ "$max_failures" =~ ^[1-9][0-9]*$ ]] || { echo 'Invalid worker failure limit' >&2; exit 2; }
+# Whole milliseconds keep the backoff arithmetic in Bash; sleep takes fractions.
+to_ms() {
+  local whole=${1%%.*} frac=0
+  [[ "$1" != *.* ]] || frac=${1#*.}
+  frac="${frac}000"
+  printf '%d' $((10#$whole * 1000 + 10#${frac:0:3}))
 }
-[[ "$interval" =~ ^[0-9]+([.][0-9]+)?$ && "$interval" == *[1-9]* ]] || { echo 'Invalid worker interval' >&2; exit 2; }
+from_ms() { printf '%d.%03d' $(($1 / 1000)) $(($1 % 1000)); }
+base_ms=$(to_ms "$interval")
+cap_ms=$(to_ms "$max_interval")
+(( cap_ms >= base_ms )) || cap_ms=$base_ms
+
+# The supervisor appends this process's stderr to run/worker/stderr.log and
+# never rotates it. When that file is our stderr, keep only its tail on start.
+inode_of() {
+  if [[ "$OSTYPE" == darwin* || "$OSTYPE" == *bsd* ]]; then stat -L -f %i "$1"; else stat -L -c %i "$1"; fi
+}
+size_of() {
+  if [[ "$OSTYPE" == darwin* || "$OSTYPE" == *bsd* ]]; then stat -L -f %z "$1"; else stat -L -c %s "$1"; fi
+}
+bound_log() {
+  local log="${TRASHTALK_WORKER_LOG:-$TRASHTALK_DIR/run/worker/stderr.log}"
+  local max=${TRASHTALK_WORKER_LOG_MAX_BYTES:-1048576} size keep fd_inode log_inode err_fd
+  [[ "$max" =~ ^[1-9][0-9]*$ && -f "$log" ]] || return 0
+  # Duplicate stderr first: redirecting the probe's own stderr would otherwise
+  # make /dev/fd/2 name the redirection target instead of our log.
+  exec {err_fd}>&2 || return 0
+  fd_inode=$(inode_of "/dev/fd/$err_fd" 2>/dev/null)
+  exec {err_fd}>&-
+  log_inode=$(inode_of "$log" 2>/dev/null) || return 0
+  [[ -n "$fd_inode" && "$fd_inode" == "$log_inode" ]] || return 0
+  size=$(size_of "$log" 2>/dev/null) || return 0
+  (( size > max )) || return 0
+  keep=$((max / 4))
+  # Keep the previous contents once as stderr.log.1, then rewrite the live file
+  # in place: the supervisor opened it for appending, so later lines follow the
+  # retained tail rather than the old end offset.
+  cp -f "$log" "$log.1" 2>/dev/null || true
+  tail -c "$keep" "$log" > "$log.tmp" && cat "$log.tmp" > "$log"
+  rm -f "$log.tmp"
+  printf 'Trashtalk worker log exceeded %s bytes; retained the last %s bytes (previous contents in %s)\n' "$max" "$keep" "$log.1" >&2
+}
+bound_log
+
+stamp=$(mktemp "${TMPDIR:-/tmp}/trash-worker-stamp.XXXXXX") || exit 1
+# Compiled classes and helpers load lazily, so a rebuild would leave this
+# process half old and half new. Re-exec on the next idle beat instead. The
+# compiler caches hold thousands of entries and are pruned from the scan.
+rebuilt() {
+  [[ -n $(find "$TRASHTALK_DIR/trash/.compiled" "$TRASHTALK_DIR/lib" \
+    \( -name .astcache -o -name .symbolcache -o -name .buildcache \) -prune -o \
+    -type f -newer "$stamp" -print -quit 2>/dev/null) ]]
+}
 # Exiting the worker never signals an independently detached harness.
 trap 'rm -f "$stamp"; exit 0' INT TERM HUP
+delay_ms=$base_ms
+failures=0
 while :; do
   if rebuilt; then
     rm -f "$stamp"
     printf '%s\n' 'Trashtalk runtime rebuilt; worker restarting with the new build' >&2
     exec "$BASH" "$0" "$@"
   fi
-  @ AgentWorker tick >/dev/null || printf '%s\n' 'AgentWorker tick failed; will retry' >&2
-  sleep "$interval" &
+  # tick runs in this shell (pragma: direct) so its per-process memos persist.
+  # Stdout is not a work signal: the workstation stage may print values too.
+  busy=0
+  if @ AgentWorker tick >/dev/null; then
+    if (( failures > 0 )); then
+      printf 'AgentWorker tick recovered after %s consecutive failures\n' "$failures" >&2
+    fi
+    failures=0
+    [[ "$(@ AgentWorker hasActiveRuns)" != true ]] || busy=1
+  else
+    failures=$((failures + 1))
+    if (( failures == 1 )); then
+      printf '%s\n' 'AgentWorker tick failed; retrying with backoff' >&2
+    fi
+    if (( failures >= max_failures )); then
+      printf 'AgentWorker tick failed %s times in a row; exiting so the supervisor can restart the worker\n' "$failures" >&2
+      rm -f "$stamp"
+      exit 1
+    fi
+  fi
+  if (( busy )); then delay_ms=$base_ms; fi
+  sleep "$(from_ms "$delay_ms")" &
   wait "$!" || true
+  if (( ! busy )); then
+    delay_ms=$((delay_ms * 2))
+    (( delay_ms <= cap_ms )) || delay_ms=$cap_ms
+  fi
 done
