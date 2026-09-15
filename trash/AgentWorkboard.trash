@@ -1,0 +1,76 @@
+# AgentWorkboard - read-only view over existing Attention and Assignment records.
+# It owns no lifecycle state and publishes no work. Details remain on their
+# source objects and in Inbox/AgentSession browsers.
+AgentWorkboard subclass: Object
+
+  classMethod: status [
+    ^ @ AgentWorkboard statusWithin: ''
+  ]
+
+  classMethod: statusWithin: unused [
+    | human attentionIds attentionItems assignmentIds assignmentItems id attention assignment snapshot execution row activity running waiting review manual |
+    human := @ AgentFocus human.
+    attentionIds := @ Attention localOpen.
+    attentionItems := '[]'.
+    attentionIds linesDo: [:id |
+      attention := @ Attention read: id.
+      row := @ attention display.
+      attentionItems := attentionItems arrayPushJson: row
+    ].
+
+    assignmentIds := @ Store idsOf: 'Assignment' matching: (#{owner: human state: 'open'} asJson).
+    assignmentItems := '[]'.
+    running := 0.
+    waiting := 0.
+    review := 0.
+    manual := 0.
+    assignmentIds arrayEach: [:id |
+      assignment := @ Store read: id class: 'Assignment'.
+      # Assignment snapshot owns its short consistent read transaction. The
+      # workboard deliberately combines those current projections rather than
+      # holding a store lock while formatting the full board.
+      snapshot := @ assignment snapshot.
+      execution := snapshot jsonAt: 'execution'.
+      activity := snapshot objectAt: 'activity'.
+      (activity = 'running') ifTrue: [running := running + 1].
+      (activity = 'waiting on question') ifTrue: [waiting := waiting + 1].
+      (activity = 'needs review') ifTrue: [review := review + 1].
+      (activity = 'ready for manual work') ifTrue: [manual := manual + 1].
+      row := #{id: id objective: (snapshot objectAt: 'objective') workspace: (snapshot objectAt: 'workspace')
+        assignee: (snapshot objectAt: 'assignee') activity: activity session: (snapshot objectAt: 'currentSession')
+        delivery: (snapshot objectAt: 'delivery') deliveryState: (execution objectAt: 'deliveryState')
+        run: (execution objectAt: 'run') runState: (execution objectAt: 'runState')
+        error: (execution objectAt: 'error') unansweredQuestions: ((snapshot jsonAt: 'questions') arrayLength jsonValue)} asJson.
+      assignmentItems := assignmentItems arrayPushJson: row
+    ].
+    ^ #{schema_version: 1 generatedAt: (@ Time nowISO) owner: human
+      attention: #{count: (attentionItems arrayLength jsonValue) items: (attentionItems jsonValue)}
+      assignments: #{count: (assignmentItems arrayLength jsonValue) running: (running jsonValue)
+        waitingOnQuestion: (waiting jsonValue) needsReview: (review jsonValue)
+        readyForManualWork: (manual jsonValue) items: (assignmentItems jsonValue)}} asJson
+  ]
+
+  classMethod: show [
+    pragma: stream
+    | report attention assignments items text |
+    report := @ self status.
+    attention := report jsonAt: 'attention'.
+    assignments := report jsonAt: 'assignments'.
+    text := 'Workboard for ' , (report objectAt: 'owner') , ': ' , (attention objectAt: 'count') , ' attention item(s), ' , (assignments objectAt: 'count') , ' open assignment(s)'.
+    @ Console print: text.
+    items := attention jsonAt: 'items'.
+    items jsonRows: #('id' 'state' 'eventCount' 'workspace' 'routingNote') into: [:id :state :eventCount :workspace :routingNote |
+      text := 'Attention ' , id , ' [' , state , '] events=' , eventCount , ' ' , workspace.
+      (routingNote notEmpty) ifTrue: [text := text , ' | ' , routingNote].
+      @ Console print: text
+    ].
+    items := assignments jsonAt: 'items'.
+    items jsonRows: #('id' 'activity' 'objective' 'workspace' 'assignee' 'deliveryState' 'runState' 'unansweredQuestions') into: [:id :activity :objective :workspace :assignee :deliveryState :runState :questions |
+      text := 'Assignment ' , id , ' [' , activity , '] ' , objective , ' | ' , workspace.
+      (assignee notEmpty) ifTrue: [text := text , ' | ' , assignee].
+      (deliveryState notEmpty) ifTrue: [text := text , ' | delivery ' , deliveryState].
+      (runState notEmpty) ifTrue: [text := text , ' / run ' , runState].
+      (questions ~= '0') ifTrue: [text := text , ' | questions ' , questions].
+      @ Console print: text
+    ]
+  ]

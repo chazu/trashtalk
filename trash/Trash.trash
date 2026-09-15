@@ -7,6 +7,16 @@ Trash subclass: Object
     ^ @ Assignment current
   ]
 
+  # Read-only aggregate over existing Attention and Assignment records.
+  classMethod: workStatus [
+    ^ @ AgentWorkboard status
+  ]
+
+  classMethod: showWorkboard [
+    pragma: stream
+    @ AgentWorkboard show
+  ]
+
   # Resolve the user's durable Inbox instance. Raw: shell environment lookup.
   rawClassMethod: userInbox [
     @ Inbox named: "${TRASHTALK_USER:-$USER}"
