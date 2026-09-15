@@ -57,6 +57,23 @@ if os.environ.get('FOCUS_CLOSE_EARLY'):
     print(json.dumps({'schema_version':1,'request_id':1,'intent':'load_older'}),flush=True)
     sys.stdin.close()
     sys.exit(0)
+if os.environ.get('FOCUS_TRANSIENT_AUTH_FAILURE'):
+    # Force exactly one or two idle frame authorization failures, then prove
+    # that the bridge is still alive by completing a normal request.
+    import sqlite3,time
+    db=os.environ['SQLITE_JSON_DB']; identity=os.environ['FOCUS_IDENTITY']
+    con=sqlite3.connect(db)
+    con.execute("UPDATE instances SET data=json_set(data,'$.enabled','false') WHERE id=?",(identity,)); con.commit()
+    time.sleep(1.3)
+    con.execute("UPDATE instances SET data=json_set(data,'$.enabled','true') WHERE id=?",(identity,)); con.commit(); con.close()
+    print(json.dumps({'schema_version':1,'request_id':1,'intent':'load_older'}),flush=True)
+    for line in sys.stdin:
+        frame=json.loads(line)
+        if frame.get('type')=='ack' and frame.get('request_id')==1:
+            open(os.environ['FOCUS_RETRY_ACK'],'w').write('ack')
+            print(json.dumps({'schema_version':1,'request_id':2,'intent':'dismiss'}),flush=True)
+            break
+    sys.exit(0)
 if os.environ.get('FOCUS_VIEW_ONLY'):
     if os.environ['FOCUS_VIEW_ONLY']=='live':
         with open(os.environ['FOCUS_NATIVE_OUTPUT'],'a') as log:log.write('new live native output\n')
@@ -91,6 +108,10 @@ check 'closing during an acknowledgement returns dismissed' dismissed "$(@ "$ses
 check 'closing the UI emits no broken-pipe diagnostic' '' "$(cat "$tmp/early-close-errors")"
 check 'closing during an acknowledgement leaves the process alive' true "$(@ "$run" isProcessAlive)"
 unset FOCUS_CLOSE_EARLY
+export FOCUS_TRANSIENT_AUTH_FAILURE=1 FOCUS_IDENTITY="$identity" FOCUS_RETRY_ACK="$tmp/retry-ack"
+check 'transient refresh authorization failure does not dismiss the view' dismissed "$(@ "$session" focus)"
+check 'view accepts a request after transient refresh failure' ack "$(cat "$tmp/retry-ack")"
+unset FOCUS_TRANSIENT_AUTH_FAILURE FOCUS_IDENTITY FOCUS_RETRY_ACK
 export FOCUS_VIEW_ONLY=1
 check 'attached view is limited to durable chat messages' dismissed "$(@ "$session" focus)"
 export FOCUS_VIEW_ONLY=1 FOCUS_PICK_ID=session FOCUS_PICK_RECORDS="$tmp/picker-records"

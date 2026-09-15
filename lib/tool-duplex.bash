@@ -34,6 +34,7 @@ write_frame "$snapshot" || { printf '%s\n' dismissed; exit 0; }
 previous=$snapshot
 partial=''
 previous_token=''
+refresh_failures=0
 while kill -0 "$surface_pid" 2>/dev/null; do
     fragment='' token=''
     if IFS= read -r -t 1 fragment <&"$output"; then
@@ -63,7 +64,17 @@ while kill -0 "$surface_pid" 2>/dev/null; do
         token=$(@ "$handler" changeTokenFor: "$context" 2>/dev/null) || token=''
         if [[ -n "$token" && "$token" == "$previous_token" ]]; then continue; fi
     fi
-    snapshot=$(@ "$handler" frameFor: "$context") || break
+    # A frame is an observation, not a lifecycle control. Store snapshot
+    # validation can lose a short race with a worker commit or a SQLite busy
+    # interval. Previously one such read failure looked exactly like a user
+    # dismissal. Keep the surface attached through a small bounded retry window;
+    # a genuinely closed/revoked session still fails every refresh and closes.
+    if ! snapshot=$(@ "$handler" frameFor: "$context"); then
+        refresh_failures=$((refresh_failures + 1))
+        (( refresh_failures < 5 )) && continue
+        break
+    fi
+    refresh_failures=0
     previous_token=$token
     if [[ "$snapshot" != "$previous" ]]; then
         write_frame "$snapshot" || break
