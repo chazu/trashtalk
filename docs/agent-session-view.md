@@ -2,6 +2,9 @@
 
 Implemented in Trashtalk and the companion Innards checkout.
 
+Outstanding dismissal, conversation-creation and detached-notification work is
+recorded in [deferred improvements](agent-ui-future-improvements.md).
+
 ```bash
 @ Agent::Session browse             # choose a session, then Attach to conversation
 @ "$session" focus               # attach an existing Agent::Session directly
