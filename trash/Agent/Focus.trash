@@ -1,30 +1,32 @@
+package: Agent
+
 # Human focus is temporary; messages and explicit controls stay in the domain.
-AgentFocus subclass: Object
+Focus subclass: Object
   classMethod: open: session [
     | available argv context human |
     human := @ self human.
     human isEmpty ifTrue: [^ @ Require reject: 'Session focus requires a human context'].
-    session := @ AgentAccess liveSession: session.
+    session := @ Agent::Access liveSession: session.
     session isEmpty ifTrue: [^ @ Require reject: 'Session access denied'].
     available := @ Tools::Inagent isInstalled.
     (available ~= 'true') ifTrue: [^ @ Require reject: 'inagent is not installed; build and install the Innards applet'].
     context := #{session: session window: 400} asJson.
     argv := @ Tools::Inagent argv.
-    ^ @ Tool duplexArgvJson: argv handler: 'AgentFocus' context: context
+    ^ @ Tool duplexArgvJson: argv handler: 'Agent::Focus' context: context
   ]
 
   classMethod: frameFor: context [
     | session |
-    session := @ AgentAccess session: (context jsonTextAt: 'session').
+    session := @ Agent::Access session: (context jsonTextAt: 'session').
     session isEmpty ifTrue: [^ @ Require reject: 'Session access denied'].
-    ^ @ AgentTranscript snapshotFor: session limit: (context jsonTextAt: 'window')
+    ^ @ Agent::Transcript snapshotFor: session limit: (context jsonTextAt: 'window')
   ]
 
   classMethod: markViewed: messages inSession: session [
     | included |
-    session := @ AgentAccess session: session.
+    session := @ Agent::Access session: session.
     session isEmpty ifTrue: [^ @ Require reject: 'Session access denied'].
-    included := @ AgentTranscript includesMessages: messages inSession: session.
+    included := @ Agent::Transcript includesMessages: messages inSession: session.
     (included ~= 'true') ifTrue: [^ @ Require reject: 'Message does not belong to this conversation'].
     messages arrayEach: [:message | @ message markViewed].
     ^ 'Messages marked read'
@@ -35,26 +37,26 @@ AgentFocus subclass: Object
     # Native input validates current ownership and membership under the worker
     # lock. Reuse that authoritative admission instead of validating twice here.
     (intent = 'send_message') ifTrue: [^ @ session input: body].
-    session := @ AgentAccess session: session.
+    session := @ Agent::Access session: session.
     session isEmpty ifTrue: [^ @ Require reject: 'Session access denied'].
     (intent = 'compact_session') ifTrue: [^ @ session compact].
     (intent = 'pause_session') ifTrue: [^ @ session pause].
     (intent = 'resume_session') ifTrue: [
       result := @ session resume.
-      (result = 'open') ifTrue: [result := @ AgentWorker tickSession: session].
+      (result = 'open') ifTrue: [result := @ Agent::Worker tickSession: session].
       ^ 'Resumed'
     ].
     (intent = 'interrupt_run') ifTrue: [
       allowed := @ self run: run belongsTo: session.
       (allowed ~= 'true') ifTrue: [^ @ Require reject: 'The displayed run does not belong to this session'].
-      ^ @ AgentWorker stopRun: run
+      ^ @ Agent::Worker stopRun: run
     ].
     ^ @ Require reject: 'Unsupported session intent'
   ]
 
   # Fresh run attribution applies to public controls as well as UI frames.
   rawClassMethod: run: run belongsTo: session [
-    db_get "$1" | jq -r --arg session "$2" '.class=="AgentRun" and .session==$session'
+    db_get "$1" | jq -r --arg session "$2" '.class=="Agent::Run" and .session==$session'
   ]
 
   # Cheap read-only change probe for the polling view. It covers every record
@@ -67,10 +69,10 @@ AgentFocus subclass: Object
     esid=$(_db_escape "$sid")
     rows=$(_db_sql "SELECT id||' '||data FROM instances WHERE id='$esid'
       OR id=(SELECT json_extract(data,'$.identity') FROM instances WHERE id='$esid')
-      OR (class IN ('AgentRun','AgentDelivery') AND json_extract(data,'$.session')='$esid')
+      OR (class IN ('Agent::Run','Agent::Delivery') AND json_extract(data,'$.session')='$esid')
       OR (class='Message' AND (json_extract(data,'$.from')='session:$esid' OR json_extract(data,'$.to')='session:$esid'
         OR EXISTS(SELECT 1 FROM instances d,json_each(json_extract(d.data,'$.messageIds')) j
-          WHERE d.class='AgentDelivery' AND json_extract(d.data,'$.session')='$esid' AND j.value=instances.id)))
+          WHERE d.class='Agent::Delivery' AND json_extract(d.data,'$.session')='$esid' AND j.value=instances.id)))
       ORDER BY id;") || return 1
     members=$(_db_sql "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='agent_session_memberships');") || return 1
     memberships=''
@@ -78,8 +80,8 @@ AgentFocus subclass: Object
       memberships=$(_db_sql "SELECT * FROM agent_session_memberships WHERE session_id='$esid'
         OR identity_id=(SELECT json_extract(data,'$.identity') FROM instances WHERE id='$esid') ORDER BY 1,2,3;") || return 1
     fi
-    runs=$(_db_sql "SELECT id FROM instances WHERE class='AgentRun' AND json_extract(data,'$.session')='$esid' ORDER BY id;") || return 1
-    base=$(@ AgentDriver runDirFor: "$sid") || return 1
+    runs=$(_db_sql "SELECT id FROM instances WHERE class='Agent::Run' AND json_extract(data,'$.session')='$esid' ORDER BY id;") || return 1
+    base=$(@ Agent::Driver runDirFor: "$sid") || return 1
     files=$(perl "${TRASHTALK_DIR:-$HOME/.trashtalk}/lib/run-files-stamp.pl" "${base%/*}" $runs) || return 1
     printf '%s\n%s\n%s\n%s\n' "$1" "$rows" "$memberships" "$files" | shasum -a 256 | cut -d ' ' -f 1
   ]
@@ -93,7 +95,7 @@ AgentFocus subclass: Object
   # nonzero action failures become feedback without discarding the draft.
   rawClassMethod: handleFrame: frame context: context [
     local frame="$1" context="$2" intent sid body run state request window result ok=true
-    @ AgentFocus human >/dev/null || return 1
+    @ Agent::Focus human >/dev/null || return 1
     jq -e 'type=="object" and .schema_version==1 and (.request_id|type=="number" and floor==. and .>0) and
       (.intent|IN("dismiss","load_older","send_message","mark_viewed","pause_session","resume_session","interrupt_run","compact_session")) and
       (if .intent=="mark_viewed" then (.message_ids|type=="array" and length>0 and length<=200 and all(.[];type=="string")) else true end) and
@@ -102,21 +104,21 @@ AgentFocus subclass: Object
     intent=$(jq -r .intent <<< "$frame")
     request=$(jq -r .request_id <<< "$frame")
     sid=$(jq -r .session <<< "$context")
-    state=$(db_get "$sid" | jq -er 'select(.class=="AgentSession") | .lifecycleState') || return 1
+    state=$(db_get "$sid" | jq -er 'select(.class=="Agent::Session") | .lifecycleState') || return 1
     if [[ "$intent" == dismiss ]]; then
       jq -cn --argjson context "$context" '{context:$context,done:true}'; return
     fi
     if [[ "$intent" == mark_viewed ]]; then
-      result=$(@ AgentFocus markViewed: "$(jq -c .message_ids <<< "$frame")" inSession: "$sid" 2>&1) || ok=false
+      result=$(@ Agent::Focus markViewed: "$(jq -c .message_ids <<< "$frame")" inSession: "$sid" 2>&1) || ok=false
     elif [[ "$intent" == load_older ]]; then
-      @ AgentAccess session: "$sid" >/dev/null || return 1
+      @ Agent::Access session: "$sid" >/dev/null || return 1
       window=$(jq -r '.window' <<< "$context")
       if (( window >= 100000 )); then result='History limit reached (100,000 entries); inspect older run logs through Session actions.'; ok=false
       else context=$(jq -c '.window = ([.window*2,100000]|min)' <<< "$context"); result='Loaded earlier history'; fi
     else
       IFS= read -r -d '' body < <(jq -jr '(.body // ""), "\u0000"' <<< "$frame")
       run=$(jq -r '.run_id // ""' <<< "$frame")
-      result=$(@ AgentFocus perform: "$intent" session: "$sid" body: "$body" run: "$run" 2>&1) || ok=false
+      result=$(@ Agent::Focus perform: "$intent" session: "$sid" body: "$body" run: "$run" 2>&1) || ok=false
       [[ -n "$result" ]] || { result='Action failed; inspect the session before retrying'; ok=false; }
     fi
     jq -cn --argjson context "$context" --argjson request "$request" --argjson ok "$ok" --arg text "$result" --arg intent "$intent" \

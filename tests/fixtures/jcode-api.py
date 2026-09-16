@@ -53,9 +53,9 @@ def finish(prompt, request_id=None):
             # Exercise the actual Inbox show: operation through run authority.
             subprocess.run(argv, check=True, capture_output=True, text=True)
             body = subprocess.check_output([argv[0], argv[-1], 'body'], text=True).strip()
-            subprocess.run([argv[0], 'AgentRun', 'result:', 'fixture got: ' + body,
+            subprocess.run([argv[0], 'Agent::Run', 'result:', 'fixture got: ' + body,
                             'forDelivery:', delivery], check=True, capture_output=True)
-            subprocess.run([argv[0], 'AgentRun', 'settle:', delivery],
+            subprocess.run([argv[0], 'Agent::Run', 'settle:', delivery],
                            check=True, capture_output=True)
     emit('text_delta', session_id=native, text='Direct fixture answer\n')
     if os.environ.get('JCODE_TEST_IDLE_LATE'):

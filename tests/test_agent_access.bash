@@ -27,62 +27,62 @@ rejects() {
     fi
     check "$label emits no successful result" '' "$(cat "$tmp/result")"
 }
-check 'owner can inspect its session' "$session" "$(@ AgentAccess session: "$session")"
-check 'owner can focus an open session' "$session" "$(@ AgentAccess liveSession: "$session")"
+check 'owner can inspect its session' "$session" "$(@ Agent::Access session: "$session")"
+check 'owner can focus an open session' "$session" "$(@ Agent::Access liveSession: "$session")"
 @ "$session" pause >/dev/null
-check 'paused session remains focusable' "$session" "$(@ AgentAccess liveSession: "$session")"
+check 'paused session remains focusable' "$session" "$(@ Agent::Access liveSession: "$session")"
 check 'focus validation does not resume' paused "$(@ "$session" lifecycleState)"
 before=$(db_get "$session")
-@ AgentFocus frameFor: "$context" >/dev/null
+@ Agent::Focus frameFor: "$context" >/dev/null
 check 'frame leaves durable session unchanged' "$before" "$(db_get "$session")"
 @ "$session" close >/dev/null
-rejects 'closed session cannot open a live view' @ AgentAccess liveSession: "$session"
-check 'closed history remains inspectable by owner' "$session" "$(@ AgentAccess session: "$session")"
+rejects 'closed session cannot open a live view' @ Agent::Access liveSession: "$session"
+check 'closed history remains inspectable by owner' "$session" "$(@ Agent::Access session: "$session")"
 @ "$session" reopen >/dev/null
 
 # Prime this shell with a snapshot, then change only the durable owner.
 @ "$identity" reload >/dev/null
 @ Store patch: "$identity" with: '{"owner":"other-owner"}' >/dev/null
-rejects 'stale identity cache grants no authority' @ AgentAccess session: "$session"
-rejects 'foreign session cannot open the applet' @ AgentFocus open: "$session"
-rejects 'foreign session cannot refresh its transcript' @ AgentFocus frameFor: "$context"
-rejects 'foreign session cannot pause through focus' @ AgentFocus perform: pause_session session: "$session" body: '' run: ''
+rejects 'stale identity cache grants no authority' @ Agent::Access session: "$session"
+rejects 'foreign session cannot open the applet' @ Agent::Focus open: "$session"
+rejects 'foreign session cannot refresh its transcript' @ Agent::Focus frameFor: "$context"
+rejects 'foreign session cannot pause through focus' @ Agent::Focus perform: pause_session session: "$session" body: '' run: ''
 check 'unauthorized pause leaves lifecycle unchanged' open "$(db_get "$session" | jq -r .lifecycleState)"
 frame='{"schema_version":1,"request_id":1,"intent":"load_older"}'
-rejects 'retained view context cannot load foreign history' @ AgentFocus handleFrame: "$frame" context: "$context"
+rejects 'retained view context cannot load foreign history' @ Agent::Focus handleFrame: "$frame" context: "$context"
 @ Store patch: "$identity" with: '{"owner":"access-owner","enabled":"false"}' >/dev/null
-rejects 'disabled identity cannot open live focus' @ AgentAccess liveSession: "$session"
+rejects 'disabled identity cannot open live focus' @ Agent::Access liveSession: "$session"
 @ Store patch: "$identity" with: '{"enabled":"true","owner":""}' >/dev/null
-rejects 'ownerless identity does not borrow current user authority' @ AgentAccess session: "$session"
+rejects 'ownerless identity does not borrow current user authority' @ Agent::Access session: "$session"
 @ Store patch: "$identity" with: '{"owner":"access-owner"}' >/dev/null
 _store_tx_before_commit() {
     @ Store patch: "$identity" with: '{"owner":"other-owner"}' >/dev/null
 }
-rejects 'ownership change during validation conflicts' @ AgentAccess session: "$session"
+rejects 'ownership change during validation conflicts' @ Agent::Access session: "$session"
 unset -f _store_tx_before_commit
 @ Store patch: "$identity" with: '{"owner":"access-owner"}' >/dev/null
 export TRASHTALK_RUN_TOKEN=not-human
-rejects 'run token cannot act as a human viewer' @ AgentAccess session: "$session"
+rejects 'run token cannot act as a human viewer' @ Agent::Access session: "$session"
 unset TRASHTALK_RUN_TOKEN
-rejects 'missing session cannot authorize' @ AgentAccess session: agentsession_missing
-rejects 'identity ID is not a session' @ AgentAccess session: "$identity"
+rejects 'missing session cannot authorize' @ Agent::Access session: agentsession_missing
+rejects 'identity ID is not a session' @ Agent::Access session: "$identity"
 # A view admission observes membership too, including deletion during validation.
 members=$(_db_sql "SELECT json_group_array(json_object('identity',identity_id,'scope',scope_key,'session',session_id,'revision',policy_revision)) FROM agent_session_memberships WHERE identity_id='$identity';")
 _store_tx_before_commit() { _db_sql "DELETE FROM agent_session_memberships WHERE identity_id='$identity';"; }
-rejects 'membership change during validation conflicts' @ AgentAccess liveSession: "$session"
+rejects 'membership change during validation conflicts' @ Agent::Access liveSession: "$session"
 unset -f _store_tx_before_commit
 _db_sql "INSERT INTO agent_session_memberships SELECT json_extract(value,'$.identity'),json_extract(value,'$.scope'),json_extract(value,'$.session'),json_extract(value,'$.revision') FROM json_each('$(_db_escape "$members")');"
-check 'restored membership admits current session' "$session" "$(@ AgentAccess liveSession: "$session")"
+check 'restored membership admits current session' "$session" "$(@ Agent::Access liveSession: "$session")"
 # The lighter path and ordinary guarded DSL validator agree on the live fixture.
-check 'snapshot admission matches transaction validator' "$(@ Store transaction: AgentAccess sending: validateLiveSession: with: "$session")" "$(@ AgentAccess liveSession: "$session")"
+check 'snapshot admission matches transaction validator' "$(@ Store transaction: Agent::Access sending: validateLiveSession: with: "$session")" "$(@ Agent::Access liveSession: "$session")"
 (
     export SQLITE_JSON_DB="$tmp/legacy.db"
     db_init
-    db_put agentidentity_legacy '{"class":"AgentIdentity","owner":"access-owner","enabled":true,"sessionPolicyRevision":0}'
-    db_put agentsession_legacy '{"class":"AgentSession","identity":"agentidentity_legacy","lifecycleState":"open"}'
-    check 'pre-membership session matches transaction validation' "$(@ Store transaction: AgentAccess sending: validateLiveSession: with: agentsession_legacy)" "$(@ AgentAccess liveSession: agentsession_legacy)"
-    db_put agentidentity_legacy '{"class":"AgentIdentity","owner":"access-owner\n","enabled":"true\n","sessionPolicyRevision":0}'
-    check 'legacy scalar capture semantics are retained' "$(@ Store transaction: AgentAccess sending: validateLiveSession: with: agentsession_legacy)" "$(@ AgentAccess liveSession: agentsession_legacy)"
+    db_put agentidentity_legacy '{"class":"Agent::Identity","owner":"access-owner","enabled":true,"sessionPolicyRevision":0}'
+    db_put agentsession_legacy '{"class":"Agent::Session","identity":"agentidentity_legacy","lifecycleState":"open"}'
+    check 'pre-membership session matches transaction validation' "$(@ Store transaction: Agent::Access sending: validateLiveSession: with: agentsession_legacy)" "$(@ Agent::Access liveSession: agentsession_legacy)"
+    db_put agentidentity_legacy '{"class":"Agent::Identity","owner":"access-owner\n","enabled":"true\n","sessionPolicyRevision":0}'
+    check 'legacy scalar capture semantics are retained' "$(@ Store transaction: Agent::Access sending: validateLiveSession: with: agentsession_legacy)" "$(@ Agent::Access liveSession: agentsession_legacy)"
     check 'legacy admission does not install a schema' 0 "$(_db_sql "SELECT count(*) FROM sqlite_master WHERE name='agent_session_memberships';")"
 )
 passed=$((passed+3))

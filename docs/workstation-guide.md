@@ -315,9 +315,9 @@ A specialist works the same way; sessions for a workspace-scoped identity are
 per directory:
 
 ```bash
-identity=$(@ AgentIdentity named: test-fixer)
+identity=$(@ Agent::Identity named: test-fixer)
 @ "$identity" owner: "$TRASHTALK_USER"; @ "$identity" save
-session=$(@ AgentSession openFor: "$identity" archetype: "$arch" role: "$role" workspace: ~/proj profile: jcode)
+session=$(@ Agent::Session openFor: "$identity" archetype: "$arch" role: "$role" workspace: ~/proj profile: jcode)
 ```
 
 `clearTarget:` removes the target and turns automatic delegation off. Both are
@@ -357,7 +357,7 @@ is one of:
 | `subscription-disabled` | receipts are not being read | `enable:` |
 | `target-missing`, `target-unauthorized`, `target-disabled` | the identity is gone, someone else's, or disabled | fix the identity or pick another |
 | `workspace-unknown`, `workspace-missing` | the receipt's directory was not recorded or no longer exists | run the command again from a real directory |
-| `no-session` | the identity has no current session for that workspace | start one (`@@`, `Gusgus sessionFor:`, `AgentSession openFor:`) |
+| `no-session` | the identity has no current session for that workspace | start one (`@@`, `Gusgus sessionFor:`, `Agent::Session openFor:`) |
 | `session-ambiguous` | a legacy identity has several eligible sessions | `selectCurrentSession:` on the identity |
 | `session-paused`, `session-closed` | the session is not open | resume or open a session |
 | `workspace-unauthorized` | the session's role does not allow that directory | adjust the role or use another identity |
@@ -516,7 +516,7 @@ records with their fields as columns.
 | `Command receipt publication failed` on the wrapper | Honker or the store was unavailable at that moment | the command result is still correct; nothing to repair |
 | `routingStatus` says `no-session` for Gusgus | no current conversation | `@@ 'hi'` or `@ Gusgus sessionFor: "$PWD"` |
 | `routingStatus` says `session-ambiguous` | a legacy identity with several open sessions | `@ "$identity" selectCurrentSession: "$session"` |
-| Delegated, but no run starts | worker not running, session paused, or a stalled delivery on that session | `bin/trash-worker --once`; `@ "$session" summary`; `@ AgentSession browse` |
+| Delegated, but no run starts | worker not running, session paused, or a stalled delivery on that session | `bin/trash-worker --once`; `@ "$session" summary`; `@ Agent::Session browse` |
 | Worker logs `command not found` after `make` | a worker older than the auto-restart behavior | `bin/trash-worker-service stop && bin/trash-worker-service start` |
 
 Everything durable can be inspected directly:

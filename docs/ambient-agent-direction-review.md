@@ -71,19 +71,19 @@ every blocked delivery in that session to pending. That is broader than
 relationship remains valuable and should become an early milestone. Reading,
 archiving, answering, and approving must remain distinct operations.
 
-See `AgentQueue assign:messages:outbox:` in
-[AgentQueue.trash](../trash/AgentQueue.trash) and `AgentRun askUser:` in
-[AgentRun.trash](../trash/AgentRun.trash).
+See `Agent::Queue assign:messages:outbox:` in
+[Agent::Queue.trash](../trash/Agent/Queue.trash) and `Agent::Run askUser:` in
+[Agent::Run.trash](../trash/Agent/Run.trash).
 
 ### Policy promises need an implementation boundary
 
-`AgentRole` has recipient and budget fields, but the current agent send path
+`Agent::Role` has recipient and budget fields, but the current agent send path
 authenticates the run and sends without enforcing those policies. The revised
 document should distinguish implemented attribution, actual sandbox
 containment, and still-planned authorization checks.
 
-See [AgentRole.trash](../trash/AgentRole.trash) and `AgentRun send:to:` in
-[AgentRun.trash](../trash/AgentRun.trash).
+See [Agent::Role.trash](../trash/Agent/Role.trash) and `Agent::Run send:to:` in
+[Agent::Run.trash](../trash/Agent/Run.trash).
 
 ### The old implementation prescription should largely retire
 

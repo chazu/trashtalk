@@ -15,23 +15,23 @@ check() { if [[ "$2" == "$3" ]]; then echo "PASS: $1"; passed=$((passed+1)); els
 must() { "$@" || { printf 'FAIL: command failed: %s\n' "$*" >&2; exit 1; }; }
 reject() { local name="$1"; shift; if "$@" >"$tmp/rejected" 2>&1; then echo "FAIL: accepted $name"; exit 1; else echo "PASS: $name"; passed=$((passed+1)); fi; }
 field() { db_get "$1" | jq -r "$2"; }
-new_session() { @ AgentSession openFor: "$identity" archetype: "$arch" role: "$role" workspace: "$root" profile: shell; }
+new_session() { @ Agent::Session openFor: "$identity" archetype: "$arch" role: "$role" workspace: "$root" profile: shell; }
 new_assignment() { local a; a=$(@ Assignment draft: "$1" in: "$root") || return 1; @ "$a" assignTo: "$identity" >/dev/null || return 1; @ "$a" workIn: "$session" >/dev/null || return 1; echo "$a"; }
 start_run() {
     local pair
-    mapfile -t pair < <(@ AgentRun startFor: "$1" profile: shell)
+    mapfile -t pair < <(@ Agent::Run startFor: "$1" profile: shell)
     run=${pair[0]}; token=${pair[1]}
     must @ "$run" transitionTo: running >/dev/null
 }
 
-identity=$(must @ AgentIdentity named: assignment-specialist)
+identity=$(must @ Agent::Identity named: assignment-specialist)
 @ "$identity" owner: assignment-owner
 @ "$identity" save
-arch=$(must @ AgentArchetype define: assignment-specialist revision: 1 instructions: 'Use Assignment and read inbox messages.' profile: shell)
-role=$(must @ AgentRole define: assignment-specialist revision: 1 capabilities: '["inbox.read","message.send","assignment.work"]' workspacePolicy: '[]' runBudget: '{}')
+arch=$(must @ Agent::Archetype define: assignment-specialist revision: 1 instructions: 'Use Assignment and read inbox messages.' profile: shell)
+role=$(must @ Agent::Role define: assignment-specialist revision: 1 capabilities: '["inbox.read","message.send","assignment.work"]' workspacePolicy: '[]' runBudget: '{}')
 session=$(must new_session)
-foreign=$(must @ AgentIdentity named: foreign)
-foreign_session=$(must @ AgentSession openFor: "$foreign" archetype: "$arch" role: "$role" workspace: "$root" profile: shell)
+foreign=$(must @ Agent::Identity named: foreign)
+foreign_session=$(must @ Agent::Session openFor: "$foreign" archetype: "$arch" role: "$role" workspace: "$root" profile: shell)
 
 reject 'empty objective rejected' @ Assignment draft: ' ' in: "$root"
 a=$(must @ Assignment draft: 'Explain the failing integration test' in: "$root")
@@ -47,7 +47,7 @@ must @ "$a" assignTo: "$identity" >/dev/null
 must @ "$a" assignTo: "$identity" >/dev/null
 reject 'automatic identity reassignment is excluded' @ "$a" assignTo: "$foreign"
 reject 'foreign identity session rejected' @ "$a" workIn: "$foreign_session"
-wrong_ws=$(must @ AgentSession openFor: "$identity" archetype: "$arch" role: "$role" workspace: "$tmp" profile: shell)
+wrong_ws=$(must @ Agent::Session openFor: "$identity" archetype: "$arch" role: "$role" workspace: "$tmp" profile: shell)
 reject 'workspace mismatch rejected' @ "$a" workIn: "$wrong_ws"
 
 # Work publication must be all-or-nothing even at its final outbox write.
@@ -63,8 +63,8 @@ check 'repeated workIn publishes once' 1 "$(field "$a" '.history | length')"
 work_body=$(field "message_${a}_work_1" .body)
 check 'work message keeps actual line breaks' true "$([[ "$work_body" == *$'\nCompletion criteria: '* ]] && echo true || echo false)"
 check 'work is held for manual use' manual "$(field "$delivery" .dispatchMode)"
-check 'worker pending list excludes held work' '' "$(@ AgentDelivery pendingFor: "$session")"
-must @ AgentWorker tickSession: "$session" >/dev/null
+check 'worker pending list excludes held work' '' "$(@ Agent::Delivery pendingFor: "$session")"
+must @ Agent::Worker tickSession: "$session" >/dev/null
 check 'worker tick launches no assignment run' '' "$(@ "$session" activeRun)"
 check 'held work is visible through inbox messages' "message_${a}_work_1" "$(@ "$session" inboxObject | while read -r inbox; do @ "$inbox" unread; done)"
 reject 'criteria cannot silently change published work' @ "$a" criteria: changed
@@ -113,7 +113,7 @@ first_run="$run"; first_token="$token"
 export TRASHTALK_RUN_TOKEN="$token"
 reject 'unclaimed assignment is not current' @ Trash currentAssignment
 reject 'unclaimed work cannot be completed' @ "$c" complete: unclaimed
-check 'explicit fixture claim succeeds' true "$(@ AgentDelivery claim: "$cdelivery" run: "$run")"
+check 'explicit fixture claim succeeds' true "$(@ Agent::Delivery claim: "$cdelivery" run: "$run")"
 check 'run resolves exact held assignment' "$c" "$(@ Trash currentAssignment)"
 check 'claim records participating run' "$run" "$(field "$c" '.history[0].runs[0]')"
 must @ "$c" progress: 'Controlled run observed the failure.' >/dev/null
@@ -139,7 +139,7 @@ check 'manual answer has no pending routing obligation' "$session" "$(_db_sql "S
 followup=$(must @ "$answer2" reply: 'Acknowledged; continuing the manual walkthrough.')
 followup_reply=$(must @ "$followup" reply: 'One more detail for this exchange.')
 check 'manual boundary survives subsequent replies' manual "$(field "$followup_reply" .dispatchMode)"
-check 'subsequent manual reply stays out of automatic routing' 0 "$(@ AgentQueue pending | awk -v id="$followup_reply" '$0==id {n++} END {print n+0}')"
+check 'subsequent manual reply stays out of automatic routing' 0 "$(@ Agent::Queue pending | awk -v id="$followup_reply" '$0==id {n++} END {print n+0}')"
 must @ "$session" close >/dev/null
 third=$(must new_session)
 must @ "$c" workIn: "$third" >/dev/null
@@ -153,11 +153,11 @@ unset TRASHTALK_RUN_TOKEN
 start_run "$third"
 export TRASHTALK_RUN_TOKEN="$token"
 new_delivery=$(field "$c" .delivery)
-check 'replacement run claims only new delivery' true "$(@ AgentDelivery claim: "$new_delivery" run: "$run")"
-check 'superseded delivery cannot be reclaimed' false "$(@ AgentDelivery claim: "$cdelivery" run: "$run")"
+check 'replacement run claims only new delivery' true "$(@ Agent::Delivery claim: "$new_delivery" run: "$run")"
+check 'superseded delivery cannot be reclaimed' false "$(@ Agent::Delivery claim: "$cdelivery" run: "$run")"
 unrelated_msg=$(must @ Inbox send: unrelated to: "session:$third" from: assignment-owner)
-unrelated=$(must @ AgentDelivery forSession: "$third" messages: "[\"$unrelated_msg\"]")
-must @ AgentDelivery claim: "$unrelated" run: "$run" >/dev/null
+unrelated=$(must @ Agent::Delivery forSession: "$third" messages: "[\"$unrelated_msg\"]")
+must @ Agent::Delivery claim: "$unrelated" run: "$run" >/dev/null
 
 # Failure at outcome insertion must not leave completion or settlement behind.
 _db_sql "CREATE TRIGGER reject_assignment_outcome BEFORE INSERT ON instances WHEN NEW.id='message_${c}_outcome' BEGIN SELECT RAISE(ABORT,'fixture outcome failure'); END;"
@@ -175,8 +175,8 @@ unset TRASHTALK_RUN_TOKEN
 
 # Requester session and original conversation survive outcome routing.
 second="$third"
-origin_identity=$(must @ AgentIdentity named: conversation-requester)
-origin_session=$(must @ AgentSession openFor: "$origin_identity" archetype: "$arch" role: "$role" workspace: "$root" profile: shell)
+origin_identity=$(must @ Agent::Identity named: conversation-requester)
+origin_session=$(must @ Agent::Session openFor: "$origin_identity" archetype: "$arch" role: "$role" workspace: "$root" profile: shell)
 origin=$(must @ Inbox send: 'Investigate for me' to: assignment-owner from: "session:$origin_session")
 r=$(must @ Assignment draft: 'Keep the conversation link' in: "$root")
 must @ "$r" origin: "$origin" >/dev/null
@@ -220,13 +220,13 @@ export TRASHTALK_USER=assignment-owner
 start_run "$session"
 export TRASHTALK_RUN_TOKEN="$token"
 export TRASHTALK_RUN_TOKEN=invalid
-reject 'invalid token cannot claim assignment work' @ AgentDelivery claim: "$xd" run: "$run"
+reject 'invalid token cannot claim assignment work' @ Agent::Delivery claim: "$xd" run: "$run"
 export TRASHTALK_RUN_TOKEN="$token"
 @ Store patch: "$role" with: '{"capabilities":[]}' >/dev/null
-check 'role without assignment capability cannot claim' false "$(@ AgentDelivery claim: "$xd" run: "$run")"
+check 'role without assignment capability cannot claim' false "$(@ Agent::Delivery claim: "$xd" run: "$run")"
 @ Store patch: "$role" with: '{"capabilities":["inbox.read","message.send","assignment.work"]}' >/dev/null
-check 'first assignment claimed' true "$(@ AgentDelivery claim: "$xd" run: "$run")"
-check 'second assignment claimed' true "$(@ AgentDelivery claim: "$yd" run: "$run")"
+check 'first assignment claimed' true "$(@ Agent::Delivery claim: "$xd" run: "$run")"
+check 'second assignment claimed' true "$(@ Agent::Delivery claim: "$yd" run: "$run")"
 reject 'multiple held assignments require explicit selection' @ Trash currentAssignment
 export TRASHTALK_ASSIGNMENT_ID="$y"
 check 'explicit context resolves ambiguity' "$y" "$(@ Trash currentAssignment)"
@@ -251,12 +251,12 @@ unset TRASHTALK_RUN_TOKEN
 must @ "$qx" reply: main >/dev/null
 start_run "$session"
 export TRASHTALK_RUN_TOKEN="$token"
-check 'new run resumes answered work in same session' true "$(@ AgentDelivery claim: "$xd" run: "$run")"
+check 'new run resumes answered work in same session' true "$(@ Agent::Delivery claim: "$xd" run: "$run")"
 check 'same-session retry keeps both run references' 2 "$(field "$x" '.history[0].runs | length')"
 reject 'predecessor cannot become active beside replacement' @ Store patch: "$old_run" with: '{"state":"running"}'
 export TRASHTALK_RUN_TOKEN="$old_token"
 reject 'old run cannot complete after same-session handoff' @ "$x" complete: stale
-reject 'agent cannot claim on behalf of another run' @ AgentDelivery claim: "$xd" run: "$run"
+reject 'agent cannot claim on behalf of another run' @ Agent::Delivery claim: "$xd" run: "$run"
 @ Store patch: "$old_run" with: '{"state":"waiting_for_user"}' >/dev/null
 export TRASHTALK_RUN_TOKEN="$token"
 must @ "$x" complete: 'Retry evidence recorded.' >/dev/null
@@ -267,12 +267,12 @@ unset TRASHTALK_RUN_TOKEN
 uncertain=$(must new_assignment 'Review an interrupted effect')
 ud=$(field "$uncertain" .delivery)
 start_run "$session"
-check 'operator fixture claims work' true "$(@ AgentDelivery claim: "$ud" run: "$run")"
+check 'operator fixture claims work' true "$(@ Agent::Delivery claim: "$ud" run: "$run")"
 must @ "$ud" transitionTo: uncertain >/dev/null
 must @ "$run" finishWith: unsettled outcome: '{}' error: 'Needs review' >/dev/null
 check 'uncertainty is derived review activity' 'needs review' "$(@ "$uncertain" snapshot | jq -r .activity)"
 must @ "$session" close >/dev/null
-third=$(must @ AgentSession openFor: "$identity" archetype: "$arch" role: "$role" workspace: "$root" profile: shell)
+third=$(must @ Agent::Session openFor: "$identity" archetype: "$arch" role: "$role" workspace: "$root" profile: shell)
 second="$third"
 reject 'uncertainty blocks replacement' @ "$uncertain" workIn: "$third"
 reject 'uncertainty blocks inferred completion' @ "$uncertain" complete: done
@@ -295,8 +295,8 @@ must @ "$rr" complete: 'Atomic result' >/dev/null
 
 # An identity-addressed requester must not accidentally activate a harness when
 # it happens to have exactly one eligible session.
-requester=$(must @ AgentIdentity named: assignment-requester)
-requester_session=$(must @ AgentSession openFor: "$requester" archetype: "$arch" role: "$role" workspace: "$root" profile: shell)
+requester=$(must @ Agent::Identity named: assignment-requester)
+requester_session=$(must @ Agent::Session openFor: "$requester" archetype: "$arch" role: "$role" workspace: "$root" profile: shell)
 requester_inbox=$(@ "$requester" inbox)
 identity_origin=$(must @ Inbox send: 'A request from an identity inbox' to: assignment-owner from: "$requester_inbox")
 ir=$(must @ Assignment draft: 'Reply to the requester identity' in: "$root")
@@ -307,9 +307,9 @@ must @ "$ir" workIn: "$second" >/dev/null
 must @ "$ir" complete: 'Ready for manual review.' >/dev/null
 im=$(field "$ir" .resultMessage)
 check 'identity result uses the originating inbox' "$requester_inbox" "$(field "$im" .to)"
-check 'identity result is excluded from automatic routing' 0 "$(@ AgentQueue pending | awk -v id="$im" '$0==id {n++} END {print n+0}')"
-must @ AgentWorker deliverMessage: "$im" toInbox: "$requester_inbox" >/dev/null
-must @ AgentWorker tickSession: "$requester_session" >/dev/null
+check 'identity result is excluded from automatic routing' 0 "$(@ Agent::Queue pending | awk -v id="$im" '$0==id {n++} END {print n+0}')"
+must @ Agent::Worker deliverMessage: "$im" toInbox: "$requester_inbox" >/dev/null
+must @ Agent::Worker tickSession: "$requester_session" >/dev/null
 check 'direct routing cannot create automatic work from held result' '' "$(@ "$requester_session" pendingDeliveries)"
 check 'identity requester has no automatic run' '' "$(@ "$requester_session" activeRun)"
 echo "Assignment: $passed checks passed"

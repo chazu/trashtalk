@@ -7,7 +7,7 @@ export TRASHTALK_DIR
 unset TRASH_SESSION_ID
 source "$TRASHTALK_DIR/lib/trash.bash" || exit 1
 case "${1:-run}" in
-  --once) @ AgentWorker tick; exit $? ;;
+  --once) @ Agent::Worker tick; exit $? ;;
   run) ;;
   *) printf '%s\n' 'Usage: trash-worker [run|--once]' >&2; exit 2 ;;
 esac
@@ -91,19 +91,19 @@ while :; do
   # tick runs in this shell (pragma: direct) so its per-process memos persist.
   # Stdout is not a work signal: the workstation stage may print values too.
   busy=0
-  if @ AgentWorker tick >/dev/null; then
+  if @ Agent::Worker tick >/dev/null; then
     if (( failures > 0 )); then
-      printf 'AgentWorker tick recovered after %s consecutive failures\n' "$failures" >&2
+      printf 'Agent::Worker tick recovered after %s consecutive failures\n' "$failures" >&2
     fi
     failures=0
-    [[ "$(@ AgentWorker hasActiveRuns)" != true ]] || busy=1
+    [[ "$(@ Agent::Worker hasActiveRuns)" != true ]] || busy=1
   else
     failures=$((failures + 1))
     if (( failures == 1 )); then
-      printf '%s\n' 'AgentWorker tick failed; retrying with backoff' >&2
+      printf '%s\n' 'Agent::Worker tick failed; retrying with backoff' >&2
     fi
     if (( failures >= max_failures )); then
-      printf 'AgentWorker tick failed %s times in a row; exiting so the supervisor can restart the worker\n' "$failures" >&2
+      printf 'Agent::Worker tick failed %s times in a row; exiting so the supervisor can restart the worker\n' "$failures" >&2
       rm -f "$stamp"
       exit 1
     fi

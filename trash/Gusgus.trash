@@ -17,15 +17,15 @@ Gusgus subclass: Object
     local text profile
     text=$(@ "$_RECEIVER" instructions)
     profile=$(@ "$_RECEIVER" profile)
-    @ AgentArchetype define: assistant revision: 1 instructions: "$text" profile: "$profile"
+    @ Agent::Archetype define: assistant revision: 1 instructions: "$text" profile: "$profile"
   ]
 
   rawClassMethod: role [
-    @ AgentRole define: assistant revision: 1 capabilities: '["inbox.read","message.send","question.ask","source.read","proposal.submit"]' workspacePolicy: '[]' runBudget: '{"turns":0,"usd":0,"retryLimit":2}'
+    @ Agent::Role define: assistant revision: 1 capabilities: '["inbox.read","message.send","question.ask","source.read","proposal.submit"]' workspacePolicy: '[]' runBudget: '{"turns":0,"usd":0,"retryLimit":2}'
   ]
 
   # Gusgus-specific human command wrapper. Other stable facades may expose a
-  # different UX, but all use the same durable Inbox/AgentSession boundary.
+  # different UX, but all use the same durable Inbox/Agent::Session boundary.
   rawClassMethod: chat: text workingDirectory: dir status: status lastResult: lastResult [
     local text="$1" dir="$2" status="$3" last="$4" session inbox owner body msg
     session=$(@ "$_RECEIVER" sessionFor: "$dir") || return 1

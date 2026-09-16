@@ -3,9 +3,9 @@
 if [[ "${TRASHTALK_TEST_ISOLATED:-}" != 1 ]]; then
     exec bash "$(dirname "${BASH_SOURCE[0]}")/../lib/test-isolated.bash" "${BASH_SOURCE[0]}" "$@"
 fi
-# End-to-end test of the headless session loop over the ShellDriver:
-# @@ / Gusgus chat: -> Inbox deliver: -> AgentWorker tick -> detached process ->
-# trash-send AgentRun result:/settle: -> reply in the owner's inbox thread.
+# End-to-end test of the headless session loop over the Agent::ShellDriver:
+# @@ / Gusgus chat: -> Inbox deliver: -> Agent::Worker tick -> detached process ->
+# trash-send Agent::Run result:/settle: -> reply in the owner's inbox thread.
 # No model is involved; TRASHTALK_SHELL_DRIVER plays the agent.
 
 TRASHTALK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -45,7 +45,7 @@ trap cleanup EXIT
 settle_session() {
     local session="$1" i
     for i in $(seq 1 100); do
-        @ AgentWorker tickSession: "$session" >/dev/null 2>&1
+        @ Agent::Worker tickSession: "$session" >/dev/null 2>&1
         [[ -z "$(@ "$session" activeRun)" ]] && return 0
         sleep 0.2
     done
@@ -53,12 +53,12 @@ settle_session() {
 }
 
 # The stand-in agent: answer with a count of the messages it saw, then settle.
-AGENT_OK='prompt=$(cat); ids=$(printf "%s\n" "$prompt" | sed -n "s/^--- delivery //p"); ts="$TRASHTALK_DIR/bin/trash-send"; "$ts" AgentRun result: "pong: $(printf "%s\n" "$prompt" | grep -c "^Message:")" >/dev/null; for id in $ids; do "$ts" AgentRun settle: "$id" >/dev/null; done'
-AGENT_NO_SETTLE='prompt=$(cat); "$TRASHTALK_DIR/bin/trash-send" AgentRun result: "forgot to settle" >/dev/null'
+AGENT_OK='prompt=$(cat); ids=$(printf "%s\n" "$prompt" | sed -n "s/^--- delivery //p"); ts="$TRASHTALK_DIR/bin/trash-send"; "$ts" Agent::Run result: "pong: $(printf "%s\n" "$prompt" | grep -c "^Message:")" >/dev/null; for id in $ids; do "$ts" Agent::Run settle: "$id" >/dev/null; done'
+AGENT_NO_SETTLE='prompt=$(cat); "$TRASHTALK_DIR/bin/trash-send" Agent::Run result: "forgot to settle" >/dev/null'
 AGENT_CRASH='cat >/dev/null; exit 1'
-AGENT_ASK='prompt=$(cat); "$TRASHTALK_DIR/bin/trash-send" AgentRun askUser: "A or B?" >/dev/null'
+AGENT_ASK='prompt=$(cat); "$TRASHTALK_DIR/bin/trash-send" Agent::Run askUser: "A or B?" >/dev/null'
 
-echo "=== AgentWorker end-to-end (ShellDriver) ==="
+echo "=== Agent::Worker end-to-end (Agent::ShellDriver) ==="
 echo ""
 
 # ==========================================
@@ -76,13 +76,13 @@ assert_eq "message went to the session inbox" "$(@ $session inbox)" "$(@ $msg to
 assert_eq "message is from the owner" "tester" "$(@ $msg from)"
 
 settle_session "$session" && pass "run finished" || fail "run finished" "no active run" "$(@ $session activeRun)"
-run=$(@ Store findByClass: AgentRun where: "json_extract(data, '\$.session') = '$session'" orderBy: 'created_at ASC' limit: 1)
+run=$(@ Store findByClass: Agent::Run where: "json_extract(data, '\$.session') = '$session'" orderBy: 'created_at ASC' limit: 1)
 assert_nonempty "a run was recorded" "$run"
 assert_eq "run succeeded" "succeeded" "$(@ $run state)"
 assert_eq "run recorded the shell conversation ref" "shell-$run" "$(@ $run externalConversationRef)"
 assert_eq "session remembers the conversation ref" "shell-$run" "$(@ $session lastConversationRef)"
-delivery=$(@ Store findByClass: AgentDelivery where: "json_extract(data, '\$.session') = '$session'" orderBy: 'created_at ASC' limit: 1)
-assert_eq "forKey: finds the same delivery" "$delivery" "$(@ AgentDelivery forKey: "$(@ $delivery deliveryKey)")"
+delivery=$(@ Store findByClass: Agent::Delivery where: "json_extract(data, '\$.session') = '$session'" orderBy: 'created_at ASC' limit: 1)
+assert_eq "forKey: finds the same delivery" "$delivery" "$(@ Agent::Delivery forKey: "$(@ $delivery deliveryKey)")"
 assert_nonempty "a delivery was recorded" "$delivery"
 assert_eq "delivery processed by the agent" "processed" "$(@ $delivery state)"
 assert_eq "delivery attempts is 1" "1" "$(@ $delivery attempts)"
@@ -109,7 +109,7 @@ echo "2. replying to the result resumes the same session"
 followup=$(@ $reply reply: 'and again?')
 assert_eq "reply landed in the session inbox" "session:$session" "$(@ $followup to)"
 settle_session "$session" && pass "second run finished" || fail "second run finished" "no active run" "$(@ $session activeRun)"
-runs=$(@ Store findByClass: AgentRun where: "json_extract(data, '\$.session') = '$session'" orderBy: 'created_at ASC' limit: 10)
+runs=$(@ Store findByClass: Agent::Run where: "json_extract(data, '\$.session') = '$session'" orderBy: 'created_at ASC' limit: 10)
 assert_eq "two runs for the session" "2" "$(line_count "$runs")"
 run2=$(printf '%s\n' "$runs" | tail -n 1)
 assert_eq "second run succeeded" "succeeded" "$(@ $run2 state)"
@@ -127,11 +127,11 @@ echo "3. a process that exits without settling leaves the delivery uncertain"
 export TRASHTALK_SHELL_DRIVER="$AGENT_NO_SETTLE"
 msg3=$(@ Gusgus chat: 'third' workingDirectory: "$TRASHTALK_DIR" status: 0 lastResult: '' 2>/dev/null)
 settle_session "$session" && pass "third run finished" || fail "third run finished" "no active run" "$(@ $session activeRun)"
-run3=$(@ Store findByClass: AgentRun where: "json_extract(data, '\$.session') = '$session'" orderBy: 'created_at DESC, rowid DESC' limit: 1)
+run3=$(@ Store findByClass: Agent::Run where: "json_extract(data, '\$.session') = '$session'" orderBy: 'created_at DESC, rowid DESC' limit: 1)
 assert_eq "run is unsettled" "unsettled" "$(@ $run3 state)"
-d3=$(@ AgentDelivery offeredFor: "$run3")
+d3=$(@ Agent::Delivery offeredFor: "$run3")
 assert_empty "no delivery still offered on the run" "$d3"
-d3=$(@ Store findByClass: AgentDelivery where: "json_extract(data, '\$.run') = '$run3'" orderBy: 'created_at ASC' limit: 1)
+d3=$(@ Store findByClass: Agent::Delivery where: "json_extract(data, '\$.run') = '$run3'" orderBy: 'created_at ASC' limit: 1)
 assert_eq "delivery is uncertain" "uncertain" "$(@ $d3 state)"
 unread=$(@ $owner_inbox unread)
 assert_eq "owner got the result and an alert" "2" "$(line_count "$unread")"
@@ -149,19 +149,19 @@ echo "4. a failure before process launch retries once, then stalls with an alert
 
 export TRASHTALK_SHELL_DRIVER=""
 msg4=$(@ Gusgus chat: 'fourth' workingDirectory: "$TRASHTALK_DIR" status: 0 lastResult: '' 2>/dev/null)
-d4=$(@ Store findByClass: AgentDelivery where: "json_extract(data, '\$.session') = '$session'" orderBy: 'created_at DESC, rowid DESC' limit: 1)
+d4=$(@ Store findByClass: Agent::Delivery where: "json_extract(data, '\$.session') = '$session'" orderBy: 'created_at DESC, rowid DESC' limit: 1)
 # First attempt: missing driver command -> run failed -> delivery back to pending.
 for i in $(seq 1 50); do
     [[ -z "$(@ $session activeRun)" ]] && break
     sleep 0.2
 done
-@ AgentWorker tickSession: "$session" >/dev/null 2>&1   # reconcile attempt 1 AND launch attempt 2
+@ Agent::Worker tickSession: "$session" >/dev/null 2>&1   # reconcile attempt 1 AND launch attempt 2
 sleep 0.5
 attempts_after_first=$(@ $d4 attempts)
 [[ "$attempts_after_first" == 1 || "$attempts_after_first" == 2 ]] && pass "delivery was retried" || fail "delivery was retried" "1 or 2" "$attempts_after_first"
 settle_session "$session" && pass "retry run finished" || fail "retry run finished" "no active run" "$(@ $session activeRun)"
 # Reconcile attempt 2 (settle_session ticks until no active run; one more tick makes sure).
-@ AgentWorker tickSession: "$session" >/dev/null 2>&1
+@ Agent::Worker tickSession: "$session" >/dev/null 2>&1
 assert_eq "delivery attempts is 2" "2" "$(@ $d4 attempts)"
 assert_eq "delivery is failed" "failed" "$(@ $d4 state)"
 assert_empty "no new run after the retry limit" "$(@ $session activeRun)"
@@ -182,9 +182,9 @@ echo "5. a blocking question blocks the delivery; the user's reply unblocks it"
 export TRASHTALK_SHELL_DRIVER="$AGENT_ASK"
 msg5=$(@ Gusgus chat: 'fifth' workingDirectory: "$TRASHTALK_DIR" status: 0 lastResult: '' 2>/dev/null)
 settle_session "$session" && pass "asking run finished" || fail "asking run finished" "no active run" "$(@ $session activeRun)"
-run5=$(@ Store findByClass: AgentRun where: "json_extract(data, '\$.session') = '$session'" orderBy: 'created_at DESC, rowid DESC' limit: 1)
+run5=$(@ Store findByClass: Agent::Run where: "json_extract(data, '\$.session') = '$session'" orderBy: 'created_at DESC, rowid DESC' limit: 1)
 assert_eq "run is waiting for the user" "waiting_for_user" "$(@ $run5 state)"
-d5=$(@ Store findByClass: AgentDelivery where: "json_extract(data, '\$.run') = '$run5'" orderBy: 'created_at ASC' limit: 1)
+d5=$(@ Store findByClass: Agent::Delivery where: "json_extract(data, '\$.run') = '$run5'" orderBy: 'created_at ASC' limit: 1)
 assert_eq "delivery is blocked" "blocked" "$(@ $d5 state)"
 question=$(@ $owner_inbox questions)
 assert_eq "owner has one question" "1" "$(line_count "$question")"
@@ -194,7 +194,7 @@ export TRASHTALK_SHELL_DRIVER="$AGENT_OK"
 answer=$(@ $question reply: 'B')
 settle_session "$session" && pass "resumed run finished" || fail "resumed run finished" "no active run" "$(@ $session activeRun)"
 assert_eq "blocked delivery was processed after the reply" "processed" "$(@ $d5 state)"
-run6=$(@ Store findByClass: AgentRun where: "json_extract(data, '\$.session') = '$session'" orderBy: 'created_at DESC, rowid DESC' limit: 1)
+run6=$(@ Store findByClass: Agent::Run where: "json_extract(data, '\$.session') = '$session'" orderBy: 'created_at DESC, rowid DESC' limit: 1)
 assert_eq "resumed run succeeded" "succeeded" "$(@ $run6 state)"
 assert_contains "agent saw both the original and the answer" "pong: 2" "$(for m in $(@ $owner_inbox unread); do @ $m body; done)"
 @ $owner_inbox readAll >/dev/null
@@ -209,7 +209,7 @@ msg6=$(@ Gusgus chat: 'sixth' workingDirectory: "$TRASHTALK_DIR" status: 0 lastR
 assert_empty "no run launched" "$(@ $session activeRun)"
 assert_eq "one pending delivery" "1" "$(line_count "$(@ $session pendingDeliveries)")"
 unset TRASHTALK_NO_AUTOTICK
-started=$(@ AgentWorker tick)
+started=$(@ Agent::Worker tick)
 assert_nonempty "tick launches the pending work" "$started"
 settle_session "$session" && pass "ticked run finished" || fail "ticked run finished" "no active run" "$(@ $session activeRun)"
 assert_eq "no pending deliveries remain" "0" "$(line_count "$(@ $session pendingDeliveries)")"
@@ -240,25 +240,25 @@ echo "8. a question committed after the worker snapshot is still blocking"
 export TRASHTALK_NO_AUTOTICK=1
 race_message=$(@ Inbox send: 'question race' to: "session:$session2" from: tester)
 race_delivery=$(@ "$session2" pendingDeliveries)
-mapfile -t race_started < <(@ AgentRun startFor: "$session2" profile: shell)
+mapfile -t race_started < <(@ Agent::Run startFor: "$session2" profile: shell)
 race_run=${race_started[0]}
-@ AgentDelivery claim: "$race_delivery" run: "$race_run" >/dev/null
+@ Agent::Delivery claim: "$race_delivery" run: "$race_run" >/dev/null
 @ "$race_run" transitionTo: running >/dev/null
 mkdir -p "$TRASHTALK_RUN_DIR/race"
 echo 0 > "$TRASHTALK_RUN_DIR/race/exit"
 @ "$race_run" exitFile: "$TRASHTALK_RUN_DIR/race/exit"
 @ "$race_run" save
-@ AgentQueue refresh
+@ Agent::Queue refresh
 # Simulate the harness commit after refresh, leaving the worker cache offered.
 _db_sql "UPDATE instances SET data=json_set(data,'$.state','blocked') WHERE id='$race_delivery';"
-assert_eq "reconcile reads the final committed delivery state" waiting_for_user "$(@ AgentWorker reconcileRun: "$race_run")"
+assert_eq "reconcile reads the final committed delivery state" waiting_for_user "$(@ Agent::Worker reconcileRun: "$race_run")"
 assert_eq "blocking receipt remains blocked" blocked "$(@ "$race_delivery" reload >/dev/null; @ "$race_delivery" state)"
 
 echo ""
 echo "9. worker snapshots cannot overwrite messages still being published"
 draft=$(@ Message new)
 _env_delete "$draft"
-@ AgentQueue refresh
+@ Agent::Queue refresh
 _db_sql "UPDATE instances SET data=json_set(data,'$.kind','result','$.body','published result') WHERE id='$draft';"
 assert_eq "worker does not cache another process's message draft" result "$(@ "$draft" kind)"
 

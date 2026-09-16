@@ -1,7 +1,7 @@
 package: Agent
 
 # Shared facade behavior for a durable, named agent with stable defaults.
-# The facade is not persisted: AgentIdentity and AgentSession remain the durable
+# The facade is not persisted: Agent::Identity and Agent::Session remain the durable
 # authority and conversation records. Including classes supply policy selectors
 # `agentHandle`, `agentDisplayName`, `owner`, `archetype`, `role`, `profile`,
 # and `sessionScope`.
@@ -9,7 +9,7 @@ Stable trait
   classMethod: identity [
     | id args handle |
     handle := @ self agentHandle.
-    id := @ AgentIdentity named: handle.
+    id := @ Agent::Identity named: handle.
     args := #{identity: id owner: (@ self owner) archetype: (@ self archetype)
       role: (@ self role) displayName: (@ self agentDisplayName) scope: (@ self sessionScope)} asJson.
     ^ @ Store transaction: self sending: 'configureStableIdentityWithin:' with: args replaying: true
@@ -18,7 +18,7 @@ Stable trait
   classMethod: configureStableIdentityWithin: args [
     | identity owner scope |
     @ Store requireTransaction.
-    identity := @ Store read: (args objectAt: 'identity') class: 'AgentIdentity'.
+    identity := @ Store read: (args objectAt: 'identity') class: 'Agent::Identity'.
     owner := @ identity owner.
     (owner isEmpty) ifTrue: [
       @ identity owner: (args objectAt: 'owner').
@@ -31,18 +31,18 @@ Stable trait
     ].
     scope := @ identity sessionScope.
     @ Require equal: scope to: (args objectAt: 'scope').
-    ^ @ AgentAccess validateIdentity: identity
+    ^ @ Agent::Access validateIdentity: identity
   ]
 
   classMethod: configuredIdentityWithin [
     | ids count identity |
     @ Store requireTransaction.
-    ids := @ Store idsOf: 'AgentIdentity' matching: (#{handle: (@ self agentHandle)} asJson).
+    ids := @ Store idsOf: 'Agent::Identity' matching: (#{handle: (@ self agentHandle)} asJson).
     count := ids arrayLength.
     (count = 0) ifTrue: [^ ''].
     @ Require equal: count to: 1.
     identity := ids arrayFirst.
-    ^ @ AgentAccess validateIdentity: identity
+    ^ @ Agent::Access validateIdentity: identity
   ]
 
   classMethod: currentFor: workspace [
@@ -53,19 +53,19 @@ Stable trait
     | identity |
     identity := @ self configuredIdentityWithin.
     (identity isEmpty) ifTrue: [^ ''].
-    ^ @ AgentSession currentWithinFor: identity workspace: workspace
+    ^ @ Agent::Session currentWithinFor: identity workspace: workspace
   ]
 
   classMethod: sessionFor: dir [
     | workspace current identity archetype role profile |
-    workspace := @ AgentSession workspaceFor: dir.
+    workspace := @ Agent::Session workspaceFor: dir.
     current := @ self currentFor: workspace.
     (current notEmpty) ifTrue: [^ current].
     identity := @ self identity.
     archetype := @ self archetype.
     role := @ self role.
     profile := @ self profile.
-    ^ @ AgentSession ensureFor: identity archetype: archetype role: role workspace: workspace profile: profile
+    ^ @ Agent::Session ensureFor: identity archetype: archetype role: role workspace: workspace profile: profile
   ]
 
   classMethod: focusCurrent [
@@ -80,9 +80,9 @@ Stable trait
   classMethod: fresh: dir [
     | identity workspace archetype role profile |
     identity := @ self identity.
-    workspace := @ AgentSession workspaceFor: dir.
+    workspace := @ Agent::Session workspaceFor: dir.
     archetype := @ self archetype.
     role := @ self role.
     profile := @ self profile.
-    ^ @ AgentSession freshFor: identity archetype: archetype role: role workspace: workspace profile: profile
+    ^ @ Agent::Session freshFor: identity archetype: archetype role: role workspace: workspace profile: profile
   ]

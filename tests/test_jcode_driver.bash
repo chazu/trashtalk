@@ -43,13 +43,13 @@ field() { db_get "$1" | jq -r --arg f "$2" '.[$f] // empty'; }
 await_file() { for i in {1..100}; do [[ ! -s "$1" ]] || return; sleep .1; done; echo "FAIL: missing $1"; exit 1; }
 settle() {
     for i in {1..100}; do
-        @ AgentWorker tickSession: "$session" >/dev/null 2>&1
+        @ Agent::Worker tickSession: "$session" >/dev/null 2>&1
         [[ -n "$(@ "$session" activeRun)" ]] || return
         sleep .1
     done
     echo 'FAIL: Jcode run did not settle'; cat "$TRASHTALK_RUN_DIR"/*/stderr.log; exit 1
 }
-check 'common profile resolves Jcode' JcodeDriver "$(@ AgentWorker driverFor: jcode)"
+check 'common profile resolves Jcode' Agent::JcodeDriver "$(@ Agent::Worker driverFor: jcode)"
 check 'Gusgus defaults to Jcode' jcode "$(@ Gusgus profile)"
 doctor=$(@ Trash doctor 2>&1)
 check 'doctor checks the default Jcode harness' true "$([[ "$doctor" == *'Jcode found'* ]] && echo true || echo false)"
@@ -57,14 +57,14 @@ check 'doctor does not install an unselected Maki harness' false "$([[ "$doctor"
 session=$(@ Gusgus sessionFor: "$tmp/workspace with spaces")
 check 'new session snapshots Jcode by default' jcode "$(field "$session" backendProfile)"
 msg=$(@ Inbox send: FIRST_SECRET to: "session:$session" from: jcode-owner)
-run=$(@ AgentWorker tickSession: "$session")
+run=$(@ Agent::Worker tickSession: "$session")
 directory="$TRASHTALK_RUN_DIR/$run"
 await_file "$directory/conversation"
 host=$(jq -r .home "$directory/jcode.json")
 for i in {1..100}; do [[ $(cat "$host/fixture-state") == processing ]] && break; sleep .1; done
 check 'ack and unrelated completion leave run active' running "$(field "$run" state)"
 msg2=$(@ Inbox send: SECOND_SECRET to: "session:$session" from: jcode-owner)
-check 'busy session gets no overlapping run' '' "$(@ AgentWorker tickSession: "$session")"
+check 'busy session gets no overlapping run' '' "$(@ Agent::Worker tickSession: "$session")"
 check 'second message stays queued' 1 "$(@ "$session" pendingCount)"
 check 'direct steering can join a run processing inbox mail' 'Input sent directly to the session at its next safe point' "$(@ "$session" input: 'direct steering while reading inbox')"
 check 'steering adds no pending delivery' 1 "$(@ "$session" pendingCount)"
@@ -85,7 +85,7 @@ for reply in $replies; do
     check 'reply scoped to its delivery' "fixture got: $(@ "$original" body)" "$(@ "$reply" body)"
     check 'sender derived from run' "session:$session" "$(@ "$reply" from)"
 done
-check 'completed launcher loses authority' '' "$("$directory/trash-send" AgentRun current 2>/dev/null)"
+check 'completed launcher loses authority' '' "$("$directory/trash-send" Agent::Run current 2>/dev/null)"
 check 'notification contains no message body' 0 "$(grep -c FIRST_SECRET "$directory/prompt.txt")"
 
 # Public context maintenance keeps the session, provider reference, and queue.
@@ -103,7 +103,7 @@ touch "$host/refuse-compact"
 @ "$session" compact >/dev/null
 compact_run=$(@ "$session" activeRun)
 for i in {1..100}; do
-    @ AgentWorker tickSession: "$session" >/dev/null 2>&1
+    @ Agent::Worker tickSession: "$session" >/dev/null 2>&1
     [[ $(field "$compact_run" state) != running ]] && break
     sleep .1
 done
@@ -114,7 +114,7 @@ touch "$host/lose-compact"
 @ "$session" compact >/dev/null
 compact_run=$(@ "$session" activeRun)
 for i in {1..100}; do
-    @ AgentWorker tickSession: "$session" >/dev/null 2>&1
+    @ Agent::Worker tickSession: "$session" >/dev/null 2>&1
     [[ $(field "$compact_run" state) != running ]] && break
     sleep .1
 done
@@ -125,9 +125,9 @@ rm "$host/lose-compact"
 # A connection can disappear while a resident daemon still owns the prompt.
 export JCODE_TEST_MODE=lost
 @ Inbox send: 'long task' to: "session:$session" from: jcode-owner >/dev/null
-lost=$(@ AgentWorker tickSession: "$session")
+lost=$(@ Agent::Worker tickSession: "$session")
 for i in {1..100}; do
-    @ AgentWorker tickSession: "$session" >/dev/null
+    @ Agent::Worker tickSession: "$session" >/dev/null
     [[ $(field "$lost" state) == recovering ]] && break
     sleep .1
 done
@@ -135,68 +135,68 @@ check 'lost connection retains exact recoverable run' recovering "$(field "$lost
 check 'lost connection pauses new dispatch' paused "$(field "$session" lifecycleState)"
 work_pid=$(cat "$host/fixture-work.pid")
 check 'native tool survives adapter connection loss' true "$(kill -0 "$work_pid" 2>/dev/null && echo true || echo false)"
-check 'lost run launcher revoked' '' "$("$TRASHTALK_RUN_DIR/$lost/trash-send" AgentRun current 2>/dev/null)"
+check 'lost run launcher revoked' '' "$("$TRASHTALK_RUN_DIR/$lost/trash-send" Agent::Run current 2>/dev/null)"
 @ Inbox send: 'still queued' to: "session:$session" from: jcode-owner >/dev/null
-@ AgentWorker tickSession: "$session" >/dev/null
+@ Agent::Worker tickSession: "$session" >/dev/null
 check 'lost prompt never replayed' 3 "$(jq -s '[.[] | select(.req=="send_message")] | length' "$host/fixture-calls.jsonl")"
 
 # Agent stop authority is checked against the authenticated caller and owner.
-identity=$(@ AgentIdentity named: supervisor)
+identity=$(@ Agent::Identity named: supervisor)
 @ "$identity" owner: jcode-owner
 @ "$identity" save
-role=$(@ AgentRole define: supervisor revision: 1 capabilities: '["agent.stop"]' workspacePolicy: '[]' runBudget: '{}')
-actor_session=$(@ AgentSession openFor: "$identity" archetype: "$(@ "$session" archetype)" role: "$role" workspace: "$tmp" profile: shell)
-mapfile -t started < <(@ AgentRun startFor: "$actor_session" profile: shell)
+role=$(@ Agent::Role define: supervisor revision: 1 capabilities: '["agent.stop"]' workspacePolicy: '[]' runBudget: '{}')
+actor_session=$(@ Agent::Session openFor: "$identity" archetype: "$(@ "$session" archetype)" role: "$role" workspace: "$tmp" profile: shell)
+mapfile -t started < <(@ Agent::Run startFor: "$actor_session" profile: shell)
 actor=${started[0]} actor_token=${started[1]}
 @ "$actor" transitionTo: running >/dev/null
 check 'invalid supplied token rejects stop' '' "$(TRASHTALK_RUN_TOKEN=invalid @ "$lost" stop 2>/dev/null)"
 @ "$identity" owner: someone-else
 @ "$identity" save
-TRASHTALK_RUN_TOKEN="$actor_token" @ AgentRun stop: "$lost" >/dev/null 2>&1; rc=$?
+TRASHTALK_RUN_TOKEN="$actor_token" @ Agent::Run stop: "$lost" >/dev/null 2>&1; rc=$?
 check 'cross-owner stop rejected' 1 "$rc"
 @ "$identity" owner: jcode-owner
 @ "$identity" save
 touch "$host/refuse-stop"
-TRASHTALK_RUN_TOKEN="$actor_token" @ AgentRun stop: "$lost" >/dev/null 2>&1; rc=$?
+TRASHTALK_RUN_TOKEN="$actor_token" @ Agent::Run stop: "$lost" >/dev/null 2>&1; rc=$?
 check 'cancel acknowledgment alone cannot confirm stop' 1 "$rc"
 check 'unconfirmed cancellation retains run' recovering "$(field "$lost" state)"
 rm "$host/refuse-stop"
-check 'authorized agent cancels native work after adapter loss' interrupted "$(TRASHTALK_RUN_TOKEN="$actor_token" @ AgentRun stop: "$lost")"
+check 'authorized agent cancels native work after adapter loss' interrupted "$(TRASHTALK_RUN_TOKEN="$actor_token" @ Agent::Run stop: "$lost")"
 check 'native session observed idle' idle "$(cat "$host/fixture-state")"
 check 'stop also kills native foreground tool' true "$([[ -z "$(ps -p "$work_pid" -o stat=)" || "$(ps -p "$work_pid" -o stat=)" == *Z* ]] && echo true || echo false)"
 check 'stopped session remains paused' paused "$(field "$session" lifecycleState)"
 check 'unsettled work preserved for review' 1 "$(@ "$session" stalledCount)"
-receipt=$(@ Store findByClass: AgentDelivery where: "json_extract(data,'$.run')='$lost'" orderBy: 'created_at ASC' limit: 1)
+receipt=$(@ Store findByClass: Agent::Delivery where: "json_extract(data,'$.run')='$lost'" orderBy: 'created_at ASC' limit: 1)
 check 'stopped delivery cache agrees with durable receipt' uncertain "$(@ "$receipt" state)"
 check 'later inbox message remains queued' 1 "$(@ "$session" pendingCount)"
 check 'repeat stop is idempotent' already-stopped "$(@ "$lost" stop)"
-@ AgentWorker tickSession: "$session" >/dev/null
+@ Agent::Worker tickSession: "$session" >/dev/null
 check 'stop does not cause automatic restart' '' "$(@ "$session" activeRun)"
-check 'other agent keeps its authority' "$actor" "$(TRASHTALK_RUN_TOKEN="$actor_token" @ AgentRun current)"
+check 'other agent keeps its authority' "$actor" "$(TRASHTALK_RUN_TOKEN="$actor_token" @ Agent::Run current)"
 
 # Explicit review/resume may launch replacement work; an old stop cannot hit it.
-uncertain=$(@ Store findByClass: AgentDelivery where: "json_extract(data,'$.run')='$lost' AND json_extract(data,'$.state')='uncertain'" orderBy: 'created_at ASC' limit: 1)
+uncertain=$(@ Store findByClass: Agent::Delivery where: "json_extract(data,'$.run')='$lost' AND json_extract(data,'$.state')='uncertain'" orderBy: 'created_at ASC' limit: 1)
 @ "$session" skip: "$uncertain" note: 'reviewed interrupted fixture' >/dev/null
 @ "$session" resume >/dev/null
 unset JCODE_TEST_MODE
 rm "$JCODE_TEST_GATE"
-replacement=$(@ AgentWorker tickSession: "$session")
+replacement=$(@ Agent::Worker tickSession: "$session")
 await_file "$TRASHTALK_RUN_DIR/$replacement/conversation"
 for i in {1..100}; do [[ $(cat "$host/fixture-state") == processing ]] && break; sleep .1; done
 check 'stale stop is harmless after replacement' already-stopped "$(@ "$lost" stop)"
 check 'replacement remains active' "$replacement" "$(@ "$session" activeRun)"
 check 'replacement native work remains processing' processing "$(cat "$host/fixture-state")"
 
-denyrole=$(@ AgentRole define: observer revision: 1 capabilities: '["inbox.read"]' workspacePolicy: '[]' runBudget: '{}')
-observer_identity=$(@ AgentIdentity named: observer)
+denyrole=$(@ Agent::Role define: observer revision: 1 capabilities: '["inbox.read"]' workspacePolicy: '[]' runBudget: '{}')
+observer_identity=$(@ Agent::Identity named: observer)
 @ "$observer_identity" owner: jcode-owner
 @ "$observer_identity" save
-denysession=$(@ AgentSession openFor: "$observer_identity" archetype: "$(@ "$session" archetype)" role: "$denyrole" workspace: "$tmp" profile: shell)
-mapfile -t denied < <(@ AgentRun startFor: "$denysession" profile: shell)
+denysession=$(@ Agent::Session openFor: "$observer_identity" archetype: "$(@ "$session" archetype)" role: "$denyrole" workspace: "$tmp" profile: shell)
+mapfile -t denied < <(@ Agent::Run startFor: "$denysession" profile: shell)
 @ "${denied[0]}" transitionTo: running >/dev/null
-TRASHTALK_RUN_TOKEN="${denied[1]}" @ AgentRun stop: "$replacement" >/dev/null 2>&1; rc=$?
+TRASHTALK_RUN_TOKEN="${denied[1]}" @ Agent::Run stop: "$replacement" >/dev/null 2>&1; rc=$?
 check 'same-owner agent without agent.stop is rejected' 1 "$rc"
 check 'user termination cancels resident work as well as adapter' terminated "$(@ "$session" terminate)"
 check 'termination confirmed native idle' idle "$(cat "$host/fixture-state")"
-check 'terminated replacement token is revoked' '' "$("$TRASHTALK_RUN_DIR/$replacement/trash-send" AgentRun current 2>/dev/null)"
+check 'terminated replacement token is revoked' '' "$("$TRASHTALK_RUN_DIR/$replacement/trash-send" Agent::Run current 2>/dev/null)"
 echo "=== $passed Jcode driver checks passed ==="

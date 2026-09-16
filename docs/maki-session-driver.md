@@ -12,8 +12,8 @@ conversation identity, durable replies, or successful delivery settlement.
 
 ## Design and implementation
 
-`TRASHTALK_GUSGUS_PROFILE=maki` selects Maki; `AgentWorker driverFor:` resolves that
-profile to `MakiDriver`. Existing `codex` and `assistant-low-power` mappings
+`TRASHTALK_GUSGUS_PROFILE=maki` selects Maki; `Agent::Worker driverFor:` resolves that
+profile to `Agent::MakiDriver`. Existing `codex` and `assistant-low-power` mappings
 remain Codex so historical runs retain their correct interpretation. Sessions
 capture their profile on creation. The one-shot `Agent` backend is unchanged.
 
@@ -25,7 +25,7 @@ Plain print mode is insufficient because it does not resume stored sessions.
 
 The existing detached launcher owns PID/exit files, logs, environment run
 tokens, and process lifecycle. The worker continues to own routing, claims,
-question links, and settlement. Maki calls the same `trash-send AgentRun`
+question links, and settlement. Maki calls the same `trash-send Agent::Run`
 surface as other harnesses. No Maki plugin implements Trashtalk behavior.
 
 The driver reads the session ID from `system/init` or `result` events. The
@@ -53,7 +53,7 @@ background work within Trashtalk's session lifecycle.
 
 Maki's SDK uses `bypassPermissions` for unattended tool execution. This is not
 an OS sandbox: the process has normal user filesystem/network permissions.
-The driver's capabilities explicitly report `sandbox: false`. AgentRole
+The driver's capabilities explicitly report `sandbox: false`. Agent::Role
 metadata must not be interpreted as OS enforcement. Live steering and an
 attached Maki terminal are outside this adapter's scope.
 

@@ -1,7 +1,7 @@
 # Coding assignment contract
 
 **Status:** public operating contract for the existing `Assignment`, Inbox,
-AgentSession, and AgentWorker surfaces. It adds no persisted object or parallel
+Agent::Session, and Agent::Worker surfaces. It adds no persisted object or parallel
 protocol.
 
 ## Purpose

@@ -51,7 +51,7 @@ Schema subclass: Object
     [[ -n ${_WORKSTATION_VALIDATED_JSON:-} && "$1" == "$_WORKSTATION_VALIDATED_JSON" ]] || { _throw WorkstationSchemaError 'Mutation requires the exact prevalidated document'; return 1; }
   ]
 
-  # Same idempotent DDL installation boundary as AgentSession.ensureSchema.
+  # Same idempotent DDL installation boundary as Agent::Session.ensureSchema.
   rawClassMethod: ensureSchema [
     [[ -z ${_STORE_TX:-} ]] || { _throw TransactionError 'Install workstation schema before transactions'; return 1; }
     _db_sql -bail < "${TRASHTALK_DIR:-$HOME/.trashtalk}/lib/workstation-schema.sql"

@@ -6,7 +6,7 @@ remain design work.
 
 ### Implementation status
 
-`AgentAccess` now supplies fresh, typed identity/session ownership checks for
+`Agent::Access` now supplies fresh, typed identity/session ownership checks for
 human conversation views. Focus validates ownership on open, snapshot refresh,
 and each non-dismiss UI request. Open and paused sessions may open a live view,
 and validation does not resume paused work. Closed sessions cannot open a new
@@ -50,8 +50,8 @@ Trashtalk previously resolved Gusgus sessions by identity and workspace. A
 persistent assistant therefore gets a new long-lived conversation in each
 directory, leaves many plausible sessions, and makes focus shortcuts surprising.
 
-An `AgentIdentity` is the durable persona and authority boundary. An
-`AgentSession` is a mutable conversation and execution context. Session scope
+An `Agent::Identity` is the durable persona and authority boundary. An
+`Agent::Session` is a mutable conversation and execution context. Session scope
 must be explicit because a persistent assistant and a project specialist have
 different isolation needs.
 
@@ -67,7 +67,7 @@ different isolation needs.
 
 ## Scope policy
 
-`AgentIdentity` revisions carry a `sessionScope` policy. The stable identity ID,
+`Agent::Identity` revisions carry a `sessionScope` policy. The stable identity ID,
 not a display name or revision ID, owns the scope key.
 
 | Scope       | Scope key                          | Intended use                           |
@@ -75,8 +75,8 @@ not a display name or revision ID, owns the scope key.
 | `identity`  | `(identityId)`                     | Gusgus and other persistent assistants |
 | `workspace` | `(identityId, canonicalWorkspace)` | Project and task specialists           |
 
-`AgentSession.workspace` is the creation workspace. Under `identity` scope it
-is provenance only, never the uniqueness key. Every `AgentDelivery` additionally
+`Agent::Session.workspace` is the creation workspace. Under `identity` scope it
+is provenance only, never the uniqueness key. Every `Agent::Delivery` additionally
 records its canonical originating workspace, authorization snapshot, and role
 revision. A worker reauthorizes that workspace before dispatch and uses it as
 the run's execution directory. Missing or unauthorized workspaces fail rather

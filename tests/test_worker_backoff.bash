@@ -45,8 +45,8 @@ check 'far fewer ticks than a fixed interval would run' true "$([[ "$sleeps" -le
 check 'idle ticks do not fail' '' "$(grep 'tick failed' "$tmp/idle.err")"
 
 echo "2. an active run keeps the base interval"
-db_put agentrun_backoff_fixture '{"class":"AgentRun","session":"agentsession_missing","state":"running","_vars":["session","state"]}'
-check 'probe sees the active run' true "$(@ AgentWorker hasActiveRuns)"
+db_put agentrun_backoff_fixture '{"class":"Agent::Run","session":"agentsession_missing","state":"running","_vars":["session","state"]}'
+check 'probe sees the active run' true "$(@ Agent::Worker hasActiveRuns)"
 : > "$SLEEP_LOG"
 PATH="$tmp/bin:$PATH" TRASHTALK_WORKER_INTERVAL=0.1 TRASHTALK_WORKER_MAX_INTERVAL=0.4 \
     "$root/bin/trash-worker" 2>"$tmp/active.err" & worker=$!
@@ -58,7 +58,7 @@ sleeps=$(wc -l < "$SLEEP_LOG" | tr -d ' ')
 # delay never doubled.
 check 'the worker kept polling' true "$([[ "$sleeps" -ge 2 ]] && echo true || echo "false ($sleeps sleeps)")"
 db_delete agentrun_backoff_fixture
-check 'probe sees no active run' false "$(@ AgentWorker hasActiveRuns)"
+check 'probe sees no active run' false "$(@ Agent::Worker hasActiveRuns)"
 
 echo "3. repeated tick failures exit for the supervisor's restart throttle"
 mkdir -p "$tmp/not-a-database"

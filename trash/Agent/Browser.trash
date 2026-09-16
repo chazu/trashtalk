@@ -1,7 +1,9 @@
-# AgentBrowser - Snapshot inspection and explicit recovery through Innards.
+package: Agent
+
+# Agent::Browser - Snapshot inspection and explicit recovery through Innards.
 # Pickers return intent; Trashtalk validates membership and owns all mutations.
 # Reading a conversation marks its messages read without signalling execution.
-AgentBrowser subclass: Object
+Browser subclass: Object
 
   # OS boundary: temporary preview files and signal/exit cleanup.
   rawClassMethod: browse [
@@ -9,7 +11,7 @@ AgentBrowser subclass: Object
       local dir
       dir=$(mktemp -d "${TMPDIR:-/tmp}/trash-sessions.XXXXXX") || exit 1
       trap 'rm -rf "$dir"' EXIT
-      @ AgentBrowser browseIn: "$dir"
+      @ Agent::Browser browseIn: "$dir"
     )
   ]
 
@@ -18,7 +20,7 @@ AgentBrowser subclass: Object
       local dir
       dir=$(mktemp -d "${TMPDIR:-/tmp}/trash-sessions.XXXXXX") || exit 1
       trap 'rm -rf "$dir"' EXIT
-      @ AgentBrowser session: "$1" in: "$dir"
+      @ Agent::Browser session: "$1" in: "$dir"
     )
   ]
 
@@ -105,7 +107,7 @@ AgentBrowser subclass: Object
       (action = 'pause') ifTrue: [ignored := @ session pause].
       (action = 'resume') ifTrue: [
         ignored := @ session resume.
-        ignored := @ AgentWorker tickSession: session
+        ignored := @ Agent::Worker tickSession: session
       ]
     ]
   ]
@@ -141,7 +143,7 @@ AgentBrowser subclass: Object
   ]
 
   classMethod: listedSessions [
-    ^ @ Store query: "class = 'AgentSession' AND coalesce(json_extract(data, '$.lifecycleState'), '') != 'terminated' ORDER BY CASE WHEN json_extract(data, '$.lifecycleState') IN ('open','paused') THEN 0 ELSE 1 END, json_extract(data, '$.lastActivityAt') DESC, id"
+    ^ @ Store query: "class = 'Agent::Session' AND coalesce(json_extract(data, '$.lifecycleState'), '') != 'terminated' ORDER BY CASE WHEN json_extract(data, '$.lifecycleState') IN ('open','paused') THEN 0 ELSE 1 END, json_extract(data, '$.lastActivityAt') DESC, id"
   ]
 
   classMethod: sessionRecordsIn: dir [
@@ -152,7 +154,7 @@ AgentBrowser subclass: Object
 
   classMethod: sessionRecordsFor: sessions in: dir [
     | snapshots template documents |
-    snapshots := @ AgentSession snapshotsFor: sessions.
+    snapshots := @ Agent::Session snapshotsFor: sessions.
     template := #{path: #{_concat: #(#{_at: 'id'} '.txt')}
       text: #{_concat: #('Session: ' #{_at: 'id'} '
 Identity: ' #{_at: 'identity'} '
@@ -249,9 +251,9 @@ Latest failure: ' #{_at: 'error'})}
   rawClassMethod: runRecordsFor: session in: dir [
     local run text
     for run in $(@ "$1" runs); do
-      text=$(@ AgentBrowser runDetails: "$run")
+      text=$(@ Agent::Browser runDetails: "$run")
       printf '%s\n' "$text" > "$2/$run.txt"
-      @ AgentBrowser record: "$run" label: "$run [$(@ "$run" state)]" detail: "$(@ "$run" error)" path: "$run.txt"
+      @ Agent::Browser record: "$run" label: "$run [$(@ "$run" state)]" detail: "$(@ "$run" error)" path: "$run.txt"
     done
   ]
 
@@ -269,7 +271,7 @@ Latest failure: ' #{_at: 'error'})}
     for d in $(@ "$1" stalledDeliveries); do
       @ "$d" reload >/dev/null || return 1
       @ "$d" asJson | jq . > "$2/$d.txt"
-      @ AgentBrowser record: "$d" label: "$d [$(@ "$d" state)]" detail: "$(@ "$d" lastError)" path: "$d.txt"
+      @ Agent::Browser record: "$d" label: "$d [$(@ "$d" state)]" detail: "$(@ "$d" lastError)" path: "$d.txt"
     done
   ]
 
@@ -283,6 +285,6 @@ Latest failure: ' #{_at: 'error'})}
     answer := @ self pick: records root: dir title: 'Confirm retry (Esc cancels)'.
     (answer = 'retry') ifTrue: [
       ignored := @ session requeue: delivery.
-      ignored := @ AgentWorker tickSession: session
+      ignored := @ Agent::Worker tickSession: session
     ]
   ]

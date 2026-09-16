@@ -1,6 +1,6 @@
 # Maki - Tool wrapper for the stock Maki CLI.
 # Top-level name supports @ Maki loginToProvider: 'openai'. This is installation
-# and authentication support; session execution still belongs to AgentDriver.
+# and authentication support; session execution still belongs to Agent::Driver.
 Maki subclass: Tool
 
   classMethod: name [

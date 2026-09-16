@@ -2,14 +2,14 @@
 
 **Status:** Current manual Assignment workflow; automatic specialist dispatch remains proposed.
 
-An `Assignment` records work entrusted to an `AgentIdentity`. It retains its
+An `Assignment` records work entrusted to an `Agent::Identity`. It retains its
 objective, completion criteria, requester, progress, questions, outcome, and
 session/run participation history when execution moves to another session.
 Its lifecycle is `open`, `completed`, or `cancelled`. Completion reports an
 outcome; acceptance, merging, deployment, and external issue state are separate.
 
 This is the first manual slice of the [delegation plan](agent-delegation-implementation.md).
-`workIn:` publishes a Message and a held AgentDelivery in the chosen session's
+`workIn:` publishes a Message and a held Agent::Delivery in the chosen session's
 inbox. The worker does not dispatch these deliveries. Assignment messages and
 replies remain available through Inbox, including when a worker service is
 running. Automatic specialist dispatch and generated assignment prompts are
@@ -22,16 +22,16 @@ identity and session; the `shell` profile will not be launched by these calls.
 
 ```bash
 source "${TRASHTALK_DIR:-$HOME/.trashtalk}/lib/trash.bash"
-workspace=$(@ AgentSession workspaceFor: "$PWD")
-agent=$(@ AgentIdentity named: assignment-specialist)
+workspace=$(@ Agent::Session workspaceFor: "$PWD")
+agent=$(@ Agent::Identity named: assignment-specialist)
 @ "$agent" owner: "${TRASHTALK_USER:-$USER}"
 @ "$agent" save
-archetype=$(@ AgentArchetype define: assignment-specialist revision: 1 \
+archetype=$(@ Agent::Archetype define: assignment-specialist revision: 1 \
   instructions: 'Inspect the assignment and read messages through Inbox.' profile: shell)
-role=$(@ AgentRole define: assignment-specialist revision: 1 \
+role=$(@ Agent::Role define: assignment-specialist revision: 1 \
   capabilities: '["inbox.read","message.send","assignment.work"]' \
   workspacePolicy: '[]' runBudget: '{}')
-session=$(@ AgentSession openFor: "$agent" archetype: "$archetype" role: "$role" \
+session=$(@ Agent::Session openFor: "$agent" archetype: "$archetype" role: "$role" \
   workspace: "$workspace" profile: shell)
 
 assignment=$(@ Assignment draft: 'Explain the failing integration test' in: "$workspace")
@@ -58,7 +58,7 @@ Continue the same assignment in another session, retaining the question:
 
 ```bash
 @ "$session" close
-nextSession=$(@ AgentSession openFor: "$agent" archetype: "$archetype" role: "$role" \
+nextSession=$(@ Agent::Session openFor: "$agent" archetype: "$archetype" role: "$role" \
   workspace: "$workspace" profile: shell)
 @ "$assignment" workIn: "$nextSession"
 @ "$question" reply: 'Yes, include it.'
@@ -91,7 +91,7 @@ an error; with multiple assignments, supply the handle explicitly or set
 
 ## Rules and recovery
 
-- `assignTo:` requires an enabled `AgentIdentity`, owned by the local operator
+- `assignTo:` requires an enabled `Agent::Identity`, owned by the local operator
   or with no owner set. Repeating it with that identity is harmless; changing
   identities is outside this slice.
 - `workIn:` requires an open session of that identity in the same canonical

@@ -62,9 +62,9 @@ MessagePresentation subclass: Object
     addresses=$(_db_escape "$addresses")
     names=$(_db_sql "SELECT coalesce(json_group_object(a.value,coalesce((
       SELECT coalesce(nullif(json_extract(i.data,'$.displayName'),''),json_extract(i.data,'$.handle'))
-      FROM instances i WHERE i.class='AgentIdentity' AND (json_extract(i.data,'$.inbox')=a.value
+      FROM instances i WHERE i.class='Agent::Identity' AND (json_extract(i.data,'$.inbox')=a.value
       OR i.id=(SELECT json_extract(s.data,'$.identity') FROM instances s
-        WHERE s.class='AgentSession' AND json_extract(s.data,'$.inbox')=a.value LIMIT 1)) LIMIT 1),a.value)),'{}')
+        WHERE s.class='Agent::Session' AND json_extract(s.data,'$.inbox')=a.value LIMIT 1)) LIMIT 1),a.value)),'{}')
       FROM json_each('$addresses') a;") || return
     timestamps=$(printf '%s' "$1" | jq -cs '[.[] | .data.sentAt | if .=="" then 0 else tonumber end | ./1000 | floor | select(.>0)] | unique') || return
     calendar=$(@ Time calendarFor: "$timestamps") || return
@@ -112,7 +112,7 @@ MessagePresentation subclass: Object
     local address="$1" name escaped
     if [[ "$address" == "${TRASHTALK_USER:-$USER}" ]]; then echo You; return; fi
     escaped=$(_db_escape "$address")
-    name=$(_db_sql "SELECT COALESCE(NULLIF(json_extract(i.data,'$.displayName'),''),json_extract(i.data,'$.handle')) FROM instances i WHERE i.class='AgentIdentity' AND (json_extract(i.data,'$.inbox')='$escaped' OR i.id=(SELECT json_extract(s.data,'$.identity') FROM instances s WHERE s.class='AgentSession' AND json_extract(s.data,'$.inbox')='$escaped' LIMIT 1)) LIMIT 1;")
+    name=$(_db_sql "SELECT COALESCE(NULLIF(json_extract(i.data,'$.displayName'),''),json_extract(i.data,'$.handle')) FROM instances i WHERE i.class='Agent::Identity' AND (json_extract(i.data,'$.inbox')='$escaped' OR i.id=(SELECT json_extract(s.data,'$.identity') FROM instances s WHERE s.class='Agent::Session' AND json_extract(s.data,'$.inbox')='$escaped' LIMIT 1)) LIMIT 1;")
     @ MessagePresentation singleLine: "${name:-$address}"
   ]
 

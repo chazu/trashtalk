@@ -7,13 +7,13 @@ remain proposed. Operational detail for the implemented phases lives in
 This is the execution companion to
 [the workstation event, attention, and delegation design](workstation-event-attention-delegation.md).
 It deliberately starts with the smallest durable model built on existing Honker
-`Stream`, Store, Inbox, AgentQueue, and AgentWorker contracts.
+`Stream`, Store, Inbox, Agent::Queue, and Agent::Worker contracts.
 
 ## Delivery rules
 
 - A phase is not “mostly done”. Its acceptance gates must pass before beginning
   the next phase.
-- Use `Persistable`, `Store transaction:`, `Require`, `AgentAccess`, and the
+- Use `Persistable`, `Store transaction:`, `Require`, `Agent::Access`, and the
   existing Honker `Stream` wrapper. Do not add raw SQLite or a second event log.
 - `EventSubscription` and `Attention` are the only new persisted domain classes
   in Phases 0 and 1. Honker owns stream messages and consumer offsets.
@@ -50,7 +50,7 @@ isolated database. The worker, Inbox, and agents are unchanged.
 ### Explicitly excluded
 
 - No command wrapper or `CommandReceiptSourceAdapter`.
-- No `AgentWorker` subscription tick stage.
+- No `Agent::Worker` subscription tick stage.
 - No Stream read/ack in production logic.
 - No Inbox message/outbox publication, Whisker count, notification, or agent
   dispatch.
@@ -102,7 +102,7 @@ isolated database. The worker, Inbox, and agents are unchanged.
   dispatch, disable/enable, and inspectable summary/display projection.
 - Add one transaction-only create/update selector that CUE-vets before the
   transaction and performs native semantic checks inside it.
-- Canonicalize the workspace/target policy at the existing AgentAccess boundary
+- Canonicalize the workspace/target policy at the existing Agent::Access boundary
   when those fields are introduced, but do not resolve an agent session yet.
 
 **Invariants**
@@ -152,7 +152,7 @@ isolated database. The worker, Inbox, and agents are unchanged.
 
 - Table-driven legal and illegal transition tests.
 - Reload after every transition preserves state and display columns.
-- No lifecycle action creates a Message, AgentDelivery, AgentRun, or Honker
+- No lifecycle action creates a Message, Agent::Delivery, Agent::Run, or Honker
   offset side effect.
 
 ### Task 0.4: add coordinate idempotency as internal storage
@@ -201,7 +201,7 @@ isolated database. The worker, Inbox, and agents are unchanged.
 - A persisted adapter class/selector/shell string can never determine dispatch.
 - Unknown/disabled/schema-incompatible kinds fail before any source read.
 - Base/fixture adapter output is bounded and includes stream coordinates.
-- No adapter class writes Store records, sends Message, calls AgentQueue, or
+- No adapter class writes Store records, sends Message, calls Agent::Queue, or
   acknowledges a Stream offset.
 
 ### Task 0.6: migration, browser, and doctor integration
@@ -247,7 +247,7 @@ Make one real, local event journey work without starting an agent: a wrapped
 command publishes a bounded receipt to a durable Honker Stream; the worker
 consumes it at least once; matching failures become one grouped Attention and
 one ordinary user-Inbox Message; the user can inspect, acknowledge, snooze,
-resolve, or suppress it. **No Phase 1 code may create AgentDelivery, route to
+resolve, or suppress it. **No Phase 1 code may create Agent::Delivery, route to
 an identity/session, start a harness, or resume paused work.**
 
 ### Task 1.1: command receipt producer
@@ -287,7 +287,7 @@ its class-side contract using a named `Stream` consumer:
 - return stream name, partition, and offset unchanged for idempotency.
 
 It does not write Store records, publish Messages, acknowledge offsets, or
-invoke AgentQueue. Fixture adapter availability remains test-only.
+invoke Agent::Queue. Fixture adapter availability remains test-only.
 
 **Tests:** valid/filtering/invalid records, offset/partition preservation,
 bounded batches, stable group keys, cross-workspace non-grouping, and no Store
@@ -295,7 +295,7 @@ or Inbox side effects from direct adapter calls.
 
 ### Task 1.3: worker subscription stage and replay-safe acceptance
 
-Add a bounded, fair subscription stage to `AgentWorker tick`, after existing
+Add a bounded, fair subscription stage to `Agent::Worker tick`, after existing
 recovery work and before any optional agent routing. It lists only enabled
 `command-receipt` subscriptions, reads each named consumer outside the worker
 lock, and processes a capped number of records per tick.
@@ -323,17 +323,17 @@ feature schema once per worker process. Repeated CUE validation of identical
 bytes within one runtime is a process-local memo keyed by schema digest, root,
 and document hash; failures are never memoized.
 
-**Tests:** the whole local journey through a supervised `AgentWorker tick`,
+**Tests:** the whole local journey through a supervised `Agent::Worker tick`,
 replay after commit-before-ack, acknowledgement failure after commit, rollback
 of a failed projection, malformed records that block later records without
 echoing payload, disabled subscriptions, batch bounds, and the absence of any
-AgentDelivery, AgentRun, session, identity, or outbox side effect.
+Agent::Delivery, Agent::Run, session, identity, or outbox side effect.
 
 ### Task 1.4: local Inbox projection and attention controls
 
 The root Message is an ordinary `alert` in the owner's human Inbox with
 `dispatchMode: manual`, created through a transaction-only Inbox boundary that
-cannot reach the outbox, AgentQueue, or a foreground worker tick. Its subject
+cannot reach the outbox, Agent::Queue, or a foreground worker tick. Its subject
 and body are the safe display projection plus the event count; causal first/last
 stream coordinates and the count are Message metadata. Later events in the same
 group update that one Message instead of sending another. A Honker wake hint is
@@ -360,12 +360,12 @@ Phase 1 is complete only when:
    behavior and safe bounded output policy, and `bin/trash-receipt` exercises
    the same payload path without executing anything.
 2. `CommandReceiptSourceAdapter` is the only production adapter and has no
-   Store, Inbox, offset, or AgentQueue side effects when called directly.
-3. A supervised `AgentWorker tick` turns a failing receipt into exactly one
+   Store, Inbox, offset, or Agent::Queue side effects when called directly.
+3. A supervised `Agent::Worker tick` turns a failing receipt into exactly one
    Attention and one owner-Inbox Message, replays are idempotent, and every
    failure path leaves the consumer offset unacknowledged.
-4. No Phase 1 code path creates AgentDelivery, AgentRun, AgentSession,
-   AgentIdentity, or outbox rows.
+4. No Phase 1 code path creates Agent::Delivery, Agent::Run, Agent::Session,
+   Agent::Identity, or outbox rows.
 5. Operations documentation covers subscription setup, the worker stage, the
    Message controls, the count, stuck-record recovery, and worker restarts.
 
@@ -387,7 +387,7 @@ role, executes an unapproved OS effect, or treats a model harness as a sandbox.
 
 ### Phase 2A: target configuration and dry-run admission
 
-**Deliverable:** an `EventSubscription` may name one target `AgentIdentity`,
+**Deliverable:** an `EventSubscription` may name one target `Agent::Identity`,
 but nothing is delivered yet. Add a public factory/configuration message and a
 `routingStatusFor:` projection for an Attention.
 
@@ -401,13 +401,13 @@ leave Attention unchanged.
 
 **Acceptance:** identity- and workspace-scoped fixture targets, canonical cwd
 authorization, every ineligible reason, and a valid dry-run result create no
-Message, outbox, AgentDelivery, AgentRun, or lifecycle change.
+Message, outbox, Agent::Delivery, Agent::Run, or lifecycle change.
 
 ### Phase 2B: explicit one-attention delegation
 
 **Deliverable:** the user selects one Attention and chooses **Delegate to
 configured agent**. It creates one causal agent-facing Message and outbox row
-through the existing transactional Inbox/AgentQueue publication boundary.
+through the existing transactional Inbox/Agent::Queue publication boundary.
 
 The transaction records Attention ID, exact Honker coordinates, receipt cwd,
 target identity, resolved session, and lineage root/depth. Its uniqueness key
@@ -482,7 +482,7 @@ capability. Current harness role checks are cooperative controls, not a sandbox.
 | --- | --- | --- |
 | 1.1 | `bin/trash-command`, `bin/trash-receipt`, `CommandReceipt` producer | Phase 0 |
 | 1.2 | `CommandReceiptSourceAdapter` and `Stream consumerNamed:consumer:` | 1.1 |
-| 1.3 | `WorkstationWorker tick` stage inside `AgentWorker tick` | 1.2 |
+| 1.3 | `WorkstationWorker tick` stage inside `Agent::Worker tick` | 1.2 |
 | 1.4 | Inbox/Message projection, controls, and count | 1.3 |
 
 ## Task rundown for Phase 0

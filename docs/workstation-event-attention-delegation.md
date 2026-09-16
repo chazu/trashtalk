@@ -15,12 +15,12 @@ The first release adds only two persisted domain records:
    stream and routing meaningful records.
 2. **`Attention`**, a grouped, user-visible projection of matching stream
    records, linked to an existing Inbox `Message` and its ordinary outbox /
-   `AgentDelivery` records.
+   `Agent::Delivery` records.
 
 This deliberately does **not** add `EventCursor`, `WorkstationEvent`,
 `ActionRequest`, `Approval`, `EffectRecord`, or `ExecutionAttempt` yet. Honker
 already persists stream messages and consumer offsets. Inbox, Message,
-AgentDelivery, linked Questions, AgentRun, and the worker already model
+Agent::Delivery, linked Questions, Agent::Run, and the worker already model
 communication and recoverable delegated work. A separately designed, restricted
 executor is a prerequisite for adding approved external effects.
 
@@ -39,7 +39,7 @@ executor is a prerequisite for adding approved external effects.
   distributed event bus.
 - Exactly-once arbitrary shell effects, an always-running model, or a claim that
   current harness permissions are a security sandbox.
-- Replacing Inbox, AgentDelivery, Questions, AgentWorker, Whisker, or Innards.
+- Replacing Inbox, Agent::Delivery, Questions, Agent::Worker, Whisker, or Innards.
 
 ## Why Honker is the right layer
 
@@ -139,7 +139,7 @@ preserves the command's exit status, signal, stdin/TTY behavior, and does not
 turn an event-publication error into a false command result. Output capture is
 opt-in, bounded, redacted before persistence, and rendered safely.
 
-The worker's subscription stage is a normal `AgentWorker tick` stage:
+The worker's subscription stage is a normal `Agent::Worker tick` stage:
 
 1. `EventSourceAdapter` opens the subscription's named Stream consumer and
    reads a fair, bounded batch outside the Store lock.
@@ -149,7 +149,7 @@ The worker's subscription stage is a normal `AgentWorker tick` stage:
    the accepted stream coordinate.
 4. After commit, it acknowledges the Honker offset. A Honker pub/sub topic may
    wake the worker immediately, but polling/replay is the recovery path.
-5. Existing AgentQueue and AgentWorker routing handle the persisted outbox.
+5. Existing Agent::Queue and Agent::Worker routing handle the persisted outbox.
    Resolution includes identity session scope, canonical workspace, current
    membership, lifecycle, role policy, and budget admission. No eligible or
    ambiguous session leaves Attention visible and pending. It never creates or
@@ -203,7 +203,7 @@ message/outbox causal metadata, and public Innards records. The same fixtures
 are used by producer, consumer, browser, and tests.
 
 CUE validates shape, variants, ranges, schema versions, and explicit
-constructor defaults. Store transactions, AgentAccess, `Require`, and the
+constructor defaults. Store transactions, Agent::Access, `Require`, and the
 worker still enforce identity ownership, role authorization, workspace
 canonicalization, uniqueness, lifecycle transitions, budgets, and liveness.
 CUE success never authorizes routing or execution.
@@ -218,7 +218,7 @@ are bounded and redact payload details.
 ## Attention UX
 
 Whisker shows compact counts such as `!2 ?1`; it does not print every event.
-Inbox and AgentBrowser offer an Attention view with **Inspect**, **Focus**,
+Inbox and Agent::Browser offer an Attention view with **Inspect**, **Focus**,
 **Acknowledge**, **Snooze**, **Resolve**, and **Suppress**. Inspect reads the
 referenced stream range and causal message/run records. Focus attaches to the
 recorded session only and never starts, resumes, stops, or detaches work.

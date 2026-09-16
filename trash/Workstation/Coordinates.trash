@@ -19,7 +19,7 @@ Coordinates subclass: Object
     sub := @ Store read: (coordinate jsonTextAt: 'subscription') class: 'Workstation::EventSubscription'.
     stream := @ sub streamName.
     owner := @ sub owner.
-    human := @ AgentFocus human.
+    human := @ Agent::Focus human.
     @ Require equal: stream to: (coordinate jsonTextAt: 'streamName').
     @ Require equal: owner to: human.
     patch := @ Workstation::Schema extend: data coordinate: coordinate.

@@ -11,14 +11,14 @@ Reporting trait
 
   method: ask: question [
     | args |
-    @ AgentQueue ensureSchema.
+    @ Agent::Queue ensureSchema.
     args := #{kind: 'question' body: question} asJson.
     ^ @ Store transaction: self sending: 'recordWithin:' with: args
   ]
 
   method: recordWithin: args [
     | actor sender run kind body session message data d state allowed now gen event |
-    actor := @ AgentRun actingContext.
+    actor := @ Agent::Run actingContext.
     sender := @ self authorize: actor operatorOnly: false.
     @ self requireOpen.
     body := args objectAt: 'body'.
@@ -32,12 +32,12 @@ Reporting trait
     (kind = 'question') ifTrue: [
       message := @ Message questionForAssignment: self body: body sender: sender.
       data := @ self asJson.
-      d := @ Store read: (data objectAt: 'delivery') class: 'AgentDelivery'.
+      d := @ Store read: (data objectAt: 'delivery') class: 'Agent::Delivery'.
       state := @ d state.
       allowed := @ Require contains: state in: '["pending","offered","blocked"]'.
       (allowed = 'true') ifTrue: [@ d state: 'blocked'. @ d save].
-      @ AgentQueue publishManual: message.
-      @ AgentQueue linkQuestion: message session: session run: run delivery: d
+      @ Agent::Queue publishManual: message.
+      @ Agent::Queue linkQuestion: message session: session run: run delivery: d
     ].
     now := @ Time nowISO.
     gen := @ self generation.

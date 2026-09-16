@@ -3,7 +3,7 @@ package: Assignment
 # Read projections derive activity from persisted work, execution and questions.
 Presentation trait
   method: snapshot [
-    @ AgentQueue ensureSchema.
+    @ Agent::Queue ensureSchema.
     ^ @ Store transaction: self sending: 'snapshotWithin:' with: ''
   ]
 
@@ -12,7 +12,7 @@ Presentation trait
     @ Store requireTransaction.
     a := @ Store read: self class: 'Assignment'.
     data := @ a asJson.
-    questions := @ AgentQueue questionsForAssignment: a.
+    questions := @ Agent::Queue questionsForAssignment: a.
     session := data objectAt: 'currentSession'.
     d := data objectAt: 'delivery'.
     execution := '{}'.

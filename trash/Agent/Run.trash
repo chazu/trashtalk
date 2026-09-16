@@ -1,4 +1,6 @@
-# AgentRun - One backend execution on behalf of a session
+package: Agent
+
+# Agent::Run - One backend execution on behalf of a session
 # A run is started by the worker (startFor:profile:), which hands the child
 # process a capability token `<runId>:<secret>` in TRASHTALK_RUN_TOKEN. Only
 # the sha256 of the secret is stored. The agent-facing class methods
@@ -10,18 +12,26 @@
 #         failed interrupted
 #
 # Usage (worker):
-#   read -r run token < <(@ AgentRun startFor: $session profile: shell)
+#   read -r run token < <(@ Agent::Run startFor: $session profile: shell)
 #   @ $run transitionTo: running
 # Usage (agent, with TRASHTALK_RUN_TOKEN exported):
-#   @ AgentRun result: 'done'
-#   @ AgentRun settle: $delivery
-AgentRun subclass: Object
+#   @ Agent::Run result: 'done'
+#   @ Agent::Run settle: $delivery
+Run subclass: Object
   include: Persistable
   instanceVars: session:'' state:'starting' archetypeRevision:'' roleRevision:''
                 backendProfile:'' externalConversationRef:'' ownerGeneration:0 workerId:''
                 capabilityTokenHash:'' purpose:'work' processPid:0 pidFile:'' exitFile:'' outputLog:''
                 errorLog:'' promptFile:'' lastMessageFile:'' priorRun:'' started:''
                 heartbeatAt:'' finished:'' outcome:'' error:'' stopRequested:'false' executionWorkspace:''
+
+  # Stable authority IDs survive the namespace migration and existing validators.
+  classMethod: new [
+    | id |
+    id := @ Runtime generateId: 'AgentRun'.
+    @ Runtime create: 'Agent::Run' id: id.
+    ^ id
+  ]
 
   method: executionWorkspace [
     | value |
@@ -42,7 +52,7 @@ AgentRun subclass: Object
     from=$(_ivar state)
     allowed=" starting:running starting:failed running:recovering running:succeeded running:waiting_for_user running:unsettled running:failed running:interrupted recovering:running recovering:failed recovering:unsettled recovering:succeeded recovering:waiting_for_user recovering:interrupted "
     if [[ "$allowed" != *" $from:$to "* ]]; then
-      _throw "TransitionError" "AgentRun $_RECEIVER: $from -> $to rejected"
+      _throw "TransitionError" "Agent::Run $_RECEIVER: $from -> $to rejected"
       return 1
     fi
     local eid ef et changed patch
@@ -65,30 +75,30 @@ AgentRun subclass: Object
 
   rawClassMethod: startFor: sessionId profile: p workspace: workspace [
     local secret hash args run
-    @ AgentSession ensureSchema || return 1
+    @ Agent::Session ensureSchema || return 1
     secret=$(uuidgen | tr -d '-' | tr 'A-Z' 'a-z') || return 1
     hash=$(printf '%s' "$secret" | shasum -a 256 | cut -d' ' -f1) || return 1
     args=$(jq -cn --arg session "$1" --arg profile "$2" --arg hash "$hash" --arg workspace "$3" '{session:$session,profile:$profile,hash:$hash,workspace:$workspace}') || return 1
-    run=$(@ Store transaction: AgentRun sending: 'startWithin:' with: "$args") || return 1
+    run=$(@ Store transaction: Agent::Run sending: 'startWithin:' with: "$args") || return 1
     printf '%s\n%s:%s\n' "$run" "$run" "$secret"
   ]
 
   classMethod: startWithin: args [
     | session run active now state revision workspace role allowed |
     @ Store requireTransaction.
-    session := @ Store read: (args objectAt: 'session') class: 'AgentSession'.
+    session := @ Store read: (args objectAt: 'session') class: 'Agent::Session'.
     state := @ session lifecycleState.
     @ Require equal: state to: 'open'.
-    @ AgentSession requireCurrentWithin: session.
-    workspace := @ AgentSession workspaceFor: (args objectAt: 'workspace').
+    @ Agent::Session requireCurrentWithin: session.
+    workspace := @ Agent::Session workspaceFor: (args objectAt: 'workspace').
     role := @ session role.
-    role := @ Store read: role class: 'AgentRole'.
+    role := @ Store read: role class: 'Agent::Role'.
     allowed := @ role allowsWorkspace: workspace.
     @ Require equal: allowed to: 'true'.
-    active := @ Store idsOf: 'AgentRun' matching: (#{session: session state: #('starting' 'running' 'recovering')} asJson).
+    active := @ Store idsOf: 'Agent::Run' matching: (#{session: session state: #('starting' 'running' 'recovering')} asJson).
     @ Require equal: active to: '[]'.
     now := @ Time nowISO.
-    run := @ AgentRun new.
+    run := @ Agent::Run new.
     @ run session: session.
     @ run state: 'starting'.
     revision := @ session archetypeRevision.
@@ -151,7 +161,7 @@ AgentRun subclass: Object
     data=$(db_get "$runId" 2>/dev/null)
     cls=""
     [[ -n "$data" ]] && cls=$(printf '%s' "$data" | jq -r '.class // empty')
-    if [[ "$cls" != "AgentRun" ]]; then
+    if [[ "$cls" != "Agent::Run" ]]; then
       _throw "RunTokenError" "Unknown run '$runId'"
       return 1
     fi
@@ -195,13 +205,13 @@ AgentRun subclass: Object
   # ------------------------------------------------------------------
 
   rawClassMethod: settle: deliveryId [
-    @ AgentRun settle: "$1" note: ''
+    @ Agent::Run settle: "$1" note: ''
   ]
 
   classMethod: settle: deliveryId note: text [
     | run drun state |
-    run := @ AgentRun current ifFailed: [
-      @ RunTokenError signal: 'AgentRun settle: requires a valid TRASHTALK_RUN_TOKEN'
+    run := @ Agent::Run current ifFailed: [
+      @ RunTokenError signal: 'Agent::Run settle: requires a valid TRASHTALK_RUN_TOKEN'
     ].
     drun := @ deliveryId run.
     ((drun isEmpty) or: [drun ~= run]) ifTrue: [
@@ -219,15 +229,15 @@ AgentRun subclass: Object
   # Without a held delivery the result goes to the identity owner's inbox.
   rawClassMethod: result: body [
     local body="$1" run sid sender deliveries d first to subj thread msg inbox owner
-    run=$(@ AgentRun current) || {
-      _throw "RunTokenError" "AgentRun result: requires a valid TRASHTALK_RUN_TOKEN"
+    run=$(@ Agent::Run current) || {
+      _throw "RunTokenError" "Agent::Run result: requires a valid TRASHTALK_RUN_TOKEN"
       return 1
     }
     sid=$(@ "$run" session)
     sender="session:$sid"
-    deliveries=$(@ AgentDelivery offeredFor: "$run")
+    deliveries=$(@ Agent::Delivery offeredFor: "$run")
     if [[ -z "$deliveries" ]]; then
-      owner=$(@ AgentRun ownerInboxFor: "$run")
+      owner=$(@ Agent::Run ownerInboxFor: "$run")
       @ Inbox send: "$body" to: "$owner" from: "$sender" subject: result kind: result
       return
     fi
@@ -256,7 +266,7 @@ AgentRun subclass: Object
   # Raw boundary: reject foreign receipts before resolving their message data.
   rawClassMethod: result: body forDelivery: delivery [
     local run sid first msg inbox
-    run=$(@ AgentRun current) || return 1
+    run=$(@ Agent::Run current) || return 1
     [[ "$(@ "$2" run)" == "$run" ]] || { _throw 'RunError' 'Delivery is not held by this run'; return 1; }
     case "$(@ "$2" state)" in offered|blocked) ;; *) _throw 'RunError' 'Delivery is no longer held'; return 1 ;; esac
     first=$(@ "$2" messageIdList | head -n 1)
@@ -272,19 +282,19 @@ AgentRun subclass: Object
 
   # Local user control targets this immutable run id, never a replacement run.
   method: stop [
-    ^ @ AgentWorker stopRun: self
+    ^ @ Agent::Worker stopRun: self
   ]
 
   # Agent entry point requires a valid token even if the caller omitted one.
   classMethod: stop: target [
-    (@ AgentRun current) ifFailed: [:e | @ e signal ].
-    ^ @ AgentWorker stopRun: target
+    (@ Agent::Run current) ifFailed: [:e | @ e signal ].
+    ^ @ Agent::Worker stopRun: target
   ]
 
   classMethod: send: body to: address [
     | run sid |
-    run := @ AgentRun current ifFailed: [
-      @ RunTokenError signal: 'AgentRun send:to: requires a valid TRASHTALK_RUN_TOKEN'
+    run := @ Agent::Run current ifFailed: [
+      @ RunTokenError signal: 'Agent::Run send:to: requires a valid TRASHTALK_RUN_TOKEN'
     ].
     sid := @ run session.
     ^ @ Inbox send: body to: address from: 'session:' , sid subject: '' kind: 'note'
@@ -293,8 +303,8 @@ AgentRun subclass: Object
   # Deduplicated send: one message per (session, key).
   rawClassMethod: send: body to: address key: k [
     local run sid key esc efrom existing
-    run=$(@ AgentRun current) || {
-      _throw "RunTokenError" "AgentRun send:to:key: requires a valid TRASHTALK_RUN_TOKEN"
+    run=$(@ Agent::Run current) || {
+      _throw "RunTokenError" "Agent::Run send:to:key: requires a valid TRASHTALK_RUN_TOKEN"
       return 1
     }
     sid=$(@ "$run" session)
@@ -312,9 +322,9 @@ AgentRun subclass: Object
   # Default: the question blocks all deliveries currently held by this run.
   rawClassMethod: askUser: question [
     local run ids
-    run=$(@ AgentRun current) || return 1
-    ids=$(@ AgentDelivery offeredFor: "$run" | jq -Rsc 'split("\n") | map(select(length > 0))') || return 1
-    @ AgentRun askUser: "$1" forDeliveries: "$ids"
+    run=$(@ Agent::Run current) || return 1
+    ids=$(@ Agent::Delivery offeredFor: "$run" | jq -Rsc 'split("\n") | map(select(length > 0))') || return 1
+    @ Agent::Run askUser: "$1" forDeliveries: "$ids"
   ]
 
   classMethod: askUser: question forDelivery: delivery [
@@ -327,12 +337,12 @@ AgentRun subclass: Object
   # The queue checks delivery ownership again inside the publication transaction.
   rawClassMethod: askUser: question forDeliveries: deliveryIds [
     local run sid owner ids first delivery thread msg inbox
-    run=$(@ AgentRun current) || {
-      _throw "RunTokenError" "AgentRun askUser: requires a valid TRASHTALK_RUN_TOKEN"
+    run=$(@ Agent::Run current) || {
+      _throw "RunTokenError" "Agent::Run askUser: requires a valid TRASHTALK_RUN_TOKEN"
       return 1
     }
     sid=$(@ "$run" session)
-    owner=$(@ AgentRun ownerInboxFor: "$run")
+    owner=$(@ Agent::Run ownerInboxFor: "$run")
     ids=$(printf '%s' "$2" | jq -ce 'select(type == "array" and all(.[]; type == "string")) | unique') || return 1
     delivery=$(printf '%s' "$ids" | jq -r '.[0] // empty')
     thread=""
@@ -344,7 +354,7 @@ AgentRun subclass: Object
     [[ -n "$thread" ]] && @ "$msg" thread: "$thread"
     inbox=$(@ Inbox named: "$owner")
     @ "$inbox" prepare: "$msg" || return 1
-    @ AgentQueue persist: "$msg" questionRun: "$run" deliveries: "$ids" || return 1
+    @ Agent::Queue persist: "$msg" questionRun: "$run" deliveries: "$ids" || return 1
     for delivery in $(printf '%s' "$ids" | jq -r '.[]'); do
       @ "$delivery" reload >/dev/null
     done
@@ -353,8 +363,8 @@ AgentRun subclass: Object
 
   rawClassMethod: inbox [
     local run sid ib
-    run=$(@ AgentRun current) || {
-      _throw "RunTokenError" "AgentRun inbox requires a valid TRASHTALK_RUN_TOKEN"
+    run=$(@ Agent::Run current) || {
+      _throw "RunTokenError" "Agent::Run inbox requires a valid TRASHTALK_RUN_TOKEN"
       return 1
     }
     sid=$(@ "$run" session)
@@ -366,7 +376,7 @@ AgentRun subclass: Object
   rawClassMethod: actingContext [
     local run hash
     if [[ ${TRASHTALK_RUN_TOKEN+x} ]]; then
-      run=$(@ AgentRun current) || return 1
+      run=$(@ Agent::Run current) || return 1
       hash=$(printf '%s' "${TRASHTALK_RUN_TOKEN#*:}" | shasum -a 256 | cut -d' ' -f1)
       jq -cn --arg run "$run" --arg hash "$hash" '{run:$run,hash:$hash,human:""}'
     else
@@ -378,7 +388,7 @@ AgentRun subclass: Object
   classMethod: activeFor: session except: run [
     | fields ids remaining same |
     fields := #{session: session state: #('starting' 'running' 'recovering')} asJson.
-    ids := @ Store idsOf: 'AgentRun' matching: fields.
+    ids := @ Store idsOf: 'Agent::Run' matching: fields.
     remaining := '[]'.
     ids arrayEach: [:id |
       same := @ String equals: id to: run.

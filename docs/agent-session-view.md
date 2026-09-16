@@ -3,8 +3,8 @@
 Implemented in Trashtalk and the companion Innards checkout.
 
 ```bash
-@ AgentSession browse             # choose a session, then Attach to conversation
-@ "$session" focus               # attach an existing AgentSession directly
+@ Agent::Session browse             # choose a session, then Attach to conversation
+@ "$session" focus               # attach an existing Agent::Session directly
 @ "$session" attach              # synonym
 @ Gusgus focusCurrent             # existing current conversation, any directory
 # Option-U toggles this view from the configured shell.
@@ -34,7 +34,7 @@ shells that loaded these classes can reload them, or start a fresh shell.
 ## Boundaries and implementation
 
 The existing agent browser offers snapshots and log files. The Innards
-`inagent` applet attaches to a logical AgentSession: scroll and search the
+`inagent` applet attaches to a logical Agent::Session: scroll and search the
 conversation, follow current harness output, compose messages, and detach.
 
 Trashtalk owns session state, inbox delivery, and run control. The applet owns
@@ -50,12 +50,12 @@ output and reasoning stay in run inspection. Snapshots carry stable entry IDs,
 a bounded recent window, and an earlier-history indicator. Reading the view does
 not acknowledge deliveries.
 
-Composer input uses `AgentSession input:`. Jcode sends the text through its native
+Composer input uses `Agent::Session input:`. Jcode sends the text through its native
 Harness API, using `send_message` for an idle session and `soft_interrupt` for
 input at the next safe point while working. It uses the active adapter connection,
 so there is no second native controller. Idle input starts a tracked run with
 fresh authority supplied as a separate system reminder; the user text stays literal.
-There is no Message or AgentDelivery for composer input. Native acknowledgements
+There is no Message or Agent::Delivery for composer input. Native acknowledgements
 clear the draft; rejection or a lost acknowledgement retains it. Paused sessions
 must be resumed, and drivers without direct-input support reject the operation.
 `@@` remains an inbox message shortcut and treats every argument as text.
@@ -77,7 +77,7 @@ Terminal control bytes are removed from displayed text. Other drivers retain
 inbox history inspection and reject composer input until they expose a direct
 session adapter.
 
-Public entry points: `@ session focus` (also `attach`), `@ AgentSession browse`,
+Public entry points: `@ session focus` (also `attach`), `@ Agent::Session browse`,
 and an attach action in the existing session menu. Message actions offer the
 sender's current session: resolve the originating identity and its session
 policy. Identity-scoped Gusgus resolves to the selected current conversation

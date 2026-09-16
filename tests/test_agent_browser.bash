@@ -35,20 +35,20 @@ check() { if [[ "$2" == "$3" ]]; then echo "PASS: $1"; passed=$((passed+1)); els
 contains() { [[ "$3" == *"$2"* ]] || { echo "FAIL: $1 missing $2"; exit 1; }; echo "PASS: $1"; passed=$((passed+1)); }
 session=$(@ Gusgus sessionFor: "$root")
 msg=$(@ Inbox send: 'please inspect this' to: "session:$session" from: browser-owner)
-mapfile -t lines < <(@ AgentRun startFor: "$session" profile: shell)
+mapfile -t lines < <(@ Agent::Run startFor: "$session" profile: shell)
 run=${lines[0]}
 @ "$run" transitionTo: running >/dev/null
 @ "$run" finishWith: failed outcome: '{}' error: 'fixture provider error' >/dev/null
 # Browser dispatch still crosses the public worker selector; spy on that boundary
 # so this UI contract test doesn't also launch a harness.
-@ AgentWorker handlesInbox: test >/dev/null
-__AgentWorker__class__tickSession_() { printf '%s\n' "$1" >> "$TICKS"; }
-records=$(@ AgentBrowser sessionRecordsIn: "$tmp")
+@ Agent::Worker handlesInbox: test >/dev/null
+__Agent__Worker__class__tickSession_() { printf '%s\n' "$1" >> "$TICKS"; }
+records=$(@ Agent::Browser sessionRecordsIn: "$tmp")
 contains 'session record includes workspace' "$root" "$records"
 contains 'session record includes queued count' 'pending=1' "$records"
 contains 'session details include provider failure' 'fixture provider error' "$(@ "$session" details)"
 printf '%s\n' "$session" details messages runs "$run" back '' > "$PICKS"
-result=$(@ AgentSession browse)
+result=$(@ Agent::Session browse)
 check 'browser stdout contains only dismissal outcome' dismissed "$result"
 contains 'pager shows session message body' 'please inspect this' "$(cat "$PAGES")"
 contains 'pager shows run failure' 'fixture provider error' "$(cat "$PAGES")"
@@ -60,46 +60,46 @@ check 'temporary preview dirs removed' 0 "$(find "$TMPDIR" -maxdepth 1 -type d -
 
 # Pause, select a failed delivery, explicitly confirm retry, then dismiss.
 delivery=$(@ "$session" pendingDeliveries)
-mapfile -t lines < <(@ AgentRun startFor: "$session" profile: shell)
+mapfile -t lines < <(@ Agent::Run startFor: "$session" profile: shell)
 claim_run=${lines[0]}
 @ "$claim_run" transitionTo: running >/dev/null
-@ AgentDelivery claim: "$delivery" run: "$claim_run" >/dev/null
+@ Agent::Delivery claim: "$delivery" run: "$claim_run" >/dev/null
 @ "$delivery" transitionTo: failed >/dev/null
 printf '%s\n' "$session" pause retry "$delivery" retry back '' > "$PICKS"
-@ AgentSession browse >/dev/null
+@ Agent::Session browse >/dev/null
 check 'pause is applied on the session instance' paused "$(@ "$session" lifecycleState)"
 check 'confirmed retry returns the delivery to pending' pending "$(@ "$delivery" state)"
 check 'confirmed retry resets attempts' 0 "$(@ "$delivery" attempts)"
 contains 'retry requests a tick for the selected session' "$session" "$(cat "$TICKS")"
 printf '%s\n' "$session" resume back '' > "$PICKS"
-@ AgentSession browse >/dev/null
+@ Agent::Session browse >/dev/null
 check 'resume is applied on the session instance' open "$(@ "$session" lifecycleState)"
 
 # Cancel the retry confirmation and reject a forged picker id.
-@ AgentDelivery claim: "$delivery" run: "$claim_run" >/dev/null
+@ Agent::Delivery claim: "$delivery" run: "$claim_run" >/dev/null
 @ "$delivery" transitionTo: uncertain >/dev/null
 printf '%s\n' "$session" retry "$delivery" '' back '' > "$PICKS"
-@ AgentSession browse >/dev/null
+@ Agent::Session browse >/dev/null
 check 'cancelled confirmation preserves uncertain state' uncertain "$(@ "$delivery" state)"
-check 'unoffered picker id is rejected' '' "$(@ AgentBrowser selectedFrom: '{"outcome":"selected","selection":{"id":"forged"}}' records: "$records")"
+check 'unoffered picker id is rejected' '' "$(@ Agent::Browser selectedFrom: '{"outcome":"selected","selection":{"id":"forged"}}' records: "$records")"
 
 # Ctrl-D is an explicit intent for the selected session, with a safe default.
-check 'termination confirmation defaults to Cancel' cancel "$(@ AgentBrowser terminationRecordsAt: session.txt | head -n 1 | jq -r .id)"
+check 'termination confirmation defaults to Cancel' cancel "$(@ Agent::Browser terminationRecordsAt: session.txt | head -n 1 | jq -r .id)"
 printf '%s\n' "terminate:$session" cancel '' > "$PICKS"
-@ AgentSession browse >/dev/null
+@ Agent::Session browse >/dev/null
 contains 'session list binds Ctrl-D to terminate' '--ctrl-d-action terminate' "$(cat "$PICK_ARGS")"
 check 'Cancel preserves the session' open "$(@ "$session" lifecycleState)"
 printf '%s\n' "terminate:$session" '' '' > "$PICKS"
-@ AgentSession browse >/dev/null
+@ Agent::Session browse >/dev/null
 check 'Escape preserves the session' open "$(@ "$session" lifecycleState)"
-other=$(@ AgentSession new)
+other=$(@ Agent::Session new)
 printf '%s\n' "terminate:$session" terminate '' > "$PICKS"
-@ AgentSession browse >/dev/null
+@ Agent::Session browse >/dev/null
 @ "$session" reload >/dev/null
 check 'confirmed Ctrl-D terminates selected session' terminated "$(@ "$session" lifecycleState)"
 check 'another session stays open' open "$(@ "$other" lifecycleState)"
 check 'refreshed picker excludes terminated session' "$other" "$(tail -n 1 "$RECORDS" | jq -r .id)"
-records=$(@ AgentBrowser sessionRecordsIn: "$tmp")
+records=$(@ Agent::Browser sessionRecordsIn: "$tmp")
 check 'reopening list excludes terminated session' 0 "$(printf '%s\n' "$records" | jq -s --arg id "$session" '[.[] | select(.id == $id)] | length')"
 check 'termination retains original message' 'please inspect this' "$(@ "$msg" body)"
 printf '%s\n' details '' > "$PICKS"
@@ -107,9 +107,9 @@ check 'terminated session remains directly browsable by id' dismissed "$(@ "$ses
 contains 'direct browsing shows terminal state' 'Lifecycle: terminated' "$(cat "$PAGES")"
 
 # A public control failure must be visible in the pager, not silently dismissed.
-@ AgentBrowser terminationRecordsAt: session.txt >/dev/null
-__AgentBrowser__class__terminateResultFor_() { echo 'fixture harness has not stopped'; return 1; }
+@ Agent::Browser terminationRecordsAt: session.txt >/dev/null
+__Agent__Browser__class__terminateResultFor_() { echo 'fixture harness has not stopped'; return 1; }
 printf '%s\n' "terminate:$other" terminate '' > "$PICKS"
-@ AgentSession browse >/dev/null
+@ Agent::Session browse >/dev/null
 contains 'termination failure is shown' 'fixture harness has not stopped' "$(cat "$PAGES")"
 echo "=== $passed browser checks passed ==="

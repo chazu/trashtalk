@@ -421,7 +421,7 @@ examples, result contracts, and qualification limits.
 
 ## Live agent conversations
 
-Use `@ AgentSession browse` and choose **Attach to conversation**, or send
+Use `@ Agent::Session browse` and choose **Attach to conversation**, or send
 `focus` / `attach` to an existing session. The Innards `inagent` applet shows
 backlog and live harness output, offers an inbox-backed composer, and detaches
 without stopping work. Message actions also offer **Attach to sender session**
@@ -475,9 +475,9 @@ messages. `@ "$inbox" unreadCount` counts only unread messages.
 `@ Inbox count` counts stored inbox instances. The `Inbox` class does not
 implicitly select the current user's inbox.
 
-Each `@@` becomes an `AgentDelivery` on Gusgus's current `AgentSession`.
-`AgentWorker` notifies the configured harness with inbox message references;
-the agent reads their contents from Inbox and uses `AgentRun result:forDelivery:`
+Each `@@` becomes an `Agent::Delivery` on Gusgus's current `Agent::Session`.
+`Agent::Worker` notifies the configured harness with inbox message references;
+the agent reads their contents from Inbox and uses `Agent::Run result:forDelivery:`
 and `settle:` to respond and acknowledge work. Every run gets a private launcher
 for the common `trash-send` API. Busy sessions queue messages for the next prompt.
 Jcode is the default and uses a resident daemon, resuming the same native
@@ -485,7 +485,7 @@ conversation across runs. Jcode and Maki run with your normal OS permissions.
 `@@` and inbox replies request foreground ticks. For queued work to continue
 without another command, run `bin/trash-worker` or install and start its user
 service with `bin/trash-worker-service install` and `bin/trash-worker-service start`.
-`@ AgentSession browse` opens session activity, messages, run logs, and explicit
+`@ Agent::Session browse` opens session activity, messages, run logs, and explicit
 pause/resume/retry actions in Innards. See [agent operations](docs/agent-operations.md)
 for recovery behavior, service controls, and validation. Gusgus uses OpenAI
 OAuth and medium reasoning effort. Configure with
@@ -497,7 +497,7 @@ OAuth and medium reasoning effort. Configure with
 (default `gpt-5.6-terra`). Maki uses `TRASHTALK_MAKI_MODEL`
 (default `openai/gpt-5.6-terra`). Jcode uses existing OpenAI subscription login.
 `@ Jcode login` starts interactive authentication. `@ "$run" stop` pauses its
-session and stops that exact run; agents use `AgentRun stop:` with `agent.stop`
+session and stops that exact run; agents use `Agent::Run stop:` with `agent.stop`
 role authority. Profiles are captured when a session opens;
 changing the default does not migrate existing conversations. See the
 [Jcode driver design](docs/jcode-session-driver.md),
@@ -704,11 +704,11 @@ another runtime.
 | `Inbox` | Durable named inboxes for messages between agents, humans, and processes |
 | `Message` | A persisted message: sender, recipient, kind, status, thread |
 | `Gusgus` | The persistent assistant behind `@@`: one session per workspace |
-| `AgentSession` | Durable agent conversation bound to an identity, archetype, role, and workspace |
-| `AgentIdentity`, `AgentArchetype`, `AgentRole` | Who an agent is, what it is for, and what it may do |
-| `AgentRun`, `AgentDelivery` | One harness process, and the durable input batch it was offered |
-| `AgentWorker` | Foreground dispatch and reconciliation: claim, launch, settle |
-| `JcodeDriver`, `MakiDriver`, `CodexDriver`, `ShellDriver` | Common session drivers for resident Jcode, Maki SDK, Codex, and test scripts |
+| `Agent::Session` | Durable agent conversation bound to an identity, archetype, role, and workspace |
+| `Agent::Identity`, `Agent::Archetype`, `Agent::Role` | Who an agent is, what it is for, and what it may do |
+| `Agent::Run`, `Agent::Delivery` | One harness process, and the durable input batch it was offered |
+| `Agent::Worker` | Foreground dispatch and reconciliation: claim, launch, settle |
+| `Agent::JcodeDriver`, `Agent::MakiDriver`, `Agent::CodexDriver`, `Agent::ShellDriver` | Common session drivers for resident Jcode, Maki SDK, Codex, and test scripts |
 
 ### Traits
 

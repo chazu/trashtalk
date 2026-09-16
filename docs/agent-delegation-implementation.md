@@ -40,7 +40,7 @@ deliveries, and Innards inspection. Maki and Codex can resume conversations.
 The worker can run independent sessions concurrently while serializing its
 dispatch decisions under the store lock.
 
-`AgentRun send:to:` can already address another session, whose `result:` can
+`Agent::Run send:to:` can already address another session, whose `result:` can
 reply to Gusgus. However:
 
 - Assignment now provides a durable responsibility and completion relationship
@@ -52,7 +52,7 @@ reply to Gusgus. However:
   a specialist session for a particular workspace or assignment.
 - Keyed sends use lookup followed by creation; delegation needs transactional
   uniqueness across concurrent calls and restarted runs.
-- Prompts currently teach low-level `AgentRun result:` and `settle:` commands.
+- Prompts currently teach low-level `Agent::Run result:` and `settle:` commands.
 - The worker supplies inbox references in notification prompts and supports
   authorized exact-run stop. Assignment-specific context and dispatch remain
   part of the one-specialist slice.
@@ -125,7 +125,7 @@ agent to read those messages through the public Inbox/Message operations.
 Do not substitute a copied body or a generated summary in the harness prompt
 for that inbox read. This applies to inbox input, inbox questions and answers,
 and assignment outcomes. Human input in the conversation view is direct native
-session interaction and creates no Message or AgentDelivery. `@@` remains inbox
+session interaction and creates no Message or Agent::Delivery. `@@` remains inbox
 mail, with every argument treated literally.
 
 The sequence is: persist message and notification obligation; present a wake
@@ -150,8 +150,8 @@ does not establish consumption or make an uncertain replay safe.
 
 ## Agents own assignments; sessions work on them
 
-An agent is an **`AgentIdentity` instance**. Assignments are assigned to that
-object, not a bare name or an execution session. An **`AgentSession` instance**
+An agent is an **`Agent::Identity` instance**. Assignments are assigned to that
+object, not a bare name or an execution session. An **`Agent::Session` instance**
 is a particular conversation with its own workspace, archetype/role snapshots,
 and harness configuration. Several sessions can work on one assignment over
 time without changing its assignee.
@@ -162,22 +162,22 @@ its one identity-scoped current conversation. Workspace-scoped specialists still
 use one current session per canonical workspace. These calls return different objects:
 
 ```bash
-gusgus=$(@ Gusgus identity)                # AgentIdentity instance
-session=$(@ Gusgus sessionFor: "$PWD")     # AgentSession instance
+gusgus=$(@ Gusgus identity)                # Agent::Identity instance
+session=$(@ Gusgus sessionFor: "$PWD")     # Agent::Session instance
 ```
 
 There is no implicit agent called “someone.” For the first specialist, explicitly
 find or create an identity, configure its human owner, default archetype and
 role, and select an execution profile. Then explicitly open a session for that
-identity with the intended workspace and configuration. `AgentIdentity named:`
+identity with the intended workspace and configuration. `Agent::Identity named:`
 currently finds or creates an identity; it does not by itself configure a
 ready-to-run specialist. The first slice must make this setup inspectable and
 document the actual messages used, reusing existing objects.
 
 Separate assignment from execution selection:
 
-- `assignTo:` takes an `AgentIdentity` instance and records responsibility.
-- `workIn:` takes an `AgentSession` instance, validates that it belongs to the
+- `assignTo:` takes an `Agent::Identity` instance and records responsibility.
+- `workIn:` takes an `Agent::Session` instance, validates that it belongs to the
   assignee and is suitable for the work, and records its execution participation.
   It is the explicit dispatch boundary when harness execution is enabled.
 
@@ -403,8 +403,8 @@ Keep these concepts distinct:
 | Workspace | The directory where this assignment runs; it may not be Git-backed. |
 | Worktree | A checkout belonging to a LocalRepository, with its own path, branch, and working files. |
 | Issue | A record in an external task tracker. |
-| AgentIdentity | The agent responsible for assigned work, such as Gusgus. |
-| AgentSession | A conversation that can participate in the agent's assignments. |
+| Agent::Identity | The agent responsible for assigned work, such as Gusgus. |
+| Agent::Session | A conversation that can participate in the agent's assignments. |
 | Assignment | Work entrusted to an agent identity, potentially across sessions, optionally concerning an issue and repository. |
 
 First retain the explicit workspace path. Before enabling coding assignments,
@@ -458,7 +458,7 @@ The first [code and session Tool adapters](code-and-session-tools.md) are
 implemented: Roam for checkout-local graph queries, ast-grep for structural
 search, cass for existing session history, and Chad for explicit headless tasks.
 These use the common Tool process boundary. Repository associations, learned
-memory, and a persistent Chad AgentDriver remain follow-up work.
+memory, and a persistent Chad Agent::Driver remain follow-up work.
 
 Repository memory must be reusable by authorized agents across independent
 local copies and worktrees of the same Repository. Scope by durable repository
@@ -468,7 +468,7 @@ relevant branch/worktree or dirty-state information to facts. A fact observed
 on one branch must not silently become true of every checkout.
 
 Individual agent memory and collective project memory are separate scopes.
-Personal memory follows `AgentIdentity`; repository facts belong to the shared
+Personal memory follows `Agent::Identity`; repository facts belong to the shared
 repository store. Memory should outlive harness conversations and remain
 inspectable, correctable, and removable by humans and authorized agents.
 

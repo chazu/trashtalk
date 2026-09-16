@@ -22,7 +22,7 @@ data() { @ Store getInstance: "$1"; }
 assert_count() { [[ $(data "$a" | jq -r .eventCount) == "$1" && $(data "$m" | jq -r .attentionEventCount) == "$1" ]]; }
 # Real public producer -> named Stream -> supervised worker tick -> local Inbox.
 bin/trash-receipt --publish "$fixture"
-@ AgentWorker tick >/dev/null || exit 1
+@ Agent::Worker tick >/dev/null || exit 1
 [[ $(@ "$consumer" offset) == 1 && $(count Workstation::Attention) == 1 && $(count Message) == 1 ]]
 a=$(@ Workstation::Attention findAll); m=$(data "$a" | jq -r .message)
 inbox=$(@ Inbox named: local-user)
@@ -111,7 +111,7 @@ for i in {1..5}; do publish; done
 @ Workstation::Worker tick >/dev/null || exit 1
 [[ $(@ "$consumer" offset) == 16 ]]
 # No deliveries/outbox, execution, identities, sessions, or routing side effects.
-for class in AgentDelivery AgentRun AgentSession AgentIdentity AgentAssignment; do [[ $(count "$class") == 0 ]]; done
+for class in Agent::Delivery Agent::Run Agent::Session Agent::Identity AgentAssignment; do [[ $(count "$class") == 0 ]]; done
 [[ $(_db_sql 'SELECT count(*) FROM agent_outbox;') == 0 ]]
 [[ $(count Inbox) == 1 && $(count Stream) == 2 ]]
 echo 'PASS: local receipt journey, replay, ack/transaction failures, lifecycle, filtering, batches and no agent effects'

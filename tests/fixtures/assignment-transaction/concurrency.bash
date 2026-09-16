@@ -1,9 +1,9 @@
 # Sourced by the production transaction regression after its original regression journey. Every
 # interference test pauses after the actual DSL reads, before live validation.
 
-other_identity=$(must @ AgentIdentity named: independent-specialist)
-other_session=$(must @ AgentSession openFor: "$other_identity" archetype: "$arch" role: "$role" workspace: "$root" profile: shell)
-traffic_session=$(must @ AgentSession openFor: "$identity" archetype: "$arch" role: "$role" workspace: "$root" profile: shell)
+other_identity=$(must @ Agent::Identity named: independent-specialist)
+other_session=$(must @ Agent::Session openFor: "$other_identity" archetype: "$arch" role: "$role" workspace: "$root" profile: shell)
+traffic_session=$(must @ Agent::Session openFor: "$identity" archetype: "$arch" role: "$role" workspace: "$root" profile: shell)
 traffic_work=$(must new_work 'Background progress')
 traffic_msg=$(must @ Inbox send: 'Unrelated message' to: "session:$traffic_session" from: assignment-owner)
 
@@ -14,14 +14,14 @@ independent_pair() {
     left=$(must new_work "$label left")
     right=$(identity="$other_identity" session="$other_session" must new_work "$label right")
     left_delivery=$(field "$left" .delivery); right_delivery=$(field "$right" .delivery)
-    mapfile -t pair < <(@ AgentRun startFor: "$session" profile: shell)
+    mapfile -t pair < <(@ Agent::Run startFor: "$session" profile: shell)
     r1=${pair[0]}; t1=${pair[1]}
     must @ "$r1" transitionTo: running >/dev/null
-    mapfile -t pair < <(@ AgentRun startFor: "$other_session" profile: shell)
+    mapfile -t pair < <(@ Agent::Run startFor: "$other_session" profile: shell)
     r2=${pair[0]}; t2=${pair[1]}
     must @ "$r2" transitionTo: running >/dev/null
-    check "$label: left claim" true "$(TRASHTALK_RUN_TOKEN="$t1" @ AgentDelivery claim: "$left_delivery" run: "$r1")"
-    check "$label: right claim" true "$(TRASHTALK_RUN_TOKEN="$t2" @ AgentDelivery claim: "$right_delivery" run: "$r2")"
+    check "$label: left claim" true "$(TRASHTALK_RUN_TOKEN="$t1" @ Agent::Delivery claim: "$left_delivery" run: "$r1")"
+    check "$label: right claim" true "$(TRASHTALK_RUN_TOKEN="$t2" @ Agent::Delivery claim: "$right_delivery" run: "$r2")"
     _store_tx_before_commit() {
         touch "$pair_dir/ready-$BASHPID"
         local attempt
@@ -89,7 +89,7 @@ unset -f _store_tx_before_commit
 unpublished "$g" 'new question'
 _db_sql "UPDATE agent_questions SET answer_id='answered' WHERE message_id='message_new_question';"
 
-_db_sql "INSERT INTO instances(id,data) VALUES('agentrun_becomes_active',json_object('class','AgentRun','session','$session','state','succeeded'));"
+_db_sql "INSERT INTO instances(id,data) VALUES('agentrun_becomes_active',json_object('class','Agent::Run','session','$session','state','succeeded'));"
 _store_tx_before_commit() { @ Store patch: agentrun_becomes_active with: '{"state":"running"}' >/dev/null; }
 reject 'previously inactive run becoming active invalidates query' complete "$g" done
 unset -f _store_tx_before_commit
@@ -118,7 +118,7 @@ check 'outbox collision leaves Assignment open' open "$(field "$g" .state)"
 _db_sql "DELETE FROM agent_outbox WHERE message_id='message_${g}_outcome';"
 
 _store_tx_before_commit() {
-    _db_sql "INSERT INTO instances(id,data) VALUES('agentrun_unrelated_active',json_object('class','AgentRun','session','$traffic_session','state','running'));
+    _db_sql "INSERT INTO instances(id,data) VALUES('agentrun_unrelated_active',json_object('class','Agent::Run','session','$traffic_session','state','running'));
       INSERT INTO instances(id,data) VALUES('message_unrelated_question',json_object('class','Message','assignment','$traffic_work'));
       INSERT INTO agent_questions(message_id,session,run,delivery_ids) VALUES('message_unrelated_question','$traffic_session','','[]');"
 }
@@ -130,7 +130,7 @@ check 'unrelated active run and unanswered question do not conflict' completed "
 # excluded from timings. Count logical dependencies, not just successful writes.
 for history_size in 100 1000 10000; do
     _db_sql "WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<$history_size)
-      INSERT OR IGNORE INTO instances(id,data) SELECT 'history_run_'||x,json_object('class','AgentRun','session','$traffic_session','state','running') FROM n;
+      INSERT OR IGNORE INTO instances(id,data) SELECT 'history_run_'||x,json_object('class','Agent::Run','session','$traffic_session','state','running') FROM n;
       WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<$history_size)
       INSERT OR IGNORE INTO instances(id,data) SELECT 'history_message_'||x,json_object('class','Message','assignment','$traffic_work','body',printf('%01024d',x)) FROM n;
       WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<$history_size)

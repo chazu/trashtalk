@@ -7,32 +7,32 @@ Participation subclass: Object
   classMethod: select: session for: assignment [
     | actor sender aData s sData identity iData role path canonical allowed current same runs old oldState gen message d now history participation |
     @ Store requireTransaction.
-    actor := @ AgentRun actingContext.
+    actor := @ Agent::Run actingContext.
     sender := @ assignment authorize: actor operatorOnly: true.
     @ assignment requireOpen.
     aData := @ assignment asJson.
-    s := @ Store read: session class: 'AgentSession'.
+    s := @ Store read: session class: 'Agent::Session'.
     sData := @ s asJson.
-    identity := @ Store read: (sData objectAt: 'identity') class: 'AgentIdentity'.
+    identity := @ Store read: (sData objectAt: 'identity') class: 'Agent::Identity'.
     iData := @ identity asJson.
     @ Require equal: identity to: (aData objectAt: 'assignee').
     @ Require member: (iData objectAt: 'enabled') of: '["true","1"]'.
     @ Require equal: (sData objectAt: 'lifecycleState') to: 'open'.
     path := @ s workspace.
-    canonical := @ AgentSession workspaceFor: path.
+    canonical := @ Agent::Session workspaceFor: path.
     @ Require equal: canonical to: (aData objectAt: 'workspace').
-    role := @ Store read: (sData objectAt: 'role') class: 'AgentRole'.
+    role := @ Store read: (sData objectAt: 'role') class: 'Agent::Role'.
     allowed := @ role allowsWorkspace: canonical.
     @ Require equal: allowed to: 'true'.
     current := @ assignment currentSession.
     same := @ String equals: current to: s.
     (same = 'true') ifTrue: [^ assignment].
-    runs := @ AgentRun activeFor: s except: ''.
+    runs := @ Agent::Run activeFor: s except: ''.
     @ Require equal: runs to: '[]'.
     (current notEmpty) ifTrue: [
-      runs := @ AgentRun activeFor: current except: ''.
+      runs := @ Agent::Run activeFor: current except: ''.
       @ Require equal: runs to: '[]'.
-      old := @ Store read: (aData objectAt: 'delivery') class: 'AgentDelivery'.
+      old := @ Store read: (aData objectAt: 'delivery') class: 'Agent::Delivery'.
       oldState := @ old state.
       @ Require member: oldState of: '["pending","blocked","processed","skipped"]'.
       allowed := @ Require contains: oldState in: '["pending","blocked"]'.
@@ -45,7 +45,7 @@ Participation subclass: Object
     gen := @ assignment generation.
     gen := gen + 1.
     message := @ Message workForAssignment: assignment session: s generation: gen sender: sender.
-    d := @ AgentDelivery forAssignment: assignment session: s generation: gen message: message.
+    d := @ Agent::Delivery forAssignment: assignment session: s generation: gen message: message.
     now := @ Time nowISO.
     participation := #{generation: gen session: s delivery: d message: message workspace: path selectedAt: now runs: #()} asJson.
     participation := participation objectAt: 'generation' putJson: gen.
@@ -56,28 +56,28 @@ Participation subclass: Object
     @ assignment generation: gen.
     @ assignment delivery: d.
     @ assignment save.
-    @ AgentQueue publishManual: message.
+    @ Agent::Queue publishManual: message.
     ^ assignment
   ]
 
   classMethod: claimWithin: args [
     | actor caller run d dData a aData r rData s sData i iData role roleData same value history participation runs questions previous oldData attempts updated gen |
     @ Store requireTransaction.
-    actor := @ AgentRun actingContext.
+    actor := @ Agent::Run actingContext.
     caller := actor objectAt: 'run'.
     run := args objectAt: 'run'.
     (caller notEmpty) ifTrue: [@ Require equal: caller to: run].
-    d := @ Store read: (args objectAt: 'delivery') class: 'AgentDelivery'.
+    d := @ Store read: (args objectAt: 'delivery') class: 'Agent::Delivery'.
     dData := @ d asJson.
     a := @ Store read: (dData objectAt: 'assignment') class: 'Assignment'.
     aData := @ a asJson.
-    r := @ Store read: run class: 'AgentRun'.
+    r := @ Store read: run class: 'Agent::Run'.
     rData := @ r asJson.
-    s := @ Store read: (rData objectAt: 'session') class: 'AgentSession'.
+    s := @ Store read: (rData objectAt: 'session') class: 'Agent::Session'.
     sData := @ s asJson.
-    i := @ Store read: (sData objectAt: 'identity') class: 'AgentIdentity'.
+    i := @ Store read: (sData objectAt: 'identity') class: 'Agent::Identity'.
     iData := @ i asJson.
-    role := @ Store read: (sData objectAt: 'role') class: 'AgentRole'.
+    role := @ Store read: (sData objectAt: 'role') class: 'Agent::Role'.
     roleData := @ role asJson.
     (caller isEmpty) ifTrue: [
       same := @ String equals: (actor objectAt: 'human') to: (aData objectAt: 'owner')
@@ -109,7 +109,7 @@ Participation subclass: Object
     participation := history arrayLast.
     same := @ String equals: (sData objectAt: 'workspace') to: (participation objectAt: 'workspace').
     (same = 'false') ifTrue: [^ 'false'].
-    runs := @ AgentRun activeFor: s except: run.
+    runs := @ Agent::Run activeFor: s except: run.
     (runs = '[]') ifFalse: [^ 'false'].
     value := @ d state.
     (value = 'blocked') ifTrue: [
@@ -121,7 +121,7 @@ Participation subclass: Object
         (same = 'true') ifTrue: [^ 'false']
       ]
     ].
-    questions := @ AgentQueue unansweredForAssignment: a.
+    questions := @ Agent::Queue unansweredForAssignment: a.
     (questions = '[]') ifFalse: [^ 'false'].
     attempts := @ d attempts.
     attempts := attempts + 1.

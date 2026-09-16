@@ -33,5 +33,5 @@ if @ Workstation::FixtureEventSourceAdapter read: "$badinput" limit: 1 >/dev/nul
 export TRASHTALK_WORKSTATION_FIXTURES=0
 if @ Workstation::FixtureEventSourceAdapter read: "$input" limit: 1 >/dev/null 2>&1; then exit 1; fi
 if @ Workstation::EventSourceAdapter forKind: '$(touch forbidden)' >/dev/null 2>&1; then exit 1; fi
-for class in Workstation::EventSubscription Workstation::Attention Message AgentDelivery AgentRun Stream; do [[ $(@ Store countByClass: "$class") == 0 ]]; done
+for class in Workstation::EventSubscription Workstation::Attention Message Agent::Delivery Agent::Run Stream; do [[ $(@ Store countByClass: "$class") == 0 ]]; done
 echo 'PASS: closed fixture adapter bounded normalized envelopes and no persistence'

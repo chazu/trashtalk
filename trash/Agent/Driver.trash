@@ -1,6 +1,8 @@
-# AgentDriver - Base class for session drivers.
+package: Agent
+
+# Agent::Driver - Base class for session drivers.
 # A driver launches one detached harness process per delivery batch, records
-# the process details on the AgentRun, and later parses the run's output into a
+# the process details on the Agent::Run, and later parses the run's output into a
 # normalized outcome. Subclasses supply the argv (launch:/resume:), env unsets,
 # and how to find the conversation reference and completion marker in the log.
 #
@@ -10,7 +12,7 @@
 #   resume: ref promptFile: f run: runId token: t  prints pid
 #   outcomeOf: runId                               JSON
 #   interrupt: runId                               'true' | 'false'
-AgentDriver subclass: Object
+Driver subclass: Object
 
   classMethod: capabilities [
     ^ '{"schema_version":1,"headless":true,"resume":false,"queued_input":true,"stop":true,"live_input":false,"sandbox":false}'
@@ -20,7 +22,7 @@ AgentDriver subclass: Object
   # tools invoke the same public dispatcher without inheriting a stale token.
   rawClassMethod: prepareContextFor: run token: token [
     local directory tdir
-    directory=$(@ AgentDriver runDirFor: "$1")
+    directory=$(@ Agent::Driver runDirFor: "$1")
     tdir="${TRASHTALK_DIR:-$HOME/.trashtalk}"
     (
       umask 077

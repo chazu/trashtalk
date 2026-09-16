@@ -10,8 +10,8 @@ Use `method:` and `classMethod:` for validation, policy, state transitions, and
 composition. A caller should say what it wants through the public selector,
 without knowing the storage format or the command used to perform it.
 
-`Assignment` is a durable responsibility record. `AgentIdentity` owns work;
-`AgentSession` is a temporary execution context. Splitting a large class does
+`Assignment` is a durable responsibility record. `Agent::Identity` owns work;
+`Agent::Session` is a temporary execution context. Splitting a large class does
 not require splitting that record into more persistent objects.
 
 ## Factor capabilities into traits and collaborators
@@ -48,7 +48,7 @@ session cache; `Persistable save` writes them to Store. Use `reload` when durabl
 state, rather than a cached view, is authoritative.
 
 An Assignment operation wraps its domain changes in one `Store transaction:`;
-ordinary saves remain private until commit. `AgentQueue` publishes the outbox
+ordinary saves remain private until commit. `Agent::Queue` publishes the outbox
 and sends wake hints after commit. The hint prompts an agent to read its Inbox;
 it does not substitute for the authoritative message or settle its delivery.
 See [persistence](persistence.md) for the cache and transaction boundaries.

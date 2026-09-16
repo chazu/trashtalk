@@ -4,8 +4,8 @@
 
 `Assignment` uses `Persistable` saves inside a shared `Store` transaction.
 Lifecycle rules are DSL methods; authorization, reporting and presentation are traits.
-`Message` and `AgentDelivery` construct their own objects from ordinary defaults.
-`AgentQueue` owns question links, outbox publication, and post-commit hints.
+`Message` and `Agent::Delivery` construct their own objects from ordinary defaults.
+`Agent::Queue` owns question links, outbox publication, and post-commit hints.
 
 ## Assignment composition
 

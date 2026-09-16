@@ -21,7 +21,7 @@ mkdir -p "$tmp/bin" "$tmp/workspace"
 session=$(@ Gusgus sessionFor: "$tmp/workspace")
 identity=$(@ "$session" identity)
 message=$(@ Inbox send: 'initial question' to: "agent:gusgus" from: focus-owner)
-mapfile -t started < <(@ AgentRun startFor: "$session" profile: shell)
+mapfile -t started < <(@ Agent::Run startFor: "$session" profile: shell)
 run=${started[0]}
 directory="$TRASHTALK_RUN_DIR/$run"
 mkdir -p "$directory"
@@ -35,7 +35,7 @@ pid=$(@ Tool detachArgvJson: "$argv" stdinFile: /dev/null dir: "$directory")
 @ "$run" save
 @ "$run" transitionTo: running >/dev/null
 reply=$(@ Inbox send: 'origin reply' to: focus-owner from: "session:$session")
-snapshot=$(@ AgentTranscript snapshotFor: "$session" limit: 400) || exit 1
+snapshot=$(@ Agent::Transcript snapshotFor: "$session" limit: 400) || exit 1
 check 'snapshot identifies its pinned session' "$session" "$(field "$snapshot" .session.id)"
 check 'snapshot names the identity' gusgus "$(field "$snapshot" .session.title)"
 check 'snapshot retains active run' "$run" "$(field "$snapshot" .session.run_id)"
@@ -123,65 +123,65 @@ PICK
 chmod +x "$tmp/bin/inpick"
 inbox=$(@ Trash userInbox)
 check 'message menu offers a session jump' session "$(@ "$inbox" pickActionFor: "$reply" in: "$tmp")"
-check 'message jump opens the exact current session' dismissed "$(@ AgentBrowser focusSenderOf: "$reply" in: "$tmp")"
+check 'message jump opens the exact current session' dismissed "$(@ Agent::Browser focusSenderOf: "$reply" in: "$tmp")"
 check 'message jump passes the session to the applet' "$session" "$(jq -r .session.id "$FOCUS_CAPTURE")"
 
 context=$(jq -cn --arg session "$session" '{session:$session,window:400}')
 # A retained view continues to refer to the same active conversation.
 frame=$(jq -cn --arg id "$message" '{schema_version:1,request_id:20,intent:"mark_viewed",message_ids:[$id]}')
-before_order=$(@ AgentTranscript recordsFor: "$session" limit: 400 | jq -r --arg id "$message" '.rows[]|select(.id==$id)|.seq')
-result=$(@ AgentFocus handleFrame: "$frame" context: "$context")
+before_order=$(@ Agent::Transcript recordsFor: "$session" limit: 400 | jq -r --arg id "$message" '.rows[]|select(.id==$id)|.seq')
+result=$(@ Agent::Focus handleFrame: "$frame" context: "$context")
 check 'displayed message intent marks it read' read "$(@ "$message" status)"
-after_order=$(@ AgentTranscript recordsFor: "$session" limit: 400 | jq -r --arg id "$message" '.rows[]|select(.id==$id)|.seq')
+after_order=$(@ Agent::Transcript recordsFor: "$session" limit: 400 | jq -r --arg id "$message" '.rows[]|select(.id==$id)|.seq')
 check 'marking read preserves historical ordering' "$before_order" "$after_order"
 check 'displayed message does not acknowledge processing' 1 "$(@ "$session" pendingCount)"
 foreign=$(@ Inbox send: 'unrelated' to: someone-else from: someone-else)
 frame=$(jq -cn --arg id "$foreign" '{schema_version:1,request_id:21,intent:"mark_viewed",message_ids:[$id]}')
-result=$(@ AgentFocus handleFrame: "$frame" context: "$context")
+result=$(@ Agent::Focus handleFrame: "$frame" context: "$context")
 check 'unrelated message cannot be marked through this view' false "$(field "$result" .frame.ok)"
 check 'unrelated message stays unread' unread "$(@ "$foreign" status)"
 frame='{"schema_version":1,"request_id":3,"intent":"load_older"}'
-result=$(@ AgentFocus handleFrame: "$frame" context: "$context")
+result=$(@ Agent::Focus handleFrame: "$frame" context: "$context")
 check 'explicit earlier-history intent expands bounded window' 800 "$(field "$result" .context.window)"
 # The idle poll probe: identical state yields the same token, and anything the
 # frame authorizes or projects changes it, so a skipped refresh is never stale.
-token=$(@ AgentFocus changeTokenFor: "$context")
+token=$(@ Agent::Focus changeTokenFor: "$context")
 check 'change token is a digest' 64 "${#token}"
-check 'change token is stable while nothing changed' "$token" "$(@ AgentFocus changeTokenFor: "$context")"
-check 'change token follows the view context' true "$([[ $(@ AgentFocus changeTokenFor: "$(field "$result" .context)") != "$token" ]] && echo true)"
+check 'change token is stable while nothing changed' "$token" "$(@ Agent::Focus changeTokenFor: "$context")"
+check 'change token follows the view context' true "$([[ $(@ Agent::Focus changeTokenFor: "$(field "$result" .context)") != "$token" ]] && echo true)"
 printf 'later native output\n' >> "$directory/stdout.log"
-after_log=$(@ AgentFocus changeTokenFor: "$context")
+after_log=$(@ Agent::Focus changeTokenFor: "$context")
 check 'change token follows run log growth' true "$([[ $after_log != "$token" ]] && echo true)"
 later=$(@ Inbox send: 'later note' to: focus-owner from: "session:$session")
-after_mail=$(@ AgentFocus changeTokenFor: "$context")
+after_mail=$(@ Agent::Focus changeTokenFor: "$context")
 check 'change token follows session mail' true "$([[ $after_mail != "$after_log" ]] && echo true)"
 @ "$later" markViewed >/dev/null
-check 'change token follows message status' true "$([[ $(@ AgentFocus changeTokenFor: "$context") != "$after_mail" ]] && echo true)"
-if @ AgentFocus changeTokenFor: '{"window":400}' >/dev/null 2>&1; then echo 'FAIL: token without a session'; exit 1; fi
+check 'change token follows message status' true "$([[ $(@ Agent::Focus changeTokenFor: "$context") != "$after_mail" ]] && echo true)"
+if @ Agent::Focus changeTokenFor: '{"window":400}' >/dev/null 2>&1; then echo 'FAIL: token without a session'; exit 1; fi
 passed=$((passed+1))
-if @ AgentFocus handleFrame: '{"schema_version":1,"request_id":4,"intent":"eval","body":"bad"}' context: "$context" >/dev/null 2>&1; then echo 'FAIL: arbitrary intent accepted'; exit 1; fi
+if @ Agent::Focus handleFrame: '{"schema_version":1,"request_id":4,"intent":"eval","body":"bad"}' context: "$context" >/dev/null 2>&1; then echo 'FAIL: arbitrary intent accepted'; exit 1; fi
 passed=$((passed+1))
 check 'message resolves its originating current session' "$session" "$(@ "$reply" senderSessions)"
 # Stop the real run before exercising closed/replacement history.
 frame=$(jq -cn --arg run invalid '{schema_version:1,request_id:5,intent:"interrupt_run",run_id:$run}')
-result=$(@ AgentFocus handleFrame: "$frame" context: "$context")
+result=$(@ Agent::Focus handleFrame: "$frame" context: "$context")
 check 'foreign/stale run is rejected' false "$(field "$result" .frame.ok)"
 check 'foreign stop leaves active run alive' true "$(@ "$run" isProcessAlive)"
 frame=$(jq -cn --arg run "$run" '{schema_version:1,request_id:6,intent:"interrupt_run",run_id:$run}')
-result=$(@ AgentFocus handleFrame: "$frame" context: "$context")
+result=$(@ Agent::Focus handleFrame: "$frame" context: "$context")
 check 'explicit stop succeeds through the worker' true "$(field "$result" .frame.ok)"
 check 'explicit stop actually stops the native process' false "$(@ "$run" isProcessAlive)"
 check 'explicit stop retains existing pause semantics' paused "$(@ "$session" lifecycleState)"
 ignored=$(@ "$session" close)
 frame='{"schema_version":1,"request_id":19,"intent":"send_message","body":"must not send into a closed session"}'
-result=$(@ AgentFocus handleFrame: "$frame" context: "$context")
+result=$(@ Agent::Focus handleFrame: "$frame" context: "$context")
 check 'send refreshes lifecycle changed by another process' false "$(field "$result" .frame.ok)"
 check 'rejected send does not create a delivery' 1 "$(@ "$session" pendingCount)"
 next=$(@ Gusgus sessionFor: "$tmp/workspace")
 check 'message jumps to replacement conversation' "$next" "$(@ "$reply" senderSessions)"
 other=$(@ Gusgus sessionFor: "$tmp")
 check 'another directory resolves the same current session' "$next" "$other"
-@ AgentBrowser focusSenderOf: "$reply" in: "$tmp" >/dev/null
+@ Agent::Browser focusSenderOf: "$reply" in: "$tmp" >/dev/null
 check 'old message attaches to current identity conversation' "$next" "$(jq -r .session.id "$FOCUS_CAPTURE")"
 check 'focusCurrent attaches without creating a session' dismissed "$(@ Gusgus focusCurrent)"
 check 'focusCurrent selects the replacement' "$next" "$(jq -r .session.id "$FOCUS_CAPTURE")"

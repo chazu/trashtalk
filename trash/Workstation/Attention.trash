@@ -20,7 +20,7 @@ Attention subclass: Object
   classMethod: validateWithin: document [
     | sub human message session owner |
     @ Workstation::Schema requireValidated: document.
-    human := @ AgentFocus human.
+    human := @ Agent::Focus human.
     @ Require equal: (document jsonTextAt: 'actor') to: human.
     sub := @ Store read: (document jsonTextAt: 'subscription') class: 'Workstation::EventSubscription'.
     owner := @ sub owner.
@@ -31,7 +31,7 @@ Attention subclass: Object
     message := document jsonTextAt: 'message'.
     (message notEmpty) ifTrue: [@ Store read: message class: 'Message'].
     session := document jsonTextAt: 'lastResolvedSession'.
-    (session notEmpty) ifTrue: [@ Store read: session class: 'AgentSession'].
+    (session notEmpty) ifTrue: [@ Store read: session class: 'Agent::Session'].
     @ self validateRoutingWithin: document
   ]
   # Routing references are optional metadata; when present they must resolve.
@@ -39,10 +39,10 @@ Attention subclass: Object
     | value |
     value := document jsonAt: 'delegatedSession' ifAbsent: '""'.
     value := value jsonTextAt: ''.
-    (value notEmpty) ifTrue: [@ Store read: value class: 'AgentSession'].
+    (value notEmpty) ifTrue: [@ Store read: value class: 'Agent::Session'].
     value := document jsonAt: 'delegatedIdentity' ifAbsent: '""'.
     value := value jsonTextAt: ''.
-    (value notEmpty) ifTrue: [@ Store read: value class: 'AgentIdentity'].
+    (value notEmpty) ifTrue: [@ Store read: value class: 'Agent::Identity'].
     value := document jsonAt: 'delegatedMessage' ifAbsent: '""'.
     value := value jsonTextAt: ''.
     (value notEmpty) ifTrue: [@ Store read: value class: 'Message']
@@ -96,7 +96,7 @@ Attention subclass: Object
     | document patch actor now |
     document := @ Store getInstance: self.
     document := @ Workstation::Schema document: document.
-    actor := @ AgentFocus human.
+    actor := @ Agent::Focus human.
     now := @ Time nowISO.
     patch := #{state: state snoozeUntil: wakeTime note: reason actor: actor updatedAt: now} asJson.
     document := @ Workstation::Schema merge: document with: patch.
@@ -132,7 +132,7 @@ Attention subclass: Object
     (@ Workstation::Schema validate: event as: 'Envelope') ifFailed: [:error | @ error signal].
     (@ Workstation::CommandReceiptSourceAdapter validateSubscription: subscription) ifFailed: [:error | @ error signal].
     id := @ Runtime generateId: 'Workstation::Attention'.
-    actor := @ AgentFocus human.
+    actor := @ Agent::Focus human.
     now := @ Time nowISO.
     group := event jsonTextAt: 'groupKey'.
     partition := event jsonTextAt: 'coordinate.partition'.
@@ -211,7 +211,7 @@ Attention subclass: Object
   # state or manufacturing a new event. SQL joins scope by subscription owner.
   rawClassMethod: localOpen [
     local owner
-    owner=$(_db_escape "$(@ AgentFocus human)")
+    owner=$(_db_escape "$(@ Agent::Focus human)")
     @ Store findByClass: Workstation::Attention where: "json_extract(data,'$.subscription') IN (SELECT id FROM instances WHERE class='Workstation::EventSubscription' AND json_extract(data,'$.owner')='$owner') AND (json_extract(data,'$.state')='open' OR (json_extract(data,'$.state')='snoozed' AND json_extract(data,'$.snoozeUntil')<=strftime('%Y-%m-%dT%H:%M:%SZ','now')))" orderBy: 'created_at DESC' limit: 1000
   ]
   classMethod: localOpenCount [

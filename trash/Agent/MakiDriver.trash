@@ -1,7 +1,9 @@
-# MakiDriver - Stock Maki SDK protocol over a detached CLI process.
+package: Agent
+
+# Agent::MakiDriver - Stock Maki SDK protocol over a detached CLI process.
 # One user JSONL record per delivery batch; --session resumes Maki's own history.
 # Uses OpenAI OAuth and a run-local standard configuration for medium effort.
-MakiDriver subclass: AgentDriver
+MakiDriver subclass: Agent::Driver
 
   classMethod: capabilities [
     ^ '{"schema_version":1,"headless":true,"resume":true,"queued_input":true,"stop":true,"live_input":false,"sandbox":false}'
@@ -38,7 +40,7 @@ MakiDriver subclass: AgentDriver
   ]
 
   # OS boundary: validate local configuration/authentication, write standard
-  # Maki configuration and protocol input, then reuse AgentDriver's launcher.
+  # Maki configuration and protocol input, then reuse Agent::Driver's launcher.
   rawClassMethod: launchRef: ref promptFile: promptFile run: run token: token [
     local directory status
     directory=$(@ "$_RECEIVER" runDirFor: "$3")
@@ -63,7 +65,7 @@ MakiDriver subclass: AgentDriver
     executable=$(@ Maki path)
     [[ -n "$executable" ]] || { @ "$_RECEIVER" reject: 'Maki is missing; run @ Trash doctor'; return 1; }
     model=$(@ "$_RECEIVER" model)
-    [[ "${model%%/*}" == openai ]] || { @ "$_RECEIVER" reject: 'MakiDriver currently requires an openai/ model with OAuth'; return 1; }
+    [[ "${model%%/*}" == openai ]] || { @ "$_RECEIVER" reject: 'Agent::MakiDriver currently requires an openai/ model with OAuth'; return 1; }
     session=$(@ "$run" session)
     workspace=$(@ "$run" executionWorkspace)
     # Maki 0.5.2 ignores --effort and --strict-mcp-config. Use its supported
@@ -75,7 +77,7 @@ MakiDriver subclass: AgentDriver
       }
     done
     [[ ! -d "$HOME/.maki" ]] || {
-      @ "$_RECEIVER" reject: 'Maki legacy ~/.maki config overrides managed configuration; migrate it before using MakiDriver'
+      @ "$_RECEIVER" reject: 'Maki legacy ~/.maki config overrides managed configuration; migrate it before using Agent::MakiDriver'
       return 1
     }
     directory=$(@ "$_RECEIVER" runDirFor: "$run")
@@ -120,5 +122,5 @@ MakiDriver subclass: AgentDriver
     if [[ -f "$log" ]]; then
       error=$(jq -sr '[.[] | select(.type=="result")] | last | select(. != null and (.is_error==true or .subtype!="success")) | .result // .subtype // "Maki run failed"' "$log" 2>/dev/null | tail -c 4096)
     fi
-    if [[ -n "$error" ]]; then printf '%s\n' "$error"; else @ AgentDriver errorFor: "$1"; fi
+    if [[ -n "$error" ]]; then printf '%s\n' "$error"; else @ Agent::Driver errorFor: "$1"; fi
   ]

@@ -35,7 +35,7 @@ for limit in 0 9 -1 '1;false'; do
  if @ Workstation::CommandReceiptSourceAdapter read: "$consumer" limit: "$limit" >/dev/null 2>&1; then exit 1; fi
 done
 [[ $(@ "$consumer" offset) == 0 ]]
-[[ $(@ Store countByClass: Workstation::Attention) == 0 && $(@ Store countByClass: Message) == 0 && $(@ Store countByClass: AgentDelivery) == 0 ]]
+[[ $(@ Store countByClass: Workstation::Attention) == 0 && $(@ Store countByClass: Message) == 0 && $(@ Store countByClass: Agent::Delivery) == 0 ]]
 # Atomic, insert-only initial position, including offset zero for an empty log.
 @ "$consumer" initializeFrom: from-now
 [[ $(@ "$consumer" offset) == 2 ]]

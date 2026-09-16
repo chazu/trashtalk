@@ -29,12 +29,12 @@ check() { if [[ "$2" == "$3" ]]; then echo "PASS: $1"; passed=$((passed+1)); els
 field() { db_get "$1" | jq -r --arg field "$2" '.[$field] // empty'; }
 wait_for() { local i; for i in {1..150}; do if "$@"; then return 0; fi; sleep 0.1; done; echo "FAIL: timed out: $*"; cat "$tmp/worker.log"; exit 1; }
 started() { [[ -s "$STARTS" ]]; }
-all_processed() { [[ "$(_db_sql "SELECT count(*) FROM instances WHERE class='AgentDelivery' AND json_extract(data,'$.state')!='processed';")" == 0 ]]; }
+all_processed() { [[ "$(_db_sql "SELECT count(*) FROM instances WHERE class='Agent::Delivery' AND json_extract(data,'$.state')!='processed';")" == 0 ]]; }
 no_active() { [[ -z "$(@ "$session" activeRun)" ]]; }
-export TRASHTALK_SHELL_DRIVER='prompt=$(cat); printf "started\n" >> "$STARTS"; while [[ ! -f "$GATE" ]]; do sleep 0.05; done; ts="$TRASHTALK_DIR/bin/trash-send"; "$ts" AgentRun result: "recovered answer" >/dev/null || exit; for d in $(printf "%s\n" "$prompt" | sed -n "s/^--- delivery //p"); do "$ts" AgentRun settle: "$d" >/dev/null || exit; done'
+export TRASHTALK_SHELL_DRIVER='prompt=$(cat); printf "started\n" >> "$STARTS"; while [[ ! -f "$GATE" ]]; do sleep 0.05; done; ts="$TRASHTALK_DIR/bin/trash-send"; "$ts" Agent::Run result: "recovered answer" >/dev/null || exit; for d in $(printf "%s\n" "$prompt" | sed -n "s/^--- delivery //p"); do "$ts" Agent::Run settle: "$d" >/dev/null || exit; done'
 
 # A failed outbox insert rolls back the final message snapshot too.
-@ AgentQueue ensureSchema
+@ Agent::Queue ensureSchema
 probe=$(@ Message to: session:probe from: recovery-owner subject: atomic body: probe kind: note)
 probe_inbox=$(@ Inbox named: session:probe)
 before=$(db_get "$probe")
@@ -50,9 +50,9 @@ session=$(@ Gusgus sessionFor: "$root")
 msg=$(@ Message to: "session:$session" from: recovery-owner subject: recovery body: first kind: note)
 @ "$msg" thread: "$msg"
 @ "$msg" save
-@ AgentQueue persist: "$msg"
+@ Agent::Queue persist: "$msg"
 check 'message has an unrouted durable outbox row' 1 "$(_db_sql "SELECT count(*) FROM agent_outbox WHERE session='';")"
-check 'no delivery before routing' 0 "$(@ Store countByClass: AgentDelivery)"
+check 'no delivery before routing' 0 "$(@ Store countByClass: Agent::Delivery)"
 "$root/bin/trash-worker" >"$tmp/worker.log" 2>&1 & worker=$!
 wait_for started
 run=$(@ "$session" activeRun)
@@ -76,11 +76,11 @@ second=$(@ Inbox send: second to: "session:$session" from: recovery-owner)
 ids=$(jq -cn --arg msg "$second" '[$msg]')
 pids=()
 for i in {1..6}; do
-    (@ AgentDelivery forSession: "$session" messages: "$ids" >/dev/null; @ AgentWorker tickSession: "$session" >/dev/null) & pids+=("$!")
+    (@ Agent::Delivery forSession: "$session" messages: "$ids" >/dev/null; @ Agent::Worker tickSession: "$session" >/dev/null) & pids+=("$!")
 done
 "$root/bin/trash-worker" >>"$tmp/worker.log" 2>&1 & worker=$!
 for pid in "${pids[@]}"; do wait "$pid"; done
-check 'replayed routing creates two logical deliveries total' 2 "$(@ Store countByClass: AgentDelivery)"
+check 'replayed routing creates two logical deliveries total' 2 "$(@ Store countByClass: Agent::Delivery)"
 check 'concurrent ticks do not relaunch live harness' 1 "$(wc -l < "$STARTS" | tr -d ' ')"
 touch "$GATE"
 wait_for all_processed
@@ -98,9 +98,9 @@ third=$(@ Inbox send: third to: "session:$session" from: recovery-owner)
 uncertain() { [[ "$(@ "$session" stalledCount)" == 1 ]]; }
 wait_for uncertain
 wait_for no_active
-latest=$(_db_sql "SELECT id FROM instances WHERE class='AgentRun' ORDER BY rowid DESC LIMIT 1;")
+latest=$(_db_sql "SELECT id FROM instances WHERE class='Agent::Run' ORDER BY rowid DESC LIMIT 1;")
 check 'provider error survives reconciliation' provider-auth-rejected "$(field "$latest" error)"
-delivery=$(_db_sql "SELECT id FROM instances WHERE class='AgentDelivery' ORDER BY rowid DESC LIMIT 1;")
+delivery=$(_db_sql "SELECT id FROM instances WHERE class='Agent::Delivery' ORDER BY rowid DESC LIMIT 1;")
 check 'partial output makes failed work uncertain' uncertain "$(field "$delivery" state)"
 check 'uncertain work was attempted once' 1 "$(field "$delivery" attempts)"
 kill "$worker"; wait "$worker" 2>/dev/null || true; worker=''
@@ -108,5 +108,5 @@ kill "$worker"; wait "$worker" 2>/dev/null || true; worker=''
 # Codex errors arrive as structured events too (no real provider request).
 log=$(field "$latest" outputLog)
 printf '%s\n' '{"type":"turn.failed","error":{"message":"unsupported model fixture"}}' > "$log"
-check 'structured provider error is normalized' 'unsupported model fixture' "$(@ CodexDriver errorFor: "$latest")"
+check 'structured provider error is normalized' 'unsupported model fixture' "$(@ Agent::CodexDriver errorFor: "$latest")"
 echo "=== $passed recovery checks passed ==="

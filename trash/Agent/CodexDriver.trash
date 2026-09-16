@@ -1,4 +1,6 @@
-# CodexDriver - Session driver for the Codex CLI.
+package: Agent
+
+# Agent::CodexDriver - Session driver for the Codex CLI.
 # One detached `codex exec` process per delivery batch; continuity through
 # `codex exec resume <thread_id>` in a fresh process. The seatbelt sandbox is
 # workspace-write with the Trashtalk store added as a writable root, so the
@@ -7,7 +9,7 @@
 # Verified behavior (codex-cli 0.153.4): the thread id is on the first output
 # line as thread.started.thread_id; `exec resume` does not take --sandbox, so
 # the sandbox is set through -c; the prompt is read from stdin via '-'.
-CodexDriver subclass: AgentDriver
+CodexDriver subclass: Agent::Driver
 
   classMethod: capabilities [
     ^ '{"schema_version":1,"headless":true,"resume":true,"queued_input":true,"stop":true,"live_input":false,"sandbox":true}'
@@ -95,5 +97,5 @@ CodexDriver subclass: AgentDriver
     if [[ -n "$log" && -f "$log" ]]; then
       error=$(jq -r 'select(.type == "error" or .type == "turn.failed") | .message // .error.message // empty' "$log" 2>/dev/null | tail -c 4096)
     fi
-    if [[ -n "$error" ]]; then printf '%s\n' "$error"; else @ AgentDriver errorFor: "$1"; fi
+    if [[ -n "$error" ]]; then printf '%s\n' "$error"; else @ Agent::Driver errorFor: "$1"; fi
   ]

@@ -103,7 +103,7 @@ Inbox subclass: Object
 
   classMethod: send: text to: recipient from: sender subject: subject kind: kind in: workspace [
     | msg inbox directory |
-    directory := @ AgentSession workspaceFor: workspace.
+    directory := @ Agent::Session workspaceFor: workspace.
     msg := @ Message to: recipient from: sender subject: subject body: text kind: kind.
     @ msg executionWorkspace: directory.
     inbox := @ Inbox named: recipient.
@@ -121,12 +121,12 @@ Inbox subclass: Object
 
   # Stamp, persist, and signal. Returns the message id. Inboxes named
   # `session:<id>` or `agent:<handle>` belong to agent sessions: the message
-  # also becomes an AgentDelivery and the worker ticks that session.
+  # also becomes an Agent::Delivery and the worker ticks that session.
   # Raw: the DSL cannot yet propagate a failed transaction's exit status.
   # Never report success or emit a wake when persistence failed.
   rawMethod: deliver: message [
     @ "$_RECEIVER" prepare: "$1" || return 1
-    @ AgentQueue persist: "$1" || return 1
+    @ Agent::Queue persist: "$1" || return 1
     @ "$_RECEIVER" announce: "$1"
   ]
 
@@ -146,9 +146,9 @@ Inbox subclass: Object
       payload := @ message asJson.
       @ self emit: 'message' payload: payload
     ].
-    routed := @ AgentWorker handlesInbox: name.
+    routed := @ Agent::Worker handlesInbox: name.
     (routed = 'true') ifTrue: [
-      @ AgentWorker deliverMessage: message toInbox: name
+      @ Agent::Worker deliverMessage: message toInbox: name
     ].
     ^ message
   ]
@@ -281,7 +281,7 @@ Inbox subclass: Object
           reply) @ "$_RECEIVER" composeReplyTo: "$msg" >/dev/null; break ;;
           view) @ "$_RECEIVER" readThreadOf: "$msg" ;;
           details) @ "$_RECEIVER" readDetailsOf: "$msg" ;;
-          session) @ AgentBrowser focusSenderOf: "$msg" in: "$preview_dir" >/dev/null ;;
+          session) @ Agent::Browser focusSenderOf: "$msg" in: "$preview_dir" >/dev/null ;;
           acknowledge|snooze|resolve|suppress|reopen|routing|delegate|redelegate|focus) @ "$_RECEIVER" attentionAction: "$action" on: "$msg" ;;
           archive) @ "$msg" archive >/dev/null; break ;;
           *) break ;;
@@ -435,7 +435,7 @@ Inbox subclass: Object
     fi
     outcome=$(printf '%s' "$result" | jq -r '.outcome // "cancelled"')
     if [[ "$outcome" != selected ]]; then echo back; return 0; fi
-    selected=$(@ AgentBrowser selectedFrom: "$result" records: "$records")
+    selected=$(@ Agent::Browser selectedFrom: "$result" records: "$records")
     printf '%s\n' "${selected:-back}"
   ]
 
@@ -560,11 +560,11 @@ Inbox subclass: Object
   ]
 
   # A transaction-only human inbox boundary. Unlike deliver:, this cannot
-  # create an outbox row, AgentDelivery, session, or a foreground worker tick.
+  # create an outbox row, Agent::Delivery, session, or a foreground worker tick.
   classMethod: localFor: owner [
     | human inbox id |
     @ Store requireTransaction.
-    human := @ AgentFocus human.
+    human := @ Agent::Focus human.
     @ Require equal: owner to: human.
     (owner startsWith: 'session:') ifTrue: [^ @ Require reject: 'Local attention cannot target a session inbox'].
     (owner startsWith: 'agent:') ifTrue: [^ @ Require reject: 'Local attention cannot target an agent inbox'].
@@ -579,7 +579,7 @@ Inbox subclass: Object
   method: attention: attention display: display debounce: seconds [
     | message hint human |
     @ Store requireTransaction.
-    human := @ AgentFocus human.
+    human := @ Agent::Focus human.
     @ Require equal: name to: human.
     message := @ Message forAttention: attention display: display to: name.
     hint := @ message attentionHintDue: seconds.
@@ -601,7 +601,7 @@ Inbox subclass: Object
 
   method: attentionCount [
     | human |
-    human := @ AgentFocus human.
+    human := @ Agent::Focus human.
     (@ Require equal: name to: human) ifFailed: [:error | @ error signal].
     ^ @ Workstation::Attention localOpenCount
   ]

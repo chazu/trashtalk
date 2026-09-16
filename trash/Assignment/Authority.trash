@@ -14,15 +14,15 @@ Authority trait
       ^ human
     ].
     @ Require equal: operatorOnly to: 'false'.
-    r := @ Store read: run class: 'AgentRun'.
+    r := @ Store read: run class: 'Agent::Run'.
     rData := @ r asJson.
-    s := @ Store read: (rData objectAt: 'session') class: 'AgentSession'.
+    s := @ Store read: (rData objectAt: 'session') class: 'Agent::Session'.
     sData := @ s asJson.
-    i := @ Store read: (sData objectAt: 'identity') class: 'AgentIdentity'.
+    i := @ Store read: (sData objectAt: 'identity') class: 'Agent::Identity'.
     iData := @ i asJson.
-    role := @ Store read: (sData objectAt: 'role') class: 'AgentRole'.
+    role := @ Store read: (sData objectAt: 'role') class: 'Agent::Role'.
     roleData := @ role asJson.
-    d := @ Store read: (aData objectAt: 'delivery') class: 'AgentDelivery'.
+    d := @ Store read: (aData objectAt: 'delivery') class: 'Agent::Delivery'.
     dData := @ d asJson.
     @ Require member: (rData objectAt: 'state') of: '["running","recovering"]'.
     @ Require equal: (rData objectAt: 'capabilityTokenHash') to: (actor objectAt: 'hash').

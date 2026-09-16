@@ -1,4 +1,6 @@
-# AgentDelivery - A batch of inbound messages handed to one session
+package: Agent
+
+# Agent::Delivery - A batch of inbound messages handed to one session
 # Deliveries are created when messages land in a session inbox and are
 # claimed by a run with an atomic compare-and-set (claim:run:). Idempotent
 # per (session, message ids) via deliveryKey.
@@ -6,14 +8,22 @@
 # States: pending offered blocked processed uncertain failed skipped
 #
 # Usage:
-#   d=$(@ AgentDelivery forSession: $session messages: '["message_..."]')
-#   @ AgentDelivery claim: $d run: $run       # true once, then false
+#   d=$(@ Agent::Delivery forSession: $session messages: '["message_..."]')
+#   @ Agent::Delivery claim: $d run: $run       # true once, then false
 #   @ $d transitionTo: processed
-AgentDelivery subclass: Object
+Delivery subclass: Object
   include: Persistable
   instanceVars: session:'' run:'' messageIds:'[]' deliveryKey:'' state:'pending' attempts:0
                 lastError:'' note:'' created:'' assignment:'' generation:0 dispatchMode:'automatic'
                 executionWorkspace:'' authorizationRole:'' authorizationRevision:'' authorizationWorkspacePolicy:''
+
+  # Stable authority IDs survive the namespace migration and existing validators.
+  classMethod: new [
+    | id |
+    id := @ Runtime generateId: 'AgentDelivery'.
+    @ Runtime create: 'Agent::Delivery' id: id.
+    ^ id
+  ]
 
   # Common transition rule: check the table, set, save, echo the new state.
   method: transitionTo: newState [
@@ -27,7 +37,7 @@ AgentDelivery subclass: Object
     from=$(_ivar state)
     allowed=" pending:offered pending:failed offered:processed offered:blocked offered:uncertain offered:pending offered:failed blocked:processed blocked:pending failed:pending failed:skipped uncertain:pending uncertain:processed uncertain:skipped "
     if [[ "$allowed" != *" $from:$to "* ]]; then
-      _throw "TransitionError" "AgentDelivery $_RECEIVER: $from -> $to rejected"
+      _throw "TransitionError" "Agent::Delivery $_RECEIVER: $from -> $to rejected"
       return 1
     fi
     local eid ef et changed patch
@@ -42,27 +52,27 @@ AgentDelivery subclass: Object
 
   # Create (or return the existing) delivery for these message ids.
   classMethod: forSession: sessionId messages: idsJson [
-    ^ @ AgentQueue assign: sessionId messages: idsJson outbox: ''
+    ^ @ Agent::Queue assign: sessionId messages: idsJson outbox: ''
   ]
 
   # Pending deliveries for a session, oldest first
   rawClassMethod: pendingFor: sessionId [
     local esc
     esc=$(_db_escape "$1")
-    @ Store findByClass: AgentDelivery where: "json_extract(data, '\$.session') = '$esc' AND json_extract(data, '\$.state') = 'pending' AND coalesce(json_extract(data, '\$.dispatchMode'),'automatic') != 'manual'" orderBy: "json_extract(data, '\$.created') ASC, rowid ASC" limit: 1000
+    @ Store findByClass: Agent::Delivery where: "json_extract(data, '\$.session') = '$esc' AND json_extract(data, '\$.state') = 'pending' AND coalesce(json_extract(data, '\$.dispatchMode'),'automatic') != 'manual'" orderBy: "json_extract(data, '\$.created') ASC, rowid ASC" limit: 1000
   ]
 
   # Deliveries a run is currently holding (offered or blocked), oldest first
   rawClassMethod: offeredFor: runId [
     local esc
     esc=$(_db_escape "$1")
-    @ Store findByClass: AgentDelivery where: "json_extract(data, '\$.run') = '$esc' AND json_extract(data, '\$.state') IN ('offered', 'blocked')" orderBy: "json_extract(data, '\$.created') ASC, rowid ASC" limit: 1000
+    @ Store findByClass: Agent::Delivery where: "json_extract(data, '\$.run') = '$esc' AND json_extract(data, '\$.state') IN ('offered', 'blocked')" orderBy: "json_extract(data, '\$.created') ASC, rowid ASC" limit: 1000
   ]
 
   rawClassMethod: forKey: key [
     local esc
     esc=$(_db_escape "$1")
-    @ Store findByClass: AgentDelivery where: "json_extract(data, '\$.deliveryKey') = '$esc'" orderBy: 'created_at ASC' limit: 1
+    @ Store findByClass: Agent::Delivery where: "json_extract(data, '\$.deliveryKey') = '$esc'" orderBy: 'created_at ASC' limit: 1
   ]
 
   # SQLite boundary: stopping a launched run never infers successful processing.
@@ -70,7 +80,7 @@ AgentDelivery subclass: Object
     local run ids delivery
     run=$(_db_escape "$1")
     ids=$(_db_sql "UPDATE instances SET data=json_set(data,'$.state','uncertain','$.lastError','Run explicitly stopped or session terminated')
-      WHERE class='AgentDelivery' AND json_extract(data,'$.run')='$run' AND json_extract(data,'$.state')='offered' RETURNING id;") || return 1
+      WHERE class='Agent::Delivery' AND json_extract(data,'$.run')='$run' AND json_extract(data,'$.state')='offered' RETURNING id;") || return 1
     for delivery in $ids; do @ "$delivery" reload >/dev/null || return 1; done
     echo true
   ]
@@ -115,7 +125,7 @@ AgentDelivery subclass: Object
     | id d ids key now workspace role revision policy |
     @ Store requireTransaction.
     id := 'agentdelivery_' , assignment , '_' , generation.
-    d := @ Store create: 'AgentDelivery' id: id.
+    d := @ Store create: 'Agent::Delivery' id: id.
     ids := '[]'.
     ids := ids arrayPush: message.
     key := assignment , ':' , generation.
@@ -145,14 +155,14 @@ AgentDelivery subclass: Object
     | id d ids key now workspace role roleRevision policy |
     @ Store requireTransaction.
     id := 'agentdelivery_' , attention , '_delegation_' , revision.
-    d := @ Store create: 'AgentDelivery' id: id.
+    d := @ Store create: 'Agent::Delivery' id: id.
     ids := '[]'.
     ids := ids arrayPush: message.
     key := 'attention:' , attention , ':' , revision.
     now := @ Time nowISO.
     workspace := @ message executionWorkspace.
     role := @ session role.
-    role := @ Store read: role class: 'AgentRole'.
+    role := @ Store read: role class: 'Agent::Role'.
     roleRevision := @ role revision.
     policy := @ role workspacePolicy.
     @ d session: session.

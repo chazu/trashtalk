@@ -10,8 +10,8 @@ set -uo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 passed=0
 check() { if [[ "$2" == "$3" ]]; then echo "PASS: $1"; passed=$((passed+1)); else echo "FAIL: $1 expected=$2 got=$3"; exit 1; fi; }
-output=$(bash -c 'set -euo pipefail; source "$1/lib/trash.bash"; @ AgentQueue ensureSchema; @ AgentSession ensureSchema; @ AgentQueue ensureSchema; echo survived' _ "$root" 2>&1)
+output=$(bash -c 'set -euo pipefail; source "$1/lib/trash.bash"; @ Agent::Queue ensureSchema; @ Agent::Session ensureSchema; @ Agent::Queue ensureSchema; echo survived' _ "$root" 2>&1)
 check 'direct sends at depth 0 survive set -e' survived "${output##*$'\n'}"
-output=$(bash -c 'set -euo pipefail; source "$1/lib/trash.bash"; @ Counter description; @ AgentSession ensureSchema; echo survived' _ "$root" 2>&1)
+output=$(bash -c 'set -euo pipefail; source "$1/lib/trash.bash"; @ Counter description; @ Agent::Session ensureSchema; echo survived' _ "$root" 2>&1)
 check 'captured then direct sends survive set -e' survived "${output##*$'\n'}"
 echo "=== $passed direct-send checks passed ==="

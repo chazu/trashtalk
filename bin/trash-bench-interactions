@@ -39,8 +39,8 @@ bench() {
 if [[ "$group" == browsers ]]; then
     session=$(@ Gusgus sessionFor: "$bench_tmp")
     box=$(@ Inbox named: bench-owner)
-    bench access_session @ AgentAccess session: "$session"
-    bench access_live @ AgentAccess liveSession: "$session"
+    bench access_session @ Agent::Access session: "$session"
+    bench access_live @ Agent::Access liveSession: "$session"
     bench current_session @ Gusgus currentFor: "$bench_tmp"
     bench send_human @ Inbox send: 'Fixture benchmark message' to: bench-owner from: fixture-sender
     bench send_session @ Inbox send: 'Fixture benchmark message' to: "session:$session" from: bench-owner
@@ -77,17 +77,17 @@ if [[ "$group" == browsers ]]; then
           WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<$n)
           INSERT INTO instances(id,data) SELECT 'agentsession_bench_'||i,json_set('$session_template','$.lifecycleState','closed','$.workspace','/fixture/'||i) FROM n;"
         ids=$(_db_sql "SELECT id FROM instances WHERE id LIKE 'agentsession_bench_%' ORDER BY id;")
-        bench "sessions_$n" @ AgentBrowser sessionRecordsFor: "$ids" in: "$bench_tmp/previews"
+        bench "sessions_$n" @ Agent::Browser sessionRecordsFor: "$ids" in: "$bench_tmp/previews"
         jq -se --argjson n "$n" 'length==$n' "$bench_tmp/result" >/dev/null
     done
     # Public focus refresh with large native history; cache is normally supplied
     # by Tool.duplex. Supply its private directory directly for repeatable timing.
-    db_put agentrun_bench_history "$(jq -cn --arg session "$session" '{class:"AgentRun",session:$session,state:"succeeded",started:"2026-01-01",purpose:"conversation"}')"
+    db_put agentrun_bench_history "$(jq -cn --arg session "$session" '{class:"Agent::Run",session:$session,state:"succeeded",started:"2026-01-01",purpose:"conversation"}')"
     mkdir -p "$TRASHTALK_RUN_DIR/agentrun_bench_history" "$bench_tmp/transcript-cache"
     jq -cn --argjson base "$((EPOCHSECONDS*1000+100000))" 'range(0;50000) | {kind:"assistant_delta",text:"Chunk.",time:($base+.)}' > "$TRASHTALK_RUN_DIR/agentrun_bench_history/conversation.jsonl"
     export TRASHTALK_TRANSCRIPT_CACHE="$bench_tmp/transcript-cache"
     context=$(jq -cn --arg s "$session" '{session:$s,window:400}')
-    bench focus_frame_50000 @ AgentFocus frameFor: "$context"
+    bench focus_frame_50000 @ Agent::Focus frameFor: "$context"
     jq -e '[.entries[] | select(.kind=="assistant_delta") | .text|length] | add==300000' "$bench_tmp/result" >/dev/null
 elif [[ "$group" == conversations ]]; then
     export JCODE_HOME="$bench_tmp/auth" JCODE_TEST_GATE="$bench_tmp/native-gate" TRASHTALK_GUSGUS_PROFILE=jcode
@@ -103,7 +103,7 @@ SURFACE
     chmod +x "$bench_tmp/bin/jcode" "$bench_tmp/bin/inagent"
     export PATH="$bench_tmp/bin:$PATH"
     session=$(@ Gusgus sessionFor: "$bench_tmp")
-    bench open_conversation @ AgentFocus open: "$session"
+    bench open_conversation @ Agent::Focus open: "$session"
     start=${EPOCHREALTIME/./}
     @ "$session" input: 'First fixture input' > "$bench_tmp/result"
     end=${EPOCHREALTIME/./}
@@ -113,7 +113,7 @@ SURFACE
     request=100
     ui_send() {
         request=$((request+1))
-        @ AgentFocus handleFrame: "{\"schema_version\":1,\"request_id\":$request,\"intent\":\"send_message\",\"body\":\"UI fixture input\"}" context: "$context"
+        @ Agent::Focus handleFrame: "{\"schema_version\":1,\"request_id\":$request,\"intent\":\"send_message\",\"body\":\"UI fixture input\"}" context: "$context"
     }
     bench ui_send ui_send
     jq -e '.frame.ok==true' "$bench_tmp/result" >/dev/null

@@ -438,7 +438,7 @@ value ifNotNil: [@ self process: value].
 ].
 
 # Newline-separated values (Store finders return one id per line)
-(@ AgentDelivery pendingFor: self) linesDo: [:id |
+(@ Agent::Delivery pendingFor: self) linesDo: [:id |
   @ id reload.
   (@ id state) = 'blocked' ifTrue: [^ id]   # ^ returns from the method
 ].
@@ -455,9 +455,9 @@ a Bash `case`. An array literal groups several keys; `otherwise:` is optional.
 
 ```smalltalk
 ^ profile caseOf: {
-  'shell' -> [ 'ShellDriver' ].
-  'maki' -> [ 'MakiDriver' ].
-  #('codex' 'assistant-low-power' '') -> [ 'CodexDriver' ]
+  'shell' -> [ 'Agent::ShellDriver' ].
+  'maki' -> [ 'Agent::MakiDriver' ].
+  #('codex' 'assistant-low-power' '') -> [ 'Agent::CodexDriver' ]
 } otherwise: [ @ WorkerError signal: 'Unknown backend profile ' , profile ]
 ```
 
@@ -747,7 +747,7 @@ on a statement, an assignment, or a return, and inlines to `if ! { ...; }`:
 
 ```smalltalk
 (@ store save) ifFailed: [ ^ 'unsaved' ].
-run := @ AgentRun current ifFailed: [ @ RunTokenError signal: 'no run token' ].
+run := @ Agent::Run current ifFailed: [ @ RunTokenError signal: 'no run token' ].
 ^ (@ self compute) ifFailed: [:e | ^ 'fallback (' , e , ')' ]
 ```
 

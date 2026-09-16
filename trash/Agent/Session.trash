@@ -1,20 +1,30 @@
-# AgentSession - A durable conversation between an identity and a workspace
+package: Agent
+
+# Agent::Session - A durable conversation between an identity and a workspace
 # A session snapshots the archetype/role revisions it was opened with, owns an
 # inbox named `session:<id>`, and is the unit that deliveries and runs attach
 # to. Lifecycle: open <-> paused, open|paused -> closed -> open (reopen),
 # anything -> terminated.
 #
 # Usage:
-#   s=$(@ AgentSession openFor: $identity archetype: $arch role: $role workspace: /path profile: shell)
+#   s=$(@ Agent::Session openFor: $identity archetype: $arch role: $role workspace: /path profile: shell)
 #   @ $s summary
 #   @ $s pause / resume / close / reopen / terminate
-#   @ AgentSession findFor: $identity workspace: /path
-AgentSession subclass: Object
+#   @ Agent::Session findFor: $identity workspace: /path
+Session subclass: Object
   include: Persistable
   instanceVars: identity:'' archetype:'' archetypeRevision:'' instructionsHash:'' role:''
                 roleRevision:'' backendProfile:'' executionPolicy:'single' workspace:''
                 lifecycleState:'open' inbox:'' lastConversationRef:'' parentSession:''
                 created:'' lastActivityAt:'' sessionPolicyRevision:0 supersededBy:''
+
+  # Stable authority IDs survive the namespace migration and existing validators.
+  classMethod: new [
+    | id |
+    id := @ Runtime generateId: 'AgentSession'.
+    @ Runtime create: 'Agent::Session' id: id.
+    ^ id
+  ]
 
   # Old persisted records predate membership; reads must not enroll them.
   method: sessionPolicyRevision [
@@ -29,6 +39,7 @@ AgentSession subclass: Object
     pragma: direct
     if [[ "${_AGENT_SESSION_SCHEMA_DB:-}" != "$SQLITE_JSON_DB" ]]; then
       _db_sql -bail < "${TRASHTALK_DIR:-$HOME/.trashtalk}/lib/agent-session-schema.sql" || return 1
+      _env_evict_prefix agentidentity_ agentsession_ agentrun_ agentdelivery_ agentarchetype_ agentrole_
       _AGENT_SESSION_SCHEMA_DB="$SQLITE_JSON_DB"
     fi
   ]
@@ -41,8 +52,8 @@ AgentSession subclass: Object
   method: transitionTo: newState with: patchJson [
     | args |
     args := #{session: self state: newState patch: (patchJson jsonValue)} asJson.
-    @ AgentSession ensureSchema.
-    ^ @ Store transaction: 'AgentSession' sending: 'transitionWithin:' with: args
+    @ Agent::Session ensureSchema.
+    ^ @ Store transaction: 'Agent::Session' sending: 'transitionWithin:' with: args
   ]
 
   # Lifecycle and identity selection change together. Reopen guards the empty
@@ -50,7 +61,7 @@ AgentSession subclass: Object
   classMethod: transitionWithin: args [
     | session identity from to pair allowed scope current runs data patch present workspace vars |
     @ Store requireTransaction.
-    session := @ Store read: (args objectAt: 'session') class: 'AgentSession'.
+    session := @ Store read: (args objectAt: 'session') class: 'Agent::Session'.
     data := @ Store getInstance: session.
     from := ''.
     present := data jsonAt: 'lifecycleState' ifAbsent: 'null'.
@@ -60,7 +71,7 @@ AgentSession subclass: Object
     @ Require member: pair of: '[":terminated","open:paused","paused:open","open:closed","paused:closed","closed:open","open:terminated","paused:terminated","closed:terminated"]'.
     identity := @ session identity.
     (identity notEmpty) ifTrue: [
-      identity := @ Store read: identity class: 'AgentIdentity'.
+      identity := @ Store read: identity class: 'Agent::Identity'.
       scope := @ identity sessionScope.
       (scope = 'identity') ifTrue: [
         (to = 'open') ifTrue: [
@@ -71,7 +82,7 @@ AgentSession subclass: Object
           @ identity save
         ].
         (to = 'closed') ifTrue: [
-          runs := @ Store idsOf: 'AgentRun' matching: (#{session: session state: #('starting' 'running' 'recovering')} asJson).
+          runs := @ Store idsOf: 'Agent::Run' matching: (#{session: session state: #('starting' 'running' 'recovering')} asJson).
           @ Require equal: runs to: '[]'
         ].
         allowed := @ Require contains: to in: '["closed","terminated"]'.
@@ -113,7 +124,7 @@ AgentSession subclass: Object
     allowed := @ roleId allowsWorkspace: path.
     @ Require equal: allowed to: 'true'.
     now := @ Time nowISO.
-    session := @ AgentSession new.
+    session := @ Agent::Session new.
     inboxName := 'session:' , session.
     @ session identity: identityId.
     revision := @ identityId sessionPolicyRevision.
@@ -149,7 +160,7 @@ AgentSession subclass: Object
   classMethod: resolveOwnedWithin: args [
     | identity workspace |
     @ Store requireTransaction.
-    identity := @ AgentAccess validateIdentity: (args objectAt: 'identity').
+    identity := @ Agent::Access validateIdentity: (args objectAt: 'identity').
     workspace := args objectAt: 'workspace'.
     (@ identity sessionScope = 'workspace') ifTrue: [workspace := @ self workspaceFor: workspace].
     ^ @ self currentWithinFor: identity workspace: workspace
@@ -166,7 +177,7 @@ AgentSession subclass: Object
   classMethod: currentWithinFor: identityId workspace: path [
     | identity scope fields ids selected valid count revision |
     @ Store requireTransaction.
-    identity := @ Store read: identityId class: 'AgentIdentity'.
+    identity := @ Store read: identityId class: 'Agent::Identity'.
     scope := @ identity sessionScope.
     @ Require member: scope of: '["workspace","identity"]'.
     (scope = 'workspace') ifTrue: [path := @ self workspaceFor: path].
@@ -176,7 +187,7 @@ AgentSession subclass: Object
     (scope = 'workspace') ifTrue: [
       fields := #{identity: identityId workspace: path lifecycleState: #('open' 'paused')} asJson
     ].
-    ids := @ Store idsOf: 'AgentSession' matching: fields.
+    ids := @ Store idsOf: 'Agent::Session' matching: fields.
     (scope = 'identity') ifTrue: [
       selected := @ identity currentSession.
       valid := @ Require contains: selected in: ids.
@@ -199,9 +210,9 @@ AgentSession subclass: Object
   classMethod: requireCurrentWithin: session [
     | identity revision current sessionRevision workspace |
     @ Store requireTransaction.
-    session := @ Store read: session class: 'AgentSession'.
+    session := @ Store read: session class: 'Agent::Session'.
     identity := @ session identity.
-    identity := @ Store read: identity class: 'AgentIdentity'.
+    identity := @ Store read: identity class: 'Agent::Identity'.
     revision := @ identity sessionPolicyRevision.
     (revision > 0) ifTrue: [
       sessionRevision := @ session sessionPolicyRevision.
@@ -235,7 +246,7 @@ AgentSession subclass: Object
   classMethod: openWithin: args [
     | identity path archetype role profile session scope current |
     @ Store requireTransaction.
-    identity := @ Store read: (args objectAt: 'identity') class: 'AgentIdentity'.
+    identity := @ Store read: (args objectAt: 'identity') class: 'Agent::Identity'.
     path := args objectAt: 'workspace'.
     scope := @ identity sessionScope.
     @ Require member: scope of: '["workspace","identity"]'.
@@ -243,8 +254,8 @@ AgentSession subclass: Object
       current := @ self currentWithinFor: identity workspace: path.
       (current notEmpty) ifTrue: [^ @ Require reject: 'This identity already has a current session; reuse it or explicitly start fresh']
     ].
-    archetype := @ Store read: (args objectAt: 'archetype') class: 'AgentArchetype'.
-    role := @ Store read: (args objectAt: 'role') class: 'AgentRole'.
+    archetype := @ Store read: (args objectAt: 'archetype') class: 'Agent::Archetype'.
+    role := @ Store read: (args objectAt: 'role') class: 'Agent::Role'.
     profile := args objectAt: 'profile'.
     session := @ self createWithinFor: identity archetype: archetype role: role workspace: path profile: profile.
     scope := @ identity sessionScope.
@@ -272,9 +283,9 @@ AgentSession subclass: Object
     path := args objectAt: 'workspace'.
     current := @ self currentWithinFor: identity workspace: path.
     (current notEmpty) ifTrue: [
-      runs := @ Store idsOf: 'AgentRun' matching: (#{session: current state: #('starting' 'running' 'recovering')} asJson).
+      runs := @ Store idsOf: 'Agent::Run' matching: (#{session: current state: #('starting' 'running' 'recovering')} asJson).
       @ Require equal: runs to: '[]'.
-      current := @ Store read: current class: 'AgentSession'.
+      current := @ Store read: current class: 'Agent::Session'.
       @ current lifecycleState: 'closed'.
       @ current save
     ].
@@ -284,7 +295,7 @@ AgentSession subclass: Object
   classMethod: replaceWithin: args [
     | identity session |
     @ Store requireTransaction.
-    identity := @ Store read: (args objectAt: 'identity') class: 'AgentIdentity'.
+    identity := @ Store read: (args objectAt: 'identity') class: 'Agent::Identity'.
     session := @ self createWithinFor: identity archetype: (args objectAt: 'archetype') role: (args objectAt: 'role') workspace: (args objectAt: 'workspace') profile: (args objectAt: 'profile').
     (@ identity sessionScope = 'identity') ifTrue: [
       @ identity currentSession: session.
@@ -298,7 +309,7 @@ AgentSession subclass: Object
     local eid ews
     eid=$(_db_escape "$1")
     ews=$(_db_escape "$2")
-    @ Store findByClass: AgentSession where: "json_extract(data, '\$.identity') = '$eid' AND json_extract(data, '\$.workspace') = '$ews' AND json_extract(data, '\$.lifecycleState') IN ('open', 'paused')" orderBy: "json_extract(data, '\$.created') DESC, rowid DESC" limit: 1000
+    @ Store findByClass: Agent::Session where: "json_extract(data, '\$.identity') = '$eid' AND json_extract(data, '\$.workspace') = '$ews' AND json_extract(data, '\$.lifecycleState') IN ('open', 'paused')" orderBy: "json_extract(data, '\$.created') DESC, rowid DESC" limit: 1000
   ]
 
   # Git toplevel when dir is inside a repo, otherwise the real path of dir
@@ -333,7 +344,7 @@ AgentSession subclass: Object
   ]
 
   method: terminate [
-    ^ @ AgentWorker terminateSession: self
+    ^ @ Agent::Worker terminateSession: self
   ]
 
   method: touch [
@@ -347,12 +358,12 @@ AgentSession subclass: Object
   ]
 
   method: pendingDeliveries [
-    ^ @ AgentDelivery pendingFor: self
+    ^ @ Agent::Delivery pendingFor: self
   ]
 
   # Id of the run in starting|running|recovering for this session, or empty
   method: activeRun [
-    ^ @ Store findByClass: 'AgentRun'
+    ^ @ Store findByClass: 'Agent::Run'
         matching: (#{session: self state: #('starting' 'running' 'recovering')} asJson)
         orderBy: "json_extract(data, '$.started') DESC, rowid DESC" limit: 1
   ]
@@ -360,7 +371,7 @@ AgentSession subclass: Object
   # Number of pending deliveries. Raw: counts lines without touching stdin.
   rawMethod: pendingCount [
     local ids
-    ids=$(@ AgentDelivery pendingFor: "$_RECEIVER")
+    ids=$(@ Agent::Delivery pendingFor: "$_RECEIVER")
     if [[ -z "$ids" ]]; then
       echo 0
     else
@@ -408,7 +419,7 @@ AgentSession subclass: Object
     (@ deliveryId transitionTo: 'skipped' with: (#{note: text lastError: text} asJson)) ifFailed: [:e | @ e signal ].
     # Record the skip where the human reads, not in the session inbox: a message
     # to the session would become a new delivery.
-    inboxName := @ AgentWorker ownerInboxFor: self.
+    inboxName := @ Agent::Worker ownerInboxFor: self.
     (inboxName isEmpty) ifTrue: [ inboxName := @ Env get: 'TRASHTALK_USER' default: (@ Env get: 'USER') ].
     line := 'skipped ' , deliveryId , ' in session ' , self , ': ' , text.
     @ Inbox send: line to: inboxName from: 'worker' subject: 'skipped' kind: 'note'.
@@ -420,7 +431,7 @@ AgentSession subclass: Object
     local sid states
     sid=$(_db_escape "$_RECEIVER")
     states=$(_db_escape "$1")
-    _db_sql "SELECT count(*) FROM instances WHERE class='AgentDelivery' AND json_extract(data,'$.session')='$sid' AND json_extract(data,'$.state') IN (SELECT value FROM json_each('$states'));"
+    _db_sql "SELECT count(*) FROM instances WHERE class='Agent::Delivery' AND json_extract(data,'$.session')='$sid' AND json_extract(data,'$.state') IN (SELECT value FROM json_each('$states'));"
   ]
 
   method: stalledCount [
@@ -434,7 +445,7 @@ AgentSession subclass: Object
   # Single and batch snapshots share one indexed SQL projection. The requested
   # order is retained and each batch observes one SQLite read snapshot.
   method: snapshot [
-    ^ @ AgentSession snapshotsFor: self
+    ^ @ Agent::Session snapshotsFor: self
   ]
 
   rawClassMethod: snapshotsFor: sessions [
@@ -444,27 +455,27 @@ AgentSession subclass: Object
     _db_sql "SELECT json_object(
       'id',s.id,'identity',json_extract(s.data,'$.identity'),
       'workspace',json_extract(s.data,'$.workspace'),'lifecycle',json_extract(s.data,'$.lifecycleState'),
-      'pending',(SELECT count(*) FROM instances d WHERE d.class='AgentDelivery' AND json_extract(d.data,'$.session')=s.id AND json_extract(d.data,'$.state')='pending'),
-      'questions',(SELECT count(*) FROM instances d WHERE d.class='AgentDelivery' AND json_extract(d.data,'$.session')=s.id AND json_extract(d.data,'$.state')='blocked'),
-      'stalled',(SELECT count(*) FROM instances d WHERE d.class='AgentDelivery' AND json_extract(d.data,'$.session')=s.id AND json_extract(d.data,'$.state') IN ('failed','uncertain')),
-      'run',coalesce((SELECT r.id FROM instances r WHERE r.class='AgentRun' AND json_extract(r.data,'$.session')=s.id ORDER BY r.rowid DESC LIMIT 1),''),
-      'activity',coalesce((SELECT json_extract(r.data,'$.state') FROM instances r WHERE r.class='AgentRun' AND json_extract(r.data,'$.session')=s.id ORDER BY r.rowid DESC LIMIT 1),'idle'),
-      'error',coalesce((SELECT json_extract(r.data,'$.error') FROM instances r WHERE r.class='AgentRun' AND json_extract(r.data,'$.session')=s.id AND coalesce(json_extract(r.data,'$.error'),'')!='' ORDER BY r.rowid DESC LIMIT 1),''))
+      'pending',(SELECT count(*) FROM instances d WHERE d.class='Agent::Delivery' AND json_extract(d.data,'$.session')=s.id AND json_extract(d.data,'$.state')='pending'),
+      'questions',(SELECT count(*) FROM instances d WHERE d.class='Agent::Delivery' AND json_extract(d.data,'$.session')=s.id AND json_extract(d.data,'$.state')='blocked'),
+      'stalled',(SELECT count(*) FROM instances d WHERE d.class='Agent::Delivery' AND json_extract(d.data,'$.session')=s.id AND json_extract(d.data,'$.state') IN ('failed','uncertain')),
+      'run',coalesce((SELECT r.id FROM instances r WHERE r.class='Agent::Run' AND json_extract(r.data,'$.session')=s.id ORDER BY r.rowid DESC LIMIT 1),''),
+      'activity',coalesce((SELECT json_extract(r.data,'$.state') FROM instances r WHERE r.class='Agent::Run' AND json_extract(r.data,'$.session')=s.id ORDER BY r.rowid DESC LIMIT 1),'idle'),
+      'error',coalesce((SELECT json_extract(r.data,'$.error') FROM instances r WHERE r.class='Agent::Run' AND json_extract(r.data,'$.session')=s.id AND coalesce(json_extract(r.data,'$.error'),'')!='' ORDER BY r.rowid DESC LIMIT 1),''))
       FROM instances s JOIN json_each('$ids') requested ON requested.value=s.id ORDER BY CAST(requested.key AS INTEGER);"
   ]
 
   method: details [
     | data |
     data := @ self snapshot.
-    ^ @ AgentBrowser describeSession: data
+    ^ @ Agent::Browser describeSession: data
   ]
 
   method: runs [
-    ^ @ Store findByClass: 'AgentRun' matching: (#{session: self} asJson) orderBy: 'rowid DESC' limit: 100
+    ^ @ Store findByClass: 'Agent::Run' matching: (#{session: self} asJson) orderBy: 'rowid DESC' limit: 100
   ]
 
   method: stalledDeliveries [
-    ^ @ Store findByClass: 'AgentDelivery'
+    ^ @ Store findByClass: 'Agent::Delivery'
         matching: (#{session: self state: #('failed' 'uncertain')} asJson)
         orderBy: 'rowid ASC' limit: 100
   ]
@@ -476,28 +487,28 @@ AgentSession subclass: Object
   ]
 
   classMethod: browse [
-    ^ @ AgentBrowser browse
+    ^ @ Agent::Browser browse
   ]
 
   method: browse [
-    ^ @ AgentBrowser browseSession: self
+    ^ @ Agent::Browser browseSession: self
   ]
 
-  method: compact [ ^ @ AgentContext compactSession: self ]
+  method: compact [ ^ @ Agent::Context compactSession: self ]
   # Human conversation input is direct session interaction, without inbox mail.
   method: input: text [
-    ^ @ AgentConversation send: text to: self
+    ^ @ Agent::Conversation send: text to: self
   ]
 
-  method: focus [ ^ @ AgentFocus open: self ]
+  method: focus [ ^ @ Agent::Focus open: self ]
   method: attach [ ^ @ self focus ]
 
   # Storage migration boundary: guards, retirement, revision, and membership
   # publication must commit in this order. No deliveries or provider data move.
   rawClassMethod: select: session forIdentity: identity owner: owner [
-    @ AgentSession ensureSchema || return 1
+    @ Agent::Session ensureSchema || return 1
     local sid identity owner human
-    human=$(@ AgentFocus human) || return 1
+    human=$(@ Agent::Focus human) || return 1
     [[ "$human" == "$3" ]] || return 1
     sid=$(_db_escape "$1"); identity=$(_db_escape "$2"); owner=$(_db_escape "$3")
     @ Store executeBatch: "BEGIN IMMEDIATE;
@@ -508,16 +519,16 @@ AgentSession subclass: Object
           AND json_extract(i.data,'$.sessionScope')='identity'
           AND m.policy_revision=json_extract(i.data,'$.sessionPolicyRevision'));
       INSERT INTO selection_guard SELECT EXISTS(SELECT 1 FROM instances i JOIN instances s
-        ON json_extract(s.data,'$.identity')=i.id WHERE i.id='$identity' AND i.class='AgentIdentity'
+        ON json_extract(s.data,'$.identity')=i.id WHERE i.id='$identity' AND i.class='Agent::Identity'
         AND json_extract(i.data,'$.owner')='$owner' AND json_extract(i.data,'$.enabled') IN (1,'true')
-        AND s.id='$sid' AND s.class='AgentSession' AND json_extract(s.data,'$.lifecycleState') IN ('open','paused'));
+        AND s.id='$sid' AND s.class='Agent::Session' AND json_extract(s.data,'$.lifecycleState') IN ('open','paused'));
       INSERT INTO selection_guard SELECT NOT EXISTS(SELECT 1 FROM instances r JOIN instances s
-        ON s.id=json_extract(r.data,'$.session') WHERE r.class='AgentRun'
+        ON s.id=json_extract(r.data,'$.session') WHERE r.class='Agent::Run'
         AND json_extract(s.data,'$.identity')='$identity'
         AND json_extract(r.data,'$.state') IN ('starting','running','recovering')) OR NOT EXISTS(SELECT 1 FROM selection_change);
       UPDATE instances SET data=json_set(data,'$.lifecycleState','closed','$.supersededBy','$sid',
         '$._vars',json((SELECT json_group_array(DISTINCT value) FROM (SELECT value FROM json_each(json_extract(data,'$._vars')) UNION SELECT 'supersededBy'))))
-        WHERE EXISTS(SELECT 1 FROM selection_change) AND class='AgentSession' AND id!='$sid' AND json_extract(data,'$.identity')='$identity'
+        WHERE EXISTS(SELECT 1 FROM selection_change) AND class='Agent::Session' AND id!='$sid' AND json_extract(data,'$.identity')='$identity'
           AND json_extract(data,'$.lifecycleState') IN ('open','paused');
       DELETE FROM agent_session_memberships WHERE identity_id='$identity' AND EXISTS(SELECT 1 FROM selection_change);
       INSERT INTO agent_session_policy_changes SELECT '$identity',coalesce(json_extract(data,'$.sessionPolicyRevision'),0),

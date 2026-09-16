@@ -1,6 +1,6 @@
 # AgentWorkboard - read-only view over existing Attention and Assignment records.
 # It owns no lifecycle state and publishes no work. Details remain on their
-# source objects and in Inbox/AgentSession browsers.
+# source objects and in Inbox/Agent::Session browsers.
 AgentWorkboard subclass: Object
 
   classMethod: status [
@@ -9,7 +9,7 @@ AgentWorkboard subclass: Object
 
   classMethod: statusWithin: unused [
     | human attentionIds attentionItems assignmentIds assignmentItems id attention assignment snapshot execution row activity running waiting review manual |
-    human := @ AgentFocus human.
+    human := @ Agent::Focus human.
     attentionIds := @ Workstation::Attention localOpen.
     attentionItems := '[]'.
     attentionIds linesDo: [:id |
@@ -81,8 +81,8 @@ AgentWorkboard subclass: Object
   # reads the published file; it never starts a runtime.
   rawClassMethod: unansweredQuestionCount [
     local human
-    @ AgentQueue ensureSchema || return 1
-    human=$(_db_escape "$(@ AgentFocus human)")
+    @ Agent::Queue ensureSchema || return 1
+    human=$(_db_escape "$(@ Agent::Focus human)")
     _store_guarded_query "SELECT count(*) FROM agent_questions q JOIN instances m ON m.id=q.message_id
       WHERE q.answer_id='' AND m.class='Message' AND json_extract(m.data,'\$.to')='$human'"
   ]

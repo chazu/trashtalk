@@ -2,7 +2,7 @@ package: Workstation
 
 # Guarded agent routing for Attention (Phase 2). A dry run mutates nothing and
 # returns a structured reason. Publication revalidates that admission inside one
-# Store transaction and uses the existing Inbox/AgentQueue boundary. Routing
+# Store transaction and uses the existing Inbox/Agent::Queue boundary. Routing
 # never creates, resumes, replaces, or stops a session, and it never executes.
 Routing subclass: Object
   classMethod: requiredCapability [ ^ 'inbox.read' ]
@@ -31,7 +31,7 @@ Routing subclass: Object
     | attention human subscription sub owner mode target reason detail identity handle exists class workspace execution depth limit originIdentity delegated revision resolved session sessionState role allowed caps found policy budget count open next status state first last required |
     @ Store requireTransaction.
     attention := data jsonTextAt: 'id'.
-    human := @ AgentFocus human.
+    human := @ Agent::Focus human.
     subscription := data jsonTextAt: 'subscription'.
     sub := @ Store read: subscription class: 'Workstation::EventSubscription'.
     sub := @ Store getInstance: sub.
@@ -54,10 +54,10 @@ Routing subclass: Object
       exists := @ Store exists: target.
       class := ''.
       (exists = 'true') ifTrue: [class := @ Store getClass: target].
-      (class = 'AgentIdentity') ifFalse: [reason := 'target-missing'. detail := 'The target identity record is missing']
+      (class = 'Agent::Identity') ifFalse: [reason := 'target-missing'. detail := 'The target identity record is missing']
     ].
     (reason isEmpty) ifTrue: [
-      identity := @ Store read: target class: 'AgentIdentity'.
+      identity := @ Store read: target class: 'Agent::Identity'.
       handle := @ identity handle.
       ((@ identity owner) = human) ifFalse: [reason := 'target-unauthorized'. detail := 'The target identity belongs to another owner'].
       (reason isEmpty) ifTrue: [((@ identity enabled) = 'true') ifFalse: [reason := 'target-disabled'. detail := 'The target identity is disabled'] ]
@@ -93,9 +93,9 @@ Routing subclass: Object
       (reason isEmpty) ifTrue: [(sessionState = 'open') ifFalse: [reason := 'session-closed'. detail := 'The current session is not open'] ]
     ].
     (reason isEmpty) ifTrue: [
-      session := @ Store read: session class: 'AgentSession'.
+      session := @ Store read: session class: 'Agent::Session'.
       role := @ session role.
-      role := @ Store read: role class: 'AgentRole'.
+      role := @ Store read: role class: 'Agent::Role'.
       allowed := @ role allowsWorkspace: execution.
       (allowed = 'true') ifFalse: [reason := 'workspace-unauthorized'. detail := 'The session role does not allow this workspace'].
       (reason isEmpty) ifTrue: [
@@ -118,7 +118,7 @@ Routing subclass: Object
         budget := @ self policy: budget default: '{}'.
         count := budget jsonAt: 'count' ifAbsent: '0'.
         (count > 0) ifTrue: [
-          open := @ Store idsOf: 'AgentDelivery' matching: (#{session: session state: #('pending' 'offered' 'blocked')} asJson).
+          open := @ Store idsOf: 'Agent::Delivery' matching: (#{session: session state: #('pending' 'offered' 'blocked')} asJson).
           ((open arrayLength) < count) ifFalse: [reason := 'budget-exhausted'. detail := 'The session already holds ' , (open arrayLength) , ' unsettled deliveries']
         ]
       ]
@@ -168,20 +168,20 @@ Routing subclass: Object
   ]
 
   # Non-throwing current-session resolution over the same membership rules as
-  # AgentSession currentWithinFor:. Ambiguity is a reason, not a failure.
+  # Agent::Session currentWithinFor:. Ambiguity is a reason, not a failure.
   classMethod: currentSessionWithin: identity workspace: path [
     | scope revision fields ids selected valid count member |
     @ Store requireTransaction.
     scope := @ identity sessionScope.
     revision := @ identity sessionPolicyRevision.
     (revision > 0) ifTrue: [
-      member := @ AgentSession memberFor: identity workspace: path scope: scope revision: revision.
+      member := @ Agent::Session memberFor: identity workspace: path scope: scope revision: revision.
       (member isEmpty) ifTrue: [^ #{session: '' reason: 'no-session'} asJson].
       ^ #{session: member reason: ''} asJson
     ].
     fields := #{identity: identity lifecycleState: #('open' 'paused')} asJson.
     (scope = 'workspace') ifTrue: [fields := #{identity: identity workspace: path lifecycleState: #('open' 'paused')} asJson].
-    ids := @ Store idsOf: 'AgentSession' matching: fields.
+    ids := @ Store idsOf: 'Agent::Session' matching: fields.
     (scope = 'identity') ifTrue: [
       selected := @ identity currentSession.
       valid := @ Require contains: selected in: ids.
@@ -198,7 +198,7 @@ Routing subclass: Object
     exists := @ Store exists: session.
     (exists = 'true') ifFalse: [^ 'missing'].
     data := @ Store getInstance: session.
-    ((data objectAt: 'class') = 'AgentSession') ifFalse: [^ 'missing'].
+    ((data objectAt: 'class') = 'Agent::Session') ifFalse: [^ 'missing'].
     ^ data objectAt: 'lifecycleState'
   ]
   classMethod: originIdentityWithin: data [
@@ -211,7 +211,7 @@ Routing subclass: Object
     exists := @ Store exists: run.
     (exists = 'true') ifFalse: [^ ''].
     record := @ Store getInstance: run.
-    ((record objectAt: 'class') = 'AgentRun') ifFalse: [^ ''].
+    ((record objectAt: 'class') = 'Agent::Run') ifFalse: [^ ''].
     session := record objectAt: 'session'.
     exists := @ Store exists: session.
     (exists = 'true') ifFalse: [^ ''].
@@ -295,7 +295,7 @@ Routing subclass: Object
     @ Store patch: attention with: (#{routingNote: note} asJson).
     ^ ''
   ]
-  # One causal Message, its AgentDelivery, and its outbox row commit with the
+  # One causal Message, its Agent::Delivery, and its outbox row commit with the
   # Attention link. Deterministic ids make replay and duplicate clicks inert.
   classMethod: publishWithin: attention admission: admission [
     | revision message delivery session now |
@@ -304,10 +304,10 @@ Routing subclass: Object
     revision := admission jsonTextAt: 'delegationRevision'.
     revision := revision + 1.
     session := admission jsonTextAt: 'session'.
-    @ AgentAccess validateLiveSession: session.
+    @ Agent::Access validateLiveSession: session.
     message := @ Message forDelegatedAttention: attention admission: admission revision: revision.
-    delivery := @ AgentDelivery forAttention: attention message: message session: session revision: revision.
-    @ AgentQueue publishManual: message.
+    delivery := @ Agent::Delivery forAttention: attention message: message session: session revision: revision.
+    @ Agent::Queue publishManual: message.
     now := @ Time nowISO.
     @ Store patch: attention with: (#{delegationRevision: (revision jsonValue) delegatedMessage: message
       delegatedSession: session delegatedIdentity: (admission jsonTextAt: 'targetIdentity') routingNote: '' updatedAt: now} asJson).
@@ -328,7 +328,7 @@ Routing subclass: Object
     @ Store read: attention class: 'Workstation::Attention'.
     data := @ Store getInstance: attention.
     data := @ Workstation::Schema document: data.
-    human := @ AgentFocus human.
+    human := @ Agent::Focus human.
     sub := @ Store read: (data jsonTextAt: 'subscription') class: 'Workstation::EventSubscription'.
     owner := @ sub owner.
     @ Require equal: owner to: human.
@@ -339,7 +339,7 @@ Routing subclass: Object
     delivery := 'agentdelivery_' , attention , '_delegation_' , revision.
     exists := @ Store exists: delivery.
     (exists = 'true') ifTrue: [
-      @ Store read: delivery class: 'AgentDelivery'.
+      @ Store read: delivery class: 'Agent::Delivery'.
       state := @ delivery state.
       ((state = 'pending') or: [state = 'blocked']) ifTrue: [
         @ Store patch: delivery with: (#{state: 'skipped' note: 'Attention redelegated' lastError: (args objectAt: 'reason')} asJson)
@@ -359,7 +359,7 @@ Routing subclass: Object
     data := @ Workstation::Schema document: data.
     session := data jsonTextAt: 'delegatedSession'.
     (session isEmpty) ifTrue: [^ @ Require reject: 'Attention has no delegated conversation'].
-    ^ @ AgentFocus open: session
+    ^ @ Agent::Focus open: session
   ]
 
   # ------------------------------------------------------------------
@@ -368,7 +368,7 @@ Routing subclass: Object
   # Filesystem/Git boundary: canonical execution directory, or empty when gone.
   rawClassMethod: canonicalWorkspace: path [
     if [[ -z "$1" || ! -d "$1" ]]; then echo ''; return 0; fi
-    @ AgentSession workspaceFor: "$1" 2>/dev/null || echo ''
+    @ Agent::Session workspaceFor: "$1" 2>/dev/null || echo ''
   ]
   # Role policies may be stored as JSON containers or their string encoding.
   rawClassMethod: policy: value default: fallback [
@@ -381,10 +381,10 @@ Routing subclass: Object
     run=$(printf '%s' "$1" | jq -r 'if type=="object" then (.run // "") else "" end') || return 1
     if [[ -z "$run" ]]; then echo 0; return 0; fi
     erun=$(_db_escape "$run")
-    _db_sql "SELECT max(1, coalesce((SELECT max(json_extract(m.data,'$.attentionLineageDepth')) FROM instances d, json_each(json_extract(d.data,'$.messageIds')) j JOIN instances m ON m.id=j.value WHERE d.class='AgentDelivery' AND json_extract(d.data,'$.run')='$erun' AND m.class='Message'),0));"
+    _db_sql "SELECT max(1, coalesce((SELECT max(json_extract(m.data,'$.attentionLineageDepth')) FROM instances d, json_each(json_extract(d.data,'$.messageIds')) j JOIN instances m ON m.id=j.value WHERE d.class='Agent::Delivery' AND json_extract(d.data,'$.run')='$erun' AND m.class='Message'),0));"
   ]
   # Foreground dispatch after an explicit delegation, unless suppressed.
   rawClassMethod: wake: session [
     if [[ -z "$1" || "${TRASHTALK_NO_AUTOTICK:-}" == 1 ]]; then return 0; fi
-    @ AgentWorker tickSession: "$1" >/dev/null || true
+    @ Agent::Worker tickSession: "$1" >/dev/null || true
   ]

@@ -14,7 +14,7 @@ Assignment subclass: Object
 
   classMethod: draft: objective in: workspace [
     | args |
-    @ AgentQueue ensureSchema.
+    @ Agent::Queue ensureSchema.
     args := #{objective: objective workspace: workspace} asJson.
     ^ @ Store transaction: self sending: 'draftWithin:' with: args
   ]
@@ -22,12 +22,12 @@ Assignment subclass: Object
   classMethod: draftWithin: args [
     | actor human a objective path now |
     @ Store requireTransaction.
-    actor := @ AgentRun actingContext.
+    actor := @ Agent::Run actingContext.
     human := actor objectAt: 'human'.
     @ Require text: human.
     objective := args objectAt: 'objective'.
     @ Require text: objective.
-    path := @ AgentSession workspaceFor: (args objectAt: 'workspace').
+    path := @ Agent::Session workspaceFor: (args objectAt: 'workspace').
     a := @ self new.
     now := @ Time nowISO.
     @ a objective: objective.
@@ -56,10 +56,10 @@ Assignment subclass: Object
 
   method: assignWithin: identity [
     | actor sender i data current allowed owner |
-    actor := @ AgentRun actingContext.
+    actor := @ Agent::Run actingContext.
     sender := @ self authorize: actor operatorOnly: true.
     @ self requireOpen.
-    i := @ Store read: identity class: 'AgentIdentity'.
+    i := @ Store read: identity class: 'Agent::Identity'.
     data := @ i asJson.
     @ Require member: (data objectAt: 'enabled') of: '["true","1"]'.
     owner := data objectAt: 'owner'.
@@ -94,7 +94,7 @@ Assignment subclass: Object
 
   method: describeWithin: args [
     | actor sender field value generation |
-    actor := @ AgentRun actingContext.
+    actor := @ Agent::Run actingContext.
     sender := @ self authorize: actor operatorOnly: true.
     @ self requireOpen.
     generation := @ self generation.
@@ -116,7 +116,7 @@ Assignment subclass: Object
 
   method: originWithin: message [
     | actor sender m data sent generation requester session isSession exists s fields ids count |
-    actor := @ AgentRun actingContext.
+    actor := @ Agent::Run actingContext.
     sender := @ self authorize: actor operatorOnly: true.
     @ self requireOpen.
     generation := @ self generation.
@@ -133,7 +133,7 @@ Assignment subclass: Object
       (exists = 'true') ifTrue: [
         data := @ Store getInstance: s.
         exists := data objectAt: 'class'.
-        (exists = 'AgentSession') ifTrue: [
+        (exists = 'Agent::Session') ifTrue: [
           session := s.
           requester := data objectAt: 'identity'
         ]
@@ -141,7 +141,7 @@ Assignment subclass: Object
     ].
     (session isEmpty) ifTrue: [
       fields := #{inbox: requester} asJson.
-      ids := @ Store idsOf: 'AgentIdentity' matching: fields.
+      ids := @ Store idsOf: 'Agent::Identity' matching: fields.
       count := ids arrayLength.
       (count > 0) ifTrue: [requester := ids arrayFirst]
     ].
@@ -153,7 +153,7 @@ Assignment subclass: Object
   ]
 
   method: workIn: session [
-    @ AgentQueue ensureSchema.
+    @ Agent::Queue ensureSchema.
     ^ @ Store transaction: self sending: 'selectWithin:' with: session replaying: true
   ]
 
@@ -163,21 +163,21 @@ Assignment subclass: Object
 
   method: complete: outcome [
     | args |
-    @ AgentQueue ensureSchema.
+    @ Agent::Queue ensureSchema.
     args := #{outcome: outcome cancel: 'false'} asJson.
     ^ @ Store transaction: self sending: 'finishWithin:' with: args replaying: true
   ]
 
   method: cancel: reason [
     | args |
-    @ AgentQueue ensureSchema.
+    @ Agent::Queue ensureSchema.
     args := #{outcome: reason cancel: 'true'} asJson.
     ^ @ Store transaction: self sending: 'finishWithin:' with: args replaying: true
   ]
 
   method: finishWithin: args [
     | actor sender run cancel outcome target state previous session runs data d dState questions message now event assignee |
-    actor := @ AgentRun actingContext.
+    actor := @ Agent::Run actingContext.
     cancel := args objectAt: 'cancel'.
     @ Require member: cancel of: '["true","false"]'.
     sender := @ self authorize: actor operatorOnly: cancel.
@@ -194,12 +194,12 @@ Assignment subclass: Object
     ].
     run := actor objectAt: 'run'.
     session := @ self currentSession.
-    runs := @ AgentRun activeFor: session except: run.
+    runs := @ Agent::Run activeFor: session except: run.
     @ Require equal: runs to: '[]'.
     data := @ self asJson.
     d := data objectAt: 'delivery'.
     (d notEmpty) ifTrue: [
-      d := @ Store read: d class: 'AgentDelivery'.
+      d := @ Store read: d class: 'Agent::Delivery'.
       dState := @ d state.
       @ Require member: dState of: '["pending","blocked","offered","processed","skipped"]'
     ].
@@ -207,7 +207,7 @@ Assignment subclass: Object
       assignee := @ self assignee.
       @ Require text: assignee.
       @ Require text: session.
-      questions := @ AgentQueue unansweredForAssignment: self.
+      questions := @ Agent::Queue unansweredForAssignment: self.
       @ Require equal: questions to: '[]'
     ].
     message := @ Message outcomeForAssignment: self body: outcome sender: sender cancelled: cancel.
@@ -226,19 +226,19 @@ Assignment subclass: Object
     @ self completedAt: now.
     @ self resultMessage: message.
     @ self save.
-    @ AgentQueue publishManual: message.
+    @ Agent::Queue publishManual: message.
     ^ self
   ]
 
   classMethod: current [
-    @ AgentQueue ensureSchema.
+    @ Agent::Queue ensureSchema.
     ^ @ Store transaction: self sending: 'currentWithin:' with: ''
   ]
 
   classMethod: currentWithin: unused [
     | actor run selected human ids fields candidates data a d dData state same sender count |
     @ Store requireTransaction.
-    actor := @ AgentRun actingContext.
+    actor := @ Agent::Run actingContext.
     run := actor objectAt: 'run'.
     selected := @ Env get: 'TRASHTALK_ASSIGNMENT_ID'.
     candidates := '[]'.
@@ -247,9 +247,9 @@ Assignment subclass: Object
       candidates := candidates arrayPush: selected
     ] ifFalse: [
       fields := #{run: run state: #('offered' 'blocked')} asJson.
-      ids := @ Store idsOf: 'AgentDelivery' matching: fields.
+      ids := @ Store idsOf: 'Agent::Delivery' matching: fields.
       ids arrayEach: [:id |
-        d := @ Store read: id class: 'AgentDelivery'.
+        d := @ Store read: id class: 'Agent::Delivery'.
         data := @ d asJson.
         a := data objectAt: 'assignment'.
         (a notEmpty) ifTrue: [
@@ -277,7 +277,7 @@ Assignment subclass: Object
 
   classMethod: claim: delivery run: run [
     | args |
-    @ AgentQueue ensureSchema.
+    @ Agent::Queue ensureSchema.
     args := #{delivery: delivery run: run} asJson.
     ^ @ Store transaction: 'Assignment::Participation' sending: 'claimWithin:' with: args replaying: true
   ]

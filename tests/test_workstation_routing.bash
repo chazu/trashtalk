@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Phase 2 guarded routing: dry-run admission (2A), explicit one-attention
 # delegation (2B), opt-in automatic routing with loop controls (2C), and
-# attention-to-conversation operations (2D). No model; ShellDriver plays the agent.
+# attention-to-conversation operations (2D). No model; Agent::ShellDriver plays the agent.
 if [[ ${TRASHTALK_TEST_ISOLATED:-} != 1 ]]; then
  exec bash "$(dirname "${BASH_SOURCE[0]}")/../lib/test-isolated.bash" "${BASH_SOURCE[0]}" "$@"
 fi
@@ -44,9 +44,9 @@ check 'human receipts have lineage depth zero' 0 "$(field "$a" .lineageDepth)"
 check 'no target is a structured reason' no-target "$(status "$root" .reason)"
 check 'next action asks for configuration' configure-target "$(status "$root" .nextAction)"
 reject 'automatic delegation needs a target' @ "$subscription" enableAutomaticDelegation: 'I accept' reason: early
-identity=$(must @ AgentIdentity named: routing-specialist)
+identity=$(must @ Agent::Identity named: routing-specialist)
 @ "$identity" owner: local-user; @ "$identity" save
-foreign=$(must @ AgentIdentity named: foreign-specialist)
+foreign=$(must @ Agent::Identity named: foreign-specialist)
 @ "$foreign" owner: someone-else; @ "$foreign" save
 reject 'a foreign identity cannot be a target' @ "$subscription" target: "$foreign" reason: nope
 reject 'a session is not an identity' @ "$subscription" target: "$root" reason: nope
@@ -55,8 +55,8 @@ check 'target revision is audited' 2 "$(field "$subscription" .revision)"
 check 'default delegation mode is manual' manual "$(@ "$subscription" delegationMode)"
 check 'target without a session' no-session "$(status "$root" .reason)"
 arch=$(must @ Gusgus archetype)
-role=$(must @ AgentRole define: routing-specialist revision: 1 capabilities: '["inbox.read","message.send"]' workspacePolicy: '[]' runBudget: '{}')
-session=$(must @ AgentSession openFor: "$identity" archetype: "$arch" role: "$role" workspace: "$ws" profile: shell)
+role=$(must @ Agent::Role define: routing-specialist revision: 1 capabilities: '["inbox.read","message.send"]' workspacePolicy: '[]' runBudget: '{}')
+session=$(must @ Agent::Session openFor: "$identity" archetype: "$arch" role: "$role" workspace: "$ws" profile: shell)
 check 'eligible with the current workspace session' eligible "$(status "$root" .status)"
 check 'dry run resolves the exact session' "$session" "$(status "$root" .session)"
 check 'execution workspace is the receipt cwd' "$ws" "$(status "$root" .executionWorkspace)"
@@ -77,14 +77,14 @@ check 'recipient policy is enforced' recipient-denied "$(status "$root" .reason)
 held=$(must @ Inbox send: 'hold' to: "session:$session" from: local-user)
 check 'budget counts unsettled deliveries' budget-exhausted "$(status "$root" .reason)"
 @ Store patch: "$role" with: '{"messageBudget":{"count":0}}' >/dev/null
-for d in $(@ Store findByClass: AgentDelivery matching: "{\"session\":\"$session\"}"); do @ Store patch: "$d" with: '{"state":"processed"}' >/dev/null; done
+for d in $(@ Store findByClass: Agent::Delivery matching: "{\"session\":\"$session\"}"); do @ Store patch: "$d" with: '{"state":"processed"}' >/dev/null; done
 _db_sql "DELETE FROM agent_outbox WHERE message_id='$held';"
 @ "$identity" enabled: false; @ "$identity" save
 check 'disabled target is a reason' target-disabled "$(status "$root" .reason)"
 @ "$identity" enabled: true; @ "$identity" save
 check 'dry runs are eligible again' eligible "$(status "$root" .status)"
 # Lineage: receipts produced by the target identity are never routed back to it.
-mapfile -t pair < <(@ AgentRun startFor: "$session" profile: shell)
+mapfile -t pair < <(@ Agent::Run startFor: "$session" profile: shell)
 run=${pair[0]}; token=${pair[1]}
 must @ "$run" transitionTo: running >/dev/null
 publish_origin 'agent tests' "$run"; tick
@@ -99,10 +99,10 @@ TRASHTALK_RUN_TOKEN="$run:bogus" @ Workstation::CommandReceipt publishOutcome: "
 tick
 check 'an invalid token yields a human receipt' null "$(field "$(attention_for 'bogus tests')" .origin)"
 @ "$run" finishWith: succeeded outcome: "{}" error: "" >/dev/null || { echo "finish failed: $(@ "$run" state)"; @ "$run" finishWith: succeeded outcome: "{}" error: ""; exit 1; }
-other=$(must @ AgentIdentity named: other-specialist)
+other=$(must @ Agent::Identity named: other-specialist)
 @ "$other" owner: local-user; @ "$other" save
-other_session=$(must @ AgentSession openFor: "$other" archetype: "$arch" role: "$role" workspace: "$ws" profile: shell)
-mapfile -t pair < <(@ AgentRun startFor: "$other_session" profile: shell)
+other_session=$(must @ Agent::Session openFor: "$other" archetype: "$arch" role: "$role" workspace: "$ws" profile: shell)
+mapfile -t pair < <(@ Agent::Run startFor: "$other_session" profile: shell)
 other_run=${pair[0]}
 publish_origin 'other tests' "$other_run"; tick
 c=$(attention_for 'other tests'); c_root=$(field "$c" .message)
@@ -111,8 +111,8 @@ must @ "$subscription" lineageLimit: 0 reason: 'strict' >/dev/null
 check 'lineage depth limit is enforced' lineage-depth "$(status "$c_root" .reason)"
 must @ "$subscription" lineageLimit: 1 reason: 'default' >/dev/null
 must @ "$other_run" transitionTo: failed >/dev/null
-check 'dry runs publish nothing' "0 0" "$(echo "$(outbox) $(count AgentDelivery | jq --argjson h 1 '. - $h')")"
-check 'dry runs create no runs beyond fixtures' 2 "$(count AgentRun)"
+check 'dry runs publish nothing' "0 0" "$(echo "$(outbox) $(count Agent::Delivery | jq --argjson h 1 '. - $h')")"
+check 'dry runs create no runs beyond fixtures' 2 "$(count Agent::Run)"
 
 # ---- 2B: explicit one-attention delegation ----------------------------------
 msg=$(must @ "$root" delegateAttention)
@@ -128,10 +128,10 @@ check 'delivery records the execution workspace' "$ws" "$(field "$delivery" .exe
 check 'outbox row is assigned to the session' "$session" "$(_db_sql "SELECT session FROM agent_outbox WHERE message_id='$msg';")"
 check 'attention links the delegation' "$msg $session $identity 1" "$(field "$a" '"\(.delegatedMessage) \(.delegatedSession) \(.delegatedIdentity) \(.delegationRevision)"')"
 check 'status reports delegated with links' "delegated $delivery pending focus" "$(status "$root" '"\(.status) \(.delivery) \(.deliveryState) \(.nextAction)"')"
-before=$(_db_sql "SELECT json_group_array(data) FROM instances WHERE class IN ('Workstation::Attention','Message','AgentDelivery') ORDER BY id;")
+before=$(_db_sql "SELECT json_group_array(data) FROM instances WHERE class IN ('Workstation::Attention','Message','Agent::Delivery') ORDER BY id;")
 check 'a repeated click returns the same publication' "$msg" "$(must @ "$root" delegateAttention)"
 check 'direct routing replay is inert' "$msg" "$(must @ Workstation::Routing delegate: "$a")"
-check 'repeats change nothing durable' "$before" "$(_db_sql "SELECT json_group_array(data) FROM instances WHERE class IN ('Workstation::Attention','Message','AgentDelivery') ORDER BY id;")"
+check 'repeats change nothing durable' "$before" "$(_db_sql "SELECT json_group_array(data) FROM instances WHERE class IN ('Workstation::Attention','Message','Agent::Delivery') ORDER BY id;")"
 check 'one outbox row' 1 "$(_db_sql "SELECT count(*) FROM agent_outbox WHERE message_id='$msg';")"
 publish 'unit tests'; tick
 check 'appended events keep one delegation' "2 $msg" "$(field "$a" '"\(.eventCount) \(.delegatedMessage)"')"
@@ -141,9 +141,9 @@ check 'root message shows the assignment' true "$([[ $(field "$root" .body) == *
 reject 'ineligible attention cannot be delegated' @ "$c_root" delegateAttention
 check 'rejected delegation publishes nothing' '' "$(field "$c" .delegatedMessage)"
 @ "$session" resume >/dev/null
-# Delegated work reaches the existing session with the receipt cwd (ShellDriver).
-export TRASHTALK_SHELL_DRIVER='prompt=$(cat); ids=$(printf "%s\n" "$prompt" | sed -n "s/^--- delivery //p"); ts="$TRASHTALK_DIR/bin/trash-send"; "$ts" AgentRun result: "cause: $PWD" >/dev/null; for id in $ids; do "$ts" AgentRun settle: "$id" >/dev/null; done'
-for i in $(seq 1 100); do @ AgentWorker tickSession: "$session" >/dev/null 2>&1; [[ -n "$(@ "$session" activeRun)" ]] || break; sleep 0.2; done
+# Delegated work reaches the existing session with the receipt cwd (Agent::ShellDriver).
+export TRASHTALK_SHELL_DRIVER='prompt=$(cat); ids=$(printf "%s\n" "$prompt" | sed -n "s/^--- delivery //p"); ts="$TRASHTALK_DIR/bin/trash-send"; "$ts" Agent::Run result: "cause: $PWD" >/dev/null; for id in $ids; do "$ts" Agent::Run settle: "$id" >/dev/null; done'
+for i in $(seq 1 100); do @ Agent::Worker tickSession: "$session" >/dev/null 2>&1; [[ -n "$(@ "$session" activeRun)" ]] || break; sleep 0.2; done
 check 'delivery was processed by the existing session' processed "$(field "$delivery" .state)"
 work=$(field "$delivery" .run)
 check 'run executed in the receipt workspace' "$ws" "$(field "$work" .executionWorkspace)"
@@ -162,29 +162,29 @@ publish 'paused dispatch'; tick
 p=$(attention_for 'paused dispatch')
 check 'paused dispatch withholds automatic routing' 'automatic routing withheld: dispatch-paused' "$(field "$p" .routingNote)"
 must @ "$subscription" resumeDispatch: 'route automatically' >/dev/null
-deliveries=$(count AgentDelivery)
+deliveries=$(count Agent::Delivery)
 publish 'auto tests'; tick
 f=$(attention_for 'auto tests')
 check 'accepted group is delegated automatically' "message_${f}_delegation_1 $session" "$(field "$f" '"\(.delegatedMessage) \(.delegatedSession)"')"
-check 'exactly one delivery' $((deliveries+1)) "$(count AgentDelivery)"
+check 'exactly one delivery' $((deliveries+1)) "$(count Agent::Delivery)"
 @ "$consumer" ack: $(( $(@ "$consumer" offset) - 1 )) >/dev/null
-snapshot=$(_db_sql "SELECT json_group_array(data) FROM instances WHERE class IN ('Workstation::Attention','Message','AgentDelivery') ORDER BY id;")
+snapshot=$(_db_sql "SELECT json_group_array(data) FROM instances WHERE class IN ('Workstation::Attention','Message','Agent::Delivery') ORDER BY id;")
 tick
-check 'restart replay creates no second delegation' "$snapshot" "$(_db_sql "SELECT json_group_array(data) FROM instances WHERE class IN ('Workstation::Attention','Message','AgentDelivery') ORDER BY id;")"
+check 'restart replay creates no second delegation' "$snapshot" "$(_db_sql "SELECT json_group_array(data) FROM instances WHERE class IN ('Workstation::Attention','Message','Agent::Delivery') ORDER BY id;")"
 publish 'auto tests'; tick
-check 'grouped failures append without a fresh prompt' "2 $((deliveries+1))" "$(echo "$(field "$f" .eventCount) $(count AgentDelivery)")"
+check 'grouped failures append without a fresh prompt' "2 $((deliveries+1))" "$(echo "$(field "$f" .eventCount) $(count Agent::Delivery)")"
 check 'automatic delegation reaches the outbox once' 1 "$(_db_sql "SELECT count(*) FROM agent_outbox WHERE message_id='message_${f}_delegation_1';")"
 # Session replacement: the withheld group is retried on its next event.
 @ "$session" close >/dev/null
 publish 'replaced tests'; tick
 g=$(attention_for 'replaced tests')
 check 'no current session withholds routing visibly' 'automatic routing withheld: no-session' "$(field "$g" .routingNote)"
-session2=$(must @ AgentSession openFor: "$identity" archetype: "$arch" role: "$role" workspace: "$ws" profile: shell)
+session2=$(must @ Agent::Session openFor: "$identity" archetype: "$arch" role: "$role" workspace: "$ws" profile: shell)
 publish 'replaced tests'; tick
 check 'a later event routes to the replacement session' "$session2" "$(field "$g" .delegatedSession)"
 check 'withheld note clears on delegation' '' "$(field "$g" .routingNote)"
 # Loop controls: target-produced and too-deep receipts stay local.
-mapfile -t pair < <(@ AgentRun startFor: "$session2" profile: shell)
+mapfile -t pair < <(@ Agent::Run startFor: "$session2" profile: shell)
 loop_run=${pair[0]}
 publish_origin 'loop tests' "$loop_run"; tick
 h=$(attention_for 'loop tests')
@@ -192,7 +192,7 @@ check 'recursive origin is withheld' 'automatic routing withheld: lineage-target
 check 'recursive origin publishes nothing' '' "$(field "$h" .delegatedMessage)"
 must @ "$loop_run" transitionTo: failed >/dev/null
 must @ "$subscription" lineageLimit: 0 reason: 'strict' >/dev/null
-mapfile -t pair < <(@ AgentRun startFor: "$other_session" profile: shell)
+mapfile -t pair < <(@ Agent::Run startFor: "$other_session" profile: shell)
 deep_run=${pair[0]}
 publish_origin 'deep tests' "$deep_run"; tick
 check 'lineage depth limit withholds routing' 'automatic routing withheld: lineage-depth' "$(field "$(attention_for 'deep tests')" .routingNote)"
@@ -208,9 +208,9 @@ must @ "$subscription" disableAutomaticDelegation: 'opt out again' >/dev/null
 
 # ---- 2D: attention-to-conversation operations ------------------------------
 status "$root" '.' | jq -e '.schema_version==1 and .targetHandle=="routing-specialist" and .receiptWorkspace!="" and (.firstCoordinate.offset|type)=="number" and .message!="" and .delivery!="" and .run!=""' >/dev/null || { echo 'FAIL: status projection'; status "$root" '.'; exit 1; }
-@ AgentFocus human >/dev/null
-saved_focus=$(declare -f __AgentFocus__class__open_)
-__AgentFocus__class__open_() { printf 'focused %s\n' "$1"; }
+@ Agent::Focus human >/dev/null
+saved_focus=$(declare -f __Agent__Focus__class__open_)
+__Agent__Focus__class__open_() { printf 'focused %s\n' "$1"; }
 check 'focus attaches to the recorded session' "focused $session" "$(must @ "$root" focusDelegatedAttention)"
 check 'focus changes no lifecycle' closed "$(field "$session" .lifecycleState)"
 reject 'focus without a delegation is rejected' @ "$(field "$m" .message)" focusDelegatedAttention
@@ -222,12 +222,12 @@ check 'redelegation records a note' 'redelegated: session replaced' "$(field "$a
 check 'redelegation leaves finished work alone' processed "$(field "$delivery" .state)"
 msg2=$(must @ "$root" delegateAttention)
 check 'redelegation publishes the next revision' "message_${a}_delegation_2 $session2" "$(echo "$msg2 $(field "$msg2" .to | sed 's/^session://')")"
-check 'previous delivery id is retained' 2 "$(_db_sql "SELECT count(*) FROM instances WHERE class='AgentDelivery' AND id LIKE 'agentdelivery_${a}_delegation_%';")"
+check 'previous delivery id is retained' 2 "$(_db_sql "SELECT count(*) FROM instances WHERE class='Agent::Delivery' AND id LIKE 'agentdelivery_${a}_delegation_%';")"
 must @ "$root" redelegateAttention: 'again' >/dev/null
 check 'unstarted work is skipped on redelegation' skipped "$(field "agentdelivery_${a}_delegation_2" .state)"
 reject 'redelegating an undelegated attention is rejected' @ "$root" redelegateAttention: 'twice'
 # No routing path created identities or sessions beyond the fixtures.
-check 'no sessions were created by routing' 3 "$(count AgentSession)"
-check 'no identities were created by routing' 3 "$(count AgentIdentity)"
+check 'no sessions were created by routing' 3 "$(count Agent::Session)"
+check 'no identities were created by routing' 3 "$(count Agent::Identity)"
 check 'no assignments were created' 0 "$(count Assignment)"
 echo "PASS: $passed checks; dry-run admission, explicit delegation, automatic routing with loop controls, and conversation operations"

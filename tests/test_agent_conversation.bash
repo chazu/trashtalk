@@ -30,7 +30,7 @@ check() { [[ "$2" == "$3" ]] || { printf 'FAIL: %s expected=%s actual=%s\n' "$1"
 count() { _db_sql "SELECT count(*) FROM instances WHERE class='$1';"; }
 settle() {
     for i in {1..100}; do
-        @ AgentWorker tickSession: "$session" >/dev/null
+        @ Agent::Worker tickSession: "$session" >/dev/null
         [[ -n "$(@ "$session" activeRun)" ]] || return 0
         sleep .1
     done
@@ -60,21 +60,21 @@ directory="$TRASHTALK_RUN_DIR/$run"
 host=$(jq -r .home "$directory/jcode.json")
 check 'worker lock contention sends input exactly once' 1 "$(jq -s '[.[]|select(.req=="send_message")]|length' "$host/fixture-calls.jsonl")"
 check 'direct turn creates no Message' 0 "$(count Message)"
-check 'direct turn creates no delivery' 0 "$(count AgentDelivery)"
+check 'direct turn creates no delivery' 0 "$(count Agent::Delivery)"
 check 'direct turn keeps a managed run' conversation "$(@ "$run" purpose)"
 check 'native user content preserves all bytes' true "$(jq -s --arg body "$body" 'any(.req=="send_message" and .content==$body and (.system_reminder|contains("Reply directly")))' "$host/fixture-calls.jsonl")"
-check 'run launcher retains session authority' "$run" "$("$directory/trash-send" AgentRun current)"
+check 'run launcher retains session authority' "$run" "$("$directory/trash-send" Agent::Run current)"
 ack=$(@ "$session" input: $'follow-up\n')
 check 'busy input is acknowledged by native API' 'Input sent directly to the session at its next safe point' "$ack"
 check 'busy input uses same run' "$run" "$(@ "$session" activeRun)"
 check 'busy input uses soft interrupt on exact conversation' true "$(jq -s 'any(.req=="soft_interrupt" and .session_id=="jcode-fixture-session" and .content=="follow-up\n")' "$host/fixture-calls.jsonl")"
-snapshot=$(@ AgentTranscript snapshotFor: "$session" limit: 400)
+snapshot=$(@ Agent::Transcript snapshotFor: "$session" limit: 400)
 check 'view contains literal direct user input' true "$(jq --arg body "$body" 'any(.entries[]; .kind=="user" and .text==$body)' <<< "$snapshot")"
 check 'view contains streaming assistant reply' true "$(jq 'any(.entries[]; .text=="Steering received\n")' <<< "$snapshot")"
 check 'direct input still creates no Message' 0 "$(count Message)"
 touch "$host/refuse-input"
 context=$(jq -cn --arg session "$session" '{session:$session,window:400}')
-result=$(@ AgentFocus handleFrame: '{"schema_version":1,"request_id":1,"intent":"send_message","body":"refused text"}' context: "$context")
+result=$(@ Agent::Focus handleFrame: '{"schema_version":1,"request_id":1,"intent":"send_message","body":"refused text"}' context: "$context")
 check 'native rejection reaches composer as failure' false "$(jq -r .frame.ok <<< "$result")"
 check 'native refusal diagnostic reaches composer' true "$(jq '.frame.message|contains("fixture input refused")' <<< "$result")"
 check 'rejection creates no fallback mail' 0 "$(count Message)"
@@ -85,13 +85,13 @@ touch "$JCODE_TEST_GATE"
 settle
 check 'completion waits for native idle after turn_done' true "$(jq -s '[.[]|select(.req=="attach_session")]|length>=2' "$host/fixture-calls.jsonl")"
 check 'direct turn settles without deliveries' succeeded "$(@ "$run" state)"
-check 'completed turn revokes launcher' '' "$("$directory/trash-send" AgentRun current 2>/dev/null || true)"
+check 'completed turn revokes launcher' '' "$("$directory/trash-send" Agent::Run current 2>/dev/null || true)"
 ack=$(@ "$session" input: 'second direct turn')
 settle
 check 'idle input resumes native conversation' jcode-fixture-session "$(@ "$session" lastConversationRef)"
 check 'only one provider conversation created' 1 "$(jq -s '[.[]|select(.req=="create_session")]|length' "$host/fixture-calls.jsonl")"
 check 'native user turns stay outside inbox' 0 "$(count Message)"
-snapshot=$(@ AgentTranscript snapshotFor: "$session" limit: 400)
+snapshot=$(@ Agent::Transcript snapshotFor: "$session" limit: 400)
 check 'reopened view retains both turns' true "$(jq --arg body "$body" 'any(.entries[];.text==$body) and any(.entries[];.text=="second direct turn")' <<< "$snapshot")"
 # Provider failure still belongs to the original request after steering has
 # advanced the adapter's control request ID. It cannot be silently ignored.
@@ -102,7 +102,7 @@ failed_run=$(@ "$session" activeRun)
 @ "$session" input: 'steer before provider failure' >/dev/null
 touch "$JCODE_TEST_GATE"
 for i in {1..100}; do
-    @ AgentWorker tickSession: "$session" >/dev/null
+    @ Agent::Worker tickSession: "$session" >/dev/null
     [[ $(db_get "$failed_run" | jq -r .state) != recovering ]] || break
     sleep .1
 done

@@ -1,9 +1,11 @@
-# ShellDriver - Development and test harness driver.
+package: Agent
+
+# Agent::ShellDriver - Development and test harness driver.
 # Runs $TRASHTALK_SHELL_DRIVER with `bash -c` in the run's execution workspace, prompt
 # on stdin, run token in the environment. Lets the whole delivery loop run
-# without a model: the script can call trash-send AgentRun result:/settle:.
+# without a model: the script can call trash-send Agent::Run result:/settle:.
 # No conversation continuity; resume: simply launches again.
-ShellDriver subclass: AgentDriver
+ShellDriver subclass: Agent::Driver
 
   rawClassMethod: launch: promptFile run: runId token: token [
     local prompt_file="$1" run_id="$2" token="$3" script session workspace argv bash_path

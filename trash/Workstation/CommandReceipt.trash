@@ -43,6 +43,6 @@ CommandReceipt subclass: Object
   rawClassMethod: origin [
     local run
     [[ ${TRASHTALK_RUN_TOKEN+x} ]] || { echo null; return 0; }
-    run=$(@ AgentRun current 2>/dev/null) || { echo null; return 0; }
+    run=$(@ Agent::Run current 2>/dev/null) || { echo null; return 0; }
     jq -cn --arg run "$run" '{producer:"agent-run",run:$run}'
   ]

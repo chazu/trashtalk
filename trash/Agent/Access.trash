@@ -1,6 +1,8 @@
+package: Agent
+
 # Human-view authority uses fresh guarded projections, never cached objects.
 # Ordinary transaction validators remain available inside domain mutations.
-AgentAccess subclass: Object
+Access subclass: Object
   classMethod: identity: identity [
     ^ @ self check: identity kind: 'identity'
   ]
@@ -55,24 +57,24 @@ AgentAccess subclass: Object
   classMethod: validateSnapshot: snapshot [
     | fields human current key member memberRevision |
     @ Store requireSnapshot.
-    human := @ AgentFocus human.
+    human := @ Agent::Focus human.
     fields := @ self snapshotFields: snapshot.
     fields jsonUnpack: #('id' 'identityId' 'kind' 'identityClass' 'owner' 'enabled' 'revision'
       'scope' 'sessionClass' 'state' 'sessionRevision' 'workspace' 'members')
       into: [:id :identityId :kind :identityClass :owner :enabled :revision
         :scope :sessionClass :state :sessionRevision :workspace :members |
-      @ Require equal: identityClass to: 'AgentIdentity'.
+      @ Require equal: identityClass to: 'Agent::Identity'.
       @ Require text: owner.
       @ Require equal: owner to: human.
       @ Require equal: enabled to: 'true'.
-      (kind ~= 'identity') ifTrue: [@ Require equal: sessionClass to: 'AgentSession'].
+      (kind ~= 'identity') ifTrue: [@ Require equal: sessionClass to: 'Agent::Session'].
       (kind = 'live') ifTrue: [
         @ Require member: state of: '["open","paused"]'.
         (revision > 0) ifTrue: [
           @ Require equal: sessionRevision to: revision.
           @ Require member: scope of: '["workspace","identity"]'.
           key := ''.
-          (scope = 'workspace') ifTrue: [key := @ AgentSession workspaceFor: workspace].
+          (scope = 'workspace') ifTrue: [key := @ Agent::Session workspaceFor: workspace].
           member := members objectAt: key.
           member jsonUnpack: #('session' 'revision') into: [:current :memberRevision |
             @ Require equal: current to: id.
@@ -91,8 +93,8 @@ AgentAccess subclass: Object
   classMethod: validateIdentity: identity [
     | current human owner enabled |
     @ Store requireTransaction.
-    human := @ AgentFocus human.
-    current := @ Store read: identity class: 'AgentIdentity'.
+    human := @ Agent::Focus human.
+    current := @ Store read: identity class: 'Agent::Identity'.
     owner := @ current owner.
     @ Require text: owner.
     @ Require equal: owner to: human.
@@ -104,7 +106,7 @@ AgentAccess subclass: Object
   classMethod: validateSession: session [
     | current identity |
     @ Store requireTransaction.
-    current := @ Store read: session class: 'AgentSession'.
+    current := @ Store read: session class: 'Agent::Session'.
     identity := @ current identity.
     identity := @ self validateIdentity: identity.
     ^ current
@@ -116,6 +118,6 @@ AgentAccess subclass: Object
     current := @ self validateSession: session.
     state := @ current lifecycleState.
     @ Require member: state of: '["open","paused"]'.
-    @ AgentSession requireCurrentWithin: current.
+    @ Agent::Session requireCurrentWithin: current.
     ^ current
   ]

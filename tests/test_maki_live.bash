@@ -24,15 +24,15 @@ check() { [[ "$2" == "$3" ]] || { echo "FAIL: $1 expected=$2 got=$3"; exit 1; };
 finish() {
     local deadline=$((SECONDS+240))
     while (( SECONDS < deadline )); do
-        @ AgentWorker tickSession: "$session" >/dev/null 2>&1
+        @ Agent::Worker tickSession: "$session" >/dev/null 2>&1
         [[ -n "$(@ "$session" activeRun)" ]] || return 0
         sleep 1
     done
     echo 'FAIL: timed out waiting for Maki'; exit 1
 }
 marker="maki-memory-$RANDOM-$RANDOM"
-@ Inbox send: "Remember this marker for my next message: $marker. Send exactly 'remembered' using AgentRun result:, then settle this delivery. No file work is needed." to: "session:$session" from: maki-live-tester >/dev/null
-run=$(@ AgentWorker tickSession: "$session")
+@ Inbox send: "Remember this marker for my next message: $marker. Send exactly 'remembered' using Agent::Run result:, then settle this delivery. No file work is needed." to: "session:$session" from: maki-live-tester >/dev/null
+run=$(@ Agent::Worker tickSession: "$session")
 [[ -n "$run" ]] || { echo 'FAIL: first launch'; exit 1; }
 finish
 check 'real Maki initial run succeeds' succeeded "$(@ "$run" state)"
@@ -42,13 +42,13 @@ inbox=$(@ Inbox named: maki-live-tester)
 reply=$(@ "$inbox" unread)
 check 'real reply reaches inbox' remembered "$(@ "$reply" body)"
 @ "$reply" markRead >/dev/null
-@ "$reply" reply: 'What marker did I ask you to remember? Send only that marker through AgentRun result:, then settle this delivery.' >/dev/null
-run2=$(@ AgentWorker tickSession: "$session")
+@ "$reply" reply: 'What marker did I ask you to remember? Send only that marker through Agent::Run result:, then settle this delivery.' >/dev/null
+run2=$(@ Agent::Worker tickSession: "$session")
 [[ -n "$run2" ]] || { echo 'FAIL: resume launch'; exit 1; }
 finish
 check 'real Maki resumed run succeeds' succeeded "$(@ "$run2" state)"
 check 'same Maki conversation resumes' "$ref" "$(@ "$session" lastConversationRef)"
 reply2=$(@ "$inbox" unread)
 check 'resumed Maki remembers earlier turn' "$marker" "$(@ "$reply2" body)"
-check 'all deliveries settled' 0 "$(_db_sql "SELECT count(*) FROM instances WHERE class='AgentDelivery' AND json_extract(data,'$.state')!='processed';")"
+check 'all deliveries settled' 0 "$(_db_sql "SELECT count(*) FROM instances WHERE class='Agent::Delivery' AND json_extract(data,'$.state')!='processed';")"
 echo '=== Maki live launch, reply, memory, resume, and settlement passed ==='

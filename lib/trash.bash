@@ -335,7 +335,7 @@ function _env_list {
 }
 
 # Drop cached copies whose ids start with any given prefix. Durable records are
-# untouched; the next read loads current data (AgentQueue refresh uses this
+# untouched; the next read loads current data (Agent::Queue refresh uses this
 # between worker ticks). Cheap when nothing matches: one directory glob.
 # Usage: _env_evict_prefix <prefix>...
 function _env_evict_prefix {
@@ -2566,6 +2566,19 @@ function initialize_trash() {
   # Initialize SQLite database for instance storage
   db_init 2>/dev/null || msg_debug "Database already initialized"
 
+  # Upgrade existing agent stores before any public send can observe an old
+  # discriminator. Fresh stores still install this optional schema on demand.
+  # A failed migration must fail runtime initialization, not expose mixed state.
+  local legacy_agents
+  # Preserve the Store/worker's existing handling of unavailable databases.
+  # Only an attempted compatibility migration adds a startup failure boundary.
+  legacy_agents=$(_db_sql "SELECT EXISTS(SELECT 1 FROM instances WHERE class IN
+    ('AgentIdentity','AgentSession','AgentRun','AgentDelivery','AgentArchetype','AgentRole'));" 2>/dev/null) || legacy_agents=0
+  if [[ "$legacy_agents" == 1 ]]; then
+    _db_sql -bail < "${TRASHTALK_DIR:-$HOME/.trashtalk}/lib/agent-session-schema.sql" || return 1
+    _env_evict_prefix agentidentity_ agentsession_ agentrun_ agentdelivery_ agentarchetype_ agentrole_
+  fi
+
   # Create object stubs for all objects
   for file in $TRASHDIR/*; do
     if [[ -f "$file" ]]; then  # Only process files, not directories
@@ -2579,7 +2592,7 @@ function initialize_trash() {
 }
 
 # Auto-initialize when sourced
-initialize_trash
+initialize_trash || return 1
 
 # Load tab completion for @ if in interactive shell
 if [[ $- == *i* ]] && [[ -f "$SCRIPT_DIR/trash-completion.bash" ]]; then

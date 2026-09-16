@@ -22,7 +22,7 @@ indicator="$run_dir/attention"
 [[ $(TRASHTALK_RUN_DIR=/dev/null/nowhere @ AgentWorkboard publishIndicator 2>&1 >/dev/null) == *'not updated'* ]]
 TRASHTALK_RUN_DIR=/dev/null/nowhere @ AgentWorkboard publishIndicator >/dev/null 2>&1
 # An unanswered question addressed to the human counts; one to another party does not.
-@ AgentQueue ensureSchema
+@ Agent::Queue ensureSchema
 mine=$(@ Inbox ask: 'ship it?' to: local-user from: 'session:fixture')
 theirs=$(@ Inbox ask: 'ship it?' to: someone-else from: 'session:fixture')
 _db_sql "INSERT INTO agent_questions(message_id,session,run,delivery_ids) VALUES('$mine','s','r','[]'),('$theirs','s','r','[]');"
@@ -35,11 +35,11 @@ _db_sql "UPDATE agent_questions SET answer_id='answered' WHERE message_id='$mine
 # time doubles as a liveness signal.
 _db_sql "UPDATE agent_questions SET answer_id='' WHERE message_id='$mine';"
 rm -f "$indicator"
-@ AgentWorker tick >/dev/null
+@ Agent::Worker tick >/dev/null
 [[ $(cat "$indicator") == '?1' ]]
 before=$(stat -f %m "$indicator" 2>/dev/null || stat -c %Y "$indicator")
 touch -t 200001010000 "$indicator"
-@ AgentWorker tick >/dev/null
+@ Agent::Worker tick >/dev/null
 after=$(stat -f %m "$indicator" 2>/dev/null || stat -c %Y "$indicator")
 (( after >= before ))
 # No temporary file is left beside it.

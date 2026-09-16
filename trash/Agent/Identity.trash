@@ -1,15 +1,25 @@
-# AgentIdentity - A named agent (who), independent of how it runs
+package: Agent
+
+# Agent::Identity - A named agent (who), independent of how it runs
 # Identities are found-or-created by handle. Each identity owns an inbox
 # named `agent:<handle>` where messages land when no session is targeted.
 #
 # Usage:
-#   id=$(@ AgentIdentity named: 'gusgus')
+#   id=$(@ Agent::Identity named: 'gusgus')
 #   @ $id owner: 'chazu'
 #   @ $id inboxObject
-AgentIdentity subclass: Object
+Identity subclass: Object
   include: Persistable
   instanceVars: handle:'' displayName:'' owner:'' enabled:'true' defaultArchetype:''
                 defaultRole:'' inbox:'' created:'' sessionScope:'workspace' currentSession:'' sessionPolicyRevision:0
+
+  # Stable authority IDs survive the namespace migration and existing validators.
+  classMethod: new [
+    | id |
+    id := @ Runtime generateId: 'AgentIdentity'.
+    @ Runtime create: 'Agent::Identity' id: id.
+    ^ id
+  ]
 
   # Compatibility defaults are read-only; migration remains explicit.
   method: sessionPolicyRevision [
@@ -36,20 +46,20 @@ AgentIdentity subclass: Object
       _throw "AgentIdentityError" "Invalid handle '$name' (allowed: letters, digits, _ . : -)"
       return 1
     fi
-    @ AgentSession ensureSchema || return 1
-    @ Store transaction: AgentIdentity sending: 'namedWithin:' with: "$name" replaying: true
+    @ Agent::Session ensureSchema || return 1
+    @ Store transaction: Agent::Identity sending: 'namedWithin:' with: "$name" replaying: true
   ]
 
   classMethod: namedWithin: name [
     | ids count identity inbox address now |
     @ Store requireTransaction.
-    ids := @ Store idsOf: 'AgentIdentity' matching: (#{handle: name} asJson).
+    ids := @ Store idsOf: 'Agent::Identity' matching: (#{handle: name} asJson).
     count := ids arrayLength.
     (count > 1) ifTrue: [^ @ Require reject: 'Identity handle is ambiguous; inspect legacy records'].
     (count = 1) ifTrue: [^ ids arrayFirst].
     now := @ Time nowISO.
     address := 'agent:' , name.
-    identity := @ AgentIdentity new.
+    identity := @ Agent::Identity new.
     @ identity handle: name.
     @ identity inbox: address.
     @ identity created: now.
@@ -64,7 +74,7 @@ AgentIdentity subclass: Object
   rawClassMethod: findByHandle: handle [
     local esc
     esc=$(_db_escape "$1")
-    @ Store findByClass: AgentIdentity where: "json_extract(data, '\$.handle') = '$esc'" orderBy: 'created_at ASC' limit: 1
+    @ Store findByClass: Agent::Identity where: "json_extract(data, '\$.handle') = '$esc'" orderBy: 'created_at ASC' limit: 1
   ]
 
   method: inboxObject [
@@ -74,25 +84,25 @@ AgentIdentity subclass: Object
   method: currentSessionFor: path [
     | args |
     args := #{identity: self workspace: path} asJson.
-    ^ @ Store transaction: 'AgentSession' sending: 'resolveOwnedWithin:' with: args
+    ^ @ Store transaction: 'Agent::Session' sending: 'resolveOwnedWithin:' with: args
   ]
 
   method: ensureCurrentSessionFor: path [
     | identity archetype role profile workspace |
-    identity := @ AgentAccess identity: self.
+    identity := @ Agent::Access identity: self.
     (identity isEmpty) ifTrue: [^ @ Require reject: 'Identity access denied'].
-    workspace := @ AgentSession workspaceFor: path.
+    workspace := @ Agent::Session workspaceFor: path.
     archetype := @ identity defaultArchetype.
     role := @ identity defaultRole.
     profile := @ archetype suggestedBackendProfile.
-    ^ @ AgentSession ensureFor: identity archetype: archetype role: role workspace: workspace profile: profile
+    ^ @ Agent::Session ensureFor: identity archetype: archetype role: role workspace: workspace profile: profile
   ]
 
   # Explicit owner selection preserves one provider conversation and historical work.
   method: selectCurrentSession: session [
     | identity human |
-    identity := @ AgentAccess identity: self.
+    identity := @ Agent::Access identity: self.
     (identity isEmpty) ifTrue: [^ @ Require reject: 'Identity access denied'].
-    human := @ AgentFocus human.
-    ^ @ AgentSession select: session forIdentity: identity owner: human
+    human := @ Agent::Focus human.
+    ^ @ Agent::Session select: session forIdentity: identity owner: human
   ]

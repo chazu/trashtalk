@@ -33,7 +33,7 @@ Worker subclass: Object
   # persisted scheduling field or a custom event/cursor table.
   rawClassMethod: subscriptionsAfter: id [
     local owner pivot
-    owner=$(_db_escape "$(@ AgentFocus human)")
+    owner=$(_db_escape "$(@ Agent::Focus human)")
     pivot=$(_db_escape "$1")
     @ Store findByClass: Workstation::EventSubscription where: "json_extract(data,'$.owner')='$owner' AND json_extract(data,'$.enabled')=1 AND json_extract(data,'$.adapterKind')='command-receipt'" orderBy: "CASE WHEN id>'$pivot' THEN 0 ELSE 1 END,id ASC" limit: 4
   ]
@@ -79,7 +79,7 @@ Worker subclass: Object
     current := @ Workstation::Schema document: current.
     @ Require equal: current to: subscription.
     @ Require equal: (current jsonTextAt: 'enabled') to: 'true'.
-    human := @ AgentFocus human.
+    human := @ Agent::Focus human.
     @ Require equal: (current jsonTextAt: 'owner') to: human.
     ^ 'filtered'
   ]

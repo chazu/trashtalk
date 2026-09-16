@@ -45,7 +45,7 @@ for timestamp in '2020-01-01T00:00:00Z' '2099-02-30T00:00:00Z' '2099-01-01'; do
 done
 if @ "$a" resolveWithNote: ' ' >/dev/null 2>&1; then exit 1; fi
 if @ "$a" suppress: '' >/dev/null 2>&1; then exit 1; fi
-for class in Message AgentDelivery AgentRun AgentSession Stream; do
+for class in Message Agent::Delivery Agent::Run Agent::Session Stream; do
  [[ $(@ Store countByClass: "$class") == 0 ]]
 done
 echo 'PASS: Attention complete transition table reload validation and no effects'

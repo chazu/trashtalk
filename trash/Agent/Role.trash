@@ -1,28 +1,38 @@
-# AgentRole - Versioned policy (what an agent may do)
+package: Agent
+
+# Agent::Role - Versioned policy (what an agent may do)
 # Roles are identified by name + revision and immutable once defined.
 # Container ivars hold JSON: capabilities and workspacePolicy are arrays,
 # approvalPolicy/runBudget/messageBudget are objects.
 #
 # Usage:
-#   r=$(@ AgentRole define: 'assistant' revision: '1' capabilities: '["inbox.read"]' workspacePolicy: '[]' runBudget: '{"turns":0,"usd":0,"retryLimit":2}')
+#   r=$(@ Agent::Role define: 'assistant' revision: '1' capabilities: '["inbox.read"]' workspacePolicy: '[]' runBudget: '{"turns":0,"usd":0,"retryLimit":2}')
 #   @ $r allowsWorkspace: /path      # true when policy is [] or a prefix matches
 #   @ $r retryLimit
-AgentRole subclass: Object
+Role subclass: Object
   include: Persistable
   instanceVars: name:'' revision:'' capabilities:'[]' workspacePolicy:'[]' recipientPolicy:'[]'
                 approvalPolicy:'{}' runBudget:'{"turns":0,"usd":0,"retryLimit":2}'
                 messageBudget:'{"count":0,"usd":0}' supersedes:'' created:''
 
+  # Stable authority IDs survive the namespace migration and existing validators.
+  classMethod: new [
+    | id |
+    id := @ Runtime generateId: 'AgentRole'.
+    @ Runtime create: 'Agent::Role' id: id.
+    ^ id
+  ]
+
   rawClassMethod: named: n revision: r [
     local en er
     en=$(_db_escape "$1")
     er=$(_db_escape "$2")
-    @ Store findByClass: AgentRole where: "json_extract(data, '\$.name') = '$en' AND CAST(json_extract(data, '\$.revision') AS TEXT) = '$er'" orderBy: 'created_at ASC' limit: 1
+    @ Store findByClass: Agent::Role where: "json_extract(data, '\$.name') = '$en' AND CAST(json_extract(data, '\$.revision') AS TEXT) = '$er'" orderBy: 'created_at ASC' limit: 1
   ]
 
   rawClassMethod: define: n revision: r capabilities: capsJson workspacePolicy: wpJson runBudget: rbJson [
     local name="$1" rev="$2" caps="$3" wp="$4" rb="$5" existing id now
-    existing=$(@ AgentRole named: "$name" revision: "$rev")
+    existing=$(@ Agent::Role named: "$name" revision: "$rev")
     if [[ -n "$existing" ]]; then
       echo "$existing"
       return
@@ -34,7 +44,7 @@ AgentRole subclass: Object
       fi
     done
     now=$(@ Time nowISO)
-    id=$(@ AgentRole new)
+    id=$(@ Agent::Role new)
     @ "$id" name: "$name"
     @ "$id" revision: "$rev"
     @ "$id" capabilities: "$caps"

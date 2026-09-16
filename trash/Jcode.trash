@@ -1,5 +1,5 @@
 # Jcode - Installation discovery and interactive authentication for the CLI.
-# Persistent execution belongs to JcodeDriver, not the one-shot Agent adapter.
+# Persistent execution belongs to Agent::JcodeDriver, not the one-shot Agent adapter.
 Jcode subclass: Tool
 
   classMethod: name [

@@ -25,7 +25,7 @@ if @ Process withLock: "$lock" receiver: Trash selector: info argument: '' waiti
 out=$(@ Process withLock: "$lock" receiver: Trash selector: info argument: '')
 [[ -n "$out" ]]
 # Control operations queue for a bounded, configurable number of seconds.
-[[ $(@ AgentWorker controlWait) == 30 ]]
-[[ $(TRASHTALK_CONTROL_WAIT=5 @ AgentWorker controlWait) == 5 ]]
-[[ $(TRASHTALK_CONTROL_WAIT=abc @ AgentWorker controlWait) == 30 ]]
+[[ $(@ Agent::Worker controlWait) == 30 ]]
+[[ $(TRASHTALK_CONTROL_WAIT=5 @ Agent::Worker controlWait) == 5 ]]
+[[ $(TRASHTALK_CONTROL_WAIT=abc @ Agent::Worker controlWait) == 30 ]]
 echo 'PASS: nonblocking and bounded waiting worker locks'

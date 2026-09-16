@@ -7,7 +7,7 @@ source lib/trash.bash 2>/dev/null
 trap - EXIT
 export TRASHTALK_USER=local-user TRASHTALK_WORKSTATION_FIXTURES=1
 # Install without CUE or Honker. Fresh and populated stores use the same
-# idempotent feature-DDL boundary as AgentSession, not an event migration log.
+# idempotent feature-DDL boundary as Agent::Session, not an event migration log.
 @ Workstation::Schema ensureSchema
 # The package migration changes only the Store discriminator. Existing ids and
 # documents remain usable after the idempotent installer runs again.

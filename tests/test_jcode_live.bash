@@ -27,17 +27,17 @@ cleanup() {
 }
 trap cleanup EXIT
 db_init
-identity=$(@ AgentIdentity named: jcode-live)
+identity=$(@ Agent::Identity named: jcode-live)
 @ "$identity" owner: jcode-live-test
 @ "$identity" save
-arch=$(@ AgentArchetype define: jcode-live revision: 1 instructions: 'This is an integration test. Follow each inbox message precisely. Use only the run-specific Trashtalk launcher in the current notification. Read the Inbox messages before answering. Complete each delivery before ending your prompt.' profile: jcode)
-role=$(@ AgentRole define: jcode-live revision: 1 capabilities: '["inbox.read","message.send"]' workspacePolicy: '[]' runBudget: '{"retryLimit":1}')
-session=$(@ AgentSession openFor: "$identity" archetype: "$arch" role: "$role" workspace: "$tmp/workspace" profile: jcode)
+arch=$(@ Agent::Archetype define: jcode-live revision: 1 instructions: 'This is an integration test. Follow each inbox message precisely. Use only the run-specific Trashtalk launcher in the current notification. Read the Inbox messages before answering. Complete each delivery before ending your prompt.' profile: jcode)
+role=$(@ Agent::Role define: jcode-live revision: 1 capabilities: '["inbox.read","message.send"]' workspacePolicy: '[]' runBudget: '{"retryLimit":1}')
+session=$(@ Agent::Session openFor: "$identity" archetype: "$arch" role: "$role" workspace: "$tmp/workspace" profile: jcode)
 first=$(@ Inbox send: 'Reply with exactly JCODE_FIRST_OK, then settle this delivery.' to: "session:$session" from: jcode-live-test)
-run=$(@ AgentWorker tickSession: "$session")
+run=$(@ Agent::Worker tickSession: "$session")
 second=$(@ Inbox send: 'Reply with exactly JCODE_SECOND_OK, then settle this delivery.' to: "session:$session" from: jcode-live-test)
 for attempt in {1..180}; do
-    @ AgentWorker tickSession: "$session" >/dev/null 2>&1
+    @ Agent::Worker tickSession: "$session" >/dev/null 2>&1
     life=$(@ "$session" lifecycleState)
     [[ "$life" == open ]] || break
     [[ -n "$(@ "$session" activeRun)" || "$(@ "$session" pendingCount)" != 0 ]] || break
@@ -53,12 +53,12 @@ check 'live queue drained' 0 "$(@ "$session" pendingCount)"
 owner=$(@ Inbox named: jcode-live-test)
 bodies=$(for reply in $(@ "$owner" unread); do @ "$reply" body; done)
 check 'live replies delivered through Inbox' $'JCODE_FIRST_OK\nJCODE_SECOND_OK' "$bodies"
-check 'live completed launcher revoked' '' "$("$TRASHTALK_RUN_DIR/$run/trash-send" AgentRun current 2>/dev/null)"
+check 'live completed launcher revoked' '' "$("$TRASHTALK_RUN_DIR/$run/trash-send" Agent::Run current 2>/dev/null)"
 if [[ "$failed" == 0 ]]; then
     # Stop actual resident work, not merely the adapter connection.
     instruction="Use the bash tool in the foreground to run exactly this command: echo \$\$ > '$tmp/workspace/work.pid'; touch '$tmp/workspace/work-started'; sleep 120; touch '$tmp/workspace/work-finished'. After it finishes reply SLEPT and settle. Do not background it."
     @ Inbox send: "$instruction" to: "session:$session" from: jcode-live-test >/dev/null
-    busy=$(@ AgentWorker tickSession: "$session")
+    busy=$(@ Agent::Worker tickSession: "$session")
     for attempt in {1..90}; do
         [[ ! -f "$tmp/workspace/work-started" ]] || break
         sleep 1
@@ -78,13 +78,13 @@ if [[ "$failed" == 0 ]]; then
         check 'live stopped tool did not finish its remaining work' false "$([[ -e "$tmp/workspace/work-finished" ]] && echo true || echo false)"
     fi
     native_ref=$(@ "$session" lastConversationRef)
-    stopped_delivery=$(@ Store findByClass: AgentDelivery where: "json_extract(data,'$.run')='$busy' AND json_extract(data,'$.state')='uncertain'" orderBy: 'created_at ASC' limit: 1)
+    stopped_delivery=$(@ Store findByClass: Agent::Delivery where: "json_extract(data,'$.run')='$busy' AND json_extract(data,'$.state')='uncertain'" orderBy: 'created_at ASC' limit: 1)
     @ "$session" skip: "$stopped_delivery" note: 'integration test stop reviewed' >/dev/null
     @ "$session" resume >/dev/null
     @ Inbox send: 'The previous sleep was intentionally stopped. Reply with exactly JCODE_RESUMED_OK and settle this delivery.' to: "session:$session" from: jcode-live-test >/dev/null
-    resumed=$(@ AgentWorker tickSession: "$session")
+    resumed=$(@ Agent::Worker tickSession: "$session")
     for attempt in {1..90}; do
-        @ AgentWorker tickSession: "$session" >/dev/null 2>&1
+        @ Agent::Worker tickSession: "$session" >/dev/null 2>&1
         [[ -n "$(@ "$session" activeRun)" ]] || break
         [[ "$(@ "$session" lifecycleState)" == open ]] || break
         sleep 1

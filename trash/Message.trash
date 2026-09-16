@@ -51,13 +51,13 @@ Message subclass: Object
   # Processing links are owned by the queue, independently of read/archive state.
   method: blockingDeliveryIds [
     | question |
-    question := @ AgentQueue questionFor: self.
+    question := @ Agent::Queue questionFor: self.
     ^ question jsonAt: 'deliveryIds'
   ]
 
   method: answerId [
     | question |
-    question := @ AgentQueue questionFor: self.
+    question := @ Agent::Queue questionFor: self.
     ^ question jsonTextAt: 'answerId'
   ]
 
@@ -86,7 +86,7 @@ Message subclass: Object
     sender=$(_ivar from)
     [[ "${sender%%:*}" == session ]] || return 0
     session=${sender#*:}
-    [[ $(db_get "$session" | jq -r '.class // ""') == AgentSession ]] || return 0
+    [[ $(db_get "$session" | jq -r '.class // ""') == Agent::Session ]] || return 0
     printf '%s\n' "$session"
   ]
 
@@ -95,7 +95,7 @@ Message subclass: Object
     sender=$(_ivar from)
     session=$(@ "$_RECEIVER" originSession)
     if [[ -n "$session" ]]; then @ "$session" identity
-    elif [[ "${sender%%:*}" == agent ]]; then @ AgentIdentity findByHandle: "${sender#*:}"; fi
+    elif [[ "${sender%%:*}" == agent ]]; then @ Agent::Identity findByHandle: "${sender#*:}"; fi
   ]
 
   # Prefer the exact originating conversation while it is current. Otherwise
@@ -108,7 +108,7 @@ Message subclass: Object
     @ identity reload.
     scope := @ identity sessionScope.
     (scope = 'identity') ifTrue: [
-      current := @ AgentSession currentFor: identity workspace: ''.
+      current := @ Agent::Session currentFor: identity workspace: ''.
       (current notEmpty) ifTrue: [^ current].
       ^ origin
     ].
@@ -118,11 +118,11 @@ Message subclass: Object
       (state = 'open') ifTrue: [^ origin].
       (state = 'paused') ifTrue: [^ origin].
       workspace := @ origin workspace.
-      current := @ AgentSession findFor: identity workspace: workspace.
+      current := @ Agent::Session findFor: identity workspace: workspace.
       current isEmpty ifTrue: [^ origin].
       ^ current
     ].
-    ^ @ AgentWorker eligibleSessionsFor: identity
+    ^ @ Agent::Worker eligibleSessionsFor: identity
   ]
 
   method: archive [
@@ -266,11 +266,11 @@ Message subclass: Object
   ]
 
   # Safe local projection factory. All Message and Attention changes commit
-  # together through the public Inbox attention: boundary, without AgentQueue.
+  # together through the public Inbox attention: boundary, without Agent::Queue.
   classMethod: forAttention: attention display: display to: owner [
     | data message id title summary count first last body now millis patch human recipient linked delegated |
     @ Store requireTransaction.
-    human := @ AgentFocus human.
+    human := @ Agent::Focus human.
     @ Require equal: owner to: human.
     @ Store read: attention class: 'Workstation::Attention'.
     data := @ Store getInstance: attention.
@@ -332,7 +332,7 @@ Message subclass: Object
   # These controls deliberately do not reuse reply/archive/session actions.
   method: localAttention [
     | human recipient linked |
-    human := @ AgentFocus human.
+    human := @ Agent::Focus human.
     recipient := to.
     (@ Require equal: recipient to: human) ifFailed: [:error | @ error signal].
     linked := attention.
@@ -397,7 +397,7 @@ Message subclass: Object
   classMethod: forDelegatedAttention: attention admission: admission revision: revision [
     | id msg data human session recipient title summary count first last depth body now millis root workspace execution |
     @ Store requireTransaction.
-    human := @ AgentFocus human.
+    human := @ Agent::Focus human.
     id := 'message_' , attention , '_delegation_' , revision.
     @ Store read: attention class: 'Workstation::Attention'.
     data := @ Store getInstance: attention.

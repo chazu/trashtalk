@@ -4,14 +4,14 @@
 
 ## Problem
 
-An AgentSession outlives individual AgentRuns. A resident harness must not retain
+An Agent::Session outlives individual AgentRuns. A resident harness must not retain
 an old run's authority, treat a lost connection as completed work, or confuse direct human input with
 inbox delivery. Every harness must support queued notification
 delivery and an explicit stop of an exact run.
 
 ## Design
 
-Context maintenance uses the same tracked-run lifecycle. `AgentSession compact`
+Context maintenance uses the same tracked-run lifecycle. `Agent::Session compact`
 starts native manual compaction only while the session is open and idle. The
 adapter retains its attachment until changed compaction metadata is durable.
 Jcode writes metadata to either its snapshot or an append-only journal; both
@@ -26,7 +26,7 @@ signalling the unrelated process. An unidentifiable remaining process group
 still prevents a false stop confirmation. This uses the POSIX rule that a PID
 cannot be reused while its previous process group still exists.
 
-`jcode` is a persistent-session backend profile behind AgentDriver. It uses the
+`jcode` is a persistent-session backend profile behind Agent::Driver. It uses the
 [Jcode Harness API](https://jcode.sh/sdk) over `api-bridge --stdio` (API v1,
 qualified initially against Jcode 0.84.0). Each Trashtalk session has a private
 Jcode home and daemon socket. Each run gets a short-lived Bash protocol adapter;
@@ -37,16 +37,16 @@ delegation. Trashtalk remains the message and scheduling authority.
 The worker persists messages and deliveries before dispatch. Busy sessions keep
 new deliveries pending; the next worker tick after completion sends a notification
 prompt containing message references. Agents read their contents with Inbox's
-public `show:` message, then reply and settle with AgentRun. Notifications contain
+public `show:` message, then reply and settle with Agent::Run. Notifications contain
 no message bodies or sender-supplied instructions. No model polls its inbox.
 
-Direct conversation input uses the same native API connection. `AgentSession
+Direct conversation input uses the same native API connection. `Agent::Session
 input:` starts an idle turn with literal user content and a separate system
 reminder carrying fresh run authority. While a run is active, the adapter forwards
 input as `soft_interrupt`, acknowledged for the next safe point. A private,
 locked control channel prevents acceptance after the adapter closes admission.
 Requests with uncertain acknowledgements are retained for inspection and never
-replayed automatically. Composer input creates no Message or AgentDelivery.
+replayed automatically. Composer input creates no Message or Agent::Delivery.
 The view projects acknowledged input and streamed assistant text from these runs.
 It continues the native working directory and rechecks the role policy. Jcode
 advertises `live_input:true`; this integration uses Harness API v1, not ACP.
@@ -85,14 +85,14 @@ resume. An unidentifiable surviving group yields an unconfirmed stop rather than
 signalling a potentially unrelated process. A failed confirmation leaves
 the run active and retryable. Confirmed stops mark unsettled deliveries uncertain.
 Queued messages remain durable and require explicit resume and delivery review.
-An authenticated agent uses `@ AgentRun stop: "$targetRun"`; its role needs
+An authenticated agent uses `@ Agent::Run stop: "$targetRun"`; its role needs
 `agent.stop` and both sessions must have the same owner. These controls are
 cooperative API authority, not OS isolation from a harness with Bash access.
 
 ## Implementation boundaries
 
-AgentWorker/AgentRun own lifecycle, authorization, queueing, and settlement in the
-existing DSL. JcodeDriver adapts launch/outcome/stop. `lib/jcode-api.bash` only owns
+Agent::Worker/Agent::Run own lifecycle, authorization, queueing, and settlement in the
+existing DSL. Agent::JcodeDriver adapts launch/outcome/stop. `lib/jcode-api.bash` only owns
 the bidirectional JSON wire protocol and local event receipts. There is no new
 daemon implementation or compiler dependency. Authentication uses existing OpenAI
 subscription credentials; managed homes link only the relevant credential files.
@@ -110,7 +110,7 @@ can explicitly select Maki or another supported profile for new sessions.
 The stateful API fixture exercises queued inbox reads, scoped replies, native
 conversation reuse, false completion events, adapter loss, cancellation that is
 acknowledged without stopping, same-owner stop authorization, stale tokens, and
-preserved pending work. Existing ShellDriver and Maki tests cover the shared
+preserved pending work. Existing Agent::ShellDriver and Maki tests cover the shared
 worker and notification path.
 
 On 2026-09-10, Jcode 0.84.0 with OpenAI `gpt-5.6-terra` and medium effort completed

@@ -27,7 +27,7 @@ EventSubscription subclass: Object
   classMethod: validateWithin: document [
     | human expected adapter target mode confirmation |
     @ Workstation::Schema requireValidated: document.
-    human := @ AgentFocus human.
+    human := @ Agent::Focus human.
     @ Require equal: (document jsonTextAt: 'owner') to: human.
     expected := 'workstation/' , (document jsonTextAt: 'id').
     @ Require equal: (document jsonTextAt: 'consumerName') to: expected.
@@ -35,7 +35,7 @@ EventSubscription subclass: Object
     @ Require member: (document jsonTextAt: 'grouping') of: '["opaque"]'.
     (adapter = 'Workstation::CommandReceiptSourceAdapter') ifTrue: [@ Workstation::CommandReceiptSourceAdapter validatePolicy: document].
     target := document jsonTextAt: 'targetIdentity'.
-    (target notEmpty) ifTrue: [@ AgentAccess validateIdentity: target].
+    (target notEmpty) ifTrue: [@ Agent::Access validateIdentity: target].
     # Automatic delegation is opt-in: it needs a target and an explicit confirmation note.
     mode := @ self delegationModeOf: document.
     (mode = 'automatic') ifTrue: [

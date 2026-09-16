@@ -13,7 +13,7 @@ plus Honker-backed SQLite notifications, queues, durable streams, consumer
 offsets, locks, and scheduling.
 
 The existing session path does not compose those pieces into a reliable
-headless agent system. [AgentSession](../trash/AgentSession.trash) maps
+headless agent system. [Agent::Session](../trash/Agent/Session.trash) maps
 conversations to tmux sessions, and [Agent](../trash/Agent.trash) can send
 keystrokes to interactive CLIs. Terminal existence cannot establish whether
 work was received, completed, or recovered.
@@ -84,7 +84,7 @@ Gusgus, the assistant behind `@@`.
 
 ### Session, run, and model turn have different lifetimes
 
-An `AgentSession` is a durable conversation and work context. An `AgentRun`
+An `Agent::Session` is a durable conversation and work context. An `Agent::Run`
 records execution managed by a harness. A model turn is an exchange inside
 that execution; the harness owns its sequencing and tool loop.
 
@@ -151,8 +151,8 @@ wakes are expected and must not imply duplicate launches or actions.
 
 ### Behavioral intent and permission roles are separate
 
-An `AgentArchetype` describes what an agent is for: reviewer, planner, or
-test observer. An `AgentRole` is an authorization policy: what it may read,
+An `Agent::Archetype` describes what an agent is for: reviewer, planner, or
+test observer. An `Agent::Role` is an authorization policy: what it may read,
 which recipients it may contact, and which actions need approval.
 
 Two reviewers can have different permission roles; a reviewer and a planner
@@ -181,7 +181,7 @@ validated intents.
 
 All fields and selectors below are proposed contracts.
 
-### `AgentIdentity`
+### `Agent::Identity`
 
 A stable principal identifying who acted.
 
@@ -201,7 +201,7 @@ addressed to the identity lands before routing. Identity addressing routes
 new work; session addressing continues an exact conversation. Labels are not
 credentials.
 
-### `AgentArchetype` and `AgentRole`
+### `Agent::Archetype` and `Agent::Role`
 
 An archetype is a versioned definition of purpose and operating guidance:
 
@@ -266,7 +266,7 @@ routing key. For other agents it is passed explicitly at `openFor:`. The
 role's `workspacePolicy` is the set of paths an identity may open sessions
 in.
 
-### `AgentSession`
+### `Agent::Session`
 
 The durable conversation, routing destination, and shared work context.
 
@@ -295,7 +295,7 @@ not a second source of execution authority. Backend conversation references
 are associated with runs and may be reused by subsequent runs. A session can
 therefore retain several explicitly identified conversation branches.
 
-### `AgentRun`
+### `Agent::Run`
 
 A harness-managed execution containing many model turns and, with a later
 adapter that accepts live input, incremental deliveries.
@@ -372,9 +372,9 @@ or model-authored predicates.
 because settlement lives there. The Honker consumer offset is derived from it
 and may be rebuilt from the record at any time.
 
-### `AgentDelivery` and `InboxReceipt`
+### `Agent::Delivery` and `InboxReceipt`
 
-An `AgentDelivery` records one durable input batch assigned to a run:
+An `Agent::Delivery` records one durable input batch assigned to a run:
 
 ```text
 session
@@ -602,10 +602,10 @@ Inbox message / domain event
 durable input + WakeRequest / outbox
               |
               v
-AgentWorker claims and reconciles
+Agent::Worker claims and reconciles
               |
               v
-persist run choice + AgentDelivery
+persist run choice + Agent::Delivery
               |
               v
 launch detached harness process (fresh or resumed conversation)
@@ -695,7 +695,7 @@ writes must be rejected.
 
 ### Worker and process management
 
-Here, `AgentWorker` means an explicitly started Bash process that runs a
+Here, `Agent::Worker` means an explicitly started Bash process that runs a
 Trashtalk dispatch/reconciliation loop. Sourcing the runtime or opening a
 session must not silently start it. It can run in the foreground for
 development, or under an OS supervisor for unattended operation.
@@ -753,7 +753,7 @@ so a polling worker must batch its queries per tick.
 
 The one-shot `AxeAgent` and `CodexAgent` paths remain valid for
 `@ Agent ask:workingDirectory:status:lastResult:`. [ClaudeAgent and the tmux session methods were retired](cleanup-2026-09.md).
-Persistent sessions use separate drivers behind `AgentSession`; the Codex
+Persistent sessions use separate drivers behind `Agent::Session`; the Codex
 one-shot path retains ChatGPT authentication and
 stripped API-key environment. The session driver relaxes the one-shot path's
 read-only sandbox only as far as the workspace and the Trashtalk store.
@@ -867,14 +867,14 @@ In the first slice the agent reaches Trashtalk through its shell tool and
 through the run token in `TRASHTALK_RUN_TOKEN`:
 
 ```text
-trash-send AgentRun settle: <deliveryId>          # mark a delivery processed
-trash-send AgentRun settle: <deliveryId> note: <text>
-trash-send AgentRun result: <body>                # reply in-thread to the delivery's sender
-trash-send AgentRun send: <body> to: <address>    # message a session, identity, or user
-trash-send AgentRun send: <body> to: <address> key: <idempotencyKey>
-trash-send AgentRun askUser: <question>           # blocking question; marks the delivery blocked
-trash-send AgentRun inbox                         # unread messages for this session
-trash-send AgentRun events: <rangeSpec>           # permitted stream events
+trash-send Agent::Run settle: <deliveryId>          # mark a delivery processed
+trash-send Agent::Run settle: <deliveryId> note: <text>
+trash-send Agent::Run result: <body>                # reply in-thread to the delivery's sender
+trash-send Agent::Run send: <body> to: <address>    # message a session, identity, or user
+trash-send Agent::Run send: <body> to: <address> key: <idempotencyKey>
+trash-send Agent::Run askUser: <question>           # blocking question; marks the delivery blocked
+trash-send Agent::Run inbox                         # unread messages for this session
+trash-send Agent::Run events: <rangeSpec>           # permitted stream events
 ```
 
 Every selector derives identity, session, and run from the token and ignores
@@ -1111,10 +1111,10 @@ it. It becomes the entry point to a persistent assistant named Gusgus.
   historical conversations remain inspectable.
 
 `@@ 'text'` persists a message from the user to that session, runs a
-foreground `AgentWorker tick` so no worker daemon is required, prints the
+foreground `Agent::Worker tick` so no worker daemon is required, prints the
 message id, and returns. It does not wait. Gusgus's answer arrives as an
 ordinary message in the user's inbox, in the same thread as the question,
-sent by the agent through `AgentRun result:` before it settles the delivery.
+sent by the agent through `Agent::Run result:` before it settles the delivery.
 The user reads and answers it with the existing inbox messages; Innards
 views come later.
 
@@ -1151,10 +1151,10 @@ settlement fallback visible immediately.
 ## Public Trashtalk API sketch
 
 ```smalltalk
-identity := @ AgentIdentity named: 'build-watcher'.
-archetype := @ AgentArchetype named: 'test-observer' revision: '1'.
-role := @ AgentRole named: 'workspace-reader' revision: '1'.
-session := @ AgentSession openFor: identity archetype: archetype role: role workspace: project.
+identity := @ Agent::Identity named: 'build-watcher'.
+archetype := @ Agent::Archetype named: 'test-observer' revision: '1'.
+role := @ Agent::Role named: 'workspace-reader' revision: '1'.
+session := @ Agent::Session openFor: identity archetype: archetype role: role workspace: project.
 
 @ session subscribeTo: 'tests' events: #('test.completed' 'test.failed').
 @ session wake.
@@ -1172,7 +1172,7 @@ session := @ AgentSession openFor: identity archetype: archetype role: role work
 Refine selectors against compiler capabilities before implementation.
 `Agent` remains the convenience facade/backend selector, not a persistent
 identity. The tmux-backed class is renamed `TmuxSession` before the durable
-`AgentSession` is added; the rename is mechanical and covered by existing
+`Agent::Session` is added; the rename is mechanical and covered by existing
 tests. Deprecate tmux-oriented session methods as migration paths become
 available.
 
@@ -1253,8 +1253,8 @@ available.
 
 ### Phase 1a: durable headless development slice
 
-- Rename the tmux-backed `AgentSession` to `TmuxSession`, then add the
-  domain records under `AgentSession`.
+- Rename the tmux-backed `Agent::Session` to `TmuxSession`, then add the
+  domain records under `Agent::Session`.
 - Implement transactional input/outbox creation and idempotent delivery
   assignment with plain-SQLite fencing before enabling dispatch.
 - Add detached launch with exact argv, redirected output, and PID recording
@@ -1263,11 +1263,11 @@ available.
 - Add the Codex session driver: `codex exec --json` with
   `--sandbox workspace-write --add-dir ~/.trashtalk`, `exec resume` for later
   deliveries, and the run token in the environment.
-- Add the `trash-send`-reachable `AgentRun settle:`, `result:`, `send:to:`,
+- Add the `trash-send`-reachable `Agent::Run settle:`, `result:`, `send:to:`,
   and `askUser:` selectors with token-derived attribution.
 - Persist normalized run/message events and settlement, including the
   uncertain-on-exit fallback.
-- Add a foreground `AgentWorker tick` that reconciles a bounded batch; do
+- Add a foreground `Agent::Worker tick` that reconciles a bounded batch; do
   not add another detached loop.
 - Add Gusgus: the identity, archetype, role, and profile records, the `@@`
   send-and-tick path, and the tick-on-deliver hook so inbox replies relaunch
@@ -1403,7 +1403,7 @@ generic stream applet is a stretch goal. The shared Process lifecycle
 implementation is Phase 2 work, not a prerequisite.
 
 Also decided: rename the tmux class to `TmuxSession` before the durable
-`AgentSession` lands; approvals reuse the question path; a human-only
+`Agent::Session` lands; approvals reuse the question path; a human-only
 `skipped` state with owner alerts handles head-of-line blocking; the
 subscription record owns the cursor; interruption yields `uncertain` when
 output exists and `pending` otherwise; budgets carry turn and USD caps;

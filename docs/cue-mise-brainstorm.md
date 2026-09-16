@@ -103,7 +103,7 @@ define each envelope once:
 - **Test assertions**: `TestCase` could gain `assert: json matches: '#ToolResult'`
   that shells out to `cue vet`, so the tests for Axe, Codex, Cue, and Mise stop
   re-asserting field-by-field.
-- **Agent output gating**: `Agent`/`AgentSession` receive LLM output that is
+- **Agent output gating**: `Agent`/`Agent::Session` receive LLM output that is
   supposed to be JSON of a known shape. Vetting it against a CUE definition
   before acting is a stronger check than `String isJson:` and yields
   human-readable diagnostics to feed back to the model on retry.

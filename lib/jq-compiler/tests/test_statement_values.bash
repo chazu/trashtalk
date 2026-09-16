@@ -58,8 +58,8 @@ ValueFixture subclass: Object
   method: echo: s [ ^ s ]
   method: driverFor: profile [
     ^ profile caseOf: {
-      'shell' -> [ 'ShellDriver' ].
-      #('codex' 'assistant-low-power' '') -> [ 'CodexDriver' ]
+      'shell' -> [ 'Agent::ShellDriver' ].
+      #('codex' 'assistant-low-power' '') -> [ 'Agent::CodexDriver' ]
     } otherwise: [ @ ProfileError signal: 'Unknown profile ' , profile ]
   ]
   method: label: n [
@@ -92,9 +92,9 @@ check 'walked 3 abc' @ "$id" walk: $'a\nb\n\nc'
 check 'stopped after 1' @ "$id" walk: $'a\nstop\nb'
 check 'walked 0 ' @ "$id" walk: ''
 check $'x\ny' @ "$id" printAll: $'x\ny'
-check ShellDriver @ "$id" driverFor: shell
-check CodexDriver @ "$id" driverFor: codex
-check CodexDriver @ "$id" driverFor: ''
+check Agent::ShellDriver @ "$id" driverFor: shell
+check Agent::CodexDriver @ "$id" driverFor: codex
+check Agent::CodexDriver @ "$id" driverFor: ''
 rc=0; out=$(@ "$id" driverFor: weird) || rc=$?
 [[ $rc -ne 0 && -z "$out" ]] || { echo "FAIL: caseOf: otherwise did not fail (rc=$rc out=$out)" >&2; exit 1; }
 _clear_error

@@ -12,12 +12,12 @@ db_init
 passed=0
 check() { if [[ "$2" == "$3" ]]; then echo "PASS: $1"; passed=$((passed+1)); else printf 'FAIL: %s expected=%s got=%s\n' "$1" "$2" "$3"; exit 1; fi; }
 contains() { [[ "$3" == *"$2"* ]] || { printf 'FAIL: %s missing %s in %s\n' "$1" "$2" "$3"; exit 1; }; passed=$((passed+1)); }
-identity=$(@ AgentIdentity named: gusgus)
+identity=$(@ Agent::Identity named: gusgus)
 @ "$identity" displayName: Gusgus
 @ "$identity" save
 archetype=$(@ Gusgus archetype)
 role=$(@ Gusgus role)
-session=$(@ AgentSession openFor: "$identity" archetype: "$archetype" role: "$role" workspace: "$root" profile: shell)
+session=$(@ Agent::Session openFor: "$identity" archetype: "$archetype" role: "$role" workspace: "$root" profile: shell)
 msg=$(@ Inbox send: $'\n  Tests\tpass.\n\nSecond paragraph.' to: reader from: "session:$session" subject: result kind: result)
 data=$(@ MessagePresentation dataFor: "$msg")
 check 'generic subject falls back to first nonblank body line' 'Tests pass.' "$(jq -r .label <<< "$data")"

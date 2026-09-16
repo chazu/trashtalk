@@ -14,7 +14,7 @@ check() { if [[ "$2" == "$3" ]]; then echo "PASS: $1"; passed=$((passed+1)); els
 state() { db_get "$1" | jq -r .state; }
 start_run() {
     local pair
-    mapfile -t pair < <(@ AgentRun startFor: "$session" profile: shell)
+    mapfile -t pair < <(@ Agent::Run startFor: "$session" profile: shell)
     run=${pair[0]}
     export TRASHTALK_RUN_TOKEN=${pair[1]}
     @ "$run" transitionTo: running >/dev/null
@@ -22,18 +22,18 @@ start_run() {
 new_delivery() {
     local m
     m=$(@ Inbox send: "$1" to: "session:$session" from: question-owner)
-    @ AgentDelivery forSession: "$session" messages: "$(jq -cn --arg m "$m" '[$m]')"
+    @ Agent::Delivery forSession: "$session" messages: "$(jq -cn --arg m "$m" '[$m]')"
 }
 session=$(@ Gusgus sessionFor: "$root")
 d1=$(new_delivery first)
 start_run
-@ AgentDelivery claim: "$d1" run: "$run" >/dev/null
-q1=$(@ AgentRun askUser: 'Which branch?')
+@ Agent::Delivery claim: "$d1" run: "$run" >/dev/null
+q1=$(@ Agent::Run askUser: 'Which branch?')
 @ "$run" finishWith: waiting_for_user outcome: '{}' error: '' >/dev/null
 d2=$(new_delivery second)
 start_run
-@ AgentDelivery claim: "$d2" run: "$run" >/dev/null
-q2=$(@ AgentRun askUser: 'Which test?')
+@ Agent::Delivery claim: "$d2" run: "$run" >/dev/null
+q2=$(@ Agent::Run askUser: 'Which test?')
 @ "$run" finishWith: waiting_for_user outcome: '{}' error: '' >/dev/null
 unrelated=$(@ Inbox send: 'another task' to: "session:$session" from: question-owner)
 check 'unrelated incoming message leaves first question blocked' blocked "$(state "$d1")"
@@ -53,12 +53,12 @@ check 'question records its first answer independently of unread state' "$a1" "$
 # Two independent questions in one run, plus a second prerequisite for d3.
 d3=$(new_delivery third); d4=$(new_delivery fourth)
 start_run
-@ AgentDelivery claim: "$d3" run: "$run" >/dev/null
-@ AgentDelivery claim: "$d4" run: "$run" >/dev/null
-q3=$(@ AgentRun askUser: 'Branch for third?' forDelivery: "$d3")
+@ Agent::Delivery claim: "$d3" run: "$run" >/dev/null
+@ Agent::Delivery claim: "$d4" run: "$run" >/dev/null
+q3=$(@ Agent::Run askUser: 'Branch for third?' forDelivery: "$d3")
 check 'targeted question leaves other held work offered' offered "$(state "$d4")"
-q4=$(@ AgentRun askUser: 'Branch for fourth?' forDelivery: "$d4")
-q5=$(@ AgentRun askUser: 'Also choose the third test' forDelivery: "$d3")
+q4=$(@ Agent::Run askUser: 'Branch for fourth?' forDelivery: "$d4")
+q5=$(@ Agent::Run askUser: 'Also choose the third test' forDelivery: "$d3")
 check 'targeted question publishes only its delivery' "[\"$d3\"]" "$(@ "$q3" blockingDeliveryIds)"
 @ "$run" finishWith: waiting_for_user outcome: '{}' error: '' >/dev/null
 wrong=$(@ Message to: "session:$session" from: someone-else subject: wrong body: wrong kind: note)
@@ -80,25 +80,25 @@ check 'answering every prerequisite resumes the delivery' pending "$(state "$d3"
 a4=$(@ Message to: "session:$session" from: question-owner subject: answer body: main kind: note)
 @ "$a4" replyTo: "$q4"
 @ "$inbox" prepare: "$a4"
-@ AgentQueue persist: "$a4"
+@ Agent::Queue persist: "$a4"
 check 'persisting an unrouted reply leaves delivery blocked' blocked "$(state "$d4")"
 _db_sql "CREATE TRIGGER reject_unblock BEFORE UPDATE ON instances WHEN OLD.id='$d4' AND json_extract(NEW.data,'$.state')='pending' BEGIN SELECT RAISE(ABORT,'fixture failure'); END;"
-@ AgentWorker routePending >/dev/null 2>&1; rc=$?
+@ Agent::Worker routePending >/dev/null 2>&1; rc=$?
 check 'failed routing reports failure' 1 "$rc"
 check 'failed routing does not record an answer' '' "$(@ "$q4" answerId)"
 check 'failed routing preserves pending outbox obligation' '' "$(_db_sql "SELECT session FROM agent_outbox WHERE message_id='$a4';")"
 _db_sql 'DROP TRIGGER reject_unblock;'
-@ AgentWorker routePending >/dev/null
+@ Agent::Worker routePending >/dev/null
 check 'routing replay recovers the matching answer' "$a4" "$(@ "$q4" answerId)"
 check 'routing replay resumes linked delivery' pending "$(state "$d4")"
 
 # Old answers, including duplicate outbox routing, cannot release new blockers.
 start_run
-@ AgentDelivery claim: "$d3" run: "$run" >/dev/null
-q6=$(@ AgentRun askUser: 'A new question after resume' forDelivery: "$d3")
+@ Agent::Delivery claim: "$d3" run: "$run" >/dev/null
+q6=$(@ Agent::Run askUser: 'A new question after resume' forDelivery: "$d3")
 @ "$q3" reply: duplicate >/dev/null
 _db_sql "UPDATE agent_outbox SET session='' WHERE message_id='$a3';"
-@ AgentWorker routePending >/dev/null
+@ Agent::Worker routePending >/dev/null
 check 'old answer replay does not unblock a later run' blocked "$(state "$d3")"
 check 'old question retains its original answer' "$a3" "$(@ "$q3" answerId)"
 @ "$q3" archive >/dev/null
@@ -106,15 +106,15 @@ check 'archiving a stale message cannot overwrite recorded answer' "$a3" "$(@ "$
 
 # Question publication and blocking also roll back as one transaction.
 before=$(_db_sql "SELECT count(*) FROM agent_questions;")
-bad=$(@ AgentRun askUser: 'wrong delivery' forDelivery: "$d4" 2>/dev/null); rc=$?
+bad=$(@ Agent::Run askUser: 'wrong delivery' forDelivery: "$d4" 2>/dev/null); rc=$?
 check 'cannot block a delivery not held by the current run' 1 "$rc"
 check 'rejected question returns no message id' '' "$bad"
 check 'rejected question does not publish links' "$before" "$(_db_sql 'SELECT count(*) FROM agent_questions;')"
 d5=$(new_delivery fifth)
-@ AgentDelivery claim: "$d5" run: "$run" >/dev/null
+@ Agent::Delivery claim: "$d5" run: "$run" >/dev/null
 before=$(_db_sql "SELECT count(*) FROM instances WHERE class='Message' AND json_extract(data,'$.kind')='question';")
 _db_sql "CREATE TRIGGER reject_question BEFORE INSERT ON agent_questions BEGIN SELECT RAISE(ABORT,'fixture failure'); END;"
-bad=$(@ AgentRun askUser: 'atomic question' forDelivery: "$d5" 2>/dev/null); rc=$?
+bad=$(@ Agent::Run askUser: 'atomic question' forDelivery: "$d5" 2>/dev/null); rc=$?
 check 'question transaction failure is propagated' 1 "$rc"
 check 'failed question publishes no id' '' "$bad"
 check 'failed question leaves delivery offered' offered "$(state "$d5")"

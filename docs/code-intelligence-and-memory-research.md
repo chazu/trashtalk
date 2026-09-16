@@ -44,7 +44,7 @@ pinning aid, not a claim that every described feature exists in that release.
 No candidate has been installed, benchmarked, or qualified against Trashtalk in
 this assessment.
 
-Trashtalk already has durable `AgentIdentity`, temporary `AgentSession`, and
+Trashtalk already has durable `Agent::Identity`, temporary `Agent::Session`, and
 persisted Assignment behavior. Its `Tool` subclasses expose class methods around
 external programs. Provider execution belongs there; repository identity, memory
 ownership, and assignment authority belong in domain objects. Relevant local
@@ -199,7 +199,7 @@ or worktree features meet this contract remains an acceptance-test question.
 
 | Type | Example | Proposed scope | Suitable approach |
 |---|---|---|---|
-| Personal semantic memory | An agent's durable working preferences | `AgentIdentity` | Basic Memory; Hindsight/Mem0 if extraction is useful |
+| Personal semantic memory | An agent's durable working preferences | `Agent::Identity` | Basic Memory; Hindsight/Mem0 if extraction is useful |
 | Episodic memory | An investigation, its evidence, and its outcome | Author plus repository/Assignment associations | Hindsight; Supermemory; Graphiti episodes |
 | Shared repository knowledge | A build prerequisite or architectural decision | Stable logical `Repository` | Any qualified provider with explicit scope and correction |
 | Procedural memory | A tested release procedure | Repository or explicitly shared collection | Versioned notes/skills, optionally indexed |
@@ -362,7 +362,7 @@ appealing for a general context store. [^35][^36]
 Scope is richer than one arbitrary collection string. Current concept docs
 describe user and peer memory and account-level resources/capabilities; URI
 resolution can depend on authenticated identity. An adapter must map
-AgentIdentity and Repository explicitly into this policy. Do not copy older
+Agent::Identity and Repository explicitly into this policy. Do not copy older
 examples that assume every memory belongs under one agent-memory path. [^37][^38]
 
 Session commit archives context and initiates asynchronous extraction. That
@@ -474,7 +474,7 @@ it need not implement embedding models or language servers itself.
 | `Tools::Roam`, `Tools::AstGrep`, selected memory Tool | Version/detection, explicit configuration, invocation, parsing, bounded output, errors |
 | Repository/local-copy/worktree objects | Durable identity, checkout selection, allocation, Git lifecycle, index association |
 | Memory-store object | Provider endpoint/collection association, owner, scope, permitted operations |
-| AgentIdentity | Personal-memory association and participation in shared stores |
+| Agent::Identity | Personal-memory association and participation in shared stores |
 | Assignment | Work authority, progress, outcome, provenance references |
 
 Names here are provisional. `Repository`, `LocalRepository`, `Worktree`, and

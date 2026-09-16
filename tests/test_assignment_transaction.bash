@@ -16,7 +16,7 @@ trap 'rm -rf "$tmp"' EXIT
 export SQLITE_JSON_DB="$tmp/state.db" TRASHTALK_USER=assignment-owner TRASHTALK_NO_AUTOTICK=1 TRASHTALK_GUSGUS_PROFILE=shell TRASHTALK_NO_NATIVE=1
 unset TRASHTALK_RUN_TOKEN TRASHTALK_ASSIGNMENT_ID
 db_init
-@ AgentQueue ensureSchema
+@ Agent::Queue ensureSchema
 passed=0
 check() { if [[ "$2" == "$3" ]]; then echo "PASS: $1"; passed=$((passed+1)); else printf 'FAIL: %s expected=%s got=%s\n' "$1" "$2" "$3"; exit 1; fi; }
 must() { "$@" || { printf 'FAIL: command failed: %s\n' "$*" >&2; exit 1; }; }
@@ -44,16 +44,16 @@ unpublished() {
     check "$2: no outbox entry" 0 "$(_db_sql "SELECT count(*) FROM agent_outbox WHERE message_id='message_${1}_outcome';")"
 }
 
-identity=$(must @ AgentIdentity named: proof-specialist)
+identity=$(must @ Agent::Identity named: proof-specialist)
 @ "$identity" owner: assignment-owner
 @ "$identity" save
-arch=$(must @ AgentArchetype define: proof-specialist revision: 1 instructions: 'Manual proof only.' profile: shell)
-role=$(must @ AgentRole define: proof-specialist revision: 1 capabilities: '["inbox.read","message.send","assignment.work"]' workspacePolicy: '[]' runBudget: '{}')
-session=$(must @ AgentSession openFor: "$identity" archetype: "$arch" role: "$role" workspace: "$root" profile: shell)
-requester_identity=$(must @ AgentIdentity named: proof-requester)
+arch=$(must @ Agent::Archetype define: proof-specialist revision: 1 instructions: 'Manual proof only.' profile: shell)
+role=$(must @ Agent::Role define: proof-specialist revision: 1 capabilities: '["inbox.read","message.send","assignment.work"]' workspacePolicy: '[]' runBudget: '{}')
+session=$(must @ Agent::Session openFor: "$identity" archetype: "$arch" role: "$role" workspace: "$root" profile: shell)
+requester_identity=$(must @ Agent::Identity named: proof-requester)
 @ "$requester_identity" owner: assignment-owner
 @ "$requester_identity" save
-requester=$(must @ AgentSession openFor: "$requester_identity" archetype: "$arch" role: "$role" workspace: "$root" profile: shell)
+requester=$(must @ Agent::Session openFor: "$requester_identity" archetype: "$arch" role: "$role" workspace: "$root" profile: shell)
 origin=$(must @ Inbox send: 'Please investigate' to: assignment-owner from: "session:$requester")
 a=$(must new_work 'Prove atomic completion')
 delivery=$(field "$a" .delivery)
@@ -138,7 +138,7 @@ check 'explicit retry preserves progress and completion' 2 "$(field "$c" '.event
 # New rows invalidate negative queries: no previously read row needs to change.
 d=$(must new_work 'Reject a new active run')
 _store_tx_before_commit() {
-    _db_sql "INSERT INTO instances(id,data) VALUES('agentrun_phantom',json_object('class','AgentRun','session','$session','state','running'));"
+    _db_sql "INSERT INTO instances(id,data) VALUES('agentrun_phantom',json_object('class','Agent::Run','session','$session','state','running'));"
 }
 reject 'new active run after staging rejects commit' complete "$d" done
 unset -f _store_tx_before_commit
@@ -187,12 +187,12 @@ check 'explicit replay after conflict succeeds' "$e" "$(must complete "$e" done)
 # Same completion DSL also enforces live agent token/capability/delivery fences.
 f=$(must new_work 'Worker completion')
 fd=$(field "$f" .delivery)
-mapfile -t pair < <(@ AgentRun startFor: "$session" profile: shell)
+mapfile -t pair < <(@ Agent::Run startFor: "$session" profile: shell)
 run=${pair[0]}; token=${pair[1]}
 must @ "$run" transitionTo: running >/dev/null
 export TRASHTALK_RUN_TOKEN="$token"
 reject 'worker cannot complete unclaimed work' complete "$f" done
-check 'worker claims selected delivery' true "$(@ AgentDelivery claim: "$fd" run: "$run")"
+check 'worker claims selected delivery' true "$(@ Agent::Delivery claim: "$fd" run: "$run")"
 export TRASHTALK_RUN_TOKEN=invalid
 reject 'invalid token cannot become human authority' complete "$f" done
 export TRASHTALK_RUN_TOKEN="$token"

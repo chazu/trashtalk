@@ -9,8 +9,8 @@ match the Bash runtime, and removes dormant implementations.
   NUL-delimited `mapfile -d`. Startup, compiler preflight, doctor, and installation
   instructions now agree. Make resolves Bash from PATH on each platform. Bash 3.2 and Zsh are unsupported.
 - `Agent` retains its Axe/Codex one-shot facade. The old tmux session methods,
-  `ClaudeAgent`, and `TmuxSession` are removed. Use `AgentIdentity` and
-  `AgentSession`; plain `@@` uses Gusgus/Jcode. `Tools::Tmux` remains available.
+  `ClaudeAgent`, and `TmuxSession` are removed. Use `Agent::Identity` and
+  `Agent::Session`; plain `@@` uses Gusgus/Jcode. `Tools::Tmux` remains available.
   A read-only audit found no stored instances or user source/config references
   to the removed classes in the local installation. External scripts may need
   migration; this was not a global caller audit.

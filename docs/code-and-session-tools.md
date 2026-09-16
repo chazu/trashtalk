@@ -171,9 +171,9 @@ the common harness fields `backend: "chad"` and `result.content`, plus
 parsed into a fabricated final-answer or session-ID protocol.
 
 `continueLatest:` means the most recent saved conversation in that directory;
-Chad forks it. It does not target a Trashtalk AgentSession ID and is unsuitable
+Chad forks it. It does not target a Trashtalk Agent::Session ID and is unsuitable
 for concurrent identities sharing one directory. This Tool is not registered
-as a resident `AgentDriver` or selected as Gusgus's harness. Exit 0 means the
+as a resident `Agent::Driver` or selected as Gusgus's harness. Exit 0 means the
 process finished successfully; it does not complete an Assignment.
 
 ## Verification

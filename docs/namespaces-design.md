@@ -582,3 +582,12 @@ Should `@ object class` return `MyApp::Counter` or `Counter`?
 - [GNU Smalltalk Namespaces](https://www.gnu.org/software/smalltalk/manual/html_node/Namespaces.html)
 - [Pharo Modularization Analysis](https://inria.hal.science/hal-00780293/document)
 - [Squeak Namespace Discussion](https://wiki.squeak.org/squeak/733)
+
+## Current Agent package
+
+The agent session domain uses `package: Agent` under `trash/Agent/`, alongside
+`Agent::Stable`. The global `Agent` facade remains separate from this package.
+Persisted agent authority records deliberately keep their pre-package ID
+prefixes while storing qualified class discriminators. See
+[Agent package upgrade](agent-operations.md#agent-package-upgrade) for the
+atomic, idempotent Store migration and restart requirements.

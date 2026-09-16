@@ -1,7 +1,9 @@
-# AgentQueue - SQLite boundary for durable message routing and delivery identity.
+package: Agent
+
+# Agent::Queue - SQLite boundary for durable message routing and delivery identity.
 # Outbox rows are committed with the final message snapshot. Honker is a hint;
 # the worker can route these rows after any crash, without a second logical send.
-AgentQueue subclass: Object
+Queue subclass: Object
 
   # The DDL is idempotent. Direct execution keeps a per-process memo, keyed by
   # store path, in the caller's shell: a long-running worker or an interactive
@@ -9,7 +11,7 @@ AgentQueue subclass: Object
   rawClassMethod: ensureSchema [
     pragma: direct
     if [[ "${_AGENT_QUEUE_SCHEMA_DB:-}" == "$SQLITE_JSON_DB" ]]; then return 0; fi
-    @ AgentSession ensureSchema || return 1
+    @ Agent::Session ensureSchema || return 1
     _db_sql "CREATE TABLE IF NOT EXISTS agent_outbox (
       message_id TEXT PRIMARY KEY, inbox TEXT NOT NULL,
       session TEXT NOT NULL DEFAULT '', attempted_at INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL DEFAULT (unixepoch()));
@@ -33,7 +35,7 @@ AgentQueue subclass: Object
   # blocking commit together. A reply can never observe a half-published question.
   rawClassMethod: persist: message questionRun: run deliveries: deliveryIds [
     local id data persisted erun ids question_sql=''
-    @ AgentQueue ensureSchema || return 1
+    @ Agent::Queue ensureSchema || return 1
     id=$(_db_escape "$1")
     data=$(@ "$1" asJson) || return 1
     data=$(_db_escape "$data")
@@ -43,13 +45,13 @@ AgentQueue subclass: Object
       question_sql="CREATE TEMP TABLE question_guard (valid INTEGER NOT NULL CHECK(valid=1));
         INSERT INTO question_guard SELECT CASE WHEN EXISTS (
           SELECT 1 FROM instances r JOIN instances s ON s.id=json_extract(r.data,'$.session')
-          WHERE r.id='$erun' AND r.class='AgentRun' AND s.class='AgentSession'
+          WHERE r.id='$erun' AND r.class='Agent::Run' AND s.class='Agent::Session'
           AND json_extract(r.data,'$.state') IN ('running','recovering')
           AND json_extract(s.data,'$.lifecycleState')!='terminated'
           AND json_extract('$data','$.from')='session:'||s.id
           AND json_extract('$data','$.kind')='question'
           AND NOT EXISTS (SELECT 1 FROM json_each('$ids') j LEFT JOIN instances d ON d.id=j.value
-            WHERE d.id IS NULL OR d.class!='AgentDelivery'
+            WHERE d.id IS NULL OR d.class!='Agent::Delivery'
             OR coalesce(json_extract(d.data,'$.run'),'')!='$erun'
             OR coalesce(json_extract(d.data,'$.session'),'')!=s.id
             OR coalesce(json_extract(d.data,'$.state'),'') NOT IN ('offered','blocked'))
@@ -90,7 +92,7 @@ AgentQueue subclass: Object
   # Separate processing metadata survives Message read/archive saves and caches.
   rawClassMethod: questionFor: message [
     local id data
-    @ AgentQueue ensureSchema || return 1
+    @ Agent::Queue ensureSchema || return 1
     id=$(_db_escape "$1")
     data=$(_db_sql "SELECT json_object('deliveryIds',json(delivery_ids),'answerId',answer_id)
       FROM agent_questions WHERE message_id='$id';") || return 1
@@ -99,7 +101,7 @@ AgentQueue subclass: Object
   ]
 
   rawClassMethod: pending [
-    @ AgentQueue ensureSchema || return 1
+    @ Agent::Queue ensureSchema || return 1
     _db_sql "SELECT message_id FROM agent_outbox WHERE session=''
       AND message_id NOT IN (SELECT id FROM agent_manual_messages)
       ORDER BY attempted_at, created_at, rowid LIMIT 100;"
@@ -111,21 +113,21 @@ AgentQueue subclass: Object
     local sid ids key hash id now data context esc_key esc_sid esc_id esc_data esc_msg guard
     sid="$1"
     ids=$(printf '%s' "$2" | jq -ce 'select(type == "array" and length > 0 and all(.[]; type == "string"))') || return 1
-    @ AgentQueue ensureSchema || return 1
-    context=$(@ AgentWorkContext forSession: "$sid" messages: "$ids") || return 1
+    @ Agent::Queue ensureSchema || return 1
+    context=$(@ Agent::WorkContext forSession: "$sid" messages: "$ids") || return 1
     hash=$(printf '%s' "$ids" | shasum -a 256 | cut -d' ' -f1)
     key="$sid:${hash:0:16}"
     id="agentdelivery_$(printf '%s' "$key" | shasum -a 256 | cut -d' ' -f1)"
     now=$(@ Time nowISO)
     data=$(jq -cn --arg sid "$sid" --argjson ids "$ids" --arg key "$key" --arg now "$now" --argjson context "$context" \
-      '{class:"AgentDelivery",session:$sid,messageIds:$ids,deliveryKey:$key,state:"pending",run:"",attempts:0,lastError:"",note:"",created:$now,created_at:(now|floor)} + $context | ._vars = (keys - ["class"])')
+      '{class:"Agent::Delivery",session:$sid,messageIds:$ids,deliveryKey:$key,state:"pending",run:"",attempts:0,lastError:"",note:"",created:$now,created_at:(now|floor)} + $context | ._vars = (keys - ["class"])')
     esc_sid=$(_db_escape "$sid"); esc_key=$(_db_escape "$key")
     esc_id=$(_db_escape "$id"); esc_data=$(_db_escape "$data"); esc_msg=$(_db_escape "$3")
     guard="('$esc_msg' = '' OR EXISTS(SELECT 1 FROM agent_outbox WHERE message_id='$esc_msg' AND session=''
       AND message_id NOT IN (SELECT id FROM agent_manual_messages)))"
     @ Store executeBatch: "BEGIN IMMEDIATE;
       INSERT INTO instances(id,data) SELECT '$esc_id','$esc_data'
-        WHERE $guard AND NOT EXISTS(SELECT 1 FROM instances WHERE json_extract(data,'$.class')='AgentDelivery' AND json_extract(data,'$.deliveryKey')='$esc_key');
+        WHERE $guard AND NOT EXISTS(SELECT 1 FROM instances WHERE json_extract(data,'$.class')='Agent::Delivery' AND json_extract(data,'$.deliveryKey')='$esc_key');
       UPDATE agent_questions SET answer_id='$esc_msg',answered_at=unixepoch()
         WHERE session='$esc_sid' AND answer_id='' AND '$esc_msg'!='' AND $guard
         AND EXISTS (SELECT 1 FROM instances reply JOIN instances question
@@ -134,7 +136,7 @@ AgentQueue subclass: Object
           AND json_extract(reply.data,'$.from')=json_extract(question.data,'$.to')
           AND json_extract(reply.data,'$.to')=json_extract(question.data,'$.from'));
       UPDATE instances SET data=json_set(data,'$.state','pending')
-        WHERE json_extract(data,'$.class')='AgentDelivery' AND json_extract(data,'$.session')='$esc_sid'
+        WHERE json_extract(data,'$.class')='Agent::Delivery' AND json_extract(data,'$.session')='$esc_sid'
         AND json_extract(data,'$.state')='blocked' AND '$esc_msg' != '' AND $guard
         AND EXISTS (SELECT 1 FROM agent_questions q,json_each(q.delivery_ids) j
           WHERE q.answer_id='$esc_msg' AND q.session='$esc_sid'
@@ -144,7 +146,7 @@ AgentQueue subclass: Object
           AND q.run=json_extract(instances.data,'$.run') AND j.value=instances.id);
       UPDATE agent_outbox SET session='$esc_sid' WHERE message_id='$esc_msg' AND session='';
       COMMIT;
-      SELECT id FROM instances WHERE json_extract(data,'$.class')='AgentDelivery' AND json_extract(data,'$.deliveryKey')='$esc_key' LIMIT 1;"
+      SELECT id FROM instances WHERE json_extract(data,'$.class')='Agent::Delivery' AND json_extract(data,'$.deliveryKey')='$esc_key' LIMIT 1;"
   ]
 
   # Session caches are snapshots. Between ticks, drop the cached copies of
@@ -155,7 +157,7 @@ AgentQueue subclass: Object
   # Message new persists an empty draft before its sender fills local fields.
   rawClassMethod: refresh [
     local id ids=''
-    @ AgentQueue ensureSchema || return 1
+    @ Agent::Queue ensureSchema || return 1
     _env_evict_prefix agentsession_ agentrun_ agentdelivery_
     for id in $(_env_ids_prefix message_); do
       ids="$ids'$(_db_escape "$id")',"
@@ -205,7 +207,7 @@ AgentQueue subclass: Object
       row := #{message_id: message inbox: recipient session: session} asJson.
       @ Store insert: row into: 'agent_outbox'
     ].
-    @ Store afterCommit: 'AgentQueue' sending: 'announce:' with: message
+    @ Store afterCommit: 'Agent::Queue' sending: 'announce:' with: message
   ]
 
   classMethod: linkQuestion: message session: session run: run delivery: delivery [

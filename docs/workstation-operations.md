@@ -14,8 +14,8 @@ to an existing session, and loop controls. See the
 [design](workstation-event-attention-delegation.md).
 Only `EventSubscription` and `Attention` are new persisted domain classes.
 There is no executor or automatic effect. Phase 1 alone never creates
-AgentDelivery, AgentRun, AgentSession, AgentIdentity, or outbox rows; Phase 2
-creates one Message, one AgentDelivery, and one outbox row per delegation and
+Agent::Delivery, Agent::Run, Agent::Session, Agent::Identity, or outbox rows; Phase 2
+creates one Message, one Agent::Delivery, and one outbox row per delegation and
 never creates, resumes, replaces, or stops a session.
 
 ## Installation and capability checks
@@ -29,7 +29,7 @@ source lib/trash.bash
 ```
 
 `ensureSchema` uses the existing feature-local `ensureSchema` DDL convention
-used by `AgentSession`. One SQLite transaction installs the indexes and private
+used by `Agent::Session`. One SQLite transaction installs the indexes and private
 coordinate table in the current `SQLITE_JSON_DB`. `IF NOT EXISTS` makes repeated
 installation safe on fresh or populated databases. Creation installs it lazily
 before entering a Store transaction. It does not rewrite unrelated records or
@@ -219,7 +219,7 @@ Adapter reads return at most eight records and 512 KiB per batch. Each envelope
 is at most 64 KiB. Honker `topic`, `key`, and `offset` become stream name,
 partition, and offset without reinterpretation. If a source supplies explicit
 `partition`, that takes precedence over `key`. The adapter never acknowledges,
-creates Attention/Message, or accesses AgentQueue.
+creates Attention/Message, or accesses Agent::Queue.
 
 `Stream initializeFrom:` atomically registers the **existing Honker consumer**
 with INSERT OR IGNORE. `from-start` starts at zero. `from-now` starts at the high
@@ -250,7 +250,7 @@ inbox=$(@ Trash userInbox)
 @ "$inbox" list                  # the root alert Message per failing group
 ```
 
-`AgentWorker tick` runs `WorkstationWorker tick` after agent reconciliation and
+`Agent::Worker tick` runs `WorkstationWorker tick` after agent reconciliation and
 outside the agent OS lock. Each tick visits at most four enabled subscriptions
 in a wrapping keyset order, reads at most four records per subscription through
 its named Honker consumer, and processes each record in one short Store
@@ -337,7 +337,7 @@ human, separated by one space, or an empty line when both are zero.
 `publishIndicator` writes that line to `AgentWorkboard indicatorPath`
 (`$TRASHTALK_RUN_DIR/attention`, else `$TRASHTALK_DIR/run/attention`, else
 `~/.trashtalk/run/attention`) through a temporary file and one rename, so a
-reader sees the old line or the new one. `AgentWorker tick` publishes after its
+reader sees the old line or the new one. `Agent::Worker tick` publishes after its
 workstation stage and `Attention transitionTo:until:note:` after its commit;
 both run outside Store transactions and the worker lock. A write failure is
 reported on stderr and never fails the tick or the transition. The file is
@@ -362,7 +362,7 @@ executes anything itself.
 ### 2A: target configuration and dry-run admission
 
 ```bash
-identity=$(@ AgentIdentity named: gusgus)        # or any identity you own
+identity=$(@ Agent::Identity named: gusgus)        # or any identity you own
 @ "$sub" target: "$identity" reason: 'route failing test runs'
 @ "$sub" clearTarget: 'stop routing'            # also resets delegation to manual
 @ "$msg" routingStatus                          # dry run; changes nothing
@@ -385,7 +385,7 @@ and belong to the current owner. The dry run resolves, without mutation:
 | 9 | role `messageBudget.count` versus the session's pending, offered, and blocked deliveries (`0` means unlimited) | `budget-exhausted` |
 
 Session resolution follows the identity's own scope policy through the same
-membership rules as `AgentSession currentWithinFor:`: Gusgus resolves its
+membership rules as `Agent::Session currentWithinFor:`: Gusgus resolves its
 identity-scoped current session; a workspace-scoped specialist resolves the
 session for the receipt's execution workspace. The result is JSON with
 `status` (`eligible`, `ineligible`, `delegated`), `reason`, `detail`,
@@ -394,7 +394,7 @@ session for the receipt's execution workspace. The result is JSON with
 `delegationRevision`, the stream coordinates, `message`/`delivery`/`run` links
 with their states, `routingNote`, and `nextAction` (`configure-target`,
 `delegate`, `focus`, or `inspect`). A dry run creates no Message, outbox row,
-AgentDelivery, AgentRun, or lifecycle change.
+Agent::Delivery, Agent::Run, or lifecycle change.
 
 Attention records now carry `workspace`, closed `origin`, `lineageDepth`,
 `delegationRevision`, `delegatedMessage`, `delegatedSession`,
@@ -413,10 +413,10 @@ msg=$(@ "$root" delegateAttention)      # from the owner's root alert Message
 revalidates admission inside one Store transaction that creates one
 agent-facing Message (`message_<attention>_delegation_<revision>`, kind
 `attention`, addressed to `session:<id>`, sent by the owner so the agent's
-reply lands in the owner's inbox thread), one automatic `AgentDelivery`
+reply lands in the owner's inbox thread), one automatic `Agent::Delivery`
 (`agentdelivery_<attention>_delegation_<revision>`) with the receipt's
 execution workspace and role snapshot, and one outbox row already assigned to
-the session, through `AgentQueue publishManual:`. The Message carries the
+the session, through `Agent::Queue publishManual:`. The Message carries the
 receipt cwd, first/last stream coordinates, event count, and lineage depth.
 The Attention records the message, session, identity, and revision.
 
@@ -475,7 +475,7 @@ metadata, not an authorization boundary.
 The Inbox browser offers **Routing status**, **Delegate to configured agent**,
 **Redelegate**, and **Focus delegated conversation** on workstation alerts next
 to the Phase 1 controls. `focusDelegatedAttention` opens the recorded session
-through `AgentFocus open:`, which checks ownership and liveness and never
+through `Agent::Focus open:`, which checks ownership and liveness and never
 resumes, stops, or replaces it. `routingStatus` shows target, session, reason,
 stream coordinates, message/delivery/run links, and the next action.
 

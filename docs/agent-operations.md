@@ -11,7 +11,7 @@ To select among legacy Gusgus conversations, inspect their history, wait for
 active runs to finish, then explicitly choose one:
 
 ```bash
-identity=$(@ AgentIdentity findByHandle: gusgus)
+identity=$(@ Agent::Identity findByHandle: gusgus)
 @ "$identity" selectCurrentSession: "$chosenSession"
 ```
 
@@ -35,6 +35,35 @@ Implemented in September 2026. This document describes the current single-host
 worker, snapshot browser, and live Innards attachment. The broader
 headless-session design remains a partially implemented plan.
 
+## Agent package upgrade
+
+The session domain lives in the flat `Agent` package: `Agent::Identity`,
+`Session`, `Run`, `Delivery`, `Archetype`, `Role`, `Queue`, `Worker`, `Focus`,
+`Conversation`, `Browser`, `Transcript`, `Context`, `WorkContext`, `Access`,
+`Driver`, and `CodexDriver` / `JcodeDriver` / `MakiDriver` / `ShellDriver`.
+Use qualified public sends, for example `@ Agent::Worker tick`.
+The top-level one-shot `Agent` and personas `Gusgus`, `Jcode`, `Maki`,
+`CodexAgent`, and `AxeAgent` keep their existing names. `AgentWorkboard` is
+unchanged. There are no aliases for the retired session class names.
+
+Restart workers and interactive runtimes after upgrading and running `make bash`.
+Runtime startup migrates stores containing the six old persisted discriminators
+before serving public messages. `@ Agent::Session ensureSchema` also installs
+or reapplies the migration for an explicitly selected `SQLITE_JSON_DB`.
+`lib/agent-session-schema.sql` uses one `BEGIN IMMEDIATE` transaction to drop
+the old guards, change only each record's JSON `class`, and reinstall the policy
+triggers and index. An error rolls back records and DDL together. Reapplying is
+idempotent. Old processes attempting to persist retired discriminators fail
+closed and must restart.
+
+IDs retain their historical prefixes (`agentidentity_`, `agentsession_`,
+`agentrun_`, `agentdelivery_`, `agentarchetype_`, `agentrole_`) for both migrated
+and newly created records. Tokens, inbox addresses, assignments, delivery keys,
+provider references, timestamps, memberships, and policy revisions are not
+rewritten. This namespace migration does **not** select a current conversation,
+change scope policy, enroll a legacy session, or replay work. Session policy
+upgrades remain explicit owner operations as described above.
+
 ## Daily use
 
 ### Jcode sessions
@@ -56,12 +85,12 @@ effort; `TRASHTALK_JCODE_MODEL` selects another model. Each session uses its own
 Jcode home and daemon socket, with existing OAuth credential files linked into
 that home. The driver requires `api-bridge --stdio` and Harness API v1.
 
-All harnesses use the same flow: Inbox persists the message, AgentWorker queues
+All harnesses use the same flow: Inbox persists the message, Agent::Worker queues
 its delivery, and a notification prompt gives the agent references to read with
 Inbox `show:`. A private per-run `trash-send` launcher supplies current run
 authority, including inside a reused daemon. Agents send attributed messages
-with `AgentRun send:to:`, reply to a specific delivery with
-`AgentRun result:forDelivery:`, and acknowledge it with `AgentRun settle:`.
+with `Agent::Run send:to:`, reply to a specific delivery with
+`Agent::Run result:forDelivery:`, and acknowledge it with `Agent::Run settle:`.
 Reading a message does not settle its delivery. Agents do not poll their inbox.
 
 Stop an exact execution with `@ "$run" stop`, obtaining the run ID from
@@ -71,7 +100,7 @@ state, including when its adapter connection has disappeared. It also terminates
 verified Bash tool process groups and shuts down this session's private daemon:
 native cancellation alone preserves foreground shell jobs in Jcode 0.84.0. An unconfirmed
 stop remains retryable on the same run; it does not claim successful cancellation.
-Agents call `AgentRun stop: "$targetRun"`; the caller must have a valid run
+Agents call `Agent::Run stop: "$targetRun"`; the caller must have a valid run
 token, `agent.stop` in its versioned role, and the same owner as the target.
 Existing assistant roles are not silently granted this capability.
 
@@ -101,7 +130,7 @@ Installation failures make doctor fail; doctor never starts a provider login.
 `@ Maki install` explicitly installs the latest release. Login inherits your
 terminal and returns Maki's exit status.
 
-The `maki` profile selects `MakiDriver`, using `openai/gpt-5.6-terra` at medium effort
+The `maki` profile selects `Agent::MakiDriver`, using `openai/gpt-5.6-terra` at medium effort
 with OpenAI OAuth. `TRASHTALK_MAKI_MODEL` selects another `openai/` model.
 The driver strips API-key overrides and checks OAuth before each launch.
 Stock Maki handles execution and conversation resume; Trashtalk owns delivery,
@@ -125,7 +154,7 @@ but the new harness starts without the previous harness's internal context.
 ### Sessions and inboxes
 
 ```bash
-@ AgentSession browse             # sessions that have not been terminated
+@ Agent::Session browse             # sessions that have not been terminated
 session=$(@ Gusgus sessionFor: "$PWD")
 @ "$session" browse              # one session's actions
 @ "$session" details             # plain-text snapshot
@@ -145,7 +174,7 @@ conversation**, or send `@ "$session" focus`, for live backlog and harness outpu
 The `inagent` composer sends directly to the session with **C-c C-c**.
 **Option-U** toggles the view; **C-x C-c** also detaches. Jcode uses its native
 Harness API: `send_message` for idle input and `soft_interrupt` at the next safe
-point during an active turn. These inputs create no Message or AgentDelivery.
+point during an active turn. These inputs create no Message or Agent::Delivery.
 Pause and stop are explicit actions. Detaching never stops the worker or harness.
 See [the live session view](agent-session-view.md) for navigation and installation.
 
@@ -195,13 +224,13 @@ Skipping remains a public message requiring a reason:
 
 ## Blocking questions and replies
 
-`AgentRun askUser:` publishes a question and blocks the run's held deliveries
+`Agent::Run askUser:` publishes a question and blocks the run's held deliveries
 in one transaction. An agent can name one delivery or a JSON array of deliveries
 when different pieces of work need independent answers:
 
 ```bash
-trash-send AgentRun askUser: 'Which branch?' forDelivery: "$delivery"
-trash-send AgentRun askUser: 'Which environment?' forDeliveries: '["delivery_one","delivery_two"]'
+trash-send Agent::Run askUser: 'Which branch?' forDelivery: "$delivery"
+trash-send Agent::Run askUser: 'Which environment?' forDeliveries: '["delivery_one","delivery_two"]'
 ```
 
 Only deliveries currently held by the authenticated run can be linked. Reply
@@ -263,7 +292,7 @@ and helpers (see the stale-worker note in
 [workstation operations](workstation-operations.md#recovery)).
 
 The attached conversation view polls once per second. Each poll first asks
-`AgentFocus changeTokenFor:` for a digest of everything the frame authorizes or
+`Agent::Focus changeTokenFor:` for a digest of everything the frame authorizes or
 projects (identity, session, memberships, runs, deliveries, session mail, run
 log sizes and mtimes, and the view context). The guarded authorization snapshot
 and transcript projection run only when that digest changes or after a user
@@ -330,7 +359,7 @@ job, and resumes the same conversation after daemon restart.
 receipts, and rejection of tool launches after stop.
 
 `tests/test_agent_recovery.bash` drives the real foreground worker with a local
-ShellDriver harness. It kills the worker mid-run, loses the stored PID, replays
+Agent::ShellDriver harness. It kills the worker mid-run, loses the stored PID, replays
 routing concurrently with foreground ticks, restarts the worker, and checks
 that two queued deliveries produce two replies without another user tick.
 `tests/test_agent_termination.bash` stops a real local harness, checks token
@@ -352,5 +381,5 @@ use ephemeral read-only execution. Proposal application remains a separate
 explicit SourceProposal operation.
 
 The former tmux Agent API, ClaudeAgent, and TmuxSession have been retired. Use
-AgentIdentity/AgentSession for durable identity and execution. Tools::Tmux remains
+Agent::Identity/Agent::Session for durable identity and execution. Tools::Tmux remains
 a general command adapter. See [cleanup and migration notes](cleanup-2026-09.md).

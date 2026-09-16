@@ -14,11 +14,11 @@ passed=0
 check() { if [[ "$2" == "$3" ]]; then echo "PASS: $1"; passed=$((passed+1)); else printf 'FAIL: %s expected=%s got=%s\n' "$1" "$2" "$3"; exit 1; fi; }
 must() { "$@" || { printf 'FAIL: command failed: %s\n' "$*" >&2; exit 1; }; }
 
-identity=$(must @ AgentIdentity named: workboard-specialist)
+identity=$(must @ Agent::Identity named: workboard-specialist)
 @ "$identity" owner: workboard-owner; @ "$identity" save
-arch=$(must @ AgentArchetype define: workboard-specialist revision: 1 instructions: 'Read inbox.' profile: shell)
-role=$(must @ AgentRole define: workboard-specialist revision: 1 capabilities: '["inbox.read","message.send","assignment.work"]' workspacePolicy: '[]' runBudget: '{}')
-session=$(must @ AgentSession openFor: "$identity" archetype: "$arch" role: "$role" workspace: "$root" profile: shell)
+arch=$(must @ Agent::Archetype define: workboard-specialist revision: 1 instructions: 'Read inbox.' profile: shell)
+role=$(must @ Agent::Role define: workboard-specialist revision: 1 capabilities: '["inbox.read","message.send","assignment.work"]' workspacePolicy: '[]' runBudget: '{}')
+session=$(must @ Agent::Session openFor: "$identity" archetype: "$arch" role: "$role" workspace: "$root" profile: shell)
 
 ready=$(must @ Assignment draft: 'Review queue latency' in: "$root")
 @ "$ready" criteria: 'Report evidence and a benchmark command.' >/dev/null
