@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import shlex
+import socket
 import subprocess
 import sys
 import threading
@@ -28,6 +29,40 @@ gate = Path(os.environ['JCODE_TEST_GATE'])
 mode = os.environ.get('JCODE_TEST_MODE', 'normal')
 native = 'jcode-fixture-session'
 lock = threading.Lock()
+
+
+def workspace_socket():
+    """Native workspace control without requesting a model turn."""
+    listener = socket.socket(socket.AF_UNIX)
+    listener.bind(os.environ['JCODE_SOCKET'])
+    listener.listen(1)
+
+    def serve():
+        connection, _ = listener.accept()
+        with connection, connection.makefile('rw') as stream:
+            for line in stream:
+                request = json.loads(line)
+                with calls.open('a') as output:
+                    output.write(json.dumps(dict(native_type=request['type'])) + '\n')
+                if request['type'] == 'subscribe':
+                    assert request['working_dir'] == os.getcwd()
+                    assert 'target_session_id' not in request
+                    continue
+                if request['type'] == 'state':
+                    response = dict(type='state', id=request['id'], session_id=native,
+                                    is_processing=mode == 'workspace-busy')
+                elif request['type'] == 'input_shell':
+                    assert request['command'] == 'pwd -P'
+                    response = dict(type='input_shell_result', result=dict(
+                        cwd='/wrong' if mode == 'workspace-wrong' else os.getcwd(),
+                        exit_code=0, failed_to_start=False))
+                else:
+                    raise AssertionError(request)
+                stream.write(json.dumps(response) + '\n')
+                stream.flush()
+        listener.close()
+
+    threading.Thread(target=serve, daemon=True).start()
 
 
 def emit(ev, reply=None, **fields):
@@ -85,7 +120,14 @@ for line in sys.stdin:
             (home / 'sessions' / (native + '.json')).write_text(json.dumps({'id': native, 'working_dir': os.getcwd(), 'messages': [{'role': 'user', 'content': 'retained history'}]}))
         else:
             assert req['session_id'] == native
-        emit('attached', rid, session=dict(session_id=native, status=state.read_text(), working_dir=os.getcwd()))
+        session = dict(session_id=native, status=state.read_text(), working_dir=os.getcwd())
+        if mode.startswith('workspace-'):
+            session.pop('working_dir')
+            if kind == 'create_session':
+                workspace_socket()
+            elif mode == 'workspace-attach-wrong':
+                session['working_dir'] = '/wrong'
+        emit('attached', rid, session=session)
     elif kind == 'ping':
         emit('pong', rid)
     elif kind == 'compact':

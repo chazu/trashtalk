@@ -37,7 +37,14 @@ settle() {
     cat "$TRASHTALK_RUN_DIR"/*/stderr.log
     echo 'FAIL: direct turn did not settle'; exit 1
 }
-session=$(@ Gusgus sessionFor: "$tmp/workspace")
+# Existing conversations retain their immutable archetype, but must receive
+# the current run protocol without replacing the native conversation.
+legacy=$(@ Agent::Archetype define: assistant revision: 1 instructions: 'Legacy inbox-only assistant.' profile: jcode)
+identity=$(@ Gusgus identity)
+session=$(@ Agent::Session openFor: "$identity" archetype: "$legacy" role: "$(@ Gusgus role)" workspace: "$tmp/workspace" profile: jcode)
+check 'new Gusgus archetype is versioned separately' 2 "$(@ "$(@ Gusgus archetype)" revision)"
+check 'existing conversation is retained' "$session" "$(@ Gusgus sessionFor: "$tmp/workspace")"
+check 'old archetype remains immutable' 'Legacy inbox-only assistant.' "$(@ "$legacy" instructions)"
 body=$'literal $(touch unexpected); "quotes"\n日本語\n'
 # A routine worker tick can outlast four 100ms retries. Exercise the public
 # input path under a real OS lock, then require exactly one native send.
@@ -63,6 +70,8 @@ check 'direct turn creates no Message' 0 "$(count Message)"
 check 'direct turn creates no delivery' 0 "$(count Agent::Delivery)"
 check 'direct turn keeps a managed run' conversation "$(@ "$run" purpose)"
 check 'native user content preserves all bytes' true "$(jq -s --arg body "$body" 'any(.req=="send_message" and .content==$body and (.system_reminder|contains("Reply directly")))' "$host/fixture-calls.jsonl")"
+check 'old session receives current delegation API in native context' true "$(jq -s 'any(.req=="send_message" and (.system_reminder|contains("Agent::Run delegate:")))' "$host/fixture-calls.jsonl")"
+check 'direct prompt requires acknowledgement without settling user input' true "$(jq -s 'any(.req=="send_message" and (.system_reminder|contains("Acknowledge the queued handle directly here")) and (.system_reminder|contains("This direct input has no delivery to settle")))' "$host/fixture-calls.jsonl")"
 check 'run launcher retains session authority' "$run" "$("$directory/trash-send" Agent::Run current)"
 ack=$(@ "$session" input: $'follow-up\n')
 check 'busy input is acknowledged by native API' 'Input sent directly to the session at its next safe point' "$ack"

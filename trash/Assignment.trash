@@ -3,14 +3,19 @@
 # ordinary object saves and queue publication one atomic unit of work.
 Assignment subclass: Object
   include: Persistable
+  include: StateMachine
   include: Assignment::Authority
   include: Assignment::Presentation
   include: Assignment::Reporting
+  include: Assignment::Notifications
   instanceVars: objective:'' completionCriteria:'' requester:'' requesterSession:''
                 owner:'' originMessage:'' workspace:'' assignee:'' state:'open'
                 currentSession:'' generation:0 delivery:'' history:'[]' events:'[]'
                 externalIssue:'' result:'' resultMessage:'' cancellationNote:''
                 created:'' completedAt:'' dispatchMode:'manual'
+                requestKey:'' originRun:'' delegationTarget:'' statusMessage:''
+
+  method: transitionRules [ ^ '["open:completed","open:cancelled"]' ]
 
   classMethod: draft: objective in: workspace [
     | args |
@@ -192,6 +197,7 @@ Assignment subclass: Object
       @ Require equal: previous to: outcome.
       ^ self
     ].
+    @ self requireTransitionFrom: state to: target.
     run := actor objectAt: 'run'.
     session := @ self currentSession.
     runs := @ Agent::Run activeFor: session except: run.
@@ -226,7 +232,7 @@ Assignment subclass: Object
     @ self completedAt: now.
     @ self resultMessage: message.
     @ self save.
-    @ Agent::Queue publishManual: message.
+    @ Agent::Queue publishOutcome: message.
     ^ self
   ]
 

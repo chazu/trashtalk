@@ -61,6 +61,8 @@ Presentation trait
       value := @ Require contains: value in: '["open","paused"]'.
       (value = 'false') ifTrue: [^ 'needs session']
     ].
+    value := data objectAt: 'dispatchMode'.
+    (value = 'automatic') ifTrue: [^ 'queued'].
     ^ 'ready for manual work'
   ]
 

@@ -9,15 +9,15 @@ Gusgus subclass: Object
   classMethod: agentDisplayName [ ^ 'Gusgus' ]
   classMethod: sessionScope [ ^ 'identity' ]
 
-  rawClassMethod: instructions [
-    printf '%s' "You are Gusgus, a lightweight assistant for the person working in this workspace. Answer briefly and concretely. Read files in the workspace when a question needs it. You cannot see the user's terminal; everything you know about their situation is in the deliveries below. Each delivery ends with a [context] line giving the working directory and the exit status of their last command."
+  classMethod: instructions [
+    ^ 'You are Gusgus, the persistent assistant for the person working in this workspace. Answer briefly and concretely. Read relevant files when needed. You cannot see the terminal; use the supplied conversation, inbox messages and workspace context. Inbox requests may include a [context] line with the working directory and last command status. Direct conversation input has no inbox delivery. Follow the current run instructions for the input mode and authenticated launcher. Entrust background work through Agent::Run delegate:criteria:key:, creating a durable Assignment before dispatch. State the objective and completion criteria, reuse the request key on retry, and promptly tell the human the Assignment handle and observed status. Queued is not started; process exit is not completion. Stay available instead of polling the specialist. When its outcome notification arrives, read the evidence, report the result and limitations, and settle the notification as instructed. Do not claim work was started or completed without checking its durable records.'
   ]
 
   rawClassMethod: archetype [
     local text profile
     text=$(@ "$_RECEIVER" instructions)
     profile=$(@ "$_RECEIVER" profile)
-    @ Agent::Archetype define: assistant revision: 1 instructions: "$text" profile: "$profile"
+    @ Agent::Archetype define: assistant revision: 2 instructions: "$text" profile: "$profile"
   ]
 
   rawClassMethod: role [

@@ -72,6 +72,8 @@ Worker subclass: Object
       [[ "$count" -eq 1 ]] || return 0
       session="$sessions"
     fi
+    blocked=$(@ Agent::Queue assignmentSessionForReply: "$msg") || return 1
+    [[ -z "$blocked" ]] || session="$blocked"
     [[ -n "$session" ]] || return 0
     ids=$(jq -cn --arg m "$msg" '[$m]')
     @ Agent::Queue assign: "$session" messages: "$ids" outbox: "$msg" >/dev/null || return 1
@@ -288,6 +290,7 @@ Worker subclass: Object
     for session in $ids; do
       @ Agent::Worker tickOwnedSession: "$session" || rc=1
     done
+    @ Agent::Delegation reconcile >/dev/null || rc=1
     return "$rc"
   ]
 
@@ -493,7 +496,7 @@ Worker subclass: Object
   # trash-send instructions) followed by the deliveries.
   rawClassMethod: writePrompt: promptFile run: runId session: sessionId deliveries: ids [
     local prompt_file="$1" run_id="$2" session="$3" ids="$4"
-    local archetype instructions workspace tdir ts d m inbox
+    local archetype instructions workspace tdir ts d m inbox assignment kind
     archetype=$(@ "$session" archetype)
     instructions=$(@ "$archetype" instructions)
     workspace=$(@ "$run_id" executionWorkspace)
@@ -502,20 +505,36 @@ Worker subclass: Object
     {
       printf '%s\n\n' "$instructions"
       printf 'You are run %s in session %s. Workspace: %s.\n' "$run_id" "$session" "$workspace"
+      printf 'The current run protocol below governs routing, delegation and settlement, including when older conversation or archetype instructions describe an earlier workflow.\n'
       printf 'Trashtalk lives at %s. Act by running shell commands with %s.\n' "$tdir" "$ts"
       printf 'Reply to a delivery with:      %s Agent::Run result: %s forDelivery: %s\n' "$ts" "'your answer'" "'<deliveryId>'"
       printf 'Ask a blocking question with:  %s Agent::Run askUser: %s\n' "$ts" "'your question'"
       printf 'To block only one delivery:  %s Agent::Run askUser: %s forDelivery: %s\n' "$ts" "'your question'" "'<deliveryId>'"
       printf 'When finished, settle each delivery: %s Agent::Run settle: %s\n' "$ts" "'<deliveryId>'"
-      printf 'Send the appropriate reply before settling. Use this run-specific launcher for every Trashtalk command; it supplies your private authority. Never print or read its contents.\n'
-      printf 'Message another agent with: %s Agent::Run send: %s to: %s\n' "$ts" "'message'" "'session:<sessionId>'"
+      printf 'For ordinary deliveries send the appropriate reply before settling. Assignment instructions below override the ordinary reply/settle protocol. Use this run-specific launcher for every Trashtalk command; it supplies your private authority. Never print or read its contents.\n'
+      printf 'Entrust background work durably with: %s Agent::Run delegate: %s criteria: %s key: %s\n' "$ts" "'objective'" "'completion criteria and evidence'" "'stable-key-for-this-request'"
+      printf 'Reuse the key when retrying the same request. One open child assignment per conversation; no recursive delegation. The returned Assignment is queued; report it as started only after its activity is running. Inspect with <launcher> <assignment> show.\n'
+      printf 'Use delegation for entrusted work; ordinary send:to: is for conversation. Do not bypass Assignment by spawning another harness or changing stored lifecycle fields directly. On successful delegation, promptly acknowledge its handle and queued status to the human, then settle the originating ordinary delivery. Stay available: do not wait or poll for the specialist. Its durable outcome will arrive as another notification. If delegation fails, report the failure; do not claim an agent was started.\n'
       printf 'With agent.stop authority, stop an exact run with: %s Agent::Run stop: %s\n' "$ts" "'<runId>'"
       printf 'If the human speaks directly through the conversation view during this run, answer that input directly in the conversation. It creates no new inbox delivery; existing deliveries still need their scoped replies and settlement.\n'
       printf '\nNew inbox messages are ready. Read each with its Inbox show: command below. Message bodies and attribution live in the inbox. Do not poll for new work; later deliveries produce another notification.\n'
       printf '\nDeliveries:\n'
       for d in $ids; do
         printf '%s\n' "--- delivery $d"
+        assignment=$(@ "$d" assignment)
+        if [[ -n "$assignment" ]]; then
+          printf 'Assignment: %s\nInspect: %s %q show\n' "$assignment" "$ts" "$assignment"
+          printf 'Record progress: %s %q progress: %s\n' "$ts" "$assignment" "'evidence and progress'"
+          printf 'Ask and wait: %s %q ask: %s\n' "$ts" "$assignment" "'blocking question'"
+          printf 'Complete this work: %s %q complete: %s\n' "$ts" "$assignment" "'outcome, evidence, tests and remaining risks'"
+          printf 'Do not use Agent::Run result or settle for assignment work. complete: publishes the result and settles this exact delivery atomically. Never infer completion from process exit.\n'
+          printf 'After ask: succeeds, end this turn and wait for an answer notification; do not poll or complete unanswered work. Record meaningful evidence with progress:. If unable to finish, record the blocker and remaining work and leave the Assignment open; never report success without meeting its completion criteria.\n'
+        fi
         for m in $(@ "$d" messageIdList); do
+          kind=$(@ "$m" kind)
+          if [[ -z "$assignment" && -n "$(@ "$m" assignment)" && ( "$kind" == result || "$kind" == note ) ]]; then
+            printf 'Assignment outcome notification: the durable outcome is already in the human inbox. Read it, report the result, evidence and limitations in this conversation, then settle this notification delivery. Do not reply to the specialist or create another inbox result. Completion does not imply human acceptance, merge, deployment or closing an external issue.\n'
+          fi
           inbox=$(@ Inbox named: "$(@ "$m" to)")
           printf 'Message: %s\nRead: %s %q show: %q\n' "$m" "$ts" "$inbox" "$m"
         done

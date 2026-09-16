@@ -3,8 +3,9 @@
 
 other_identity=$(must @ Agent::Identity named: independent-specialist)
 other_session=$(must @ Agent::Session openFor: "$other_identity" archetype: "$arch" role: "$role" workspace: "$root" profile: shell)
-traffic_session=$(must @ Agent::Session openFor: "$identity" archetype: "$arch" role: "$role" workspace: "$root" profile: shell)
-traffic_work=$(must new_work 'Background progress')
+traffic_identity=$(must @ Agent::Identity named: traffic-specialist)
+traffic_session=$(must @ Agent::Session openFor: "$traffic_identity" archetype: "$arch" role: "$role" workspace: "$root" profile: shell)
+traffic_work=$(identity="$traffic_identity" session="$traffic_session" must new_work 'Background progress')
 traffic_msg=$(must @ Inbox send: 'Unrelated message' to: "session:$traffic_session" from: assignment-owner)
 
 independent_pair() {
@@ -42,7 +43,7 @@ independent_pair() {
     # use ordinary public APIs and must survive both commits without lost data.
     @ "$traffic_msg" markRead >/dev/null
     (unset -f _store_tx_before_commit; @ "$traffic_work" progress: "$label background evidence" >/dev/null)
-    new_traffic=$(must @ Inbox send: "$label arriving message" to: "session:$traffic_session" from: assignment-owner)
+    new_traffic=$(unset -f _store_tx_before_commit; must @ Inbox send: "$label arriving message" to: "session:$traffic_session" from: assignment-owner)
     if [[ "$label" == affected ]]; then
         @ Store patch: "$left_delivery" with: '{"note":"Concurrent intervention"}' >/dev/null
     fi
@@ -130,7 +131,7 @@ check 'unrelated active run and unanswered question do not conflict' completed "
 # excluded from timings. Count logical dependencies, not just successful writes.
 for history_size in 100 1000 10000; do
     _db_sql "WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<$history_size)
-      INSERT OR IGNORE INTO instances(id,data) SELECT 'history_run_'||x,json_object('class','Agent::Run','session','$traffic_session','state','running') FROM n;
+      INSERT OR IGNORE INTO instances(id,data) SELECT 'history_run_'||x,json_object('class','Agent::Run','session','history_session_'||x,'state','running') FROM n;
       WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<$history_size)
       INSERT OR IGNORE INTO instances(id,data) SELECT 'history_message_'||x,json_object('class','Message','assignment','$traffic_work','body',printf('%01024d',x)) FROM n;
       WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<$history_size)

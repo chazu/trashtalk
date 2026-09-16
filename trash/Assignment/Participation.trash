@@ -5,10 +5,10 @@ package: Assignment
 # Assignment operation owns the Store transaction around every read and save.
 Participation subclass: Object
   classMethod: select: session for: assignment [
-    | actor sender aData s sData identity iData role path canonical allowed current same runs old oldState gen message d now history participation |
+    | actor sender aData s sData identity iData role path canonical allowed current same runs old oldState gen message d now history participation notice |
     @ Store requireTransaction.
     actor := @ Agent::Run actingContext.
-    sender := @ assignment authorize: actor operatorOnly: true.
+    sender := @ assignment authorizeCoordinator: actor.
     @ assignment requireOpen.
     aData := @ assignment asJson.
     s := @ Store read: session class: 'Agent::Session'.
@@ -57,6 +57,8 @@ Participation subclass: Object
     @ assignment delivery: d.
     @ assignment save.
     @ Agent::Queue publishManual: message.
+    notice := @ assignment statusMessage.
+    (notice isEmpty) ifTrue: [@ assignment updateStatusWithin: ''].
     ^ assignment
   ]
 

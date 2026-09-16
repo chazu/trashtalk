@@ -11,13 +11,14 @@ implemented contracts from designs and historical evidence.
 | Compiler, supported syntax, and tests | [Capabilities](COMPILER_CAPABILITIES.md), [compiler internals](../lib/jq-compiler/README.md) |
 | DSL recipes and design idioms | [Patterns](trashtalk-patterns.md), [The Way](the-way-of-trashtalk.md) |
 | Cache, Store, save/reload, and transactions | [Persistence](persistence.md), [Assignment refactor](assignment-persistence-implementation.md) |
+| State transition validation and persistence boundaries | [StateMachine trait](state-machines.md) |
 | JSON construction, reads, and traversal | [JSON values](json-values.md) |
 | Files and subprocesses | [File](FILE.md), [Process](PROCESS.md), [Future class](FUTURE.md) |
 | Persistent agent use, messages, stop, and recovery | [Agent operations](agent-operations.md) |
 | Attach, backlog, composer, and detach | [Live session view](agent-session-view.md) |
 | Harness contracts | [Jcode](jcode-session-driver.md), [Maki](maki-session-driver.md) |
 | Tracking failing commands, attention alerts, and delegating them to agents | [Workstation guide](workstation-guide.md) (user guide), [Workstation operations](workstation-operations.md) (operator detail) |
-| Manual durable work | [Assignments](assignments.md) |
+| Durable work and specialist dispatch | [Agent delegation](agent-delegation-flow.md), [Manual assignments](assignments.md) |
 | Code and session search / CLI harness adapters | [Tool adapters](code-and-session-tools.md) |
 | Runtime/build behavior and dated measurements | [Performance](performance.md), [opt-in result passing](result-passing-design.md), [first performance tranche, 2026-09-15](performance-first-tranche-trashtalk-2026-09-15.md) |
 | Packages and qualified names | [Namespace implementation/design](namespaces-design.md) |
@@ -27,8 +28,8 @@ implemented contracts from designs and historical evidence.
 
 - [Workstation event implementation plan](workstation-event-attention-implementation-plan.md): detailed phases and Phase 0 to 2 task and acceptance gates.
 - [Workstation event, attention, and delegated-action layer](workstation-event-attention-delegation.md): proposed durable local subscriptions, grouped attention, and safely bounded delegated effects.
-- [Delegation plan](agent-delegation-implementation.md): initial slices implemented;
-  specialist dispatch, repository/local-copy/worktree objects, and shared memory remain work.
+- [Delegation plan](agent-delegation-implementation.md): bounded specialist dispatch
+  and durable status are implemented; repository/worktree objects and shared memory remain work.
 - [Headless sessions](headless-agent-sessions-design.md): partial implementation;
   consult current agent guides for available behavior.
 - [Code intelligence and memory research](code-intelligence-and-memory-research.md):

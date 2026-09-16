@@ -1,0 +1,61 @@
+package: Assignment
+
+# One durable inbox projection per automatic assignment. It is updated in the
+# creation transaction; the worker is the single writer of subsequent status
+# projections. Progress/completion only write domain records, avoiding races
+# with presentation updates. Reconciliation also visits unpublished outcomes.
+Notifications trait
+  method: updateStatusWithin: unused [
+    | mode data execution state activity run events event detail body fingerprint message id owner sender title kind now |
+    @ Store requireTransaction.
+    mode := @ self dispatchMode.
+    (mode ~= 'automatic') ifTrue: [^ ''].
+    data := @ self snapshotWithin: ''.
+    execution := data jsonAt: 'execution'.
+    state := data objectAt: 'state'.
+    activity := data objectAt: 'activity'.
+    run := execution objectAt: 'run'.
+    detail := execution objectAt: 'error'.
+    events := data jsonAt: 'events'.
+    ((events arrayLength) > 0) ifTrue: [
+      event := events arrayLast.
+      (detail isEmpty) ifTrue: [detail := event objectAt: 'body']
+    ].
+    body := @ Console printf: 'Assignment %s\nStatus: %s\nAgent: %s' with: self and: activity and: (data objectAt: 'assignee').
+    detail := @ Console printf: 'Session: %s\nRun: %s\n%s' with: (data objectAt: 'currentSession') and: run and: detail.
+    body := @ Console printf: '%s\n%s' with: body and: detail.
+    message := @ self statusMessage.
+    (message notEmpty) ifTrue: [
+      message := @ Store read: message class: 'Message'.
+      fingerprint := @ message body.
+      (fingerprint = body) ifTrue: [^ message]
+    ].
+    title := 'Assignment ' , activity , ': ' , (data objectAt: 'objective').
+    kind := 'note'.
+    (state = 'completed') ifTrue: [kind := 'result'].
+    (activity = 'needs review') ifTrue: [kind := 'alert'].
+    (message isEmpty) ifTrue: [
+      id := self.
+      id := 'message_' , id , '_status'.
+      owner := @ self owner.
+      sender := 'session:' , (data objectAt: 'requesterSession').
+      message := @ Message forAssignment: self id: id to: owner sender: sender subject: title body: body kind: kind.
+      @ message assignmentState: state.
+      @ Agent::Queue publishManual: message.
+      @ self statusMessage: message.
+      @ self save
+    ] ifFalse: [
+      message := @ Store read: message class: 'Message'.
+      @ message subject: title.
+      @ message body: body.
+      @ message kind: kind.
+      @ message status: 'unread'.
+      @ message readAt: ''.
+      now := @ Time nowMillis.
+      @ message sentAt: now.
+      @ message assignmentState: state.
+      @ message save.
+      @ Store afterCommit: 'Agent::Queue' sending: 'announce:' with: message
+    ].
+    ^ message
+  ]

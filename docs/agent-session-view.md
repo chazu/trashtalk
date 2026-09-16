@@ -27,6 +27,10 @@ retains both the logical conversation and provider history.
 Stop confirms the displayed run ID and pauses new work through the existing
 worker API. **C-x ^ / C-x -** and Alt-Down/Alt-Up resize by one row.
 
+Scrolling upward pauses following so new output does not pull you away from
+the text you are reading. Reaching the bottom with Down, **C-n**, PageDown or
+**C-v** resumes following automatically; **M->** also follows immediately.
+
 After building Trashtalk, install the applet from the Innards checkout with
 `cargo install --path . --bin inagent --locked --force`. Existing Trashtalk
 shells that loaded these classes can reload them, or start a fresh shell.
@@ -64,6 +68,9 @@ Only displayed message entries issue validated `mark_viewed` intents; these
 preserve archive state and never settle work. Drafts clear only after a positive
 send acknowledgement. Duplicate request IDs are replayed from the temporary
 bridge's response cache; a new attachment never automatically resends a draft.
+If a message's displayed text, title or kind changes under the same ID, its new
+visible content is acknowledged again. This supports the single updating
+Assignment status Message without treating new progress as already viewed.
 
 The initial window is 400 entries, doubling on an earlier-history request up to
 100,000. Snapshots refresh roughly once a second plus projection time. Attaching

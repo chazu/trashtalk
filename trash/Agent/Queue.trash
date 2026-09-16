@@ -129,12 +129,18 @@ Queue subclass: Object
       INSERT INTO instances(id,data) SELECT '$esc_id','$esc_data'
         WHERE $guard AND NOT EXISTS(SELECT 1 FROM instances WHERE json_extract(data,'$.class')='Agent::Delivery' AND json_extract(data,'$.deliveryKey')='$esc_key');
       UPDATE agent_questions SET answer_id='$esc_msg',answered_at=unixepoch()
-        WHERE session='$esc_sid' AND answer_id='' AND '$esc_msg'!='' AND $guard
+        WHERE (session='$esc_sid' OR EXISTS(SELECT 1 FROM instances q JOIN instances a ON a.id=json_extract(q.data,'$.assignment')
+          WHERE q.id=agent_questions.message_id AND a.class='Assignment' AND json_extract(a.data,'$.currentSession')='$esc_sid'
+          AND json_extract(a.data,'$.dispatchMode')='automatic' AND json_extract(a.data,'$.state')='open'))
+        AND answer_id='' AND '$esc_msg'!='' AND $guard
         AND EXISTS (SELECT 1 FROM instances reply JOIN instances question
           ON question.id=json_extract(reply.data,'$.replyTo')
           WHERE reply.id='$esc_msg' AND question.id=agent_questions.message_id
           AND json_extract(reply.data,'$.from')=json_extract(question.data,'$.to')
-          AND json_extract(reply.data,'$.to')=json_extract(question.data,'$.from'));
+          AND (json_extract(reply.data,'$.to')=json_extract(question.data,'$.from') OR EXISTS(
+            SELECT 1 FROM instances a WHERE a.id=json_extract(question.data,'$.assignment') AND a.class='Assignment'
+            AND json_extract(a.data,'$.dispatchMode')='automatic' AND json_extract(a.data,'$.state')='open'
+            AND json_extract(reply.data,'$.to')='session:'||json_extract(a.data,'$.currentSession'))));
       UPDATE instances SET data=json_set(data,'$.state','pending')
         WHERE json_extract(data,'$.class')='Agent::Delivery' AND json_extract(data,'$.session')='$esc_sid'
         AND json_extract(data,'$.state')='blocked' AND '$esc_msg' != '' AND $guard
@@ -193,15 +199,93 @@ Queue subclass: Object
     ^ unanswered
   ]
 
-  classMethod: publishManual: message [
-    | recipient session isSession isAgent row |
+  # A question follows the responsibility when a human continues work in a
+  # replacement session. Validate the original exchange before rerouting.
+  classMethod: assignmentSessionForReply: message [
+    ^ @ Store transaction: self sending: 'assignmentReplyWithin:' with: message
+  ]
+
+  classMethod: replyRecipientFor: question [
+    ^ @ Store transaction: self sending: 'replyRecipientWithin:' with: question
+  ]
+
+  classMethod: replyRecipientWithin: question [
+    | data assignment aData value session |
     @ Store requireTransaction.
-    @ message save.
+    question := @ Store read: question class: 'Message'.
+    data := @ question asJson.
+    assignment := data objectAt: 'assignment'.
+    value := data objectAt: 'kind'.
+    (assignment notEmpty) ifTrue: [(value = 'question') ifTrue: [
+      aData := @ Store getInstance: assignment.
+      value := aData objectAt: 'dispatchMode'.
+      (value = 'automatic') ifTrue: [
+        value := aData objectAt: 'state'.
+        session := aData objectAt: 'currentSession'.
+        (value = 'open') ifTrue: [(session notEmpty) ifTrue: [^ 'session:' , session] ]
+      ]
+    ] ].
+    ^ data objectAt: 'from'
+  ]
+
+  classMethod: assignmentReplyWithin: message [
+    | reply question assignment exists rData qData aData actual expected |
+    @ Store requireTransaction.
+    reply := @ Store read: message class: 'Message'.
+    question := @ reply replyTo.
+    (question isEmpty) ifTrue: [^ ''].
+    exists := @ Store exists: question.
+    (exists ~= 'true') ifTrue: [^ ''].
+    question := @ Store read: question class: 'Message'.
+    rData := @ reply asJson.
+    qData := @ question asJson.
+    assignment := @ question assignment.
+    (assignment isEmpty) ifTrue: [^ ''].
+    actual := qData objectAt: 'kind'.
+    (actual ~= 'question') ifTrue: [^ ''].
+    actual := rData objectAt: 'from'.
+    expected := qData objectAt: 'to'.
+    (actual ~= expected) ifTrue: [^ ''].
+    assignment := @ Store read: assignment class: 'Assignment'.
+    aData := @ assignment asJson.
+    actual := aData objectAt: 'dispatchMode'.
+    (actual ~= 'automatic') ifTrue: [^ ''].
+    actual := aData objectAt: 'state'.
+    (actual ~= 'open') ifTrue: [^ ''].
+    actual := rData objectAt: 'to'.
+    expected := qData objectAt: 'from'.
+    (actual ~= expected) ifTrue: [
+      expected := 'session:' , (aData objectAt: 'currentSession').
+      (actual ~= expected) ifTrue: [^ '']
+    ].
+    ^ @ assignment currentSession
+  ]
+
+  classMethod: publishManual: message [
+    | recipient session isSession |
     recipient := @ message to.
     session := ''.
     isSession := @ String startsWith: recipient prefix: 'session:'.
+    (isSession = 'true') ifTrue: [session := recipient withoutPrefix: 'session:'].
+    ^ @ self publish: message assignedTo: session
+  ]
+
+  # Work publication already has its delivery; automatic outcomes still need
+  # routing to the requesting session. Both obligations commit with the work.
+  classMethod: publishOutcome: message [
+    | mode |
+    mode := @ message dispatchMode.
+    (mode = 'manual') ifTrue: [^ @ self publishManual: message].
+    ^ @ self publish: message assignedTo: ''
+  ]
+
+  classMethod: publish: message assignedTo: session [
+    | recipient isSession isAgent row |
+    @ Store requireTransaction.
+    @ message save.
+    recipient := @ message to.
+    isSession := @ String startsWith: recipient prefix: 'session:'.
     isAgent := @ String startsWith: recipient prefix: 'agent:'.
-    (isSession = 'true') ifTrue: [session := @ String trimPrefix: 'session:' from: recipient].
     (isAgent = 'true') ifTrue: [isSession := 'true'].
     (isSession = 'true') ifTrue: [
       row := #{message_id: message inbox: recipient session: session} asJson.

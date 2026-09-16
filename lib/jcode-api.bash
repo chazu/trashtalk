@@ -176,6 +176,15 @@ else
     request create_session "$(jq -cn --arg dir "${settings[3]}" '{working_dir:$dir}')"
     expect attached
     native_ref=$(jq -er '.session.session_id | select(length>0)' <<<"$frame")
+    if [[ $(jq -r '.session.status' <<<"$frame") == idle && $(jq -r '.session.working_dir // ""' <<<"$frame") == '' ]]; then
+        # Some bridge versions omit cwd until the first persisted model turn.
+        # Bootstrap a fresh native session with a verified shell cwd instead;
+        # never infer execution authority from the directory we requested.
+        real_bash=$(jq -er .bash "$config")
+        "$real_bash" "${BASH_SOURCE[0]%/*}/jcode-workspace.bash" "$JCODE_SOCKET" '' "${settings[3]}" > "$directory/workspace-control.json"
+        native_ref=$(jq -er '.session_id' "$directory/workspace-control.json")
+        attach
+    fi
 fi
 printf '%s\n' "$native_ref" > "$directory/conversation.tmp"
 mv "$directory/conversation.tmp" "$directory/conversation"
@@ -186,6 +195,9 @@ if [[ $(jq -r '.session.status' <<<"$frame") != idle ]]; then
     exit 1
 fi
 attached_workspace=$(jq -r '.session.working_dir // ""' <<<"$frame")
+if [[ -z "$attached_workspace" && -s "$directory/workspace-control.json" ]]; then
+    attached_workspace=$(jq -er --arg s "$native_ref" 'select(.verified==true and .session_id==$s) | .execution_workspace' "$directory/workspace-control.json")
+fi
 [[ "$attached_workspace" == "${settings[3]}" ]] || { echo 'Jcode attachment has the wrong execution directory; refusing model input' >&2; exit 1; }
 request set_model "$(jq -cn --arg s "$native_ref" --arg m "${settings[4]}" '{session_id:$s,model:$m}')"
 expect ok

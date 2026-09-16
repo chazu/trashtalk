@@ -161,6 +161,8 @@ at_status=$?
 assert_eq "Agent returns Axe success status" '0' "$at_status"
 assert_eq "Agent captures previous command status" '1' "$(jq -r .last_status "$FAKE_AXE_STDIN")"
 assert_eq "Agent captures previous result" $'previous\noutput' "$(jq -r .last_result "$FAKE_AXE_STDIN")"
+assert_eq "one-shot Axe receives its mode" 'one-shot-read-only' "$(jq -r .mode "$FAKE_AXE_STDIN")"
+assert_true "one-shot Axe receives delegation boundary" jq -e '.instructions | contains("do not create Assignments, delegate")' "$FAKE_AXE_STDIN"
 assert_eq "Agent presents final answer through inpage" $'answer line one\nanswer line two' "$(cat "$FAKE_INPAGE_STDIN")"
 assert_true "Agent leaves final answer in scrollback" grep -Fq -- 'answer line one' "$TEST_TMP/at-at-output.txt"
 

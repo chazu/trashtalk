@@ -22,14 +22,20 @@ exec perl -MIO::Socket::UNIX -MJSON::PP -e '
         }
         die "Jcode workspace connection closed\n";
     }
-    send_request({type=>"subscribe",id=>1,target_session_id=>$session});
+    my $creating=length($session)==0;
+    send_request($creating ? {type=>"subscribe",id=>1,working_dir=>$workspace}
+        : {type=>"subscribe",id=>1,target_session_id=>$session});
     send_request({type=>"state",id=>2});
     my $state=receive_type("state",2);
+    $session=$state->{session_id}//"" if $creating;
+    die "Jcode workspace session missing\n" unless length($session);
     die "Jcode workspace target is busy or changed\n" if $state->{is_processing} || ($state->{session_id}//"") ne $session;
-    send_request({type=>"subscribe",id=>3,target_session_id=>$session,working_dir=>$workspace});
-    send_request({type=>"state",id=>4});
-    $state=receive_type("state",4);
-    die "Jcode workspace target is busy or changed\n" if $state->{is_processing} || ($state->{session_id}//"") ne $session;
+    unless ($creating) {
+        send_request({type=>"subscribe",id=>3,target_session_id=>$session,working_dir=>$workspace});
+        send_request({type=>"state",id=>4});
+        $state=receive_type("state",4);
+        die "Jcode workspace target is busy or changed\n" if $state->{is_processing} || ($state->{session_id}//"") ne $session;
+    }
     send_request({type=>"input_shell",id=>5,command=>"pwd -P"});
     my $result=receive_type("input_shell_result",undef)->{result};
     die "Jcode did not apply the requested execution directory\n"

@@ -1,0 +1,170 @@
+package: Agent
+
+# One-child delegation through the existing queue and worker. The authenticated
+# coordinator's message.send capability permits entrusting work to a same-owner
+# specialist. Assignment workers cannot delegate recursively, even with that cap.
+Delegation subclass: Object
+  classMethod: create: objective session: target criteria: criteria key: key [
+    | run profile archetype role args |
+    run := @ Agent::Run current.
+    profile := @ run backendProfile.
+    @ Agent::Queue ensureSchema.
+    archetype := @ Agent::Archetype define: 'assignment-specialist' revision: 1
+      instructions: 'Work through your Assignment. Read its objective, criteria, progress and questions. Record meaningful progress. Ask through Assignment when blocked. Complete only with a concrete outcome and evidence. Do not delegate recursively.' profile: profile.
+    role := @ Agent::Role define: 'assignment-specialist' revision: 1
+      capabilities: '["inbox.read","message.send","question.ask","assignment.work"]'
+      workspacePolicy: '[]' runBudget: '{"retryLimit":0}'.
+    args := #{objective: objective target: target criteria: criteria key: key archetype: archetype role: role profile: profile} asJson.
+    ^ @ Store transaction: self sending: 'createWithin:' with: args replaying: true
+  ]
+
+  classMethod: coordinatorWithin: actor [
+    | run session identity role held data assignment rData sData iData roleData |
+    @ Store requireTransaction.
+    run := actor objectAt: 'run'.
+    rData := @ Agent::Run authorizationFor: run.
+    @ Require equal: (rData objectAt: 'class') to: 'Agent::Run'.
+    @ Require equal: (rData objectAt: 'capabilityTokenHash') to: (actor objectAt: 'hash').
+    @ Require member: (rData objectAt: 'state') of: '["running","recovering"]'.
+    session := @ Store read: (rData objectAt: 'session') class: 'Agent::Session'.
+    sData := @ session asJson.
+    @ Require equal: (sData objectAt: 'lifecycleState') to: 'open'.
+    @ Agent::Session requireCurrentWithin: session.
+    identity := @ Store read: (sData objectAt: 'identity') class: 'Agent::Identity'.
+    iData := @ identity asJson.
+    @ Require equal: (iData objectAt: 'enabled') to: 'true'.
+    @ Require text: (iData objectAt: 'owner').
+    role := @ Store read: (sData objectAt: 'role') class: 'Agent::Role'.
+    roleData := @ role asJson.
+    @ Require equal: (roleData objectAt: 'revision') to: (rData objectAt: 'roleRevision').
+    @ Require member: 'message.send' of: (roleData jsonAt: 'capabilities').
+    held := @ Store idsOf: 'Agent::Delivery' matching: (#{run: run} asJson).
+    held arrayEach: [:id |
+      data := @ Store getInstance: id.
+      assignment := data objectAt: 'assignment'.
+      (assignment notEmpty) ifTrue: [@ Require reject: 'Assignment workers cannot delegate recursively']
+    ].
+    ^ session
+  ]
+
+  classMethod: createWithin: args [
+    | actor requester run owner workspace objective criteria key target ids assignment count session identity role allowed active origin deliveries messages data now sessionArgs requesterIdentity caps |
+    @ Store requireTransaction.
+    actor := @ Agent::Run actingContext.
+    requester := @ self coordinatorWithin: actor.
+    run := actor objectAt: 'run'.
+    identity := @ requester identity.
+    requesterIdentity := identity.
+    owner := @ identity owner.
+    data := @ Agent::Run authorizationFor: run.
+    workspace := data objectAt: 'executionWorkspace'.
+    (workspace isEmpty) ifTrue: [workspace := @ requester workspace].
+    objective := args objectAt: 'objective'.
+    criteria := args objectAt: 'criteria'.
+    key := args objectAt: 'key'.
+    target := args objectAt: 'target'.
+    @ Require text: objective. @ Require text: criteria. @ Require text: key.
+    ids := @ Store idsOf: 'Assignment' matching: (#{requesterSession: requester requestKey: key dispatchMode: 'automatic'} asJson).
+    count := ids arrayLength.
+    (count > 0) ifTrue: [
+      @ Require equal: count to: 1.
+      assignment := @ Store read: (ids arrayFirst) class: 'Assignment'.
+      data := @ assignment asJson.
+      @ Require equal: (data objectAt: 'objective') to: objective.
+      @ Require equal: (data objectAt: 'completionCriteria') to: criteria.
+      @ Require equal: (data objectAt: 'workspace') to: workspace.
+      @ Require equal: (data objectAt: 'delegationTarget') to: target.
+      ^ assignment
+    ].
+    active := @ Store idsOf: 'Assignment' matching: (#{requesterSession: requester state: 'open' dispatchMode: 'automatic'} asJson).
+    @ Require equal: active to: '[]'.
+    session := target.
+    (session isEmpty) ifTrue: [
+      identity := @ Agent::Identity namedWithin: 'specialist'.
+      allowed := @ identity owner.
+      (allowed isEmpty) ifTrue: [
+        @ identity owner: owner.
+        @ identity displayName: 'Specialist'.
+        @ identity defaultArchetype: (args objectAt: 'archetype').
+        @ identity defaultRole: (args objectAt: 'role').
+        @ identity save
+      ].
+      allowed := @ identity owner.
+      @ Require equal: allowed to: owner.
+      sessionArgs := #{identity: identity workspace: workspace archetype: (args objectAt: 'archetype') role: (args objectAt: 'role') profile: (args objectAt: 'profile')} asJson.
+      session := @ Agent::Session ensureWithin: sessionArgs
+    ].
+    session := @ Store read: session class: 'Agent::Session'.
+    # ensureWithin: already guarded selection; a newly staged membership is
+    # not visible to the live membership query until this transaction commits.
+    (target notEmpty) ifTrue: [@ Agent::Session requireCurrentWithin: session].
+    (session = requester) ifTrue: [@ Require reject: 'Delegate to a different identity'].
+    identity := @ session identity.
+    identity := @ Store read: identity class: 'Agent::Identity'.
+    allowed := @ identity owner.
+    @ Require equal: allowed to: owner.
+    (identity = requesterIdentity) ifTrue: [@ Require reject: 'Delegate to a different identity'].
+    role := @ session role.
+    role := @ Store read: role class: 'Agent::Role'.
+    caps := @ role capabilities.
+    @ Require member: 'assignment.work' of: caps.
+    active := @ Store idsOf: 'Assignment' matching: (#{currentSession: session state: 'open'} asJson).
+    @ Require equal: active to: '[]'.
+    origin := ''.
+    deliveries := @ Store idsOf: 'Agent::Delivery' matching: (#{run: run state: #('offered' 'blocked')} asJson).
+    count := deliveries arrayLength.
+    (count > 1) ifTrue: [@ Require reject: 'Delegate from one request at a time; ambiguous originating deliveries'].
+    (count = 1) ifTrue: [
+      data := @ Store getInstance: (deliveries arrayFirst).
+      messages := data jsonAt: 'messageIds'.
+      @ Require equal: (messages arrayLength) to: 1.
+      origin := messages arrayFirst
+    ].
+    assignment := @ Assignment new.
+    @ assignment objective: objective.
+    @ assignment completionCriteria: criteria.
+    @ assignment owner: owner.
+    @ assignment requester: requesterIdentity.
+    @ assignment requesterSession: requester.
+    @ assignment originRun: run.
+    @ assignment originMessage: origin.
+    @ assignment requestKey: key.
+    @ assignment delegationTarget: target.
+    @ assignment workspace: workspace.
+    @ assignment assignee: identity.
+    @ assignment dispatchMode: 'automatic'.
+    now := @ Time nowISO.
+    @ assignment created: now.
+    @ assignment save.
+    ^ @ Assignment::Participation select: session for: assignment
+  ]
+
+  # Replayable reconciliation reads committed runs even after a worker restart.
+  classMethod: reconcile [
+    | ids |
+    ids := @ self statusCandidates.
+    ids linesDo: [:id | @ self reconcileStatus: id]
+  ]
+
+  # Exit-status boundary: only the derived, idempotent presentation projection
+  # may be recomputed after a known rollback. Domain commands never retry here.
+  rawClassMethod: reconcileStatus: assignment [
+    local attempt rc
+    for attempt in 1 2 3; do
+      rc=0
+      @ Store transaction: "$1" sending: 'updateStatusWithin:' with: '' >/dev/null || rc=$?
+      [[ "$rc" == 75 ]] || return "$rc"
+    done
+    # Still racing live progress: the committed Assignment remains a durable
+    # obligation and will be projected on the next worker tick.
+    return 0
+  ]
+
+  # Storage projection: a committed terminal Assignment remains an outstanding
+  # notification obligation until its status Message records that state.
+  rawClassMethod: statusCandidates [
+    @ Store findByClass: Assignment where: "json_extract(data,'$.dispatchMode')='automatic' AND
+      (json_extract(data,'$.state')='open' OR NOT EXISTS(SELECT 1 FROM instances m
+        WHERE m.id=json_extract(instances.data,'$.statusMessage')
+        AND json_extract(m.data,'$.assignmentState')=json_extract(instances.data,'$.state')))" orderBy: 'created_at ASC' limit: 1000
+  ]

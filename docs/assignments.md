@@ -1,6 +1,7 @@
 # Assignments: manual walkthrough
 
-**Status:** Current manual Assignment workflow; automatic specialist dispatch remains proposed.
+**Status:** Current manual Assignment workflow. Automatic specialist dispatch
+uses the separate [agent delegation entry point](agent-delegation-flow.md).
 
 An `Assignment` records work entrusted to an `Agent::Identity`. It retains its
 objective, completion criteria, requester, progress, questions, outcome, and
@@ -12,8 +13,8 @@ This is the first manual slice of the [delegation plan](agent-delegation-impleme
 `workIn:` publishes a Message and a held Agent::Delivery in the chosen session's
 inbox. The worker does not dispatch these deliveries. Assignment messages and
 replies remain available through Inbox, including when a worker service is
-running. Automatic specialist dispatch and generated assignment prompts are
-the next slice. No model login is needed for this walkthrough.
+running. The automatic entry point publishes dispatchable work and generated
+assignment prompts; this manual walkthrough requires no model login.
 
 ## Try it from Bash
 

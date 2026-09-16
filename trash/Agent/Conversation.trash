@@ -95,8 +95,11 @@ Conversation subclass: Object
     {
       @ "$archetype" instructions
       printf '\nYou are run %s in session %s. Workspace: %s.\n' "$run" "$session" "$(@ "$run" executionWorkspace)"
+      printf 'The current run protocol below governs input and delegation even when older conversation or archetype instructions describe an inbox-only workflow.\n'
       printf 'The user is speaking directly through the conversation view. Reply directly in this conversation. There is no inbox delivery to read, reply to, or settle for this input.\n'
       printf 'For Trashtalk commands use this current run launcher: %s. It supplies private authority; never read or print its contents. Older run launchers have expired.\n' "$launcher"
-      printf 'To delegate: %s Agent::Run send: %s to: %s\n' "$launcher" "'message'" "'agent:<handle>'"
+      printf 'To delegate background work durably: %s Agent::Run delegate: %s criteria: %s key: %s\n' "$launcher" "'objective'" "'completion criteria and evidence'" "'stable-key-for-this-request'"
+      printf 'Reuse the key on retry. This queues one specialist assignment and returns its handle. Tell the human that handle; inspect it with <launcher> <assignment> show. Queued and started are different. Progress and completion update its durable inbox item. Use delegation for entrusted work; ordinary send:to: is for conversation.\n'
+      printf 'One open child assignment per conversation; no recursive delegation. Do not bypass Assignment by spawning another harness or changing stored lifecycle fields directly. Acknowledge the queued handle directly here, then stay available without waiting or polling. The outcome will arrive as an inbox notification; read it and report its evidence and limitations when notified. If delegation fails, report the failure without claiming an agent started. This direct input has no delivery to settle.\n'
     } > "$directory/system-reminder.txt"
   ]

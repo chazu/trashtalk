@@ -26,7 +26,7 @@
 Message subclass: Object
   include: Persistable
   instanceVars: to:'' from:'' subject:'' body:'' kind:'note' status:'unread'
-                assignment:'' generation:0 dispatchMode:'automatic' executionWorkspace:''
+                assignment:'' assignmentState:'' generation:0 dispatchMode:'automatic' executionWorkspace:''
                 thread:'' replyTo:'' created:'' sentAt:0 readAt:''
                 attention:'' attentionFirstCoordinate:'null' attentionLastCoordinate:'null'
                 attentionEventCount:0 attentionHintAt:0 attentionLineageDepth:0
@@ -134,12 +134,13 @@ Message subclass: Object
   # replyTo at this message, so an agent that asked a question can find
   # the answer with `@ inbox thread: questionId`.
   method: reply: text [
-    | msg inbox |
-    msg := @ Message to: from from: to subject: subject body: text kind: 'note'.
+    | msg inbox recipient |
+    recipient := @ Agent::Queue replyRecipientFor: self.
+    msg := @ Message to: recipient from: to subject: subject body: text kind: 'note'.
     @ msg thread: thread.
     @ msg replyTo: self.
     @ msg executionWorkspace: executionWorkspace.
-    inbox := @ Inbox named: from.
+    inbox := @ Inbox named: recipient.
     ^ @ inbox deliver: msg
   ]
 
@@ -200,7 +201,7 @@ Message subclass: Object
 
   # Assignment factories use Message defaults and the normal serializer.
   classMethod: forAssignment: assignment id: id to: recipient sender: sender subject: title body: body kind: kind [
-    | msg origin conversation now millis |
+    | msg origin conversation now millis mode workspace |
     @ Store requireTransaction.
     msg := @ Store create: 'Message' id: id.
     origin := @ assignment originMessage.
@@ -222,7 +223,10 @@ Message subclass: Object
     @ msg created: now.
     @ msg sentAt: millis.
     @ msg assignment: assignment.
-    @ msg dispatchMode: 'manual'.
+    mode := @ assignment dispatchMode.
+    workspace := @ assignment workspace.
+    @ msg dispatchMode: mode.
+    @ msg executionWorkspace: workspace.
     ^ msg
   ]
 
@@ -249,7 +253,7 @@ Message subclass: Object
   ]
 
   classMethod: outcomeForAssignment: assignment body: body sender: sender cancelled: cancelled [
-    | id recipient origin objective title kind |
+    | id recipient origin objective title kind requester mode |
     id := 'message_' , assignment , '_outcome'.
     recipient := @ assignment owner.
     origin := @ assignment originMessage.
@@ -258,6 +262,9 @@ Message subclass: Object
       recipient := @ origin from.
       (recipient isEmpty) ifTrue: [recipient := @ assignment owner]
     ].
+    requester := @ assignment requesterSession.
+    mode := @ assignment dispatchMode.
+    (mode = 'automatic') ifTrue: [(requester notEmpty) ifTrue: [recipient := 'session:' , requester] ].
     objective := @ assignment objective.
     title := 'Assignment completed: ' , objective.
     kind := 'result'.

@@ -163,6 +163,8 @@ export FAKE_CODEX_SCENARIO=success
 result=$(@ Agent ask: 'selected?' workingDirectory: "$TEST_TMP/work dir" status: '9' lastResult: 'prior')
 assert_eq "Agent selects Codex backend" 'codex' "$(printf '%s' "$result" | jq -r .backend)"
 assert_eq "selected backend receives question" 'selected?' "$(jq -r .question "$FAKE_CODEX_STDIN")"
+assert_eq "selected backend receives one-shot mode" 'one-shot-read-only' "$(jq -r .mode "$FAKE_CODEX_STDIN")"
+assert_true "one-shot Codex receives delegation boundary" jq -e '.instructions | contains("do not create Assignments, delegate")' "$FAKE_CODEX_STDIN"
 
 __='previous output'
 result=$(@ Agent ask: 'what happened?' workingDirectory: "$TEST_TMP/work dir" status: '1' lastResult: "$__")

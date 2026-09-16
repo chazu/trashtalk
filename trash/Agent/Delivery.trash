@@ -13,6 +13,7 @@ package: Agent
 #   @ $d transitionTo: processed
 Delivery subclass: Object
   include: Persistable
+  include: StateMachine
   instanceVars: session:'' run:'' messageIds:'[]' deliveryKey:'' state:'pending' attempts:0
                 lastError:'' note:'' created:'' assignment:'' generation:0 dispatchMode:'automatic'
                 executionWorkspace:'' authorizationRole:'' authorizationRevision:'' authorizationWorkspacePolicy:''
@@ -26,20 +27,20 @@ Delivery subclass: Object
   ]
 
   # Common transition rule: check the table, set, save, echo the new state.
+  method: transitionRules [
+    ^ '["pending:offered","pending:failed","offered:processed","offered:blocked","offered:uncertain","offered:pending","offered:failed","blocked:processed","blocked:pending","failed:pending","failed:skipped","uncertain:pending","uncertain:processed","uncertain:skipped"]'
+  ]
+
   method: transitionTo: newState [
     ^ @ self transitionTo: newState with: '{}'
   ]
 
   # Atomic state transition plus associated fields; rejected transitions write nothing.
   rawMethod: transitionTo: newState with: patchJson [
-    local to="$1" from allowed
+    local to="$1" from
     _env_set "$_RECEIVER" "$(db_get "$_RECEIVER")"
     from=$(_ivar state)
-    allowed=" pending:offered pending:failed offered:processed offered:blocked offered:uncertain offered:pending offered:failed blocked:processed blocked:pending failed:pending failed:skipped uncertain:pending uncertain:processed uncertain:skipped "
-    if [[ "$allowed" != *" $from:$to "* ]]; then
-      _throw "TransitionError" "Agent::Delivery $_RECEIVER: $from -> $to rejected"
-      return 1
-    fi
+    @ "$_RECEIVER" requireTransitionFrom: "$from" to: "$to" >/dev/null || return 1
     local eid ef et changed patch
     printf '%s' "$2" | jq -e 'type == "object"' >/dev/null || return 1
     patch=$(_db_escape "$2")
@@ -122,7 +123,7 @@ Delivery subclass: Object
   ]
 
   classMethod: forAssignment: assignment session: session generation: generation message: message [
-    | id d ids key now workspace role revision policy |
+    | id d ids key now workspace role revision policy mode |
     @ Store requireTransaction.
     id := 'agentdelivery_' , assignment , '_' , generation.
     d := @ Store create: 'Agent::Delivery' id: id.
@@ -136,7 +137,8 @@ Delivery subclass: Object
     @ d created: now.
     @ d assignment: assignment.
     @ d generation: generation.
-    @ d dispatchMode: 'manual'.
+    mode := @ assignment dispatchMode.
+    @ d dispatchMode: mode.
     workspace := @ session workspace.
     role := @ session role.
     revision := @ role revision.

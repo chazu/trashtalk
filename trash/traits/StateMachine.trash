@@ -1,0 +1,11 @@
+# Transition validation only. The including class supplies transitionRules and
+# owns its state field, authorization, transaction, persistence and effects.
+StateMachine trait
+  method: requireTransitionFrom: from to: to [
+    | pair allowed rules |
+    pair := from , ':' , to.
+    rules := @ self transitionRules.
+    allowed := @ Require contains: pair in: rules.
+    (allowed = 'true') ifFalse: [@ TransitionError signal: 'Transition ' , from , ' -> ' , to , ' rejected'].
+    ^ to
+  ]

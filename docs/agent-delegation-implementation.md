@@ -1,15 +1,16 @@
 # Agent delegation: implementation in small steps
 
-**Status:** Slices 0 and 1 are implemented. Jcode is the default harness for new
-Gusgus sessions; the common contract supports queued inbox notifications and
-explicit stop. The Assignment API supports the manual human walkthrough and
-controlled run fixtures, with work held from automatic dispatch. See the
-[Assignment walkthrough](assignments.md) for executable commands. Automatic
-specialist delegation and later slices below remain proposals.
+**Status:** Slices 0 and 1 are implemented. The bounded automatic specialist
+flow and its recovery/status projection are implemented through the
+[delegation interface](agent-delegation-flow.md). Jcode remains the default for
+new Gusgus sessions. The [manual Assignment walkthrough](assignments.md)
+continues to hold its work from automatic dispatch. Later memory, managed
+worktree and external tracker slices remain proposals.
 
 The [Assignment persistence refactor](assignment-persistence-implementation.md)
 is implemented: domain behavior uses DSL methods and traits over shared Store
-transactions. Automatic specialist delegation remains the next slice.
+transactions. Delegation uses explicit transactions and a small StateMachine
+trait for validation; method advice does not own lifecycle effects.
 
 **Original planning baseline:** `8be14c8` plus the then-uncommitted worker,
 question, termination, and Maki changes. See [agent operations](agent-operations.md),
@@ -43,19 +44,20 @@ dispatch decisions under the store lock.
 `Agent::Run send:to:` can already address another session, whose `result:` can
 reply to Gusgus. However:
 
-- Assignment now provides a durable responsibility and completion relationship
-  for the manual walkthrough; model-driven delegation remains to be connected.
+- Assignment provides durable responsibility and completion. The automatic
+  entry point creates it before dispatch; ordinary send:to: remains messaging.
 - `result:forDelivery:` and Assignment completion target a specific request.
   The older broad `result:` remains available and should not be used to report
   an assignment outcome across unrelated inputs.
-- Identity routing requires exactly one eligible session. It does not select
-  a specialist session for a particular workspace or assignment.
-- Keyed sends use lookup followed by creation; delegation needs transactional
-  uniqueness across concurrent calls and restarted runs.
-- Prompts currently teach low-level `Agent::Run result:` and `settle:` commands.
+- Identity message routing requires exactly one eligible session. Delegation
+  separately selects the specialist's current session in the execution workspace.
+- Keyed sends use lookup followed by creation; automatic delegation uses a
+  guarded transaction to deduplicate requests across calls and restarted runs.
+- Prompts teach `delegate:criteria:key:` and the Assignment progress, question
+  and completion protocol. Ordinary messages retain `result:` and `settle:`.
 - The worker supplies inbox references in notification prompts and supports
-  authorized exact-run stop. Assignment-specific context and dispatch remain
-  part of the one-specialist slice.
+  authorized exact-run stop. Assignment context and automatic dispatch are
+  implemented for the bounded one-specialist flow.
 - Roles have policy fields, but enforcement is incomplete. Maki has normal
   user OS permissions and no OS sandbox.
 - Workspace is a path; repository, worktree, external issue, and long-term
@@ -518,8 +520,10 @@ for the implementation and validation record. Jcode is now the default for new
 Gusgus sessions; native steering remains optional and unexposed. Slice 1 is also
 implemented: identity assignment, explicit sequential session participation,
 durable progress/questions, and atomic completion. Its work and session replies
-are held for the [manual walkthrough](assignments.md). Slice 2 and later remain
-planned; automatic specialist dispatch is not enabled.
+are held for the [manual walkthrough](assignments.md). The separate
+[automatic entry point](agent-delegation-flow.md) implements bounded specialist
+dispatch and durable visibility. The table below retains the original sequence
+and acceptance criteria; broader views and later slices remain future work.
 
 Each row is a bounded change followed by a pause to use and review it. Later
 rows are options in dependency order, not authorization for one large patch.

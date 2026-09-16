@@ -2,6 +2,18 @@ package: Assignment
 
 # Fresh responsibility and run authorization, shared by Assignment operations.
 Authority trait
+  method: authorizeCoordinator: actor [
+    | run session mode requester |
+    run := actor objectAt: 'run'.
+    (run isEmpty) ifTrue: [^ @ self authorize: actor operatorOnly: true].
+    mode := @ self dispatchMode.
+    @ Require equal: mode to: 'automatic'.
+    session := @ Agent::Delegation coordinatorWithin: actor.
+    requester := @ self requesterSession.
+    @ Require equal: session to: requester.
+    ^ 'session:' , session
+  ]
+
   method: authorize: actor operatorOnly: operatorOnly [
     | a run human r s i role d owner participation history state aData rData sData iData roleData dData |
     @ Store requireTransaction.
@@ -14,8 +26,9 @@ Authority trait
       ^ human
     ].
     @ Require equal: operatorOnly to: 'false'.
-    r := @ Store read: run class: 'Agent::Run'.
-    rData := @ r asJson.
+    r := run.
+    rData := @ Agent::Run authorizationFor: r.
+    @ Require equal: (rData objectAt: 'class') to: 'Agent::Run'.
     s := @ Store read: (rData objectAt: 'session') class: 'Agent::Session'.
     sData := @ s asJson.
     i := @ Store read: (sData objectAt: 'identity') class: 'Agent::Identity'.

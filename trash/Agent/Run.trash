@@ -19,6 +19,7 @@ package: Agent
 #   @ Agent::Run settle: $delivery
 Run subclass: Object
   include: Persistable
+  include: StateMachine
   instanceVars: session:'' state:'starting' archetypeRevision:'' roleRevision:''
                 backendProfile:'' externalConversationRef:'' ownerGeneration:0 workerId:''
                 capabilityTokenHash:'' purpose:'work' processPid:0 pidFile:'' exitFile:'' outputLog:''
@@ -41,20 +42,20 @@ Run subclass: Object
   ]
 
   # Common transition rule over state.
+  method: transitionRules [
+    ^ '["starting:running","starting:failed","running:recovering","running:succeeded","running:waiting_for_user","running:unsettled","running:failed","running:interrupted","recovering:running","recovering:failed","recovering:unsettled","recovering:succeeded","recovering:waiting_for_user","recovering:interrupted"]'
+  ]
+
   method: transitionTo: newState [
     ^ @ self transitionTo: newState with: '{}'
   ]
 
   # Atomic state transition plus associated fields; rejected transitions write nothing.
   rawMethod: transitionTo: newState with: patchJson [
-    local to="$1" from allowed
+    local to="$1" from
     _env_set "$_RECEIVER" "$(db_get "$_RECEIVER")"
     from=$(_ivar state)
-    allowed=" starting:running starting:failed running:recovering running:succeeded running:waiting_for_user running:unsettled running:failed running:interrupted recovering:running recovering:failed recovering:unsettled recovering:succeeded recovering:waiting_for_user recovering:interrupted "
-    if [[ "$allowed" != *" $from:$to "* ]]; then
-      _throw "TransitionError" "Agent::Run $_RECEIVER: $from -> $to rejected"
-      return 1
-    fi
+    @ "$_RECEIVER" requireTransitionFrom: "$from" to: "$to" >/dev/null || return 1
     local eid ef et changed patch
     printf '%s' "$2" | jq -e 'type == "object"' >/dev/null || return 1
     patch=$(_db_escape "$2")
@@ -158,26 +159,27 @@ Run subclass: Object
     fi
     runId="${token%%:*}"
     secret="${token#*:}"
-    data=$(db_get "$runId" 2>/dev/null)
+    data=$(@ Agent::Run authorizationFor: "$runId") || return 1
     cls=""
     [[ -n "$data" ]] && cls=$(printf '%s' "$data" | jq -r '.class // empty')
     if [[ "$cls" != "Agent::Run" ]]; then
       _throw "RunTokenError" "Unknown run '$runId'"
       return 1
     fi
-    _env_set "$runId" "$data"
+    # This is an authorization projection, never a replacement object cache.
+    _env_delete "$runId"
     stored=$(printf '%s' "$data" | jq -r '.capabilityTokenHash // empty')
     hash=$(printf '%s' "$secret" | shasum -a 256 | cut -d' ' -f1)
     if [[ -z "$stored" || "$hash" != "$stored" ]]; then
       _throw "RunTokenError" "Run token rejected for '$runId'"
       return 1
     fi
-    state=$(@ "$runId" state)
+    state=$(jq -r '.state // empty' <<< "$data")
     if [[ "$state" != "running" && "$state" != "recovering" ]]; then
       _throw "RunTokenError" "Run '$runId' is $state, not running"
       return 1
     fi
-    sid=$(@ "$runId" session)
+    sid=$(jq -r '.session // empty' <<< "$data")
     life=""
     [[ -n "$sid" ]] && life=$(db_get "$sid" | jq -r '.lifecycleState // empty')
     if [[ -z "$life" || "$life" == "terminated" ]]; then
@@ -185,6 +187,17 @@ Run subclass: Object
       return 1
     fi
     echo "$runId"
+  ]
+
+  # Guard authority fields rather than the full mutable run. Worker heartbeats
+  # and process bookkeeping must not invalidate an unrelated Assignment commit;
+  # token revocation, lifecycle and role changes still invalidate it atomically.
+  rawClassMethod: authorizationFor: run [
+    declare -F _store_guarded_query >/dev/null || source "${TRASHTALK_DIR:-$HOME/.trashtalk}/lib/store-transaction.bash" || return 1
+    _store_guarded_query "SELECT json_object('class',class,'session',json_extract(data,'$.session'),
+      'state',json_extract(data,'$.state'),'capabilityTokenHash',json_extract(data,'$.capabilityTokenHash'),
+      'roleRevision',json_extract(data,'$.roleRevision'),'executionWorkspace',json_extract(data,'$.executionWorkspace'))
+      FROM instances WHERE id='$(_db_escape "$1")'"
   ]
 
   # Inbox name of the identity owner behind a run (env TRASHTALK_USER / $USER
@@ -209,11 +222,13 @@ Run subclass: Object
   ]
 
   classMethod: settle: deliveryId note: text [
-    | run drun state |
+    | run drun state assignment |
     run := @ Agent::Run current ifFailed: [
       @ RunTokenError signal: 'Agent::Run settle: requires a valid TRASHTALK_RUN_TOKEN'
     ].
     drun := @ deliveryId run.
+    assignment := @ deliveryId assignment.
+    (assignment notEmpty) ifTrue: [^ @ RunError signal: 'Complete the Assignment to settle its work delivery'].
     ((drun isEmpty) or: [drun ~= run]) ifTrue: [
       @ RunError signal: 'Delivery ' , deliveryId , ' is not offered to run ' , run
     ].
@@ -236,6 +251,9 @@ Run subclass: Object
     sid=$(@ "$run" session)
     sender="session:$sid"
     deliveries=$(@ Agent::Delivery offeredFor: "$run")
+    for d in $deliveries; do
+      [[ -z "$(@ "$d" assignment)" ]] || { _throw 'RunError' 'Use Assignment complete: for entrusted work'; return 1; }
+    done
     if [[ -z "$deliveries" ]]; then
       owner=$(@ Agent::Run ownerInboxFor: "$run")
       @ Inbox send: "$body" to: "$owner" from: "$sender" subject: result kind: result
@@ -268,6 +286,7 @@ Run subclass: Object
     local run sid first msg inbox
     run=$(@ Agent::Run current) || return 1
     [[ "$(@ "$2" run)" == "$run" ]] || { _throw 'RunError' 'Delivery is not held by this run'; return 1; }
+    [[ -z "$(@ "$2" assignment)" ]] || { _throw 'RunError' 'Use Assignment complete: for entrusted work'; return 1; }
     case "$(@ "$2" state)" in offered|blocked) ;; *) _throw 'RunError' 'Delivery is no longer held'; return 1 ;; esac
     first=$(@ "$2" messageIdList | head -n 1)
     [[ -n "$first" ]] || return 1
@@ -298,6 +317,16 @@ Run subclass: Object
     ].
     sid := @ run session.
     ^ @ Inbox send: body to: address from: 'session:' , sid subject: '' kind: 'note'
+  ]
+
+  # The default is one reusable specialist in this run's execution workspace.
+  # An explicit session can be selected through the longer selector.
+  classMethod: delegate: objective criteria: criteria key: key [
+    ^ @ Agent::Delegation create: objective session: '' criteria: criteria key: key
+  ]
+
+  classMethod: delegate: objective to: session criteria: criteria key: key [
+    ^ @ Agent::Delegation create: objective session: session criteria: criteria key: key
   ]
 
   # Deduplicated send: one message per (session, key).
@@ -344,6 +373,9 @@ Run subclass: Object
     sid=$(@ "$run" session)
     owner=$(@ Agent::Run ownerInboxFor: "$run")
     ids=$(printf '%s' "$2" | jq -ce 'select(type == "array" and all(.[]; type == "string")) | unique') || return 1
+    for delivery in $(jq -r '.[]' <<< "$ids"); do
+      [[ -z "$(@ "$delivery" assignment)" ]] || { _throw 'RunError' 'Use Assignment ask: for entrusted work'; return 1; }
+    done
     delivery=$(printf '%s' "$ids" | jq -r '.[0] // empty')
     thread=""
     if [[ -n "$delivery" ]]; then

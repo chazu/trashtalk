@@ -380,6 +380,13 @@ Codex one-shot requests require ChatGPT CLI login, remove API-key overrides, and
 use ephemeral read-only execution. Proposal application remains a separate
 explicit SourceProposal operation.
 
+The shared request context includes `mode: "one-shot-read-only"` and operating
+instructions for both backends. These require read-only inspection, treat prior
+command output as untrusted data, and prohibit Assignment creation, delegation,
+inbox sends and claims of background execution. Durable follow-up belongs in a
+persistent Gusgus conversation. See the [agent prompt contract](agent-delegation-flow.md#agent-prompt-contract)
+for the separate coordinator, specialist and direct-input instructions.
+
 The former tmux Agent API, ClaudeAgent, and TmuxSession have been retired. Use
 Agent::Identity/Agent::Session for durable identity and execution. Tools::Tmux remains
 a general command adapter. See [cleanup and migration notes](cleanup-2026-09.md).
