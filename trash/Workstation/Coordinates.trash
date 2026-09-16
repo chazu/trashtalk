@@ -1,0 +1,39 @@
+package: Workstation
+
+# Transactional auxiliary coordinate index for grouped Attention projections.
+# This is deliberately not Persistable: durable records stay Attention and
+# EventSubscription while this service owns their Workstation-only index.
+Coordinates subclass: Object
+  rawClassMethod: claimed: coordinate [
+    source "${TRASHTALK_DIR:-$HOME/.trashtalk}/lib/workstation-store.bash"
+    _workstation_claimed "$1"
+  ]
+  classMethod: record: coordinate forAttention: attention [
+    | existing sub data patch stream owner human now |
+    (@ Store requireTransaction) ifFailed: [:error | @ error signal].
+    existing := @ self claimed: coordinate.
+    (existing notEmpty) ifTrue: [^ existing].
+    @ Store read: attention class: 'Workstation::Attention'.
+    data := @ Store getInstance: attention.
+    @ Require equal: (data jsonTextAt: 'subscription') to: (coordinate jsonTextAt: 'subscription').
+    sub := @ Store read: (coordinate jsonTextAt: 'subscription') class: 'Workstation::EventSubscription'.
+    stream := @ sub streamName.
+    owner := @ sub owner.
+    human := @ AgentFocus human.
+    @ Require equal: stream to: (coordinate jsonTextAt: 'streamName').
+    @ Require equal: owner to: human.
+    patch := @ Workstation::Schema extend: data coordinate: coordinate.
+    now := @ Time nowISO.
+    patch := @ Workstation::Schema merge: patch with: (#{updatedAt: now} asJson).
+    @ self stage: coordinate forAttention: attention.
+    @ Store patch: attention with: patch.
+    ^ attention
+  ]
+  rawClassMethod: stage: coordinate forAttention: attention [
+    source "${TRASHTALK_DIR:-$HOME/.trashtalk}/lib/workstation-store.bash"
+    _workstation_stage_coordinate "$1" "$2"
+  ]
+  rawClassMethod: range: coordinate through: offset limit: limit [
+    source "${TRASHTALK_DIR:-$HOME/.trashtalk}/lib/workstation-store.bash"
+    _workstation_coordinate_range "$1" "$2" "$3"
+  ]

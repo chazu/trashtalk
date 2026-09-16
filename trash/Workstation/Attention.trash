@@ -188,7 +188,7 @@ Attention subclass: Object
     id := subscription jsonTextAt: 'id'.
     @ Require equal: (coordinate jsonTextAt: 'subscription') to: id.
     @ Require equal: (coordinate jsonTextAt: 'streamName') to: (subscription jsonTextAt: 'streamName').
-    existing := @ Store claimedCoordinate: coordinate.
+    existing := @ Workstation::Coordinates claimed: coordinate.
     (existing notEmpty) ifTrue: [^ existing].
     @ Workstation::Schema requireValidated: candidate.
     @ Require equal: (candidate jsonTextAt: 'subscription') to: id.
@@ -196,7 +196,7 @@ Attention subclass: Object
     matches := @ Store findByClass: 'Workstation::Attention' matching: (#{subscription: id groupKey: group state: #('open' 'acknowledged' 'snoozed' 'suppressed')} asJson) orderBy: 'created_at DESC' limit: 1.
     attention := matches firstLine.
     (attention isEmpty) ifTrue: [attention := @ self createWithin: candidate].
-    @ Store recordCoordinate: coordinate forAttention: attention.
+    @ Workstation::Coordinates record: coordinate forAttention: attention.
     # Opt-in automatic routing commits with the acceptance; the root Message
     # then reflects any assignment. Ineligible groups keep a visible reason.
     @ Workstation::Routing autoWithin: attention subscription: subscription.
