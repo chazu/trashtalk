@@ -169,6 +169,37 @@ bad=$(@ Tool detachArgvJson: '["true"]' stdinFile: "$WORK/missing-input" dir: "$
 assert_eq "unreadable stdin file yields no pid" "" "$bad"
 assert_eq "isAlivePid: non-numeric is false" "false" "$(@ Tool isAlivePid: "abc")"
 
+# ==========================================
+echo "8. detached jobs remain interruptible when the caller ignores signals"
+# ==========================================
+
+for signal in INT TERM; do
+    signal_run="$WORK/ignored-$signal"
+    signal_pid=$(bash -c '
+        trap "" INT QUIT TERM
+        source "$1/lib/trash.bash"
+        @ Tool detachArgvJson: "$3" stdinFile: "" dir: "$2"
+    ' ignored-signals "$TRASHTALK_DIR" "$signal_run" '["sleep","30"]')
+    DETACHED_PIDS+=("$signal_pid")
+    signal_child=''
+    for attempt in {1..50}; do
+        signal_child=$(pgrep -P "$signal_pid" | head -1)
+        [[ -z "$signal_child" ]] || break
+        sleep 0.1
+    done
+    assert_nonempty "$signal child started despite caller exiting" "$signal_child"
+    kill -HUP -- "-$signal_pid"
+    assert_eq "$signal job retains detached HUP immunity" true "$(@ Tool isAlivePid: "$signal_pid")"
+    assert_eq "$signal delivered despite caller ignoring it" true "$(@ Tool interruptPid: "$signal_pid" signal: "$signal")"
+    wait_for_file "$signal_run/exit" 5 || true
+    expected_exit=130
+    [[ "$signal" != TERM ]] || expected_exit=143
+    assert_eq "$signal records signal exit despite caller ignoring it" "$expected_exit" "$(cat "$signal_run/exit" 2>/dev/null)"
+    sleep 0.2
+    assert_eq "$signal stops the detached wrapper" false "$(@ Tool isAlivePid: "$signal_pid")"
+    assert_eq "$signal stops the detached child" false "$(kill -0 "$signal_child" 2>/dev/null && echo true || echo false)"
+done
+
 echo ""
 echo "=== Results: $PASSED passed, $FAILED failed ==="
 [[ $FAILED -eq 0 ]]

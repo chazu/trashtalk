@@ -15,7 +15,9 @@ export JCODE_SWARM_ENABLED=0 JCODE_AUTO_POKE=0 JCODE_MEMORY_ENABLED=0 JCODE_MEMO
 export PATH="$JCODE_HOME/bin:$PATH"
 unset TRASHTALK_RUN_TOKEN OPENAI_API_KEY CODEX_API_KEY OPENROUTER_API_KEY TRASH_SESSION_ID
 cd "${settings[3]}"
-coproc BRIDGE { exec "$executable" --no-update --quiet --no-selfdev --provider openai \
+# Control calls also run outside detached jobs. Their bridge must not inherit
+# ignored TERM from a supervisor, or cleanup's kill/wait can hang indefinitely.
+coproc BRIDGE { exec bash "${BASH_SOURCE[0]%/*}/exec-interruptible.bash" "$executable" --no-update --quiet --no-selfdev --provider openai \
     --model "${settings[4]}" --tools bash,read,write,edit,glob,grep,ls,apply_patch \
     api-bridge --stdio; }
 bridge_pid=$BRIDGE_PID

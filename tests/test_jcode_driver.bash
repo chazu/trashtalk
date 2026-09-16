@@ -157,7 +157,13 @@ check 'cross-owner stop rejected' 1 "$rc"
 @ "$identity" owner: jcode-owner
 @ "$identity" save
 touch "$host/refuse-stop"
-TRASHTALK_RUN_TOKEN="$actor_token" @ Agent::Run stop: "$lost" >/dev/null 2>&1; rc=$?
+# A supervisor may ignore interrupts. The stop control bridge must still be
+# reapable after native cancellation is refused, rather than hang in cleanup.
+TRASHTALK_RUN_TOKEN="$actor_token" timeout --kill-after=5 30 bash -c '
+    trap "" INT TERM
+    source "$1/lib/trash.bash"
+    @ Agent::Run stop: "$2"
+' ignored-control-signals "$root" "$lost" >/dev/null 2>&1; rc=$?
 check 'cancel acknowledgment alone cannot confirm stop' 1 "$rc"
 check 'unconfirmed cancellation retains run' recovering "$(field "$lost" state)"
 rm "$host/refuse-stop"

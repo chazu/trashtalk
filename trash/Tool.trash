@@ -326,6 +326,10 @@ Tool subclass: Object
       # fork once more in that case, as setsid(1) itself does.
       launcher=(perl -MPOSIX -e 'defined(POSIX::setsid()) or do { exit 0 if fork; POSIX::setsid() }; exec @ARGV')
     fi
+    # A worker or its supervisor may enter with interrupts ignored. Bash
+    # cannot trap signals ignored on entry, even with job control enabled.
+    # Reset them before starting the wrapper; keep HUP ignored for detachment.
+    launcher=(bash "${TRASHTALK_DIR:-$HOME/.trashtalk}/lib/exec-interruptible.bash" "${launcher[@]}")
 
     wrapper='trap "" HUP; trap ":" INT TERM; pf=$1; ef=$2; in=$3; out=$4; err=$5; shift 5; ps -p "$$" -o lstart= >"$pf.start.tmp" && mv -f "$pf.start.tmp" "$pf.start"; printf "%s\n" "$$" >"$pf.tmp" && mv -f "$pf.tmp" "$pf"; "$@" <"$in" >"$out" 2>"$err"; s=$?; printf "%s\n" "$s" >"$ef.tmp" && mv -f "$ef.tmp" "$ef"; exit "$s"'
 

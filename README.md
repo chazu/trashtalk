@@ -68,6 +68,8 @@ Trashtalk uses a **DSL compiler** that transforms Smalltalk-inspired source file
 - Required tools: `jo`, `jq`, `sqlite3`, `uuidgen`; builds also need `make` and `shasum`
   - Conversation log projection also uses Perl with its core `JSON::PP`,
     `Digest::SHA`, and `Time::HiRes` modules for file reads and hashes.
+    Detached process launch and Jcode control bridges use Perl to keep
+    harnesses interruptible when their supervisor ignores interrupt signals.
   - macOS: `brew install jo jq sqlite` (`uuidgen` is built in)
   - Debian/Ubuntu: `sudo apt install bash jo jq sqlite3 uuid-runtime make perl libdigest-sha-perl`
 
@@ -952,7 +954,7 @@ External tools (install separately):
 - `jq` - JSON processor
 - `sqlite3` - Database engine
 - `uuidgen` - UUID generation (usually pre-installed)
-- `perl` with `JSON::PP`, `Digest::SHA`, and `Time::HiRes` - conversation log file adapter
+- `perl` with `JSON::PP`, `Digest::SHA`, and `Time::HiRes` - conversation log file adapter and detached process launch
 - `libhonker_ext` - Honker SQLite extension (optional — enables EventBus, Actor, Stream, Scheduler)
 
 ## Emacs Integration

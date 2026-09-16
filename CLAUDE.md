@@ -286,7 +286,9 @@ Required: Bash 4.4+, `jo`, `jq`, `sqlite3`, `uuidgen`; builds also need `make`,
 `shasum`, and Perl (the tokenizer splits each source into characters in one
 Perl pass, then scans the array in Bash; see `docs/performance.md`).
 Conversation log projection uses Perl with core `JSON::PP`, `Digest::SHA`, and
-`Time::HiRes` modules at the file-read/hash boundary.
+`Time::HiRes` modules at the file-read/hash boundary. Detached process launch
+and Jcode control bridges also need Perl to restore interrupt signal defaults;
+this keeps harnesses stoppable when a supervisor ignores those signals.
 
 ## Language boundaries
 
