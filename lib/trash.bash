@@ -111,6 +111,7 @@ fi
 source "$SCRIPT_DIR/trash-progress.bash" || return 1
 source "$SCRIPT_DIR/trash-json.bash" || return 1
 source "$SCRIPT_DIR/store-transaction.bash" || return 1
+source "$SCRIPT_DIR/agent-active-sessions.bash" || return 1
 
 # ============================================
 # Profiling Support

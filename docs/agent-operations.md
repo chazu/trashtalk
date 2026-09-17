@@ -35,6 +35,30 @@ Implemented in September 2026. This document describes the current single-host
 worker, snapshot browser, and live Innards attachment. The broader
 headless-session design remains a partially implemented plan.
 
+## Active tracked sessions
+
+`@ Agent::Session activeCount` returns one decimal count of distinct persisted
+`Agent::Session` records with at least one `Agent::Run` in `starting`, `running`,
+or `recovering`. Multiple active runs count once. Idle sessions, terminal runs,
+orphan runs and untracked external processes do not count. Session lifecycle,
+identity, backend and workspace do not filter this global count. It reports
+tracked state, not an OS process-liveness probe, and does not reconcile records.
+
+Ordinary shell consumers can call `~/.trashtalk/bin/trash-active-sessions`
+without loading the runtime or installing jq. It uses Bash and SQLite only,
+prints `0` for an absent store without creating it, and fails on storage errors.
+`SQLITE_JSON_DB` overrides the store, otherwise `TRASHTALK_DIR/instances.db`
+(or `~/.trashtalk/instances.db`) is used. `TRASH_SQLITE3` / `SQLITE3` can select
+SQLite. Both APIs share one scalar query, an active-run-only partial index and
+primary-key session probes. The index is installed lazily on existing stores
+(first use needs write access), with a 50 ms lock timeout. Subsequent reads scan
+only active runs, not terminal history, and have no listing limit. The count is
+a persisted snapshot, not a query for use inside a staged Store transaction.
+
+Whisker's Bash prompt uses this command for `[agents:N]` before its input marker.
+Zero and unavailable counts leave the marker unchanged. No worker tick, inbox
+query, assignment update, or full runtime startup occurs during prompt reads.
+
 ## Agent package upgrade
 
 The session domain lives in the flat `Agent` package: `Agent::Identity`,

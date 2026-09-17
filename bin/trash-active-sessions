@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Public scalar API: distinct tracked sessions with starting/running/recovering runs.
+# Deliberately does not load the runtime or require jq (works with system Bash).
+if [[ $# != 0 ]]; then
+    printf 'Usage: trash-active-sessions\n' >&2
+    exit 2
+fi
+root="${TRASHTALK_DIR:-${BASH_SOURCE[0]%/*}/..}"
+source "$root/lib/agent-active-sessions.bash" || exit 1
+trashtalk_active_session_count

@@ -26,6 +26,10 @@ Session subclass: Object
     ^ id
   ]
 
+  # Scalar persisted-state count, shared with the jq-free shell API.
+  # SQL aggregation/index access is the storage boundary, not DSL iteration.
+  classPrimitive: activeCount calls: trashtalk_active_session_count
+
   # Old persisted records predate membership; reads must not enroll them.
   method: sessionPolicyRevision [
     | value |
