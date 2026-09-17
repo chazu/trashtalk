@@ -36,6 +36,12 @@ foreign_session=$(must @ Agent::Session openFor: "$foreign" archetype: "$arch" r
 reject 'empty objective rejected' @ Assignment draft: ' ' in: "$root"
 a=$(must @ Assignment draft: 'Explain the failing integration test' in: "$root")
 b=$(must @ Assignment draft: 'Explain the failing integration test' in: "$root")
+ticket=$(must @ Assignment draft: 'Close a human-owned ticket' in: "$root")
+must @ "$ticket" complete: 'No delegated execution was required.' >/dev/null
+check 'unassigned ticket completes for owner' completed "$(@ "$ticket" state)"
+check 'unassigned ticket records outcome' 'No delegated execution was required.' "$(@ "$ticket" result)"
+must @ "$ticket" complete: 'No delegated execution was required.' >/dev/null
+reject 'unassigned ticket rejects conflicting completion' @ "$ticket" complete: 'A different outcome'
 check 'another draft is deliberately distinct' false "$([[ "$a" == "$b" ]] && echo true || echo false)"
 check 'draft belongs to the local human' assignment-owner "$(field "$a" .requester)"
 check 'unassigned is derived activity' unassigned "$(@ "$a" snapshot | jq -r .activity)"

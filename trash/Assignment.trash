@@ -181,7 +181,7 @@ Assignment subclass: Object
   ]
 
   method: finishWithin: args [
-    | actor sender run cancel outcome target state previous session runs data d dState questions message now event assignee |
+    | actor sender run cancel outcome target state previous session runs data d dState questions message now event assignee unassigned |
     actor := @ Agent::Run actingContext.
     cancel := args objectAt: 'cancel'.
     @ Require member: cancel of: '["true","false"]'.
@@ -198,23 +198,31 @@ Assignment subclass: Object
       ^ self
     ].
     @ self requireTransitionFrom: state to: target.
-    run := actor objectAt: 'run'.
     session := @ self currentSession.
-    runs := @ Agent::Run activeFor: session except: run.
-    @ Require equal: runs to: '[]'.
+    assignee := @ self assignee.
     data := @ self asJson.
     d := data objectAt: 'delivery'.
-    (d notEmpty) ifTrue: [
-      d := @ Store read: d class: 'Agent::Delivery'.
-      dState := @ d state.
-      @ Require member: dState of: '["pending","blocked","offered","processed","skipped"]'
-    ].
-    (cancel = 'false') ifTrue: [
-      assignee := @ self assignee.
+    unassigned := (assignee isEmpty) and: [session isEmpty].
+    run := ''.
+    (unassigned = 'true') ifTrue: [
+      # A human-owned draft is a ticket before it is entrusted to any agent.
+      # It has no delivery to settle and can be closed with a recorded outcome.
+      @ Require equal: d to: ''
+    ] ifFalse: [
+      run := actor objectAt: 'run'.
+      runs := @ Agent::Run activeFor: session except: run.
+      @ Require equal: runs to: '[]'.
+      (d notEmpty) ifTrue: [
+        d := @ Store read: d class: 'Agent::Delivery'.
+        dState := @ d state.
+        @ Require member: dState of: '["pending","blocked","offered","processed","skipped"]'
+      ].
+      (cancel = 'false') ifTrue: [
       @ Require text: assignee.
       @ Require text: session.
       questions := @ Agent::Queue unansweredForAssignment: self.
       @ Require equal: questions to: '[]'
+      ]
     ].
     message := @ Message outcomeForAssignment: self body: outcome sender: sender cancelled: cancel.
     (d notEmpty) ifTrue: [
