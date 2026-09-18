@@ -2,13 +2,13 @@
 
 ## [Unreleased]
 
+### Removed
+
+- Remove the GitHub build-event importer and macOS polling service from Trashtalk.
+
 ### Fixed
 
 - Keep successful shell scripts successful when they exit without creating a temporary object environment.
-
-### Added
-
-- Subscribe to GitHub build events through a durable local Stream, with tailnet polling, atomic checkpoints, duplicate suppression, a macOS polling timer, and documented delivery validation.
 
 ## 2026-09-15
 

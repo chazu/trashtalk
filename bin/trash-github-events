@@ -1,7 +1,0 @@
-#!/usr/bin/env bash
-# One bounded poll; launchd/systemd timers may invoke this periodically.
-set -eo pipefail
-root="${TRASHTALK_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
-export TRASHTALK_DIR="$root" TRASHDIR="$root/trash"
-source "$root/lib/trash.bash"
-@ GitHub::BuildEvents sync
