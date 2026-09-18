@@ -2,8 +2,8 @@
 
 **Status:** Current CLI adapters; persistent memory and a Chad session driver remain future work.
 
-`Tools::Roam`, `Tools::AstGrep`, `Tools::Cass`, `Tools::Chad`, and
-`Tools::Worktrunk` are available
+`Tools::Git`, `Tools::Roam`, `Tools::AstGrep`, `Tools::Cass`, `Tools::Chad`,
+and `Tools::Worktrunk` are available
 through ordinary class messages. Their methods build exact argument arrays in
 the DSL. `Tool` supplies process capture and child-only directory selection;
 the `Tools::JsonOutput` trait handles structured CLI results.
@@ -21,6 +21,7 @@ installation guidance; they never install a dependency themselves.
 
 ```bash
 @ Tools::Roam version
+@ Tools::Git version
 @ Tools::AstGrep version
 @ Tools::Cass version
 @ Tools::Chad version
@@ -98,6 +99,26 @@ stable Trashtalk worktree model. The adapter exposes no `switch`, `remove`, or
 `merge` messages yet. Creating, assigning, merging, and removing agent
 worktrees needs a separate durable lifecycle and recovery design, rather than
 letting an agent invoke a convenient destructive CLI operation directly.
+
+## Git
+
+`Tools::Git` supplies explicit-checkout, read-only Git observations required to
+admit and reconcile future worktree operations:
+
+```bash
+@ Tools::Git rootInDirectory: "$PWD"
+@ Tools::Git commonDirectoryInDirectory: "$PWD"
+@ Tools::Git headInDirectory: "$PWD"
+@ Tools::Git branchInDirectory: "$PWD"
+@ Tools::Git statusInDirectory: "$PWD"
+@ Tools::Git worktreeListInDirectory: "$PWD"
+```
+
+The last two use `status --porcelain=v1 --branch --untracked-files=normal` and
+`worktree list --porcelain` respectively. Output is retained as process
+evidence. The Tool does not create branches or worktrees, commit, merge, push,
+or alter configuration. Those actions need an explicit policy and durable
+operation lifecycle above this adapter.
 
 ## ast-grep
 

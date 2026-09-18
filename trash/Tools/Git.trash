@@ -1,0 +1,71 @@
+# Git is the narrow process boundary for repository inspection. It intentionally
+# contains no admission or agent policy and exposes no mutating operation yet.
+package: Tools
+
+Git subclass: Tool
+
+  classMethod: name [ ^ 'git' ]
+
+  # Git is normally supplied by the OS or developer toolchain. Do not guess a
+  # privileged package-manager command from inside Trashtalk.
+  classMethod: ensure [
+    | available guidance |
+    available := @ self isInstalled.
+    (available = 'true') ifTrue: [^ 'true'].
+    guidance := 'Git is not installed. Install Git using your operating system or developer toolchain.'.
+    @ Console error: guidance.
+    ^ 'false'
+  ]
+
+  # All inspection methods require the checkout explicitly. The caller's shell
+  # never changes directory, and raw Git output remains evidence for a later
+  # policy or allocation decision.
+  classMethod: rootInDirectory: directory [
+    | arguments |
+    arguments := #('rev-parse' '--show-toplevel') asJson.
+    ^ @ self inspect: arguments inDirectory: directory
+  ]
+
+  classMethod: commonDirectoryInDirectory: directory [
+    | arguments |
+    arguments := #('rev-parse' '--git-common-dir') asJson.
+    ^ @ self inspect: arguments inDirectory: directory
+  ]
+
+  classMethod: headInDirectory: directory [
+    | arguments |
+    arguments := #('rev-parse' 'HEAD') asJson.
+    ^ @ self inspect: arguments inDirectory: directory
+  ]
+
+  classMethod: branchInDirectory: directory [
+    | arguments |
+    arguments := #('branch' '--show-current') asJson.
+    ^ @ self inspect: arguments inDirectory: directory
+  ]
+
+  # Git's porcelain form is stable enough to reconcile actual worktree paths
+  # and branch ownership. Parsing it into durable objects belongs above Tool.
+  classMethod: worktreeListInDirectory: directory [
+    | arguments |
+    arguments := #('worktree' 'list' '--porcelain') asJson.
+    ^ @ self inspect: arguments inDirectory: directory
+  ]
+
+  # Status is observational evidence, not a clean-checkout authorization grant.
+  classMethod: statusInDirectory: directory [
+    | arguments |
+    arguments := #('status' '--porcelain=v1' '--branch' '--untracked-files=normal') asJson.
+    ^ @ self inspect: arguments inDirectory: directory
+  ]
+
+  classMethod: inspect: arguments inDirectory: directory [
+    | available tool argv |
+    directory isEmpty ifTrue: [^ @ Require reject: 'A checkout directory is required'].
+    available := @ self isInstalled.
+    (available ~= 'true') ifTrue: [^ @ self missingToolResult: 'inspect'].
+    tool := @ self path.
+    argv := #(tool) asJson.
+    argv := @ self argv: argv appendEach: arguments.
+    ^ @ self captureArgvJson: argv inDirectory: directory
+  ]
