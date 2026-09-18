@@ -72,3 +72,20 @@ The cloud receiver acknowledges only committed events, but GitHub itself does
 not automatically retry failed webhook deliveries. Cluster outages require
 redelivery from the GitHub App's Advanced settings. Build payloads remain data;
 this bridge does not send Inbox messages, wake agents, or execute builds.
+
+## Validation on 2026-09-18
+
+The deployed GitHub App delivered a real `loosh/build-events` commit status from
+`loosh-industries/dev` through the signed public receiver to the local Stream.
+Redelivering the same GitHub delivery returned HTTP 200 and left exactly one
+stored event, with no cloud cursor advance. The installed launchd timer recovered
+from HTTP errors during a cluster rollout and returned to exit status 0.
+
+The GitHub importer regression covers duplicate delivery, competing checkpoints,
+retention gaps, independent consumers, and rollback after an injected failure
+between the Honker append and checkpoint commit. All 50 compiler tests passed.
+The full runtime run with eight jobs and a 300-second limit passed 98/101: agent
+recovery and worker backoff failed internal timing expectations, and assignment
+transactions timed out. All three passed standalone on the same final source
+(202 assertions for assignment transactions); the parallel run is not a clean
+full-suite result. Workstation routing also passed both in the suite and alone.

@@ -8,7 +8,7 @@
 
 ### Added
 
-- Subscribe to GitHub build events through a durable local Stream, with tailnet polling, atomic checkpoints, duplicate suppression, and a macOS polling timer.
+- Subscribe to GitHub build events through a durable local Stream, with tailnet polling, atomic checkpoints, duplicate suppression, a macOS polling timer, and documented delivery validation.
 
 ## 2026-09-15
 
