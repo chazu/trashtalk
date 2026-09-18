@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- Keep successful shell scripts successful when they exit without creating a temporary object environment.
+
 ## 2026-09-15
 
 ### Changed

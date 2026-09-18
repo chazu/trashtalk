@@ -418,7 +418,7 @@ function _env_is_persisted {
 # Clean up the environment directory
 # Usage: _env_cleanup
 function _env_cleanup {
-  [[ -d "$_ENV_DIR" ]] && rm -rf "$_ENV_DIR"
+  if [[ -d "$_ENV_DIR" ]]; then rm -rf "$_ENV_DIR"; fi
 }
 
 export -f _env_init _env_get _env_set _env_exists _env_delete _env_list _env_evict_prefix _env_ids_prefix _env_persist _env_load _env_is_persisted _env_cleanup
