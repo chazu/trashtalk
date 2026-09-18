@@ -31,6 +31,9 @@ implemented contracts from designs and historical evidence.
 - [Workstation event, attention, and delegated-action layer](workstation-event-attention-delegation.md): proposed durable local subscriptions, grouped attention, and safely bounded delegated effects.
 - [Delegation plan](agent-delegation-implementation.md): bounded specialist dispatch
   and durable status are implemented; repository/worktree objects and shared memory remain work.
+- [Agent workspace operations and policy](agent-workspace-operations-policy.md): proposed
+  separation of Git/Worktrunk operations, machine/project policy, durable recovery,
+  and agent orchestration.
 - [Headless sessions](headless-agent-sessions-design.md): partial implementation;
   consult current agent guides for available behavior.
 - [Code intelligence and memory research](code-intelligence-and-memory-research.md):
