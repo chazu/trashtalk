@@ -151,7 +151,7 @@ archetype text describes an earlier workflow. A fresh Gusgus session uses
 revision 2. Prompt guidance supplements the API's durable and authorization
 checks; it is not itself an enforcement boundary.
 
-The top-level `Agent` one-shot facade is separate. Its Axe and Codex request
+The top-level `Agent` one-shot facade is separate. Its Codex request
 contexts identify `one-shot-read-only` mode and explicitly prohibit creating
 Assignments, delegating, sending inbox messages or promising background work.
 Such work belongs in a persistent session with a current authenticated launcher.

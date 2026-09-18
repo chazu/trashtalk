@@ -20,8 +20,8 @@ build commands, and established Trashtalk patterns.
 5. Preserve semantic compatibility with the existing Bash runtime and validate
    compiler changes against the repository test suite.
 6. Keep agent integrations as narrow external CLI adapters behind `Agent`.
-   `TRASHTALK_AGENT_BACKEND` selects the one-shot backend (`axe` by default or
-   `codex`). The Codex backend is subscription-oriented: require ChatGPT CLI
+   `TRASHTALK_AGENT_BACKEND` selects the Codex one-shot backend (`codex`, the
+   default). The Codex backend is subscription-oriented: require ChatGPT CLI
    authentication, strip API-key variables, and retain its ephemeral read-only
    execution boundary.
 

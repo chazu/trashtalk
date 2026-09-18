@@ -37,7 +37,7 @@ whose CLI reads JSON on stdin and returns crisp exit codes and diagnostics. That
 is exactly the boundary Trashtalk already knows how to talk to.
 
 Trashtalk also depends on a handful of external binaries (`jq`, `jo`,
-`sqlite3`, `uuidgen`, optionally `axe`, `codex`, `tmux`, the Innards tools) and
+`sqlite3`, `uuidgen`, optionally `codex`, `tmux`, the Innards tools) and
 increasingly runs agents against other people's repositories. mise is the
 standard answer to "which versions of which tools does this directory want, and
 what environment should commands run under". It also happens to be a task
@@ -81,7 +81,7 @@ Ideas that fall out of this:
 
 ### 1.2 Contracts for tool and agent result envelopes
 
-`Tool`, `Tools::Axe`, `Tools::Codex`, `SourceProposal`, and
+`Tool`, `Tools::Codex`, `SourceProposal`, and
 `ObjectEditProposal` all emit `schema_version: 1` envelopes, and consumers
 `jsonUnpack:` the fields they expect. A single `docs/schemas/results.cue` could
 define each envelope once:
@@ -101,7 +101,7 @@ define each envelope once:
 ```
 
 - **Test assertions**: `TestCase` could gain `assert: json matches: '#ToolResult'`
-  that shells out to `cue vet`, so the tests for Axe, Codex, Cue, and Mise stop
+  that shells out to `cue vet`, so the tests for Codex, Cue, and Mise stop
   re-asserting field-by-field.
 - **Agent output gating**: `Agent`/`Agent::Session` receive LLM output that is
   supposed to be JSON of a known shape. Vetting it against a CUE definition
@@ -121,7 +121,6 @@ Trashtalk reads shell-style configuration (`TRASHTALK_AGENT_BACKEND`,
   'TRASHTALK_'` is already there) against a definition of known keys and
   allowed values, and produce a `doctor` finding for typos;
 - render the same config to YAML or JSON for other tools with `convert:from:to:`;
-- describe `axe/agents/*.toml` (tool allowlists, read-only constraints) so the
   test that currently greps for `write_file|edit_file|run_command` becomes a
   schema assertion.
 
@@ -173,7 +172,7 @@ the test suite is known to pass with:
 ```toml
 [tools]
 jq = "1.7"
-go = "1.23"       # for cue / axe via go install
+go = "1.23"       # for cue via go install
 "go:cuelang.org/go/cmd/cue" = "latest"
 
 [env]
@@ -191,7 +190,7 @@ TRASHTALK_TEST_JOBS = "4"
 
 ### 2.2 Running agents against other projects
 
-`Agent`, `AxeAgent`, and `CodexAgent` run one-shot LLM commands in a working
+`Agent` and `CodexAgent` run one-shot LLM commands in a working
 directory. That directory has its own toolchain expectations, and today the
 agent inherits whatever is on the caller's PATH.
 
@@ -205,7 +204,7 @@ agent inherits whatever is on the caller's PATH.
   `Env`-like object for the session.
 - **Trust as a gate**: mise refuses to load untrusted config. Surfacing
   `trust:` as an explicit, logged step fits the existing "never modify user
-  configuration silently" stance of the Axe and Codex wrappers.
+  configuration silently" stance of the Codex wrapper.
 
 ### 2.3 mise tasks as a project task graph
 
@@ -282,5 +281,5 @@ for a directory. Combining them:
    CUE definition, then decide whether generating definitions from class
    metadata is worth a compiler pass.
 4. Prototype a `Project` class over `Tools::Mise` and wire it into
-   `AxeAgent`'s working-directory context so agents see project tasks and
+   `CodexAgent`'s working-directory context so agents see project tasks and
    environment.

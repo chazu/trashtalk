@@ -95,7 +95,7 @@ for name in Codex Jcode Maki Shell; do
   [[ ! -f trash/${name}Driver.trash ]]
   grep -q '^package: Agent$' "trash/Agent/${name}Driver.trash"
 done
-for name in Agent Gusgus Jcode Maki CodexAgent AxeAgent; do
+for name in Agent Gusgus Jcode Maki CodexAgent; do
   [[ -f trash/$name.trash ]]
   ! grep -q '^package: Agent$' "trash/$name.trash"
 done

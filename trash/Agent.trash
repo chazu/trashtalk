@@ -1,15 +1,14 @@
-# Agent - provider-independent one-shot facade (Axe or authenticated Codex).
+# Agent - authenticated Codex one-shot facade.
 # @@ uses persistent Gusgus sessions by default; @@ --one-shot uses this facade.
-# TRASHTALK_AGENT_BACKEND selects axe (default) or codex for one-shot requests.
+# TRASHTALK_AGENT_BACKEND may be codex or CodexAgent; Codex is the only supported one-shot backend.
 # See docs/agent-operations.md for persistent sessions and live attachment.
 Agent subclass: Object
   classMethod: oneShotBackend [
     | configured |
-    configured := @ Env get: 'TRASHTALK_AGENT_BACKEND' default: 'axe'.
+    configured := @ Env get: 'TRASHTALK_AGENT_BACKEND' default: 'codex'.
     (configured = 'codex') ifTrue: [^ 'CodexAgent'].
     (configured = 'CodexAgent') ifTrue: [^ 'CodexAgent'].
-    (configured = 'AxeAgent') ifTrue: [^ 'AxeAgent'].
-    ^ 'AxeAgent'
+    ^ 'CodexAgent'
   ]
 
   classMethod: contextFor: question workingDirectory: workingDirectory status: status lastResult: lastResult [
@@ -50,22 +49,10 @@ Agent subclass: Object
     ^ @ backend dryRun: question workingDirectory: workingDirectory status: status lastResult: lastResult
   ]
 
-  classMethod: run: agent withInput: input [
-    ^ @ AxeAgent run: agent withInput: input
-  ]
-
   classMethod: review: subject [
     | question |
     question := 'Review this read-only context and report risks: ' , subject.
     ^ @ self ask: question
-  ]
-
-  # Requesting a proposal remains read-only. Applying it is a separate,
-  # explicit SourceProposal review transaction.
-  classMethod: propose: question for: className [
-    | workingDirectory |
-    workingDirectory := @ Env cwd.
-    ^ @ AxeAgent propose: question class: className workingDirectory: workingDirectory
   ]
 
   classMethod: reviewAndApplyProposal: proposal [
@@ -73,19 +60,10 @@ Agent subclass: Object
   ]
 
   classMethod: errorLabelForOutcome: outcome backend: backend [
-    (backend = 'codex') ifTrue: [
-      (outcome = 'missing_tool') ifTrue: [^ 'Codex unavailable'].
-      (outcome = 'configuration_error') ifTrue: [^ 'Codex authentication error'].
-      (outcome = 'invalid_output') ifTrue: [^ 'Codex returned no final answer'].
-      ^ 'Codex execution error'
-    ].
-    (outcome = 'runtime_error') ifTrue: [^ 'Axe runtime error'].
-    (outcome = 'configuration_error') ifTrue: [^ 'Axe configuration error'].
-    (outcome = 'provider_error') ifTrue: [^ 'Axe provider/network error'].
-    (outcome = 'budget_exceeded') ifTrue: [^ 'Axe token budget exceeded'].
-    (outcome = 'missing_tool') ifTrue: [^ 'Axe unavailable'].
-    (outcome = 'invalid_output') ifTrue: [^ 'Axe returned malformed JSON'].
-    ^ 'Axe process error'
+    (outcome = 'missing_tool') ifTrue: [^ 'Codex unavailable'].
+    (outcome = 'configuration_error') ifTrue: [^ 'Codex authentication error'].
+    (outcome = 'invalid_output') ifTrue: [^ 'Codex returned no final answer'].
+    ^ 'Codex execution error'
   ]
 
   classMethod: answerFromRun: runResult [

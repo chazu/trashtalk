@@ -158,6 +158,11 @@ assert_eq "dry run is marked" 'true' "$(printf '%s' "$dry_result" | jq -r .resul
 assert_eq "dry run context has question" 'why failed?' "$(printf '%s' "$dry_result" | jq -r '.result.stdin | fromjson | .question')"
 assert_eq "dry run context has prior status" '7' "$(printf '%s' "$dry_result" | jq -r '.result.stdin | fromjson | .last_status')"
 
+unset TRASHTALK_AGENT_BACKEND
+export FAKE_CODEX_SCENARIO=success
+result=$(@ Agent ask: 'default backend?' workingDirectory: "$TEST_TMP/work dir" status: '0' lastResult: '')
+assert_eq "Agent defaults to Codex backend" 'codex' "$(printf '%s' "$result" | jq -r .backend)"
+
 export TRASHTALK_AGENT_BACKEND=codex
 export FAKE_CODEX_SCENARIO=success
 result=$(@ Agent ask: 'selected?' workingDirectory: "$TEST_TMP/work dir" status: '9' lastResult: 'prior')

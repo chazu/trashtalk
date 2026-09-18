@@ -521,54 +521,36 @@ optional delegation to Gusgus or another agent you already run. See the
 
 ## One-shot agent questions
 
-`@ Agent ask:workingDirectory:status:lastResult:` sends one explicit, read-only request through the selected
-external agent harness with no memory. Axe is the default; the official Codex
-CLI is also supported. Pass the question, working directory, command status, and optional prior result
-explicitly. `Agent present:` displays the answer.
+`@ Agent ask:workingDirectory:status:lastResult:` sends one explicit, read-only
+request through the official Codex CLI with no memory. Pass the question,
+working directory, command status, and optional prior result explicitly.
+`Agent present:` displays the answer.
 
 ```bash
 run=$(@ Agent ask: 'why did that fail?' workingDirectory: "$PWD" status: '1' lastResult: '')
 @ Agent present: "$(@ Agent answerFromRun: "$run")"
 
-# Inspect the selected backend's exact context without making an LLM call.
+# Inspect the exact context without making an LLM call.
 @ Agent dryRun: 'what context would you receive?' workingDirectory: "$PWD" status: '0' lastResult: ''
 ```
 
-Choose the backend in `~/.trashrc`:
-
-```bash
-# Default: Axe with the checked-in project-local agent profile.
-TRASHTALK_AGENT_BACKEND=axe
-
-# Official Codex CLI using a ChatGPT subscription login.
-TRASHTALK_AGENT_BACKEND=codex
-```
-
-For Codex, run `codex login` and select the ChatGPT login, then verify it with
-`codex login status`. The adapter refuses API-key authentication and removes
-`CODEX_API_KEY` and `OPENAI_API_KEY` from the child process so selecting this
-backend cannot silently fall back to per-token API billing. It invokes
+The backend defaults to `codex`; `TRASHTALK_AGENT_BACKEND=codex` is accepted
+for explicit configuration. Run `codex login` and select the ChatGPT login,
+then verify it with `codex login status`. The adapter refuses API-key
+authentication and removes `CODEX_API_KEY` and `OPENAI_API_KEY` from the child
+process so it cannot silently fall back to per-token API billing. It invokes
 `codex exec` ephemerally, ignores user tool configuration, and fixes the
 sandbox to read-only. See OpenAI's documentation for
 [authentication](https://learn.chatgpt.com/docs/auth) and
 [non-interactive Codex](https://learn.chatgpt.com/docs/non-interactive-mode).
 
-Trashtalk never installs Axe or initializes credentials implicitly. Install it
-explicitly with `go install github.com/jrswab/axe@latest`, configure the
-provider required by `axe/agents/trashtalk-readonly.toml`, and use `@ Trash
-doctor` to check availability. The checked-in agent enables only Axe's
-`list_directory` and `read_file` tools—no file mutation, shell commands, or
-subagents.
-
-`@@` preserves Axe's status distinctions: `1` runtime, `2` configuration, `3`
-provider/network, and `4` budget exhaustion. Missing Axe returns `127`.
-Codex failures preserve their original process status; a non-ChatGPT login is
+Codex failures preserve their original process status. A non-ChatGPT login is
 reported as configuration exit `2`, and a missing Codex CLI as `127`.
 
 ## Reviewed source proposals
 
-Source mutation is a separate operation from `@@`. A specialized read-only Axe
-agent can propose a one-file `.trash` unified diff, but cannot apply it:
+Source mutation is a separate operation from `@@`. An explicit one-file `.trash`
+unified diff can be reviewed and applied through the guarded proposal gate:
 
 ```bash
 run=$(@ Agent propose: 'make value return 2' for: Counter)

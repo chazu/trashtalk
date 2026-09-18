@@ -67,7 +67,7 @@ The session domain lives in the flat `Agent` package: `Agent::Identity`,
 `Driver`, and `CodexDriver` / `JcodeDriver` / `MakiDriver` / `ShellDriver`.
 Use qualified public sends, for example `@ Agent::Worker tick`.
 The top-level one-shot `Agent` and personas `Gusgus`, `Jcode`, `Maki`,
-`CodexAgent`, and `AxeAgent` keep their existing names. `AgentWorkboard` is
+`CodexAgent` keeps its existing name. `AgentWorkboard` is
 unchanged. There are no aliases for the retired session class names.
 
 Restart workers and interactive runtimes after upgrading and running `make bash`.
@@ -398,7 +398,7 @@ required by these tests.
 
 `@ Agent ask: 'question' workingDirectory: "$PWD" status: '0' lastResult: ''`
 uses the one-shot `Agent` facade, selected by
-`TRASHTALK_AGENT_BACKEND=axe` (default) or `codex`. `@ Agent dryRun:workingDirectory:status:lastResult:` previews that
+`TRASHTALK_AGENT_BACKEND=codex` (the default). `@ Agent dryRun:workingDirectory:status:lastResult:` previews that
 request without running a model. These do not join the persistent Gusgus session.
 Codex one-shot requests require ChatGPT CLI login, remove API-key overrides, and
 use ephemeral read-only execution. Proposal application remains a separate

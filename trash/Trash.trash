@@ -105,7 +105,7 @@ Trash subclass: Object
 
     # The selected one-shot backend is optional. Installation and authentication stay
     # explicit because they belong to the external harness.
-    local agent_backend="${TRASHTALK_AGENT_BACKEND:-axe}" agent_auth
+    local agent_backend="${TRASHTALK_AGENT_BACKEND:-codex}" agent_auth
     case "$agent_backend" in
       codex|CodexAgent)
         if command -v codex >/dev/null 2>&1; then
@@ -119,15 +119,8 @@ Trash subclass: Object
           _d_warn "Codex backend selected but codex is not installed"
         fi
         ;;
-      axe|AxeAgent)
-        if command -v axe >/dev/null 2>&1; then
-          _d_ok "Axe found ($(command -v axe)); one-shot Agent backend selected"
-        else
-          _d_warn "Axe backend selected but axe is not installed (install explicitly with: go install github.com/jrswab/axe@latest)"
-        fi
-        ;;
       *)
-        _d_warn "Unknown TRASHTALK_AGENT_BACKEND '$agent_backend'; one-shot Agent falls back to AxeAgent"
+        _d_warn "Unknown TRASHTALK_AGENT_BACKEND '$agent_backend'; one-shot Agent uses CodexAgent"
         ;;
     esac
     if command -v indiff >/dev/null 2>&1 && command -v patch >/dev/null 2>&1; then

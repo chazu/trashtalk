@@ -751,7 +751,7 @@ so a polling worker must batch its queries per tick.
 
 ## Harness contract, context, and caching
 
-The one-shot `AxeAgent` and `CodexAgent` paths remain valid for
+The one-shot `CodexAgent` path remains valid for
 `@ Agent ask:workingDirectory:status:lastResult:`. [ClaudeAgent and the tmux session methods were retired](cleanup-2026-09.md).
 Persistent sessions use separate drivers behind `Agent::Session`; the Codex
 one-shot path retains ChatGPT authentication and
@@ -785,7 +785,6 @@ and a shell tool through which the agent can run `trash-send`.
 | Codex (`codex exec`) | First driver | Already integrated and ChatGPT-authenticated. `--json` JSONL, `-o` last-message file, `exec resume <id> <prompt>`. The only candidate with a real sandbox. Verified on this machine (codex-cli 0.153.4): `trash-send`, SQLite persistence, and the Honker dylib all work under the workspace-write seatbelt, and writes to `~/.trashtalk` succeed only with it declared as a writable root (`--add-dir` on `exec`, or `-c 'sandbox_workspace_write.writable_roots=[...]'`). The thread id is on line 1 as `thread.started.thread_id`; resume in a fresh process carried context and reported cached input tokens. Gotchas: `exec` blocks reading stdin unless launched with `< /dev/null`; `exec resume` does not accept `--sandbox`, so set `-c sandbox_mode` instead; SIGINT exits promptly with status 1 and writes no terminal JSONL event, so interruption is detected by exit, not by output. Cheapest catalog model was `gpt-5.4-mini`, a candidate for the low-power profile. |
 | maki | Second driver | Claude Code protocol clone: `-p`, `--output-format stream-json`, caller-chosen `--session-id` and `--session` resume, `--input-format stream-json` for later live input, cache token counts in usage. Verified (maki 0.5.2): print mode strips the built-in `question` tool from the tool list, and `--permission-prompt-tool stdio` emitted no control request, so the only blocking-question path is `askUser:` over `trash-send`, which is the design anyway. SIGINT is ignored in print mode and the turn runs to completion, so interruption needs SIGTERM. No sandbox; containment needs `--disallowed-tools` for `task`, `memory`, `code_execution`, and `webfetch`, plus `--no-plugins` and `--strict-mcp-config`. Two processes on one session id have no lock, so the serialization rule is a hard requirement. Direct OpenAI models rate-limited on this host; OpenRouter worked. |
 | jcode | Not first | Headless `run` lives in an auto-started daemon with swarm, auto-poke, and memory side features that must be disabled by environment. Its daemon attach story is a reference for later reconnect work. |
-| Axe | One-shot only | No session or resume concept; stays behind `@@`. |
 
 Provider authentication, model configuration, prompt expansion, tool loops,
 and provider-request retries remain the harness's responsibility. Trashtalk
@@ -1095,7 +1094,7 @@ dependency of basic message visibility.
 
 ## Gusgus: the `@@` assistant session
 
-`@@` currently sends one read-only request through Axe or Codex and forgets
+`@@` currently sends one read-only request through Codex and forgets
 it. It becomes the entry point to a persistent assistant named Gusgus.
 
 - Identity `gusgus`, archetype `assistant`, role `assistant`: workspace read,

@@ -251,16 +251,6 @@ result=$(@ SourceProposal reviewAndApply: "$proposal")
 unset FAKE_INDIFF_ACCEPTED FAKE_INDIFF_REJECTED
 assert_eq "out-of-range hunk decision fails closed" "invalid" "$(printf '%s' "$result" | jq -r .outcome)"
 
-context=$(@ AxeAgent proposalContextFor: 'change value' class: "$TEST_CLASS" workingDirectory: "$PROJECT_DIR")
-assert_eq "proposal context supplies exact source hash" "$(sha256_file "$SOURCE_FILE")" "$(printf '%s' "$context" | jq -r .base_sha256)"
-assert_eq "proposal context supplies repository path" "$RELATIVE_PATH" "$(printf '%s' "$context" | jq -r .path)"
-assert_true "proposer uses read-only tools" grep -Fq 'tools = ["list_directory", "read_file"]' "$PROJECT_DIR/axe/agents/trashtalk-proposer.toml"
-if grep -Eq 'write_file|edit_file|run_command|sub_agents[[:space:]]*=' "$PROJECT_DIR/axe/agents/trashtalk-proposer.toml"; then
-    fail "proposer enables no mutation, command, or delegation tools"
-else
-    pass "proposer enables no mutation, command, or delegation tools"
-fi
-
 PATH="/opt/homebrew/bin:/usr/bin:/bin"
 hash -r
 result=$(@ SourceProposal reviewAndApply: "$proposal")

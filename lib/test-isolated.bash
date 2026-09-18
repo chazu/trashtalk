@@ -15,7 +15,7 @@ prepare_checkout() {
     mkdir -p "$target"
     tar -C "$root" --exclude='.astcache' --exclude='.symbolcache' \
         --exclude='.buildcache' --exclude='*.db*' --exclude='trash/user' \
-        --exclude='*.dylib' --exclude='*.so' -cf - lib trash tests bin axe schemas Makefile |
+        --exclude='*.dylib' --exclude='*.so' -cf - lib trash tests bin schemas Makefile |
         tar -C "$target" -xf -
     cache_version=${TRASH_TEST_FINGERPRINT:-$(TRASHTALK_DIR="$root" bash "$root/lib/jq-compiler/driver.bash" fingerprint)}
     for cache_kind in .astcache .symbolcache; do

@@ -8,7 +8,7 @@ match the Bash runtime, and removes dormant implementations.
 - Bash **4.4+** is the minimum: the existing exact-argv process primitive uses
   NUL-delimited `mapfile -d`. Startup, compiler preflight, doctor, and installation
   instructions now agree. Make resolves Bash from PATH on each platform. Bash 3.2 and Zsh are unsupported.
-- `Agent` retains its Axe/Codex one-shot facade. The old tmux session methods,
+- `Agent` retains its Codex one-shot facade. The old tmux session methods,
   `ClaudeAgent`, and `TmuxSession` are removed. Use `Agent::Identity` and
   `Agent::Session`; plain `@@` uses Gusgus/Jcode. `Tools::Tmux` remains available.
   A read-only audit found no stored instances or user source/config references
