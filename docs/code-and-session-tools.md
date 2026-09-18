@@ -2,7 +2,8 @@
 
 **Status:** Current CLI adapters; persistent memory and a Chad session driver remain future work.
 
-`Tools::Roam`, `Tools::AstGrep`, `Tools::Cass`, and `Tools::Chad` are available
+`Tools::Roam`, `Tools::AstGrep`, `Tools::Cass`, `Tools::Chad`, and
+`Tools::Worktrunk` are available
 through ordinary class messages. Their methods build exact argument arrays in
 the DSL. `Tool` supplies process capture and child-only directory selection;
 the `Tools::JsonOutput` trait handles structured CLI results.
@@ -23,6 +24,7 @@ installation guidance; they never install a dependency themselves.
 @ Tools::AstGrep version
 @ Tools::Cass version
 @ Tools::Chad version
+@ Tools::Worktrunk version
 
 # Explicit installation uses the existing Tool interface.
 @ Tools::Roam ensure
@@ -79,6 +81,23 @@ The adapter covers graph queries only; the compiler's `Trash symbolRecords`,
 
 Upstream contracts: [Roam CLI](https://github.com/Cranot/roam-code/blob/v14.1.0/src/roam/cli.py)
 and [index refusal](https://github.com/Cranot/roam-code/blob/v14.1.0/src/roam/commands/resolve.py).
+
+## Worktrunk
+
+`Tools::Worktrunk` is the narrow adapter for
+[Worktrunk](https://worktrunk.dev/), whose executable is `wt`. The initial
+surface is deliberately read-only:
+
+```bash
+@ Tools::Worktrunk listInDirectory: "$PWD"
+```
+
+It runs `wt list` in the explicit checkout directory and returns the standard
+process envelope. Worktrunk's list output is presently treated as text, not a
+stable Trashtalk worktree model. The adapter exposes no `switch`, `remove`, or
+`merge` messages yet. Creating, assigning, merging, and removing agent
+worktrees needs a separate durable lifecycle and recovery design, rather than
+letting an agent invoke a convenient destructive CLI operation directly.
 
 ## ast-grep
 
