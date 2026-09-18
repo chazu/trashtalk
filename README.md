@@ -822,6 +822,9 @@ actor=$(@ Actor named: 'order-processor')
 
 ### Stream — Cross-Process Durable Streams
 
+[GitHub build subscriptions](docs/github-build-events.md) import Actions,
+Checks, and commit status events over Tailscale into a durable local Stream.
+
 Two separate trashtalk programs sharing the same database can communicate through streams. Messages survive crashes, and consumers track their position with offsets.
 
 ```bash
