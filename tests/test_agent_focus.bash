@@ -52,6 +52,28 @@ cat > "$tmp/bin/inagent" <<'PY'
 import sys,json,os
 first=json.loads(sys.stdin.readline())
 with open(os.environ['FOCUS_CAPTURE'],'w') as log: log.write(json.dumps(first)+'\n')
+if os.environ.get('FOCUS_START'):
+    assert first['type']=='start', first
+    assert first['agent']=='Gusgus' and first['scope']=='global', first
+    if os.environ['FOCUS_START']=='cancel':
+        print(json.dumps({'schema_version':1,'request_id':1,'intent':'dismiss'}),flush=True)
+        sys.exit(0)
+    request={'schema_version':1,'request_id':1,'intent':'start_conversation','body':'first direct message'}
+    open(os.environ['FOCUS_START_REQUEST'],'w').write(json.dumps(request))
+    print(json.dumps(request),flush=True)
+    saw_ack=False
+    for line in sys.stdin:
+        frame=json.loads(line)
+        with open(os.environ['FOCUS_CAPTURE'],'a') as log: log.write(json.dumps(frame)+'\n')
+        if frame.get('type')=='ack' and frame.get('request_id')==1:
+            # The shell fixture has no direct-input adapter. Creation still
+            # succeeds, the draft remains client-side, and the view attaches.
+            assert not frame['ok'], frame
+            saw_ack=True
+        if saw_ack and frame.get('type')=='snapshot':
+            print(json.dumps({'schema_version':1,'request_id':2,'intent':'dismiss'}),flush=True)
+            break
+    sys.exit(0)
 if os.environ.get('FOCUS_CLOSE_EARLY'):
     # Exit during an acknowledgement, as a real UI can after a final read event.
     print(json.dumps({'schema_version':1,'request_id':1,'intent':'load_older'}),flush=True)
@@ -191,4 +213,16 @@ unknown=$(@ Message to: focus-owner from: 'session:not-real' subject: '' body: '
 check 'missing origin offers no fabricated destination' '' "$(@ "$unknown" senderSessions)"
 export FOCUS_PICK_ID=session
 check 'unknown sender menu omits an unusable jump' back "$(@ "$inbox" pickActionFor: "$unknown" in: "$tmp")"
+export FOCUS_START=cancel FOCUS_START_REQUEST="$tmp/start-request"
+check 'focusCurrent opens the empty Gusgus composer' dismissed "$(@ Gusgus focusCurrent)"
+check 'empty view identifies Gusgus' Gusgus "$(jq -r .agent "$FOCUS_CAPTURE")"
+check 'empty view identifies the global scope' global "$(jq -r .scope "$FOCUS_CAPTURE")"
+check 'detaching before the first send creates nothing' '' "$(@ Gusgus currentFor: "$tmp/workspace")"
+export FOCUS_START=send
+check 'first direct send creates and attaches a conversation' dismissed "$(@ Gusgus focusCurrent)"
+started_session=$(jq -r 'select(.type=="snapshot")|.session.id' "$FOCUS_CAPTURE")
+check 'created conversation becomes current globally' "$started_session" "$(@ Gusgus currentFor: "$tmp")"
+check 'start request preserves literal direct input' 'first direct message' "$(jq -r .body "$FOCUS_START_REQUEST")"
+check 'failed native send creates no inbox delivery' 0 "$(@ "$started_session" pendingCount)"
+unset FOCUS_START FOCUS_START_REQUEST
 printf '%d agent focus checks passed\n' "$passed"

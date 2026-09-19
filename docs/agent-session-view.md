@@ -2,14 +2,15 @@
 
 Implemented in Trashtalk and the companion Innards checkout.
 
-Outstanding dismissal, conversation-creation and detached-notification work is
-recorded in [deferred improvements](agent-ui-future-improvements.md).
+Outstanding dismissal and detached-notification work is recorded in
+[deferred improvements](agent-ui-future-improvements.md). Gusgus conversation
+creation from the applet is implemented.
 
 ```bash
 @ Agent::Session browse             # choose a session, then Attach to conversation
 @ "$session" focus               # attach an existing Agent::Session directly
 @ "$session" attach              # synonym
-@ Gusgus focusCurrent             # existing current conversation, any directory
+@ Gusgus focusCurrent             # current global conversation, or empty composer
 # Option-U toggles this view from the configured shell.
 ```
 
@@ -29,6 +30,13 @@ Compaction requires an idle, open Jcode session. It runs in the background and
 retains both the logical conversation and provider history.
 Stop confirms the displayed run ID and pauses new work through the existing
 worker API. **C-x ^ / C-x -** and Alt-Down/Alt-Up resize by one row.
+
+When Gusgus has no current conversation, `focusCurrent` opens an empty `inagent`
+composer instead of creating a session. The header shows Gusgus, its global
+scope, configured profile, and canonical starting workspace. The first
+**C-c C-c** creates or reuses the global conversation and sends the draft as
+direct session input. Detaching before that send creates nothing; a failed
+creation or send retains the draft and never falls back to inbox mail.
 
 Scrolling upward pauses following so new output does not pull you away from
 the text you are reading. Reaching the bottom with Down, **C-n**, PageDown or

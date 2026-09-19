@@ -24,6 +24,12 @@ Gusgus subclass: Object
     @ Agent::Role define: assistant revision: 1 capabilities: '["inbox.read","message.send","question.ask","source.read","proposal.submit"]' workspacePolicy: '[]' runBudget: '{"turns":0,"usd":0,"retryLimit":2}'
   ]
 
+  # Option-U can open before the global conversation exists. The view itself is
+  # read-only until the human explicitly sends its first direct-input message.
+  classMethod: focusCurrent [
+    ^ @ Agent::Focus openGusgusIn: '.'
+  ]
+
   # Gusgus-specific human command wrapper. Other stable facades may expose a
   # different UX, but all use the same durable Inbox/Agent::Session boundary.
   rawClassMethod: chat: text workingDirectory: dir status: status lastResult: lastResult [

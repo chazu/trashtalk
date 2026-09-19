@@ -1,18 +1,19 @@
-# Deferred agent conversation improvements
+# Agent conversation improvements
 
-**Status: deferred by the user on 2026-09-16.** These are future improvements,
+**Status:** deferred by the user on 2026-09-16; Gusgus conversation creation
+was implemented on 2026-09-18. The other two items remain future improvements,
 not active implementation work. Sizes include implementation and regression
 tests. Reassess them when work resumes.
 
 | Improvement | Size | Main uncertainty |
 | --- | --- | --- |
 | Intermittent automatic dismissal | M, provisional | Root cause has not been isolated; could shrink to S after reproduction. |
-| Start a conversation from `inagent` | M | UI creation flow and integration with existing session selection rules. |
+| Start a conversation from `inagent` | Implemented | Gusgus-only empty composer; first direct send creates the global conversation. |
 | Inbox notifications for detached conversations | L | Durable unread tracking, focus races, coalescing and restart recovery. |
 
-Suggested order when resumed: dismissal, conversation creation, then detached
-notifications. The work spans the Innards UI and Trashtalk's session bridge;
-notification authority belongs in Trashtalk.
+Suggested order for the remaining work: dismissal, then detached notifications.
+The work spans the Innards UI and Trashtalk's session bridge; notification
+authority belongs in Trashtalk.
 
 ## Intermittent automatic dismissal
 
@@ -30,11 +31,20 @@ Acceptance:
 - Add a regression at the reproduced failure boundary, with PTY coverage where
   the failure depends on terminal behavior.
 
-## Start a conversation from inagent
+## Start a conversation from inagent (implemented)
 
-Currently the user must create a conversation through `@@` before attaching.
-Add an entry point to start or select a conversation from the UI, with identity
-and workspace selection appropriate to the existing session policy.
+Option-U and `@ Gusgus focusCurrent` attach to the current global Gusgus
+conversation when one exists. With no current conversation, they open `inagent`
+with an empty composer showing the canonical starting workspace and configured
+profile. No session is created until the user sends the first message with
+**C-c C-c**.
+
+This first implementation intentionally supports only Gusgus, whose session
+scope is always global. Trashtalk atomically reuses a conversation that appears
+during the interaction or creates the single current conversation, then sends
+the text through direct session input. It never converts the draft into inbox
+mail. The view becomes pinned to the resulting session; choosing specialist
+identities or workspace-scoped conversations remains outside this slice.
 
 Acceptance:
 
@@ -45,6 +55,11 @@ Acceptance:
 - Cancellation and creation failures retain user input and show a useful result.
 - The composer retains direct-input semantics; failure does not silently turn
   the user's text into inbox mail.
+
+Implemented behavior retains the draft on creation or send failure. If creation
+succeeds but native input fails, the view attaches to that empty conversation so
+the user can inspect the error and retry. Detaching before the first send creates
+nothing.
 
 ## Inbox notifications for detached conversations
 

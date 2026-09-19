@@ -452,7 +452,10 @@ inbox=$(@ Trash userInbox)
 @ Gusgus help
 ```
 
-Option-U opens the current conversation and detaches when pressed inside it.
+Option-U opens the current global Gusgus conversation. If none exists, it opens
+an empty composer; the first C-c C-c creates the conversation and sends direct
+session input. Detaching before that first send creates nothing. Inside an
+attached view, Option-U detaches.
 The composer sends directly to the agent session with C-c C-c, including steering
 at the next safe point while Jcode is working. These inputs create no inbox mail.
 See [the session view](docs/agent-session-view.md) for controls and key setup.
@@ -687,7 +690,7 @@ another runtime.
 | `Scheduler` | Cron-based periodic tasks with leader election |
 | `Inbox` | Durable named inboxes for messages between agents, humans, and processes |
 | `Message` | A persisted message: sender, recipient, kind, status, thread |
-| `Gusgus` | The persistent assistant behind `@@`: one session per workspace |
+| `Gusgus` | The persistent assistant behind `@@`: one global current conversation |
 | `Agent::Session` | Durable agent conversation bound to an identity, archetype, role, and workspace |
 | `Agent::Identity`, `Agent::Archetype`, `Agent::Role` | Who an agent is, what it is for, and what it may do |
 | `Agent::Run`, `Agent::Delivery` | One harness process, and the durable input batch it was offered |

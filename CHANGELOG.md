@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Added
+
+- `@ Gusgus focusCurrent` and Option-U open an empty `inagent` composer when the
+  global Gusgus conversation does not exist. The first direct send atomically
+  creates or reuses the conversation, retains failed drafts, and never falls
+  back to inbox delivery.
+
 ### Removed
 
 - Remove the GitHub build-event importer and macOS polling service from Trashtalk.

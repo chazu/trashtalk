@@ -26,7 +26,7 @@ implemented contracts from designs and historical evidence.
 
 ## Designs, research, and partial implementations
 
-- [Deferred agent conversation improvements](agent-ui-future-improvements.md): automatic dismissal (M, provisional), conversation creation (M), and detached-conversation notifications (L); parked for future work.
+- [Agent conversation improvements](agent-ui-future-improvements.md): Gusgus conversation creation is implemented; automatic dismissal (M, provisional) and detached-conversation notifications (L) remain parked.
 - [Workstation event implementation plan](workstation-event-attention-implementation-plan.md): detailed phases and Phase 0 to 2 task and acceptance gates.
 - [Workstation event, attention, and delegated-action layer](workstation-event-attention-delegation.md): proposed durable local subscriptions, grouped attention, and safely bounded delegated effects.
 - [Delegation plan](agent-delegation-implementation.md): bounded specialist dispatch
