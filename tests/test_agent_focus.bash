@@ -194,7 +194,15 @@ result=$(@ Agent::Focus handleFrame: "$frame" context: "$context")
 check 'explicit stop succeeds through the worker' true "$(field "$result" .frame.ok)"
 check 'explicit stop actually stops the native process' false "$(@ "$run" isProcessAlive)"
 check 'explicit stop retains existing pause semantics' paused "$(@ "$session" lifecycleState)"
-ignored=$(@ "$session" close)
+@ "$session" resume >/dev/null
+frame='{"schema_version":1,"request_id":18,"intent":"start_fresh_session"}'
+result=$(@ Agent::Focus handleFrame: "$frame" context: "$context")
+fresh=$(field "$result" .context.session)
+check 'fresh conversation intent is accepted for the attached agent' true "$(field "$result" .frame.ok)"
+check 'fresh conversation returns a different pinned session' true "$([[ "$fresh" != "$session" ]] && echo true)"
+check 'fresh conversation closes the former session' closed "$(@ "$session" lifecycleState)"
+check 'fresh conversation preserves the agent identity' "$(@ "$session" identity)" "$(@ "$fresh" identity)"
+check 'fresh conversation preserves the backend profile' "$(@ "$session" backendProfile)" "$(@ "$fresh" backendProfile)"
 frame='{"schema_version":1,"request_id":19,"intent":"send_message","body":"must not send into a closed session"}'
 result=$(@ Agent::Focus handleFrame: "$frame" context: "$context")
 check 'send refreshes lifecycle changed by another process' false "$(field "$result" .frame.ok)"

@@ -278,6 +278,26 @@ Session subclass: Object
     ^ @ Store transaction: self sending: 'freshWithin:' with: args
   ]
 
+  # A focused human may explicitly replace the conversation they are currently
+  # attached to. Resolve its identity/configuration in the transaction so a
+  # stale UI frame cannot replace a different session after a concurrent change.
+  classMethod: freshFrom: session [
+    | args |
+    args := #{session: session} asJson.
+    @ self ensureSchema.
+    ^ @ Store transaction: self sending: 'freshFromWithin:' with: args
+  ]
+
+  classMethod: freshFromWithin: args [
+    | current settings |
+    @ Store requireTransaction.
+    current := @ Agent::Access validateLiveSession: (args objectAt: 'session').
+    settings := #{identity: (@ current identity) archetype: (@ current archetype)
+      role: (@ current role) workspace: (@ current workspace)
+      profile: (@ current backendProfile)} asJson.
+    ^ @ self freshWithin: settings
+  ]
+
   # Closing and replacement are atomic. Guard both the current-session query
   # and active runs so concurrent creation/start cannot invalidate the decision.
   classMethod: freshWithin: args [

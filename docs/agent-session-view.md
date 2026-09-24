@@ -25,7 +25,13 @@ to the attached agent session. **Tab** switches to the transcript, **C-n/C-p** m
 **C-v/M-v** page, **C-s/C-r** search, **M->** follows latest output, and **M-<**
 loads earlier history. **Option-U** toggles the view; **C-x C-c** also detaches; an unsent draft requires an explicit
 discard choice. Esc leaves the composer, then dismisses from the transcript.
-**M-x** offers follow, earlier history, pause, resume, stop, compact context, and detach.
+**M-x** offers follow, earlier history, pause, resume, stop, **Start fresh
+conversation**, compact context, and detach. Starting fresh asks for
+confirmation, atomically closes the attached idle session, and opens a new
+session with that same agent identity, archetype, role, workspace, and profile.
+It works for Gusgus and any other attached agent the current human owns. It
+does not stop or move active work: stop the displayed run first, then start
+fresh. The former conversation and its history remain inspectable.
 Compaction requires an idle, open Jcode session. It runs in the background and
 retains both the logical conversation and provider history.
 Stop confirms the displayed run ID and pauses new work through the existing
