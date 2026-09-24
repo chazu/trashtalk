@@ -305,9 +305,13 @@ Innards availability as an optional capability.
 
 ### Class, Method, and Instance Browser
 
-With `inpick` on `PATH`, Trashtalk derives browser records directly from the
-canonical jq compiler AST and previews the selected source without maintaining
-a second index. `fzf` is used as a fallback when Innards is unavailable.
+`@ Trash browse` opens the read-only Innards `inbrowser` applet. It derives its
+package, class, protocol, and method columns directly from the canonical jq
+compiler AST and displays source from the selected method. It has no edit,
+compile, or mutation path. Use arrow keys or `j`/`k` to select, Left/Right or
+Enter to move across columns, PageUp/PageDown to scroll source, and `q` to
+close. Install it with `cargo install --path . --bin inbrowser --locked --force`
+from the Innards checkout.
 
 ```bash
 @ Trash browse                         # choose any symbol and open its source
@@ -327,6 +331,38 @@ opens its navigable object inspector with declared values and nested containers,
 rather than printing the selected record JSON. Script-level picker methods
 return JSON; commands that open source feed the chosen path and line into the
 same transactional edit/compile/test loop described above.
+
+### Readline and shell shortcuts
+
+Readline's `.inputrc` cannot execute shell functions, so the shortcut comments
+live there and Bash's `bind -x` owns the actual bindings. This is the
+Trashtalk-specific portion of the local configuration:
+
+```inputrc
+# ~/.inputrc
+# Option-U is bound with bind -x in .bashrc to preserve the command line.
+# Option-Y is bound with bind -x in .bashrc to open the read-only code browser.
+```
+
+```bash
+# ~/.bashrc
+[ -f ~/.trashtalk/lib/trash.bash ] && source ~/.trashtalk/lib/trash.bash
+
+# Option-U opens the single current Gusgus view and preserves the command line.
+trashtalk_focus_gusgus() { @ Gusgus focusCurrent; }
+bind -x '"\eu": trashtalk_focus_gusgus'
+
+# Option-Y opens the read-only Trashtalk code browser and preserves the command line.
+trashtalk_browse_code() { @ Trash browse; }
+bind -x '"\ey": trashtalk_browse_code'
+
+# Alt-I browses the user inbox while preserving the command being edited.
+bind -x '"\ei": @ "$(@ Trash userInbox)" browse'
+```
+
+Reload the shell configuration, or run the two `bind -x` lines in the current
+Bash session. Option-Y then opens the browser and returns to the same command
+line when the browser closes.
 
 ### Object Inspector
 
