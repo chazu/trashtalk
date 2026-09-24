@@ -1,0 +1,11 @@
+# Tools::Inbrowser - Typed boundary for the read-only Innards code browser.
+package: Tools
+
+Inbrowser subclass: Tool
+  classMethod: name [ ^ 'inbrowser' ]
+
+  classMethod: browseIndex: index [
+    | argv |
+    argv := #((@ self path)) asJson.
+    ^ @ self runArgvJson: argv input: index
+  ]

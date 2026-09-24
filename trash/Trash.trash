@@ -645,6 +645,35 @@ EOF
     fi
   ]
 
+  # Read-only browser snapshot. The canonical jq parser supplies every class
+  # and method location; Innards is given no mutation protocol or shell hooks.
+  rawMethod: browserIndex [
+    local root driver records
+    local -a files
+    root="$TRASHDIR"
+    driver="${TRASHTALK_DIR:-$HOME/.trashtalk}/lib/jq-compiler/driver.bash"
+    mapfile -d '' -t files < <(find "$root" -type f -name '*.trash' -print0 | sort -z)
+    ((${#files[@]})) || { _throw 'BrowserError' 'No Trashtalk source files found'; return 1; }
+    records=$("$driver" symbols-many "${files[@]}") || return 1
+    jq -cs --arg root "$root" '
+      def package: (.class_name | split("::") | if length > 1 then .[0:-1] | join("::") else "" end);
+      def short: (.class_name | split("::") | last);
+      [ .[] | select(.kind == "class" or .kind == "trait") ] as $classes |
+      [ .[] | select(.kind == "instance_method" or .kind == "class_method" or .kind == "test_method") ] as $methods |
+      {schema_version:1,root:$root,classes:[$classes[] as $class | {name:($class|short),package:($class|package),kind:$class.kind,
+        superclass:($class.superclass // ""),path:$class.path,methods:[$methods[] | select(.class_name == $class.class_name) |
+          {selector,side:(if .method_kind == "class" then "class" elif .method_kind == "test" then "test" else "instance" end),
+           kind:.method_kind,raw,line}] }]}' <<< "$records"
+  ]
+
+  classMethod: browse [
+    | available index |
+    available := @ Tools::Inbrowser isInstalled.
+    (available ~= 'true') ifTrue: [^ @ Require reject: 'inbrowser is not installed; build and install the Innards applet'].
+    index := @ self browserIndex.
+    ^ @ Tools::Inbrowser browseIndex: index
+  ]
+
   # Get the source hash for a class
   # Usage: @ Trash hashFor: Counter
   rawMethod: hashFor: class_name [
