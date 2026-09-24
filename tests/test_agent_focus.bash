@@ -121,21 +121,21 @@ for line in sys.stdin:
 PY
 chmod +x "$tmp/bin/inagent"
 export PATH="$tmp/bin:$PATH"
-check 'attach/detach returns a clean outcome' dismissed "$(@ "$session" focus)"
+check 'attach/detach is silent' '' "$(@ "$session" focus)"
 check 'detach leaves the real detached process alive' true "$(@ "$run" isProcessAlive)"
 check 'detach leaves session lifecycle alone' open "$(@ "$session" lifecycleState)"
 check 'unsupported driver never falls back to inbox on retransmission' 1 "$(@ "$session" pendingCount)"
 export FOCUS_CLOSE_EARLY=1
-check 'closing during an acknowledgement returns dismissed' dismissed "$(@ "$session" focus 2> "$tmp/early-close-errors")"
+check 'closing during an acknowledgement is silent' '' "$(@ "$session" focus 2> "$tmp/early-close-errors")"
 check 'closing the UI emits no broken-pipe diagnostic' '' "$(cat "$tmp/early-close-errors")"
 check 'closing during an acknowledgement leaves the process alive' true "$(@ "$run" isProcessAlive)"
 unset FOCUS_CLOSE_EARLY
 export FOCUS_TRANSIENT_AUTH_FAILURE=1 FOCUS_IDENTITY="$identity" FOCUS_RETRY_ACK="$tmp/retry-ack"
-check 'transient refresh authorization failure does not dismiss the view' dismissed "$(@ "$session" focus)"
+check 'transient refresh authorization failure still permits silent dismissal' '' "$(@ "$session" focus)"
 check 'view accepts a request after transient refresh failure' ack "$(cat "$tmp/retry-ack")"
 unset FOCUS_TRANSIENT_AUTH_FAILURE FOCUS_IDENTITY FOCUS_RETRY_ACK
 export FOCUS_VIEW_ONLY=1
-check 'attached view is limited to durable chat messages' dismissed "$(@ "$session" focus)"
+check 'attached view is limited to durable chat messages' '' "$(@ "$session" focus)"
 export FOCUS_VIEW_ONLY=1 FOCUS_PICK_ID=session FOCUS_PICK_RECORDS="$tmp/picker-records"
 cat > "$tmp/bin/inpick" <<'PICK'
 #!/usr/bin/env bash
@@ -145,7 +145,7 @@ PICK
 chmod +x "$tmp/bin/inpick"
 inbox=$(@ Trash userInbox)
 check 'message menu offers a session jump' session "$(@ "$inbox" pickActionFor: "$reply" in: "$tmp")"
-check 'message jump opens the exact current session' dismissed "$(@ Agent::Browser focusSenderOf: "$reply" in: "$tmp")"
+check 'message jump opens the exact current session silently' '' "$(@ Agent::Browser focusSenderOf: "$reply" in: "$tmp")"
 check 'message jump passes the session to the applet' "$session" "$(jq -r .session.id "$FOCUS_CAPTURE")"
 
 context=$(jq -cn --arg session "$session" '{session:$session,window:400}')
@@ -205,7 +205,7 @@ other=$(@ Gusgus sessionFor: "$tmp")
 check 'another directory resolves the same current session' "$next" "$other"
 @ Agent::Browser focusSenderOf: "$reply" in: "$tmp" >/dev/null
 check 'old message attaches to current identity conversation' "$next" "$(jq -r .session.id "$FOCUS_CAPTURE")"
-check 'focusCurrent attaches without creating a session' dismissed "$(@ Gusgus focusCurrent)"
+check 'focusCurrent attaches without creating a session' '' "$(@ Gusgus focusCurrent)"
 check 'focusCurrent selects the replacement' "$next" "$(jq -r .session.id "$FOCUS_CAPTURE")"
 @ "$next" close >/dev/null
 check 'no current session retains originating history' "$session" "$(@ "$reply" senderSessions)"
@@ -214,12 +214,12 @@ check 'missing origin offers no fabricated destination' '' "$(@ "$unknown" sende
 export FOCUS_PICK_ID=session
 check 'unknown sender menu omits an unusable jump' back "$(@ "$inbox" pickActionFor: "$unknown" in: "$tmp")"
 export FOCUS_START=cancel FOCUS_START_REQUEST="$tmp/start-request"
-check 'focusCurrent opens the empty Gusgus composer' dismissed "$(@ Gusgus focusCurrent)"
+check 'focusCurrent opens the empty Gusgus composer silently' '' "$(@ Gusgus focusCurrent)"
 check 'empty view identifies Gusgus' Gusgus "$(jq -r .agent "$FOCUS_CAPTURE")"
 check 'empty view identifies the global scope' global "$(jq -r .scope "$FOCUS_CAPTURE")"
 check 'detaching before the first send creates nothing' '' "$(@ Gusgus currentFor: "$tmp/workspace")"
 export FOCUS_START=send
-check 'first direct send creates and attaches a conversation' dismissed "$(@ Gusgus focusCurrent)"
+check 'first direct send creates and attaches a conversation silently' '' "$(@ Gusgus focusCurrent)"
 started_session=$(jq -r 'select(.type=="snapshot")|.session.id' "$FOCUS_CAPTURE")
 check 'created conversation becomes current globally' "$started_session" "$(@ Gusgus currentFor: "$tmp")"
 check 'start request preserves literal direct input' 'first direct message' "$(jq -r .body "$FOCUS_START_REQUEST")"

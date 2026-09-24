@@ -30,7 +30,9 @@ trap 'exit 0' INT TERM HUP
 trap '' PIPE
 write_frame() { printf '%s\n' "$1" 2>/dev/null >&"$input"; }
 declare -A replies=()
-write_frame "$snapshot" || { printf '%s\n' dismissed; exit 0; }
+# Closing before the initial frame is a normal UI dismissal. The conversation
+# has no domain result to report, so keep the public focus send silent.
+write_frame "$snapshot" || exit 0
 previous=$snapshot
 partial=''
 previous_token=''
@@ -81,4 +83,5 @@ while kill -0 "$surface_pid" 2>/dev/null; do
         previous=$snapshot
     fi
 done
-printf '%s\n' dismissed
+# A temporary view detaching is not an action result. In particular, do not
+# print a synthetic "dismissed" value into the terminal that opened Innards.
