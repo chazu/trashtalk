@@ -111,15 +111,30 @@ failed_run=$(@ "$session" activeRun)
 @ "$session" input: 'steer before provider failure' >/dev/null
 touch "$JCODE_TEST_GATE"
 for i in {1..100}; do
-    @ Agent::Worker tickSession: "$session" >/dev/null
-    [[ $(db_get "$failed_run" | jq -r .state) != recovering ]] || break
+    [[ ! -f "$TRASHTALK_RUN_DIR/$failed_run/exit" ]] || break
     sleep .1
 done
+[[ -f "$TRASHTALK_RUN_DIR/$failed_run/exit" ]] || { echo 'FAIL: failed adapter did not exit'; exit 1; }
+check 'worker has not yet observed the lost connection' open "$(@ "$session" lifecycleState)"
+result=$(@ Agent::Focus handleFrame: '{"schema_version":1,"request_id":2,"intent":"send_message","body":"discover connection loss"}' context: "$context")
+check 'input discovers connection loss without sending a new turn' false "$(jq -r .frame.ok <<< "$result")"
+check 'newly discovered loss explains stop before resume' true "$(jq '.frame.message|contains("Stop displayed run") and contains("Resume queued work")' <<< "$result")"
 check 'provider error from original request remains visible after steering' recovering "$(db_get "$failed_run" | jq -r .state)"
 check 'lost direct turn is never replayed through mail' 0 "$(count Message)"
+result=$(@ Agent::Focus handleFrame: '{"schema_version":1,"request_id":2,"intent":"send_message","body":"retry after connection loss"}' context: "$context")
+check 'recovering input is rejected by the conversation view' false "$(jq -r .frame.ok <<< "$result")"
+check 'recovering input explains stop before resume' true "$(jq '.frame.message|contains("Stop displayed run") and contains("Resume queued work")' <<< "$result")"
 check 'failed direct turn retains exact stop control' interrupted "$(@ "$failed_run" stop)"
 rm "$host/fail-after-input"
 if @ "$session" input: forbidden >/dev/null 2>&1; then echo 'FAIL: paused input admitted'; exit 1; fi
+result=$(@ Agent::Focus handleFrame: '{"schema_version":1,"request_id":3,"intent":"send_message","body":"still paused"}' context: "$context")
+check 'ordinary pause points to the resume command' true "$(jq '.frame.message|contains("Resume queued work") and (contains("Stop displayed run")|not)' <<< "$result")"
+@ "$session" resume >/dev/null
+ack=$(@ "$session" input: 'continue after recovery')
+settle
+check 'recovered input reaches the native session' 'Input sent directly to the session' "$ack"
+check 'recovery retains the original provider conversation' 1 "$(jq -s '[.[]|select(.req=="create_session")]|length' "$host/fixture-calls.jsonl")"
+check 'recovery never creates fallback mail' 0 "$(count Message)"
 @ "$session" close >/dev/null
 if @ "$session" input: forbidden >/dev/null 2>&1; then echo 'FAIL: historical input admitted'; exit 1; fi
 echo 'Direct conversation checks passed'

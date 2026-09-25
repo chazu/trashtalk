@@ -135,7 +135,12 @@ JcodeDriver subclass: Agent::Driver
     directory=$(@ Agent::Driver runDirFor: "$1")
     [[ -e "$directory/send-intent" ]] || { echo true; return; }
     if [[ -s "$directory/conversation" && -s "$directory/jcode.json" ]] && \
-      bash "${TRASHTALK_DIR:-$HOME/.trashtalk}/lib/jcode-api.bash" stop "$directory" >>"$directory/control.log" 2>>"$directory/stderr.log"; then
+      (
+        # Recovery can start a resident daemon. Only the parent controller
+        # may retain the worker lock; the daemon must not inherit it.
+        if [[ -n "${TRASH_PROCESS_LOCK_FD:-}" ]]; then _trash_close_process_lock; fi
+        bash "${TRASHTALK_DIR:-$HOME/.trashtalk}/lib/jcode-api.bash" stop "$directory"
+      ) >>"$directory/control.log" 2>>"$directory/stderr.log"; then
       echo true
     else
       echo false

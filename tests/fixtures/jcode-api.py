@@ -23,6 +23,17 @@ if sys.argv[-3:] == ['server', 'stop', '--force']:
     sys.exit(0)
 assert sys.argv[-2:] == ['api-bridge', '--stdio']
 assert '--tools' in sys.argv
+# A real bridge may start a resident daemon. It must not pass the caller's
+# worker lock to that daemon, including recovery launched under stopRun:.
+database = os.environ.get('SQLITE_JSON_DB')
+if database and Path(database + '.worker.lock').exists():
+    worker_lock = os.stat(database + '.worker.lock')
+    for entry in Path('/dev/fd').iterdir():
+        try:
+            descriptor = os.fstat(int(entry.name))
+        except OSError:
+            continue
+        assert (descriptor.st_dev, descriptor.st_ino) != (worker_lock.st_dev, worker_lock.st_ino), 'bridge inherited worker lock'
 state = home / 'fixture-state'
 calls = home / 'fixture-calls.jsonl'
 gate = Path(os.environ['JCODE_TEST_GATE'])

@@ -28,22 +28,20 @@ Conversation subclass: Object
   ]
 
   classMethod: sendText: text toSession: session [
-    | state profile driver run purpose workspace role allowed ignored human |
+    | profile driver run purpose workspace role allowed ignored human |
     human := @ Agent::Focus human.
     (human isEmpty) ifTrue: [^ @ Require reject: 'Human session input required'].
     session := @ Agent::Access liveSession: session.
     (session isEmpty) ifTrue: [^ @ Require reject: 'Current session access required'].
-    state := @ session lifecycleState.
-    (state ~= 'open') ifTrue: [^ @ Require reject: 'Resume this session before sending input'].
+    run := @ self requireInputReady: session.
     profile := @ session backendProfile.
     driver := @ Agent::Worker driverFor: profile.
     allowed := (@ driver capabilities) jsonTextAt: 'live_input'.
     (allowed ~= 'true') ifTrue: [^ @ Require reject: 'This driver does not support direct session input'].
-    run := @ session activeRun.
     (run notEmpty) ifTrue: [
       ignored := @ Agent::Worker reconcileRun: run.
       ignored := @ session reload.
-      run := @ session activeRun
+      run := @ self requireInputReady: session
     ].
     (run notEmpty) ifTrue: [
       purpose := @ run purpose.
@@ -56,6 +54,24 @@ Conversation subclass: Object
       ^ @ driver input: text run: run
     ].
     ^ @ self launch: text session: session driver: driver
+  ]
+
+  # A lost native connection retains its run for explicit stop. Resuming alone
+  # cannot recover it; reconcile can also discover this during the input send.
+  classMethod: requireInputReady: session [
+    | run state |
+    run := @ session activeRun.
+    (run notEmpty) ifTrue: [
+      state := @ run state.
+      (state = 'recovering') ifTrue: [
+        ^ @ Require reject: 'Session recovery is incomplete. Use M-x -> Stop displayed run, then M-x -> Resume queued work before sending input'
+      ]
+    ].
+    state := @ session lifecycleState.
+    (state ~= 'open') ifTrue: [
+      ^ @ Require reject: 'Session paused. Use M-x -> Resume queued work before sending input'
+    ].
+    ^ run
   ]
 
   # Token plumbing and prompt files are process boundaries. The user text is

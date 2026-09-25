@@ -8,6 +8,7 @@ config="$directory/jcode.json"
 mapfile -t settings < <(jq -er '.executable,.home,.runtime,.workspace,.model,.ref' "$config")
 [[ ${#settings[@]} == 6 ]] || exit 2
 executable=${settings[0]} native_ref=${settings[5]}
+real_bash=$(jq -er .bash "$config")
 export JCODE_HOME=${settings[1]} JCODE_RUNTIME_DIR=${settings[2]}
 export JCODE_SOCKET="$JCODE_RUNTIME_DIR/jcode.sock" JCODE_API_SOCKET="$JCODE_RUNTIME_DIR/jcode-api.sock"
 export JCODE_WAKE_MODE=external
@@ -17,7 +18,9 @@ unset TRASHTALK_RUN_TOKEN OPENAI_API_KEY CODEX_API_KEY OPENROUTER_API_KEY TRASH_
 cd "${settings[3]}"
 # Control calls also run outside detached jobs. Their bridge must not inherit
 # ignored TERM from a supervisor, or cleanup's kill/wait can hang indefinitely.
-coproc BRIDGE { exec bash "${BASH_SOURCE[0]%/*}/exec-interruptible.bash" "$executable" --no-update --quiet --no-selfdev --provider openai \
+# Control transport is not a model tool: it must bypass tool admission so a
+# previous stop gate cannot block recovery, or register the bridge for killing.
+coproc BRIDGE { exec "$real_bash" "${BASH_SOURCE[0]%/*}/exec-interruptible.bash" "$executable" --no-update --quiet --no-selfdev --provider openai \
     --model "${settings[4]}" --tools bash,read,write,edit,glob,grep,ls,apply_patch \
     api-bridge --stdio; }
 bridge_pid=$BRIDGE_PID
@@ -158,7 +161,6 @@ if [[ "$mode" == stop ]]; then
     fi
     # Bash tool jobs deliberately survive native cancellation/reload. Stop
     # only groups admitted by this private host, then close its daemon.
-    real_bash=$(jq -er .bash "$config")
     "$real_bash" "${BASH_SOURCE[0]%/*}/jcode-processes.bash" stop "$JCODE_HOME"
     "$executable" --no-update --quiet --socket "$JCODE_SOCKET" server stop --force >&2
     exit 0
@@ -168,7 +170,6 @@ if [[ -n "$native_ref" ]]; then
     source "${BASH_SOURCE[0]%/*}/jcode-context.bash"
     recorded_workspace=$(_jcode_context_value "$JCODE_HOME/sessions/$native_ref.json" "" working_dir | jq -r '. // ""')
     if [[ "$recorded_workspace" != "${settings[3]}" ]]; then
-        real_bash=$(jq -er .bash "$config")
         "$real_bash" "${BASH_SOURCE[0]%/*}/jcode-workspace.bash" "$JCODE_SOCKET" "$native_ref" "${settings[3]}" > "$directory/workspace-control.json"
     fi
     attach
@@ -180,7 +181,6 @@ else
         # Some bridge versions omit cwd until the first persisted model turn.
         # Bootstrap a fresh native session with a verified shell cwd instead;
         # never infer execution authority from the directory we requested.
-        real_bash=$(jq -er .bash "$config")
         "$real_bash" "${BASH_SOURCE[0]%/*}/jcode-workspace.bash" "$JCODE_SOCKET" '' "${settings[3]}" > "$directory/workspace-control.json"
         native_ref=$(jq -er '.session_id' "$directory/workspace-control.json")
         attach

@@ -79,6 +79,13 @@ fresh authority supplied as a separate system reminder; the user text stays lite
 There is no Message or Agent::Delivery for composer input. Native acknowledgements
 clear the draft; rejection or a lost acknowledgement retains it. Paused sessions
 must be resumed, and drivers without direct-input support reject the operation.
+If the native connection was lost, the session keeps its recovering run for
+explicit stop. Choose **M-x → Stop displayed run**, wait for confirmation, then
+**M-x → Resume queued work** and send again. Resuming alone does not clear a
+recovering run. A failed stop leaves the session paused and can be retried;
+its control connection remains available while new tool launches are blocked.
+If Jcode reports `refresh_token_reused`, run `jcode login openai` in a terminal
+and complete sign-in before retrying input.
 `@@` remains an inbox message shortcut and treats every argument as text.
 
 Only displayed message entries issue validated `mark_viewed` intents; these

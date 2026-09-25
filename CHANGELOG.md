@@ -15,6 +15,11 @@
 
 ### Fixed
 
+- Keep Jcode's recovery connection outside model-tool admission so a failed
+  stop can be retried, and close its inherited worker lock before launching
+  transport so a resident daemon cannot keep session controls busy.
+  Conversation input now explains when a recovering run
+  must be stopped before resuming, including connection loss found during send.
 - Keep successful shell scripts successful when they exit without creating a temporary object environment.
 
 ## 2026-09-15
