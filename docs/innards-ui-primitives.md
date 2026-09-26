@@ -116,6 +116,69 @@ plot
 
 `plot` owns zooming, panning, hit testing, decimation, geometry caching, axes, and tooltips. It must not create a widget for each point.
 
+### Navigable object inspector
+
+An object inspector uses a horizontal inspection stack, following the Pharo
+inspector interaction model. It is not a recursive tree and it does not open a
+separate window for every nested value.
+
+Inspecting an object creates the first inspector pane. Drilling into one of its
+declared values pushes that value onto the inspection stack. The prior active
+pane moves left and the drilled value appears in a new active pane on the
+right. Each later drill-down repeats this transition.
+
+```text
+inspect: order
+
+  [ Order ]
+
+drill into: order customer
+
+  [ Order ] [ Customer ]
+
+drill into: customer address
+
+  [ Customer ] [ Address ]
+```
+
+The viewport keeps the active pane at the right edge. On a narrow surface it
+shows the active pane alone. On a wide surface it shows the active pane and
+its immediate parent. Older entries remain retained in the inspection stack,
+so returning to them preserves their selected slot, scroll position, and other
+pane-local UI state.
+
+The inspector renders a compact row of dots below the panes. Each dot denotes
+one stack entry. The active entry has a distinct state. Selecting a dot makes
+that entry active and reveals it with its parent where space permits. Keyboard
+Back and Forward traverse entries, and a pane can expose an explicit parent
+action. Drilling from an older entry replaces entries after it, because the
+new value starts a different inspection branch.
+
+The stack state is data, not widget nesting:
+
+```text
+InspectionStack
+  entries: [InspectionEntry]
+  activeIndex: Integer
+
+InspectionEntry
+  object: ObjectReference
+  key: StableObjectIdentity
+  selectedSlot: SlotName | nil
+  scrollOffset: Number
+```
+
+`InspectionEntry key` gives each retained pane stable reconciliation identity.
+An object reference must use the inspector's existing safe snapshot or
+inspection protocol. The UI never enumerates arbitrary object state while
+painting. Reconciliation obtains the visible slot records, then the renderer
+draws resolved pane state.
+
+This composition lowers to `panel`, `split`, `list`, `text`, `button`, and
+`toggle`-like dot controls. It does not need a new primitive. A future
+`inspector` convenience construct can create this composition and own its
+inspection-stack state.
+
 ## Declarative binding and actions
 
 Every primitive uses the same broad shape.
