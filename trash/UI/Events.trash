@@ -1,0 +1,17 @@
+package: UI
+
+Events subclass: Object
+  classMethod: open [
+    ^ @ UI::Surface open: self context: '{"count":10000,"revision":0}'
+  ]
+
+  # Bulk projection/serialization is a jq boundary; no per-row public sends.
+  rawClassMethod: frameFor: context [
+    jq -cn --arg mode init --argjson context "$1" --argjson frame null -f "${TRASHTALK_DIR:-$HOME/.trashtalk}/lib/ui-events.jq"
+  ]
+  rawClassMethod: handleFrame: frame context: context [
+    jq -cn --arg mode handle --argjson context "$2" --argjson frame "$1" -f "${TRASHTALK_DIR:-$HOME/.trashtalk}/lib/ui-events.jq"
+  ]
+  rawClassMethod: pollFor: context [
+    jq -cn --arg mode poll --argjson context "$1" --argjson frame null -f "${TRASHTALK_DIR:-$HOME/.trashtalk}/lib/ui-events.jq"
+  ]

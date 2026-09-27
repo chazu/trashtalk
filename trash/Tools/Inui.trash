@@ -1,0 +1,4 @@
+package: Tools
+
+Inui subclass: Tool
+  classMethod: name [ ^ 'inui' ]

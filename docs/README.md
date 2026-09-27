@@ -60,3 +60,9 @@ These capture prior reasoning, not current installation or implementation instru
 The jq compiler is canonical. There is no Procyon compiler/plugin or `tt` daemon
 to build. Old proposals are preserved in Git and the archive so they need not
 remain executable scaffolding in the runtime.
+
+## Retained terminal interfaces
+
+- [Innards UI toolkit and protocol](innards-ui.md)
+- [Innards UI design](innards-ui-primitives.md)
+- [Innards UI performance receipts](innards-ui-performance.md)

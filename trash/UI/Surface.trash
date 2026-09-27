@@ -1,0 +1,25 @@
+package: UI
+
+Surface subclass: Object
+  classMethod: open: handler context: context [
+    | toolPath argv |
+    toolPath := @ Tools::Inui path.
+    toolPath isEmpty ifTrue: [ @ StateError signal: 'Install Innards inui before opening a UI surface' ].
+    argv := #(toolPath) asJson.
+    ^ @ self openArgv: argv handler: handler context: context
+  ]
+
+  # Process/pipe ownership is the OS boundary. The application remains a DSL
+  # handler using frameFor:, handleFrame:context:, and pollFor:.
+  rawClassMethod: openArgv: argv handler: handler context: context [
+    bash "${TRASHTALK_DIR:-$HOME/.trashtalk}/lib/tool-duplex.bash" "$1" "$2" "$3" ui
+  ]
+
+  classMethod: view: view revision: revision root: root collections: collections [
+    ^ #{schema_version: 1 type: 'init' view: view revision: (revision jsonValue)
+        root: (root jsonValue) collections: (collections jsonValue)} asJson
+  ]
+
+  classMethod: reply: frames context: context [
+    ^ #{frames: (frames jsonValue) context: (context jsonValue)} asJson
+  ]

@@ -1035,3 +1035,13 @@ Supposedly v1.0.0
 ## Author
 
 Chaz Straney
+
+### Retained Innards interfaces
+
+With `inui` installed, `@ UI::Events open` opens a 10,000-row synthetic live event
+inspector with native filtering, details and a plot. `UI::Surface` hosts ordinary
+Trashtalk handlers over bounded JSONL; editing and cached scrolling stay native.
+`UI::Node`, `UI::Form`, `UI::Signal`, `UI::Binding`, and `UI::Inspector` provide
+composition, bindings and navigable snapshot inspection. See the
+[toolkit guide](docs/innards-ui.md) for installation, public messages, the protocol
+and profiling on both sides. `bin/trash-bench-ui` measures the bulk bridge.

@@ -1,0 +1,19 @@
+package: UI
+
+Inspector subclass: Object
+  classMethod: openRecord: record title: title [
+    | context |
+    context := #{record: (record jsonValue) title: title paths: #(#()) active: 0 revision: 0} asJson.
+    ^ @ UI::Surface open: self context: context
+  ]
+
+  # The snapshot is supplied explicitly. No reflective getters run in paint.
+  rawClassMethod: frameFor: context [
+    jq -cn --arg mode init --argjson context "$1" --argjson frame null -f "${TRASHTALK_DIR:-$HOME/.trashtalk}/lib/ui-inspector.jq"
+  ]
+  rawClassMethod: handleFrame: frame context: context [
+    jq -cn --arg mode handle --argjson context "$2" --argjson frame "$1" -f "${TRASHTALK_DIR:-$HOME/.trashtalk}/lib/ui-inspector.jq"
+  ]
+  classMethod: pollFor: context [
+    ^ '{"frames":[]}'
+  ]

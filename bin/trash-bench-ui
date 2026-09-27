@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Dedicated observer run: count external jq/sqlite calls and Bash processes.
+# DEBUG tracing is intentionally NOT installed in normal UI sessions.
+set -euo pipefail
+export LC_ALL=C
+base=$(cd "${BASH_SOURCE[0]%/*}/.." && pwd)
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+mkdir -p "$work/bin"
+for command in jq sqlite3;do
+    real=$(command -v "$command")
+    printf '#!/usr/bin/env bash\nprintf "%%s\\n" %q >> "$UI_EXEC_TRACE"\nexec %q "$@"\n' "$command" "$real" > "$work/bin/$command"
+    chmod +x "$work/bin/$command"
+done
+cat > "$work/trace.bash" <<'TRACE'
+if [[ -n ${UI_PROCESS_TRACE:-} ]];then
+    set -T
+    __ui_trace_pid=0
+    trap 'if [[ $__ui_trace_pid != "$BASHPID" ]];then __ui_trace_pid=$BASHPID; printf "%s\n" "$BASHPID" >> "$UI_PROCESS_TRACE";fi' DEBUG
+fi
+TRACE
+cat > "$work/surface.py" <<'PY'
+import json,sys,time,os
+start=time.monotonic_ns();first=json.loads(sys.stdin.readline());initial=time.monotonic_ns()-start
+n=int(os.environ['UI_ROWS']);rows=first['collections'][0]['rows'];assert len(rows)==n and rows[0]['key']=='event-0' and rows[-1]['key']=='event-'+str(n-1)
+start=time.monotonic_ns()
+print(json.dumps(dict(schema_version=1,view='events',request_id=1,intent='action',widget='refresh',action='append',value=None)),flush=True)
+change=json.loads(sys.stdin.readline());ack=json.loads(sys.stdin.readline());elapsed=time.monotonic_ns()-start
+assert len(change['changes'][0]['rows'])==16 and change['changes'][0]['rows'][0]['key']=='event-'+str(n) and ack['ok']
+open(os.environ['UI_TIMING'],'w').write(json.dumps(dict(initial_read_us=initial//1000,action_roundtrip_us=elapsed//1000,initial_rows=n,changed_rows=16)))
+PY
+for mode in disabled enabled traced;do
+  for rows in 100 10000;do
+    : > "$work/exec";: > "$work/process"
+    argv=$(jq -cn --arg path "$work/surface.py" '["python3",$path]')
+    profile=''; trace=''; process=''
+    [[ $mode == disabled ]] || profile="$work/profile"
+    if [[ $mode == traced ]];then trace="$work/trace.bash";process="$work/process";fi
+    UI_ROWS=$rows UI_TIMING="$work/timing" UI_EXEC_TRACE="$work/exec" UI_PROCESS_TRACE="$process" BASH_ENV="$trace" \
+      TRASHTALK_UI_PROFILE="$profile" TRASHTALK_DIR="$base" TRASHTALK_SKIP_USER_CONFIG=1 \
+      PATH="$work/bin:$PATH" bash "$base/lib/ui-duplex.bash" "$argv" UI::Events "{\"count\":$rows,\"revision\":0}"
+    jq -cn --arg mode "$mode" --slurpfile timing "$work/timing" --rawfile exec "$work/exec" --rawfile processes "$work/process" \
+      '{mode:$mode,timing:$timing[0],external_commands:($exec|split("\n")|map(select(length>0))|group_by(.)|map({command:.[0],count:length})),bash_processes:($processes|split("\n")|map(select(length>0))|unique|length),note:"PATH command observer present in all runs; Bash DEBUG process tracing only in traced runs. These are not unobserved latency samples or a complete OS exec census."}'
+  done
+done

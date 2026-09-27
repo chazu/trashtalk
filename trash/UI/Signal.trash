@@ -1,0 +1,17 @@
+package: UI
+
+Signal subclass: Object
+  # View-local files bridge Bash command-substitution scope. The helper uses
+  # builtins for values and dependency reads; it never creates runtime objects.
+  rawClassMethod: set: name to: value [
+    source "${TRASHTALK_DIR:-$HOME/.trashtalk}/lib/ui-signals.bash"
+    ui_signal_set "$1" "$2"
+  ]
+  rawClassMethod: value: name [
+    source "${TRASHTALK_DIR:-$HOME/.trashtalk}/lib/ui-signals.bash"
+    ui_signal_get "$1"
+  ]
+  rawClassMethod: invalidate: name [
+    source "${TRASHTALK_DIR:-$HOME/.trashtalk}/lib/ui-signals.bash"
+    ui_signal_invalidate "$1"
+  ]

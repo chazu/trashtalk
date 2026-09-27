@@ -1,0 +1,27 @@
+# Immutable widget descriptions are JSON values, never persistent UI objects.
+package: UI
+
+Node subclass: Object
+  classMethod: kind: kind key: key props: props children: children [
+    ^ #{kind: kind key: key props: (props jsonValue) children: (children jsonValue)} asJson
+  ]
+
+  classMethod: text: text key: key [
+    ^ #{kind: 'text' key: key props: #{text: text}} asJson
+  ]
+
+  classMethod: input: value key: key action: action [
+    ^ #{kind: 'input' key: key props: #{value: value action: action border: true}} asJson
+  ]
+
+  classMethod: button: label key: key action: action [
+    ^ #{kind: 'button' key: key props: #{text: label action: action}} asJson
+  ]
+
+  classMethod: list: source key: key field: field [
+    ^ #{kind: 'list' key: key props: #{source: source field: field border: true}} asJson
+  ]
+
+  classMethod: panel: children key: key direction: direction [
+    ^ #{kind: 'panel' key: key props: #{direction: direction} children: (children jsonValue)} asJson
+  ]

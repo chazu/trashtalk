@@ -4,6 +4,13 @@
 
 ### Added
 
+- Retained Innards toolkit through `inui` and `UI::*`: native controls, virtual
+  lists/tables, plots, forms, a navigable inspection stack, and a reproducible
+  live event inspector. Versioned batches, bounded asynchronous transport,
+  stale-query/window rejection, signal dependency capture, and profiling keep
+  Bash off local editing and drawing paths. See `docs/innards-ui.md` and
+  `bin/trash-bench-ui`.
+
 - `@ Gusgus focusCurrent` and Option-U open an empty `inagent` composer when the
   global Gusgus conversation does not exist. The first direct send atomically
   creates or reuses the conversation, retains failed drafts, and never falls

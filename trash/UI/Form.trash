@@ -1,0 +1,20 @@
+package: UI
+
+Form subclass: Object
+  # Form fields use ordinary descriptors: key, label, value. Composition stays
+  # in the DSL; this runs once to build a small form, never during native paint.
+  classMethod: fields: fields key: key submit: action [
+    | children names labelNode inputNode submit |
+    children := '[]'.
+    names := '[]'.
+    fields jsonRows: #('key' 'label' 'value') into: [:name :label :value |
+      labelNode := @ UI::Node text: label key: name , '-label'.
+      inputNode := @ UI::Node input: value key: name action: ''.
+      children := children arrayPushJson: labelNode.
+      children := children arrayPushJson: inputNode.
+      names := names arrayPush: name
+    ].
+    submit := #{kind: 'button' key: key , '-submit' props: #{text: 'Submit' action: action inputs: (names jsonValue)}} asJson.
+    children := children arrayPushJson: submit.
+    ^ @ UI::Node panel: children key: key direction: 'column'
+  ]

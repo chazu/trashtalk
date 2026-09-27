@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # A temporary UI child, not a harness host. No signals are forwarded to agents.
 set -uo pipefail
+if [[ ${4:-} == ui ]]; then
+    exec bash "${BASH_SOURCE[0]%/*}/ui-duplex.bash" "$1" "$2" "$3"
+fi
 argv_json=$1 handler=$2 context=$3
 base=${TRASHTALK_DIR:-${BASH_SOURCE[0]%/lib/*}}
 source "$base/lib/trash.bash" >/dev/null
