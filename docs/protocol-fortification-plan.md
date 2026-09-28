@@ -157,11 +157,14 @@ ordinary build receipt identity. Update the manifest atomically with that
 receipt.
 
 The resolver consumes this manifest for both static and direct dynamic
-validation. V1 resolves a local package name first, then requires an explicitly
-qualified global name. It has no import search because Trashtalk has no import
-declaration. It rejects ambiguity, shadowing that changes a prior identity,
-stale receipt references, and an unregistered artifact. It never constructs a
-source path from an untrusted class or protocol name.
+validation. Trashtalk parses `import:` declarations, but v1 protocol resolution
+intentionally does not search imports. An unqualified protocol name resolves
+only in the declaring package. Every nonlocal protocol reference must be fully
+qualified, including references to imported packages. An imported unqualified
+protocol reference fails with a diagnostic naming the required qualified
+identity. The resolver rejects ambiguity, shadowing that changes a prior
+identity, stale receipt references, and an unregistered artifact. It never
+constructs a source path from an untrusted class or protocol name.
 
 The build graph uses canonical resolved identities from this resolver, not raw
 spelling. Dynamic validation uses the same manifest before it loads a compiled
@@ -349,6 +352,8 @@ measured.
 - Same-package, explicitly qualified, ambiguous, stale-manifest, and
   unregistered protocol identities resolve or fail according to the manifest
   rules.
+- An unqualified protocol from an imported package fails with the required
+  qualified identity, while its fully qualified reference succeeds.
 - Selector-form `requires:` on an ordinary class fails without emitting protocol
   metadata.
 - A protocol requirement edit invalidates every declared implementation through
