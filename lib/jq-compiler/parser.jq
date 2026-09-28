@@ -713,7 +713,7 @@ def parsePrimitive:
 
 # Parse class body elements
 def parseClassBody:
-  {instanceVars: [], classInstanceVars: [], traits: [], requires: [], methodRequirements: [], implementedProtocols: [], methods: [], aliases: [], advice: [], classPragmas: [], errors: [], currentCategory: null, state: .} |
+  {instanceVars: [], classInstanceVars: [], traits: [], requires: [], methodRequirements: [], requirementDeclarations: [], implementedProtocols: [], methods: [], aliases: [], advice: [], classPragmas: [], errors: [], currentCategory: null, state: .} |
   until((.state | atEnd);
     .state |= skipNewlines |
     if (.state | atEnd) then
@@ -791,6 +791,7 @@ def parseClassBody:
     elif (.state | current.value) == "requires:" then
       (.state | parseRequires) as $r |
       if $r.result != null then
+         .requirementDeclarations += [$r.result] |
         if $r.result.type == "requires" then
           # File dependency
           .requires += [$r.result.path] |
@@ -910,6 +911,7 @@ def parseClassBody:
     traits: .traits,
     requires: .requires,
     methodRequirements: .methodRequirements,
+    requirementDeclarations: .requirementDeclarations,
     implementedProtocols: .implementedProtocols,
     methods: .methods,
     aliases: .aliases,
@@ -984,7 +986,7 @@ def parseClass:
         $class + {package: null, imports: []}
       end)
     else
-      ($header + {instanceVars: [], classInstanceVars: [], traits: [], requires: [], methodRequirements: [], implementedProtocols: [], methods: [], aliases: [], advice: [], classPragmas: []}) as $class |
+      ($header + {instanceVars: [], classInstanceVars: [], traits: [], requires: [], methodRequirements: [], requirementDeclarations: [], implementedProtocols: [], methods: [], aliases: [], advice: [], classPragmas: []}) as $class |
       .result = (if $pkgDecl != null then
         $class + {package: $pkgDecl.package, imports: $pkgDecl.imports}
       else

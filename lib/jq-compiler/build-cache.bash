@@ -52,18 +52,19 @@ _build_inventory() {
         .metadata=(if .parsed != null then .parsed
           elif .old.source==.source and .old.source_hash==.hash and .old.compiler==$compiler
             and (.old.metadata|type)=="object" and (.old.metadata.traits|type)=="array"
-          then .old.metadata else null end) | del(.parsed)]' \
+          then .old.metadata else null end) |
+        (if (.key|startswith("/")) and .metadata != null then .key=.metadata.identity else . end) | del(.parsed)]' \
         "$build_work/inventory.nul" > "$build_work/inventory.json"
 }
 
 _build_plan() {
-    jq --arg mode "$1" --arg compiler "$_COMPILER_VERSION" \
+    jq -L "$SCRIPT_DIR" --arg mode "$1" --arg compiler "$_COMPILER_VERSION" \
         --arg value_send "${TRASHTALK_VALUE_SEND:-0}" --arg strict "${TRASHTALK_STRICT:-}" --arg lenient "${TRASHTALK_LENIENT:-}" \
         -f "$SCRIPT_DIR/build-plan.jq" "$build_work/inventory.json"
 }
 
 cmd_build_metadata() {
-    _parse_single_file "$1" | jq -c '{name,package,parent,parentPackage,traits,implementedProtocols: [.implementedProtocols[]?.protocol]}' > "$2"
+    _parse_single_file "$1" | jq -c -L "$SCRIPT_DIR" 'include "protocols"; protocol_metadata | protocol_semantics' > "$2"
 }
 
 # Cache entries are keyed by content hash and compiler fingerprint, so every
@@ -117,7 +118,7 @@ cmd_build_worker() {
     before=$(_build_hash "${inputs[@]}")
     mkdir -p "${output_file%/*}"
     candidate=$(mktemp "$output_file.XXXXXX")
-    if cmd_compile "$source_file" "$candidate" true; then
+    if BUILD_VALIDATED_REQUEST="$request" cmd_compile "$source_file" "$candidate" true; then
         if [[ "$before" != "$(_build_hash "${inputs[@]}")" ]]; then
             rm -f "$candidate"
             error "Build inputs changed during compilation: $source_file; retry"
@@ -137,8 +138,8 @@ cmd_compile_many() (
     [[ "$jobs" =~ ^[1-9][0-9]*$ ]] || error 'Build jobs must be positive'
     [[ $# -gt 0 ]] || return 0
     mkdir -p "$output_dir"
-    export TRASHTALK_COMPILED_DIR="$(cd "$output_dir" && pwd)"
-    TRASHTALK_DIR="$(cd "$TRASHTALK_DIR" && pwd)"
+    export TRASHTALK_COMPILED_DIR="$(cd "$output_dir" && pwd -P)"
+    TRASHTALK_DIR="$(cd "$TRASHTALK_DIR" && pwd -P)"
     export TRASHTALK_DIR
     local build_work source output i idx level max_level receipt body tmp initial_compiler
     local -a build_sources=() build_outputs=() pending=() requested=()
@@ -147,11 +148,24 @@ cmd_compile_many() (
     trap 'rm -rf "$build_work"' EXIT
     mkdir -p "$build_work/meta" "$build_work/jobs"
     for source in "$@"; do
-        source="$(cd "$(dirname "$source")" && pwd)/${source##*/}"
+        source="$(cd "$(dirname "$source")" && pwd -P)/${source##*/}"
         [[ -f "$source" ]] || error "Source file not found: $source"
         build_requested[$source]=true
         requested+=("$source")
     done
+    if [[ -f "$TRASHTALK_COMPILED_DIR/.protocol-manifest.json" ]]; then
+        while IFS= read -r source; do
+            [[ -f "$source" ]] || continue
+            build_requested[$source]=true
+            requested+=("$source")
+        done < <(jq -r --args '
+          .entries as $entries | $ARGS.positional | unique |
+          until(. == ( . as $roots | reduce $entries[] as $e ($roots;
+            if any($e.receipt_data.dependencies|keys[]; . as $dep | $roots|index($dep)) then .+[$e.source] else . end) | unique);
+            . as $roots | reduce $entries[] as $e ($roots;
+            if any($e.receipt_data.dependencies|keys[]; . as $dep | $roots|index($dep)) then .+[$e.source] else . end) | unique) | .[]
+          ' "${requested[@]}" < "$TRASHTALK_COMPILED_DIR/.protocol-manifest.json")
+    fi
     for source in "${requested[@]}" "$TRASHTALK_DIR/trash/"*.trash "$TRASHTALK_DIR/trash/"*/*.trash; do
         [[ -f "$source" && -z "${known[$source]:-}" ]] || continue
         [[ "$source" != *$'\n'* ]] || error 'Build paths cannot contain newlines'
@@ -173,11 +187,29 @@ cmd_compile_many() (
             xargs -0 -P"$jobs" -n2 bash "$SCRIPT_DIR/driver.bash" build-metadata || return
     done
     _build_plan final > "$build_work/plan.json" || return
+    if [[ -f "$TRASHTALK_COMPILED_DIR/.protocol-manifest.json" ]]; then
+        jq -e --slurpfile old "$TRASHTALK_COMPILED_DIR/.protocol-manifest.json" '
+          all(.[]; . as $n | $old[0].entries[$n.metadata.identity] as $e |
+            if $e != null and $e.source != $n.source then error("Protocol manifest identity shadowed: " + $n.metadata.identity) else true end)
+          ' "$build_work/plan.json" >/dev/null || return
+    fi
+    jq -e 'group_by(.metadata.identity) | all(.[]; length==1)' "$build_work/plan.json" >/dev/null || error 'Ambiguous declared identity'
+    mkdir -p "$build_work/api"
+    while IFS= read -r -d '' idx && IFS= read -r -d '' body; do
+        printf '%s' "$body" > "$build_work/api/$idx"
+    done < <(jq -rj '.[] | (.index|tostring),"\u0000",({metadata,surface,hash,dependencies:(.dependencies|map_values(.source_hash))}|tojson),"\u0000"' "$build_work/plan.json")
+    shasum -a 256 "$build_work/api/"* > "$build_work/api-hashes"
+    jq -Rn '[inputs | capture("^(?<hash>[a-f0-9]+)  .*?/(?<index>[0-9]+)$")] | map({key:.index,value:.hash}) | from_entries' \
+        < "$build_work/api-hashes" > "$build_work/api.json"
+    jq --slurpfile api "$build_work/api.json" 'map(. + {api_hash:$api[0][(.index|tostring)]})' \
+        "$build_work/plan.json" > "$build_work/hashed-plan.json"
+    mv "$build_work/hashed-plan.json" "$build_work/plan.json"
     # Two selected sources must not silently overwrite the same artifact.
     jq -e 'group_by(.output) | all(.[]; length==1)' "$build_work/plan.json" >/dev/null || error 'Duplicate build output'
     max_level=$(jq '[.[]|select(.dirty)|.level] | max // -1' "$build_work/plan.json")
     if [[ "$max_level" == -1 ]]; then
         printf '  = %s artifacts unchanged\n' "$(jq length "$build_work/plan.json")"
+        _build_publish_manifest || return
         _build_prune_caches
         return 0
     fi
@@ -202,10 +234,13 @@ cmd_compile_many() (
     jq -e --slurpfile hashes "$build_work/hashes.json" 'all(.[]; .hash==$hashes[0][.source])' \
         "$build_work/plan.json" >/dev/null || error 'Source changed during build; retry'
     jq -rj --slurpfile hashes "$build_work/hashes.json" --arg compiler "$_COMPILER_VERSION" \
-        --arg value_send "${TRASHTALK_VALUE_SEND:-0}" --arg strict "${TRASHTALK_STRICT:-}" --arg lenient "${TRASHTALK_LENIENT:-}" '
+        --slurpfile plan "$build_work/plan.json" --arg value_send "${TRASHTALK_VALUE_SEND:-0}" --arg strict "${TRASHTALK_STRICT:-}" --arg lenient "${TRASHTALK_LENIENT:-}" '
       .[]|select(.dirty)|. as $node|.receipt,"\u0000",
       ({version:2,source:.source,source_hash:.hash,output_hash:$hashes[0][.output],
         compiler:$compiler,strict:$strict,lenient:$lenient,value_send:$value_send,metadata:.metadata,
+        validation:{schema:1,implementing_surface_hash:.api_hash,
+          protocol_hashes:(reduce .metadata.implementedProtocols[] as $p ({};
+            .[$p]=([$plan[0][]|select(.key==$p)|.api_hash][0]))),result:"valid"},
         dependencies:(.dependencies|with_entries(.value.output_hash=$hashes[0][.value.output]))}|tojson),"\u0000"' \
         "$build_work/plan.json" > "$build_work/receipts.nul"
     while IFS= read -r -d '' receipt && IFS= read -r -d '' body; do
@@ -214,12 +249,45 @@ cmd_compile_many() (
         printf '%s\n' "$body" > "$tmp"
         mv -f "$tmp" "$receipt"
     done < "$build_work/receipts.nul"
+    _build_publish_manifest || return
     _build_prune_caches
 )
 
 cmd_compile_cached() {
     local output="$2"
     mkdir -p "$(dirname "$output")"
-    output="$(cd "$(dirname "$output")" && pwd)/${output##*/}"
+    output="$(cd "$(dirname "$output")" && pwd -P)/${output##*/}"
     BUILD_SINGLE_OUTPUT="$output" cmd_compile_many "${TRASHTALK_COMPILED_DIR:-$TRASHTALK_DIR/trash/.compiled}" 1 "$1"
+}
+
+# One atomic manifest publication contains the same ordinary receipts used by
+# the build cache. Sidecars are checked against these copies by boundary users;
+# interrupted publication fails closed rather than accepting mixed generations.
+_build_publish_manifest() {
+    local manifest="$TRASHTALK_COMPILED_DIR/.protocol-manifest.json" tmp receipt
+    local -a receipts=()
+    mapfile -t receipts < <(jq -r '.[].receipt' "$build_work/plan.json")
+    jq -s '.' "${receipts[@]}" > "$build_work/final-receipts.json" || return
+    [[ -f "$manifest" ]] || printf '{"schema":1,"entries":{}}\n' > "$build_work/empty-manifest.json"
+    tmp=$(mktemp "$manifest.XXXXXX")
+    jq --slurpfile previous "$(if [[ -f "$manifest" ]]; then printf '%s' "$manifest"; else printf '%s' "$build_work/empty-manifest.json"; fi)" \
+       --slurpfile receipts "$build_work/final-receipts.json" '
+      reduce .[] as $n ($previous[0]; .schema=1 |
+        if .entries[$n.metadata.identity] != null and .entries[$n.metadata.identity].source != $n.source then
+          error("Protocol manifest identity shadowed: " + $n.key)
+        else . end |
+        .entries[$n.metadata.identity]={identity:$n.metadata.identity,source:$n.source,artifact:$n.output,receipt:$n.receipt,
+          kind:$n.metadata.kind,package:$n.metadata.package,imports:$n.metadata.imports,
+          api_hash:$n.api_hash,surface:$n.surface,requirements:$n.metadata.requirements,
+          receipt_data:([$receipts[0][]|select(.source==$n.source)][0])})
+      ' "$build_work/plan.json" > "$tmp" || { rm -f "$tmp"; return 1; }
+    if [[ -f "$manifest" ]] && jq -e --slurpfile old "$manifest" 'del(.generation)==($old[0]|del(.generation))' "$tmp" >/dev/null; then
+        rm -f "$tmp"
+    else
+        # Small first line is a generation fence readable with a Bash builtin.
+        jq -r --arg generation "$(uuidgen)" '
+          "{\"generation\":\"" + $generation + "\",\n" + (del(.generation)|tojson|ltrimstr("{"))' "$tmp" > "$tmp.publish" || return
+        mv -f "$tmp.publish" "$manifest"
+        rm -f "$tmp"
+    fi
 }

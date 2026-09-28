@@ -2638,7 +2638,7 @@ def generateMetadata:
   # Exception: core/global classes should never be qualified
   # These are base classes that exist at the global level, not in any package
   .parent as $parentName |
-  ["Object", "Tool", "TestCase"] as $globalClasses |
+  ["Object", "Tool", "TestCase", "Protocol"] as $globalClasses |
   (if $parentName == null or $parentName == "" then ""
    elif ($parentName | contains("::")) then $parentName
    elif .parentPackage then "\(.parentPackage)::\($parentName)"

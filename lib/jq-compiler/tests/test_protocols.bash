@@ -32,6 +32,8 @@ fail() {
     ((TESTS_RUN++))
 }
 
+rm -f "$TRASHDIR/.compiled/.protocol-manifest.json"
+
 # Load runtime
 source "$PROJECT_DIR/lib/trash.bash" 2>/dev/null
 
@@ -98,6 +100,8 @@ else
     fail "Protocol.trash compilation" "compiled file" "not found"
 fi
 
+"$COMPILER_DIR/driver.bash" compile-cached "$TRASHDIR/Counter.trash" "$TRASHDIR/.compiled/Counter" >/dev/null
+
 # Test 6: _class_has_method finds instance method
 echo "Test 6: _class_has_method finds instance method"
 # Counter has 'increment' method
@@ -128,14 +132,14 @@ fi
 echo "Test 9: Create and test a protocol end-to-end"
 
 # Create a test protocol
-cat > /tmp/TestProtocol.trash << 'EOF'
+cat > "$TRASHDIR/Incrementable.trash" << 'EOF'
 Incrementable subclass: Protocol
   requires: increment
   requires: incrementBy:
 EOF
 
 # Create a test class that conforms
-cat > /tmp/TestConforming.trash << 'EOF'
+cat > "$TRASHDIR/TestConforming.trash" << 'EOF'
 TestConforming subclass: Object
   instanceVars: value:0
 
@@ -153,8 +157,8 @@ TestConforming subclass: Object
 EOF
 
 # Compile them
-"$COMPILER_DIR/driver.bash" compile /tmp/TestProtocol.trash > "$TRASHDIR/.compiled/Incrementable" 2>/dev/null
-"$COMPILER_DIR/driver.bash" compile /tmp/TestConforming.trash > "$TRASHDIR/.compiled/TestConforming" 2>/dev/null
+"$COMPILER_DIR/driver.bash" compile-cached "$TRASHDIR/Incrementable.trash" "$TRASHDIR/.compiled/Incrementable" > /dev/null 2>/dev/null
+"$COMPILER_DIR/driver.bash" compile-cached "$TRASHDIR/TestConforming.trash" "$TRASHDIR/.compiled/TestConforming" > /dev/null 2>/dev/null
 
 # Source the compiled files
 source "$TRASHDIR/.compiled/Incrementable"
@@ -172,7 +176,7 @@ fi
 echo "Test 10: Non-conforming class"
 
 # Create a class that doesn't have all methods
-cat > /tmp/TestNonConforming.trash << 'EOF'
+cat > "$TRASHDIR/TestNonConforming.trash" << 'EOF'
 TestNonConforming subclass: Object
   instanceVars: value:0
 
@@ -184,7 +188,7 @@ TestNonConforming subclass: Object
 EOF
 
 # Compile it
-"$COMPILER_DIR/driver.bash" compile /tmp/TestNonConforming.trash > "$TRASHDIR/.compiled/TestNonConforming" 2>/dev/null
+"$COMPILER_DIR/driver.bash" compile-cached "$TRASHDIR/TestNonConforming.trash" "$TRASHDIR/.compiled/TestNonConforming" > /dev/null 2>/dev/null
 source "$TRASHDIR/.compiled/TestNonConforming"
 
 # Test non-conformance (missing incrementBy:)
@@ -196,7 +200,7 @@ else
 fi
 
 # Cleanup
-rm -f /tmp/TestProtocol.trash /tmp/TestConforming.trash /tmp/TestNonConforming.trash
+rm -f "$TRASHDIR/Incrementable.trash" "$TRASHDIR/TestConforming.trash" "$TRASHDIR/TestNonConforming.trash"
 rm -f "$TRASHDIR/.compiled/Incrementable" "$TRASHDIR/.compiled/TestConforming" "$TRASHDIR/.compiled/TestNonConforming"
 
 echo ""

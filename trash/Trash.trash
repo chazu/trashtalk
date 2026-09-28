@@ -427,6 +427,7 @@ EOF
   # Reload a single class (hot reload for development)
   rawMethod: reloadClass: class_name [
     pragma: direct
+    _protocol_invalidate
     if [[ -z "$class_name" ]]; then
       echo "Usage: @ Trash reloadClass <ClassName>"
       return 1
@@ -512,7 +513,6 @@ EOF
     local trait_source="$TRASHDIR/traits/${source_name}.trash"
     local target_file=""
     local file_to_compile=""
-    local temp_file="/tmp/trash_compile_$$_${compiled_name}"
 
     # Find source file and determine target (check user dir before system dir)
     if [[ -f "$user_source" ]]; then
@@ -536,23 +536,11 @@ EOF
       return 1
     fi
 
-    # Compile to temp file
-    if ! "$SCRIPT_DIR/jq-compiler/driver.bash" compile "$file_to_compile" > "$temp_file" 2>&1; then
-      echo "Compilation failed:"
-      cat "$temp_file"
-      rm -f "$temp_file"
+    # Graph validation includes registered reverse dependencies before installing.
+    if ! "$SCRIPT_DIR/jq-compiler/driver.bash" 'compile-cached' "$file_to_compile" "$target_file"; then
+      echo "Compilation failed; class not reloaded"
       return 1
     fi
-
-    # Validate bash syntax
-    if ! bash -n "$temp_file" 2>&1; then
-      echo "Syntax validation failed - class not updated"
-      rm -f "$temp_file"
-      return 1
-    fi
-
-    # Success - replace the compiled file
-    mv "$temp_file" "$target_file"
     @ "$_RECEIVER" reloadClass: "$class_name"
     return $?
   ]
@@ -961,7 +949,7 @@ EOF
     artifact=$(mktemp "${TMPDIR:-/tmp}/trash-edit-artifact.XXXXXX")
     error_file=$(mktemp "${TMPDIR:-/tmp}/trash-edit-compile.XXXXXX")
 
-    if _trash_with_progress "Compiling $className" "$SCRIPT_DIR/jq-compiler/driver.bash" compile "$sourceFile" > "$artifact" 2> "$error_file"; then
+    if _trash_with_progress "Compiling $className" "$SCRIPT_DIR/jq-compiler/driver.bash" 'compile-preview' "$sourceFile" "$artifact" 2> "$error_file"; then
       rm -f "$error_file"
       jq -cn --arg artifact "$artifact" '{ok:true,phase:"compile",artifact:$artifact,line:1,message:""}'
       return 0
@@ -1007,11 +995,12 @@ EOF
       target="$TRASHDIR/.compiled/$compiled_name"
     fi
     mkdir -p "$(dirname "$target")"
-    if ! mv "$artifact" "$target"; then
+    if ! output=$("$SCRIPT_DIR/jq-compiler/driver.bash" 'compile-cached' "$sourceFile" "$target" 2>&1); then
       rm -f "$artifact"
-      jq -cn --arg message "Could not install $target" '{ok:false,phase:"install",line:1,message:$message}'
+      jq -cn --arg message "$output" '{ok:false,phase:"install",line:1,message:$message}'
       return 0
     fi
+    rm -f "$artifact"
     output=$(@ "$_RECEIVER" reloadClass: "$className" 2>&1)
     status=$?
     if [[ $status -eq 0 ]]; then

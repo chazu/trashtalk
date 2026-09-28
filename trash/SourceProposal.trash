@@ -139,13 +139,13 @@ SourceProposal subclass: Object
       '{ok:true,phase:"stage",message:"",candidate:$candidate,base_sha256:$base_sha256}'
   ]
 
-  # Install two already-gated files with backups. The base hash is checked a
+  # Install reviewed source through the graph build, with backups. The base hash is checked a
   # second time to close the review-to-commit race. Any failure restores both
   # source and compiled artifact before returning.
   rawClassMethod: commit: candidate artifact: artifact source: source_file class: class_name expectedHash: expected_hash [
     pragma: direct
     local candidate="$1" artifact="$2" source_file="$3" class_name="$4" expected_hash="$5"
-    local current_hash compiled_name target source_backup target_backup source_next target_next output
+    local current_hash compiled_name target source_backup target_backup source_next output
     if [[ ! -f "$candidate" || -L "$candidate" || ! -f "$artifact" || -L "$artifact" || \
           ! -f "$source_file" || -L "$source_file" ]]; then
       rm -f "$candidate" "$artifact"
@@ -185,35 +185,32 @@ SourceProposal subclass: Object
       jq -cn '{ok:false,phase:"commit",message:"Could not create source commit file"}'
       return 0
     fi
-    if ! target_next=$(mktemp "$(dirname "$target")/.trash-proposal-artifact-next.XXXXXX"); then
-      rm -f "$candidate" "$artifact" "$source_backup" "$target_backup" "$source_next"
-      jq -cn '{ok:false,phase:"commit",message:"Could not create artifact commit file"}'
-      return 0
-    fi
     if ! cp -p "$source_file" "$source_backup"; then
-      rm -f "$candidate" "$artifact" "$source_backup" "$target_backup" "$source_next" "$target_next"
+      rm -f "$candidate" "$artifact" "$source_backup" "$target_backup" "$source_next"
       jq -cn '{ok:false,phase:"commit",message:"Could not back up source"}'
       return 0
     fi
     if [[ -f "$target" ]]; then
       if ! cp -p "$target" "$target_backup"; then
-        rm -f "$candidate" "$artifact" "$source_backup" "$target_backup" "$source_next" "$target_next"
+        rm -f "$candidate" "$artifact" "$source_backup" "$target_backup" "$source_next"
         jq -cn '{ok:false,phase:"commit",message:"Could not back up compiled artifact"}'
         return 0
       fi
     else
       : > "$target_backup.absent"
     fi
-    if ! cp -p "$candidate" "$source_next" || ! cp -p "$artifact" "$target_next"; then
-      rm -f "$candidate" "$artifact" "$source_backup" "$target_backup" "$source_next" "$target_next" "$target_backup.absent"
+    if ! cp -p "$candidate" "$source_next"; then
+      rm -f "$candidate" "$artifact" "$source_backup" "$target_backup" "$source_next" "$target_backup.absent"
       jq -cn '{ok:false,phase:"commit",message:"Could not prepare same-directory commit files"}'
       return 0
     fi
 
-    if ! mv "$source_next" "$source_file" || ! mv "$target_next" "$target"; then
+    # Installing reviewed source still uses the graph coordinator: validate
+    # promises and registered dependents, then publish the ordinary receipts.
+    if ! mv "$source_next" "$source_file" || ! "$SCRIPT_DIR/jq-compiler/driver.bash" 'compile-cached' "$source_file" "$target" >/dev/null; then
       mv "$source_backup" "$source_file" 2>/dev/null || true
       if [[ -f "$target_backup.absent" ]]; then rm -f "$target"; else mv "$target_backup" "$target" 2>/dev/null || true; fi
-      rm -f "$candidate" "$artifact" "$source_next" "$target_next" "$source_backup" "$target_backup" "$target_backup.absent"
+      rm -f "$candidate" "$artifact" "$source_next" "$source_backup" "$target_backup" "$target_backup.absent"
       jq -cn '{ok:false,phase:"commit",message:"Could not install proposal; source and artifact were restored"}'
       return 0
     fi
@@ -221,8 +218,9 @@ SourceProposal subclass: Object
     if ! output=$(@ Trash reloadClass: "$class_name" 2>&1); then
       mv "$source_backup" "$source_file" 2>/dev/null || true
       if [[ -f "$target_backup.absent" ]]; then rm -f "$target"; else mv "$target_backup" "$target" 2>/dev/null || true; fi
+      "$SCRIPT_DIR/jq-compiler/driver.bash" 'compile-cached' "$source_file" "$target" >/dev/null 2>&1 || true
       @ Trash reloadClass: "$class_name" >/dev/null 2>&1 || true
-      rm -f "$candidate" "$artifact" "$source_next" "$target_next" "$source_backup" "$target_backup" "$target_backup.absent"
+      rm -f "$candidate" "$artifact" "$source_next" "$source_backup" "$target_backup" "$target_backup.absent"
       jq -cn --arg message "$output" '{ok:false,phase:"reload",message:$message}'
       return 0
     fi

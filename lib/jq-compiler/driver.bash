@@ -82,7 +82,7 @@ _compiler_version() {
         # code generation, so changing browser queries must not flush the AST
         # cache for every source file.
         _COMPILER_VERSION=$(cat "$PARSER" "$CODEGEN" \
-            "$TOKENIZER" "$SCRIPT_DIR/build-cache.bash" "$SCRIPT_DIR/build-plan.jq" "${BASH_SOURCE[0]}" 2>/dev/null \
+            "$TOKENIZER" "$SCRIPT_DIR/build-cache.bash" "$SCRIPT_DIR/build-plan.jq" "$SCRIPT_DIR/protocols.jq" "${BASH_SOURCE[0]}" 2>/dev/null \
             | shasum -a 256 2>/dev/null | cut -d' ' -f1 | cut -c1-16)
     fi
     echo "$_COMPILER_VERSION"
@@ -288,7 +288,7 @@ _resolved_parent() {
       if $p == null or $p == "" then ""
       elif ($p | contains("::")) then $p
       elif .parentPackage then .parentPackage + "::" + $p
-      elif (["Object","Tool","TestCase"] | index($p)) then $p
+      elif (["Object","Tool","TestCase","Protocol"] | index($p)) then $p
       elif .package then .package + "::" + $p else $p end'
 }
 
@@ -578,6 +578,28 @@ cmd_compile() {
         exit 1
     fi
 
+    # Standalone codegen must never silently accept a nominal promise. Workers
+    # carry an explicit graph-validated request; other callers use compile-cached.
+    local protocol_meta
+    protocol_meta=$(jq -c -L "$SCRIPT_DIR" 'include "protocols"; (.class // .) | protocol_metadata | protocol_semantics' <<<"$ast") || return
+    if [[ -z "${BUILD_VALIDATED_REQUEST:-}" ]] && jq -e '.implementedProtocols|length>0' <<<"$protocol_meta" >/dev/null; then
+        error "Unresolved protocol dependencies: use compile-cached or compile-many for graph validation"
+    fi
+    if [[ -z "${BUILD_VALIDATED_REQUEST:-}" ]]; then
+        local parent_source parent_meta
+        parent_class=$(jq -r '.resolved_parent' <<<"$protocol_meta")
+        parent_source="$TRASHTALK_DIR/trash/${parent_class//:://}.trash"
+        if [[ "$parent_class" != Protocol && -f "$parent_source" ]]; then
+            parent_meta=$(_parse_single_file "$parent_source" | jq -r -L "$SCRIPT_DIR" 'include "protocols"; protocol_metadata | .kind') || return
+            [[ "$parent_meta" != protocol ]] || error 'ProtocolError: protocol inheritance is not supported'
+        fi
+    fi
+
+    if [[ -n "${BUILD_VALIDATED_REQUEST:-}" ]]; then
+        jq -e --argjson metadata "$protocol_meta" '.metadata==$metadata and (.surface.selectors|type)=="array"' \
+            "$BUILD_VALIDATED_REQUEST" >/dev/null || error 'Invalid graph validation request'
+    fi
+
     # Compute source hash (SHA-256) for cache invalidation
     local source_hash
     source_hash=$(shasum -a 256 "$source_file" 2>/dev/null | cut -d' ' -f1)
@@ -728,6 +750,16 @@ main() {
             cmd_compile "$source_file" "$output_file" "$check_syntax"
             ;;
 
+        compile-preview)
+            preview_dir=$(mktemp -d "${TMPDIR:-/tmp}/trash-preview.XXXXXX")
+            if BUILD_SINGLE_OUTPUT="$preview_dir/candidate" cmd_compile_many "$preview_dir" 1 "$1" >&2; then
+                cp "$preview_dir/candidate" "$2"
+                rm -rf "$preview_dir"
+            else
+                rm -rf "$preview_dir"
+                exit 1
+            fi
+            ;;
         compile-cached)
             [[ $# == 2 ]] || error 'Usage: compile-cached <source> <output>'
             cmd_compile_cached "$1" "$2"

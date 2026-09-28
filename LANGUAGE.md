@@ -242,13 +242,42 @@ alias: length for: count
 
 ### Protocol Requirements
 
-Declare method dependencies (documentation/validation):
+Protocols are optional, build-validated promises about public instance selectors:
 
 ```smalltalk
-requires: 'lib/database.bash'    # File dependency
-requires: do:                     # Required method selector
-requires: inject: into:           # Required keyword method
+Readable subclass: Protocol
+  requires: size
+  requires: at:
+
+Buffer subclass: Object
+  implements: Readable
+  instanceVars: size:0
+  method: at: index [ ^ index ]
 ```
+
+`make`, `compile-cached`, and `compile-many` reject missing selectors together.
+Use these graph builds for declarations; standalone `compile` rejects unresolved
+protocol promises. File dependencies retain their separate meaning:
+`requires: 'lib/database.bash'` sources a file.
+
+Only direct subclasses of `Protocol` declare selector requirements. Requirements
+are public, and protocols cannot inherit other protocols. Classes may repeat
+`implements:` for different protocols. Unqualified names resolve in the declaring
+package only; nonlocal protocols must be fully qualified, even with `import:`.
+
+Conformance includes instance methods, generated accessors, valid unary aliases,
+direct traits, and inherited class instance methods. It excludes private methods,
+class-side methods, and traits of ancestors. Two direct traits supplying a
+required selector conflict unless the class defines that selector itself.
+
+`@ Readable isSatisfiedBy: Buffer` checks structural conformance without requiring
+an `implements:` declaration. Direct Bash `_conforms_to Buffer Readable` prints
+`true` or `false` and caches either result in that process. Invalid or unregistered
+identities print `false` and fail. Command substitutions do not retain new cache
+entries in the parent. Build publication and explicit reload invalidate caches.
+Only graph-built, receipt-verified artifacts can be checked; checking never
+sources a class or grants authority to invoke it. Ordinary sends are unchanged.
+See [protocol fortification](docs/protocol-fortification-plan.md).
 
 ## Traits
 

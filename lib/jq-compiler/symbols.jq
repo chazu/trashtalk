@@ -26,7 +26,7 @@ def resolved_parent:
   if $p == null or $p == "" then ""
   elif ($p | contains("::")) then $p
   elif .parentPackage then .parentPackage + "::" + $p
-  elif (["Object", "Tool", "TestCase"] | index($p)) then $p
+  elif (["Object", "Tool", "TestCase", "Protocol"] | index($p)) then $p
   elif .package then .package + "::" + $p else $p end;
 
 (.path // $path) as $source_path |
@@ -45,7 +45,12 @@ def resolved_parent:
     class_name: $qualified,
     superclass: ($class | resolved_parent),
     traits: ($class.traits // [])
-  },
+  } + (if ($class.implementedProtocols // [] | length)>0 then
+    {protocols:[$class.implementedProtocols[] | {identity:(.protocol |
+      if contains("::") or ($class.package // "")=="" then . else $class.package+"::"+. end),
+      line:.location.line,column:(.location.col+1)}]}
+    else {} end) + (if ($class.methodRequirements // []|length)>0 then
+      {protocol_requirements:$class.methodRequirements} else {} end),
   ($class.instanceVars[]? |
     {
       schema_version: 1,

@@ -1,7 +1,37 @@
 # Protocol fortification plan
 
-**Status:** Proposed plan, revised after adversarial review. This document does
-not change protocol behavior.
+**Status:** Implemented. Parsing and metadata landed first; the graph validator,
+shared surface summaries, boundary cache, and dispatch guard complete the mechanism.
+ServiceClient adoption remains dependent on the LiteLLM proof of concept.
+
+## Implementation note
+
+`lib/jq-compiler/protocols.jq` is the single public-instance surface resolver.
+The graph validates every promise before any worker installs an artifact. Its
+ordinary receipts carry validation results; the versioned manifest embeds those
+same receipts and resolved summaries. Publication uses an atomic rename. Boundary
+checks compare sidecars and content hashes before admitting an identity, so an
+interrupted publication cannot silently admit mixed receipts. No executable
+cache or guessed artifact path is used.
+
+Incremental and edit builds include registered reverse dependencies. Edit preview
+uses a disposable graph build; installation validates the graph again. Standalone
+code generation rejects nominal promises without an explicit graph request.
+
+The runtime reads a small manifest generation header using a Bash builtin.
+Within a generation, direct boundary calls cache success and failure by surface
+hash, requirement hash, and algorithm version. Explicit reload invalidates this
+cache. Arbitrary external function replacement must call `_protocol_invalidate`
+before checking again. Loading and executing a class remain caller decisions.
+
+Run `bash lib/jq-compiler/tests/test_protocol_fortification.bash` for the semantic
+and invalidation matrix, and `bash lib/jq-compiler/tests/test_protocol_dispatch.bash`
+for code/trace equivalence and timings. On this machine, Bash 5.3.15, 300 hot sends
+measured 0.540 seconds without a declaration and 0.562 seconds with one; cold
+source was 0.001/0.000 seconds. First dynamic validation was 0.243 seconds; 300
+cached checks were 0.037 seconds. These are single-run observations under build
+load, not a statistical performance claim or cross-version acceptance. Byte-identical
+function bodies and complete send traces are the hard regression guard.
 
 ## Outcome
 
@@ -14,8 +44,9 @@ providing its required selectors. It adds an optional nominal declaration so a
 class can state which contracts it promises to implement.
 
 ```smalltalk
+package: Services
+
 ServiceClient subclass: Protocol
-  # Unary requirements require the Phase 1 grammar extension below.
   requires: endpoint
   requires: readiness
   requires: request: options:
@@ -23,7 +54,7 @@ ServiceClient subclass: Protocol
 package: Tools
 
 LiteLLM subclass: Object
-  implements: ServiceClient
+  implements: Services::ServiceClient
 ```
 
 `implements:` does not alter dispatch. It asks the build to verify the promise.
@@ -48,11 +79,9 @@ The language documentation currently calls `requires:` documentation and
 validation, but the normal build does not reject a class that promises an
 unsatisfied protocol. This plan makes declared promises build errors.
 
-The example describes target syntax, not accepted current syntax. Today
-`requires:` accepts a string dependency or a keyword selector, but not unary
-selectors such as `endpoint`. Package qualification uses `package: Tools`, not
-a qualified class declaration. Phase 1 adds unary requirements and
-`implements:` before this example becomes valid source.
+The example describes the implemented syntax. Each class is defined in its own
+source file; package qualification uses `package: Tools`, not a qualified class
+declaration. The sections below retain the original design and acceptance gates.
 
 ## Design decisions
 
