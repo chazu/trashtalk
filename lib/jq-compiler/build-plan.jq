@@ -6,7 +6,7 @@ def parent($m):
   elif $m.parentPackage then $m.parentPackage + "::" + $p
   elif (["Object","Tool","TestCase"] | index($p)) then $p
   elif $m.package then $m.package + "::" + $p else $p end;
-def dependencies($m): [parent($m), $m.traits[]?] | map(select(. != "")) | unique;
+def dependencies($m): [parent($m), $m.traits[]?, $m.implementedProtocols[]?] | map(select(. != "")) | unique;
 . as $nodes |
 (reduce ($nodes | sort_by(.priority))[] as $node ({};
   if has($node.key) then . else .[$node.key]=$node.index end)) as $lookup |

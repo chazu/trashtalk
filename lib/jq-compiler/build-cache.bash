@@ -63,7 +63,7 @@ _build_plan() {
 }
 
 cmd_build_metadata() {
-    _parse_single_file "$1" | jq -c '{name,package,parent,parentPackage,traits}' > "$2"
+    _parse_single_file "$1" | jq -c '{name,package,parent,parentPackage,traits,implementedProtocols: [.implementedProtocols[]?.protocol]}' > "$2"
 }
 
 # Cache entries are keyed by content hash and compiler fingerprint, so every
