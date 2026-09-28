@@ -1,6 +1,7 @@
 # Protocol fortification plan
 
-**Status:** Proposed plan. This document does not change protocol behavior.
+**Status:** Proposed plan, revised after adversarial review. This document does
+not change protocol behavior.
 
 ## Outcome
 
@@ -14,11 +15,14 @@ class can state which contracts it promises to implement.
 
 ```smalltalk
 ServiceClient subclass: Protocol
+  # Unary requirements require the Phase 1 grammar extension below.
   requires: endpoint
   requires: readiness
   requires: request: options:
 
-Tools::LiteLLM subclass: Object
+package: Tools
+
+LiteLLM subclass: Object
   implements: ServiceClient
 ```
 
@@ -44,6 +48,12 @@ The language documentation currently calls `requires:` documentation and
 validation, but the normal build does not reject a class that promises an
 unsatisfied protocol. This plan makes declared promises build errors.
 
+The example describes target syntax, not accepted current syntax. Today
+`requires:` accepts a string dependency or a keyword selector, but not unary
+selectors such as `endpoint`. Package qualification uses `package: Tools`, not
+a qualified class declaration. Phase 1 adds unary requirements and
+`implements:` before this example becomes valid source.
+
 ## Design decisions
 
 ### Keep protocols distinct from traits and categories
@@ -52,9 +62,16 @@ A trait supplies reusable method bodies. A protocol specifies selectors that a
 class must supply. A method category is a browser/documentation grouping.
 These concepts may use related names, but they must not share runtime behavior.
 
-Traits can help a class satisfy a protocol. The build resolves trait methods
-and inherited methods before conformance validation. A class-defined method
-wins where existing trait conflict rules permit it.
+Traits can help a class satisfy a protocol, but v1 must mirror actual runtime
+lookup rather than assume compile-time trait merging. Its effective dispatch
+surface is: class-declared methods, then direct traits in declaration order,
+then inherited class methods. Do not count traits of ancestors unless runtime
+dispatch changes and tests establish that behavior.
+
+A class-defined method overrides all direct traits. Two direct traits defining
+the same required selector are a build error for a declared protocol unless a
+class-defined method disambiguates it. This is a protocol-validation rule, not
+a claim that the present trait runtime has conflict-resolution metadata.
 
 ### Use explicit contracts, but preserve duck typing
 
@@ -85,17 +102,23 @@ stored service directly. It does not check the protocol again.
 
 ### Grammar and AST
 
-1. Add repeatable `implements: ProtocolName` declarations to class bodies.
-2. Reject `implements:` in traits and protocol definitions in the first version.
-3. Parse declarations into `implementedProtocols`, preserving source order.
-4. Reject duplicate names and reject references that do not resolve to a class
-   whose direct or inherited parent is `Protocol`.
-5. Continue parsing `requires:` exactly as it does today. In a `Protocol`
-   subclass, it means a required selector. In ordinary classes, retain current
-   dependency behavior until a separate cleanup design changes it.
+1. Extend `requires:` to accept an identifier as a unary selector. Preserve its
+   canonical selector as `endpoint`. Retain string dependencies and keyword
+   selectors without changing their current spelling.
+2. Add repeatable `implements: ProtocolName` declarations to class bodies. Add
+   it to parser synchronization and class-body parsing. Parse a class reference
+   through the existing package-resolution path and retain source locations for
+   diagnostics.
+3. Parse declarations into `implementedProtocols`, preserving source order and
+   rejecting duplicates. Resolve each reference before deciding whether it names
+   a `Protocol` descendant. Reject declarations on traits and protocols after
+   this resolution step.
+4. In a `Protocol` subclass, `requires:` means a required selector. In ordinary
+   classes, retain current dependency behavior until a separate cleanup design
+   changes it.
 
-The compiler must preserve fully qualified protocol names. Relative names
-follow the existing package-resolution rules.
+The compiler must preserve canonical fully qualified protocol identities.
+Relative names follow the existing package-resolution rules.
 
 ### Compiled metadata
 
@@ -113,16 +136,25 @@ one-time runtime cache. It is not required by ordinary method dispatch.
 
 ### API summary for validation
 
-During the build, compute each class's effective public selector set from:
+Use canonical DSL selector spelling, such as `endpoint` and `request:options:`.
+Do not compare requirements with emitted Bash symbols such as `request_options_`.
+
+During the build, compute an explicit effective dispatch-surface summary from:
 
 1. methods declared on the class;
-2. included traits after trait resolution;
+2. direct included traits in runtime declaration order;
 3. inherited selectors from its resolved parent;
-4. aliases that the current runtime dispatch exposes.
+4. aliases that the current runtime dispatch exposes;
+5. generated instance-variable getter and setter selectors;
+6. class methods, because current `_class_has_method` accepts them. This is the
+   explicit v1 policy, not an inferred semantic equivalence.
 
-Compute this set once in the compiler/build process. Do not recreate it by
+V1 aliases remain unary only because that is the existing alias grammar. Extend
+alias syntax separately before allowing keyword aliases in protocol summaries.
+
+Compute this surface once in the compiler/build process. Do not recreate it by
 calling Bash `declare -f` while compiling. A protocol satisfies a class when
-every required selector is present in this effective selector set.
+every required selector is present in this surface.
 
 The compiler should use selector strings only. It must not attempt to prove
 argument types, return shapes, streaming behavior, or side effects. Those are
@@ -145,10 +177,11 @@ ProtocolError: Tools::LiteLLM implements ServiceClient but lacks:
   request:options:
 ```
 
-Validation must run in `make bash`, incremental rebuilds, and the compiler's
-single-class path when all referenced artifacts are available. If a standalone
-compile cannot resolve a protocol, return a clear unresolved-dependency error.
-It must never silently skip validation.
+Validation must run in `make bash` and incremental rebuilds after their normal
+dependency graph resolves all summaries. Route hot reload through that graph
+coordinator. A standalone compiler invocation must receive explicit validated
+dependency summaries or return a clear unresolved-dependency error. It must
+never silently skip validation.
 
 ### Incremental build cache
 
@@ -160,23 +193,36 @@ The conformance result depends on these inputs:
 - each declared protocol's requirement hash;
 - compiler version/hash.
 
-Store these in build-cache metadata. If none changes, reuse the validation
-receipt. If any changes, rebuild and revalidate the affected class and its
-subclasses. A protocol requirement change must invalidate every implementation
-of that protocol. A parent or trait API change must invalidate descendants that
-promise protocols.
+Add resolved protocol identities to the ordinary build dependency graph. Add
+their API-summary or output hashes to the normal dependency receipt. Store the
+validation result atomically in that existing receipt as
+`validation: {schema, implementing_surface_hash, protocol_hashes, result}`.
+Do not create a separately invalidated conformance receipt.
+
+If none of these inputs changes, reuse the normal receipt. If any changes,
+rebuild and revalidate the affected class and its subclasses. A protocol
+requirement change must invalidate every implementation of that protocol. A
+parent or trait API change must invalidate descendants that promise protocols.
 
 This is build-time work only. It cannot change request latency.
 
 ### One-time dynamic validation
 
-Keep a separate cache key of `(concrete class, protocol API hash)` for
-`_conforms_to`. Cache both success and failure. Include the protocol API hash
-so a reload in a long-lived development process cannot reuse a stale result.
+Keep a separate cache key of `(resolved concrete dispatch-surface hash, resolved
+protocol requirement hash, conformance-algorithm version)` for `_conforms_to`.
+Cache both success and failure. This prevents reuse after a concrete class,
+parent, trait, or protocol reload.
 
-Do not cache or source arbitrary class names from untrusted input. Dynamic
-loading remains an explicit caller responsibility. The cache stores a
-verification result only and does not grant authority to invoke the class.
+Use the cache only in a direct, non-capturing boundary API. Public `@` sends
+often execute in a command-substitution subshell, so mutated shell variables do
+not persist across those sends. If a caller uses `_conforms_to` in such a path,
+cache hits are best-effort and can disappear. Do not claim a process-local cache
+persists there.
+
+Validate class and protocol identities against the compiled-artifact registry
+before sourcing them. Do not cache or source arbitrary input. Dynamic loading
+remains an explicit caller responsibility. The cache stores a verification
+result only and does not grant authority to invoke the class.
 
 ## Performance budget and measurement
 
@@ -190,7 +236,7 @@ versions:
 | Measurement | Acceptance criterion |
 | --- | --- |
 | Direct compiled method send on an implementing class | No statistically meaningful regression beyond measurement noise. |
-| Hot loop of direct sends | No protocol-dependent command spawn, `source`, `declare -f`, or metadata scan. |
+| Hot loop of direct sends | No protocol-dependent command spawn, `source`, `declare -f`, metadata scan, or branch in `send`. |
 | First dynamic conformance check | Bounded by required selectors and inheritance depth. |
 | Repeated dynamic conformance check | Cached lookup only. |
 | Incremental rebuild with unchanged API hashes | Reuses conformance receipt. |
@@ -198,9 +244,15 @@ versions:
 
 Build a deterministic microbenchmark that compares otherwise identical classes,
 one declaring `implements:` and one not declaring it. Use shell builtins and
-fixed iteration counts. Record wall time and command/process counts where
-available. The benchmark must fail if generated code for the implementing class
-contains a conformance call in the method send path.
+fixed iteration counts. Record cold first-source cost separately from hot-send
+wall time and command/process counts where available.
+
+For a class differing only by `implements:`, generated method function
+definitions and every compiled send expression must be byte-identical. The
+artifact may differ only in declarative metadata. The benchmark must fail if
+generated method bodies contain `_conforms_to`, `isSatisfiedBy:`, `source`, or
+reflection. Add a behavior test that instruments `send` and proves that an
+implementing and nonimplementing class use identical lookup routes.
 
 Do not set a percentage threshold until a baseline is recorded on supported
 machines. The generated-code equivalence check is the hard guard. Measurements
@@ -209,21 +261,26 @@ set the practical regression threshold after the baseline exists.
 ## Implementation phases
 
 1. **Characterize current behavior.** Add focused tests for `requires:`,
-   inheritance, trait-provided selectors, aliases, namespaces, protocol reload,
-   and current `_conforms_to` behavior. Record a direct-send baseline.
+   inheritance, direct traits, trait order conflicts, class overrides,
+   inherited-trait behavior, aliases, namespaces, protocol reload, and current
+   `_conforms_to` behavior. Record a direct-send baseline.
 2. **Add metadata and parsing.** Implement `implements:` parsing, qualified name
    resolution, duplicate rejection, compiler metadata, and source-navigation
-   output. No validation yet. Verify that generated message dispatch is
-   byte-for-byte unchanged for equivalent methods.
-3. **Add static API summaries.** Build effective selector sets from the AST and
-   resolved dependency metadata. Test inheritance, traits, aliases, and
-   unresolved dependency diagnostics.
-4. **Validate declared conformance.** Integrate validation into full and
-   incremental build paths. Add precise multi-selector diagnostics and cache
-   invalidation tests.
-5. **Fortify dynamic checks.** Add hash-keyed process-local caching to
-   `_conforms_to` and `Protocol isSatisfiedBy:`. Keep it opt-in. Test cache
-   invalidation after class/protocol reload.
+   output. No validation yet. Verify that method function definitions and compiled
+   send expressions are byte-identical for otherwise equivalent methods. Allow
+   declarative protocol metadata to differ.
+3. **Add static API summaries.** Build dispatch-surface summaries from the AST
+   and resolved dependency metadata. Test canonical selector spelling, class
+   methods, accessors, inheritance, direct traits, aliases, and unresolved
+   dependency diagnostics.
+4. **Validate declared conformance.** Integrate validation into the normal full
+   and incremental dependency graph and its single receipt. Route hot reload
+   through the graph coordinator. Add precise multi-selector diagnostics and
+   cache invalidation tests.
+5. **Fortify dynamic checks.** Add hash-keyed caching to a direct boundary API
+   around `_conforms_to` and `Protocol isSatisfiedBy:`. Keep it opt-in. Test
+   invalidation after class, trait, parent, and protocol reload, plus documented
+   best-effort behavior from command-substitution paths.
 6. **Benchmark and document.** Add the benchmark and a generated-code guard.
    Update `LANGUAGE.md`, `docs/README.md`, and protocol examples. Define the
    `ServiceClient` protocol only after the mechanism passes these gates.
@@ -236,16 +293,20 @@ measured.
 
 - A class satisfies a protocol with a directly declared method.
 - A class satisfies a protocol through a parent method.
-- A class satisfies a protocol through an included trait.
+- A class satisfies a protocol through an included direct trait.
+- Trait ordering conflict, class override, and inherited-trait behavior match
+  the documented v1 dispatch surface.
 - A class satisfies a protocol through an existing alias.
 - A class fails with every missing selector listed once.
 - A missing, non-protocol, duplicate, and incorrectly qualified declaration
   fails at compile time.
-- A protocol requirement edit invalidates every declared implementation.
+- A protocol requirement edit invalidates every declared implementation through
+  the ordinary dependency DAG and receipt.
 - A trait or parent API edit invalidates affected descendants.
 - An unchanged build reuses the validation receipt.
 - A dynamic check caches success and failure but invalidates on reload.
-- Direct sends have no protocol-check commands in generated Bash.
+- Direct sends have no protocol-check commands in generated Bash and identical
+  runtime `send` lookup routes for implementing and nonimplementing classes.
 
 ## Deferred decisions
 
