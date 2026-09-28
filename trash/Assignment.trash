@@ -8,12 +8,13 @@ Assignment subclass: Object
   include: Assignment::Presentation
   include: Assignment::Reporting
   include: Assignment::Notifications
+  include: Assignment::Recovery
   instanceVars: objective:'' completionCriteria:'' requester:'' requesterSession:''
                 owner:'' originMessage:'' workspace:'' assignee:'' state:'open'
                 currentSession:'' generation:0 delivery:'' history:'[]' events:'[]'
                 externalIssue:'' result:'' resultMessage:'' cancellationNote:''
                 created:'' completedAt:'' dispatchMode:'manual'
-                requestKey:'' originRun:'' delegationTarget:'' statusMessage:''
+                requestKey:'' originRun:'' delegationTarget:'' statusMessage:'' continuationAllowance:3
 
   method: transitionRules [ ^ '["open:completed","open:cancelled"]' ]
 

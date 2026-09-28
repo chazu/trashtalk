@@ -18,7 +18,7 @@ implemented contracts from designs and historical evidence.
 | Attach, backlog, composer, and detach | [Live session view](agent-session-view.md) |
 | Harness contracts | [Jcode](jcode-session-driver.md), [Maki](maki-session-driver.md) |
 | Tracking failing commands, attention alerts, and delegating them to agents | [Workstation guide](workstation-guide.md) (user guide), [Workstation operations](workstation-operations.md) (operator detail) |
-| Durable work and specialist dispatch | [Agent delegation](agent-delegation-flow.md), [Manual assignments](assignments.md) |
+| Durable work and specialist dispatch | [Agent delegation](agent-delegation-flow.md), [Manual assignments](assignments.md), [Continuation and recovery](assignment-recovery.md) |
 | Code and session search / CLI harness adapters | [Tool adapters](code-and-session-tools.md) |
 | Runtime/build behavior and dated measurements | [Performance](performance.md), [opt-in result passing](result-passing-design.md), [first performance tranche, 2026-09-15](performance-first-tranche-trashtalk-2026-09-15.md) |
 | Packages and qualified names | [Namespace implementation/design](namespaces-design.md) |

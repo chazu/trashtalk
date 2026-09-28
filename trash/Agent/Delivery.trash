@@ -16,7 +16,7 @@ Delivery subclass: Object
   include: StateMachine
   instanceVars: session:'' run:'' messageIds:'[]' deliveryKey:'' state:'pending' attempts:0
                 lastError:'' note:'' created:'' assignment:'' generation:0 dispatchMode:'automatic'
-                executionWorkspace:'' authorizationRole:'' authorizationRevision:'' authorizationWorkspacePolicy:''
+                freshConversation:'false' executionWorkspace:'' authorizationRole:'' authorizationRevision:'' authorizationWorkspacePolicy:''
 
   # Stable authority IDs survive the namespace migration and existing validators.
   classMethod: new [

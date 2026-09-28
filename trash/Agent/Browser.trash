@@ -276,7 +276,7 @@ Latest failure: ' #{_at: 'error'})}
   ]
 
   classMethod: retryFor: session in: dir [
-    | records delivery answer path ignored |
+    | records delivery answer path ignored assignment key |
     records := @ self retryRecordsFor: session in: dir.
     delivery := @ self pick: records root: dir title: 'Choose delivery to retry'.
     delivery isEmpty ifTrue: [^ 'dismissed'].
@@ -284,7 +284,11 @@ Latest failure: ' #{_at: 'error'})}
     records := @ self record: 'retry' label: 'Retry this delivery' detail: 'Uncertain work may already have produced effects' path: path.
     answer := @ self pick: records root: dir title: 'Confirm retry (Esc cancels)'.
     (answer = 'retry') ifTrue: [
-      ignored := @ session requeue: delivery.
+      assignment := @ delivery assignment.
+      (assignment notEmpty) ifTrue: [
+        key := 'browser-' , delivery.
+        ignored := @ assignment continue: 'Owner confirmed continuation after inspecting recorded effects' afterDelivery: delivery key: key
+      ] ifFalse: [ignored := @ session requeue: delivery].
       ignored := @ Agent::Worker tickSession: session
     ]
   ]

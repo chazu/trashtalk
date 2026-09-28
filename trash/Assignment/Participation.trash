@@ -5,25 +5,13 @@ package: Assignment
 # Assignment operation owns the Store transaction around every read and save.
 Participation subclass: Object
   classMethod: select: session for: assignment [
-    | actor sender aData s sData identity iData role path canonical allowed current same runs old oldState gen message d now history participation notice |
+    | actor sender aData s allowed current same runs old oldState |
     @ Store requireTransaction.
     actor := @ Agent::Run actingContext.
     sender := @ assignment authorizeCoordinator: actor.
     @ assignment requireOpen.
     aData := @ assignment asJson.
-    s := @ Store read: session class: 'Agent::Session'.
-    sData := @ s asJson.
-    identity := @ Store read: (sData objectAt: 'identity') class: 'Agent::Identity'.
-    iData := @ identity asJson.
-    @ Require equal: identity to: (aData objectAt: 'assignee').
-    @ Require member: (iData objectAt: 'enabled') of: '["true","1"]'.
-    @ Require equal: (sData objectAt: 'lifecycleState') to: 'open'.
-    path := @ s workspace.
-    canonical := @ Agent::Session workspaceFor: path.
-    @ Require equal: canonical to: (aData objectAt: 'workspace').
-    role := @ Store read: (sData objectAt: 'role') class: 'Agent::Role'.
-    allowed := @ role allowsWorkspace: canonical.
-    @ Require equal: allowed to: 'true'.
+    s := @ self eligibleSession: session for: assignment.
     current := @ assignment currentSession.
     same := @ String equals: current to: s.
     (same = 'true') ifTrue: [^ assignment].
@@ -42,6 +30,33 @@ Participation subclass: Object
         @ old save
       ]
     ].
+    ^ @ self publishFor: assignment session: s sender: sender
+  ]
+
+  classMethod: eligibleSession: session for: assignment [
+    | aData s sData identity iData role path canonical allowed |
+    @ Store requireTransaction.
+    aData := @ assignment asJson.
+    s := @ Store read: session class: 'Agent::Session'.
+    sData := @ s asJson.
+    identity := @ Store read: (sData objectAt: 'identity') class: 'Agent::Identity'.
+    iData := @ identity asJson.
+    @ Require equal: identity to: (aData objectAt: 'assignee').
+    @ Require member: (iData objectAt: 'enabled') of: '["true","1"]'.
+    @ Require equal: (sData objectAt: 'lifecycleState') to: 'open'.
+    path := @ s workspace.
+    canonical := @ Agent::Session workspaceFor: path.
+    @ Require equal: canonical to: (aData objectAt: 'workspace').
+    role := @ Store read: (sData objectAt: 'role') class: 'Agent::Role'.
+    allowed := @ role allowsWorkspace: canonical.
+    @ Require equal: allowed to: 'true'.
+    ^ s
+  ]
+
+  classMethod: publishFor: assignment session: s sender: sender [
+    | gen message d now history participation notice path |
+    @ Store requireTransaction.
+    path := @ s workspace.
     gen := @ assignment generation.
     gen := gen + 1.
     message := @ Message workForAssignment: assignment session: s generation: gen sender: sender.

@@ -147,4 +147,41 @@ check 'silent process success leaves assignment open' open "$(field "$c" .state)
 check 'unsettled work is visible for review' 'needs review' "$(@ "$c" snapshot | jq -r .activity)"
 check 'same status item reports failure to finish' alert "$(field "$(field "$c" .statusMessage)" .kind)"
 
+
+# Recovery of the exact observed failure: provider turn finishes, Assignment
+# remains open, coordinator continues it, then the real worker completes it.
+cdelivery=$(field "$c" .delivery)
+oldrun=$(field "$cdelivery" .run)
+notice="message_${cdelivery}_recovery_${oldrun}"
+check 'unfinished turn has a neutral stop reason' unfinished "$(field "$oldrun" '.outcome | fromjson | .stop_reason')"
+check 'recovery notification names the requesting coordinator' "session:$coordinator" "$(field "$notice" .to)"
+check 'recovery notice has its own interpretation' 'needs review' "$(field "$notice" .assignmentState)"
+must @ Agent::Delegation reconcile >/dev/null
+check 'reconciliation publishes one recovery obligation' 1 "$(_db_sql "SELECT count(*) FROM agent_outbox WHERE message_id='$notice';")"
+export TRASHTALK_RUN_TOKEN="$token"
+check 'identical delegation acknowledges stranded work' "$c" "$(@ Agent::Run delegate: 'Do not infer success' criteria: 'Explicit result required' key: silent)"
+check 'creation replay does not requeue' uncertain "$(field "$cdelivery" .state)"
+reject 'changed creation text is not continuation' @ Agent::Run delegate: 'Continue this work' criteria: evidence key: silent
+reject 'new key cannot bypass the open assignment' @ Agent::Run delegate: 'Continue this work' criteria: evidence key: replacement
+reject 'coordinator cannot bypass recovery through session requeue' @ "$child" requeue: "$cdelivery"
+next=$(must @ "$c" continue: 'Resume the remaining fixture' afterDelivery: "$cdelivery" key: recover-silent)
+check 'continuation queues a new generation' 2 "$(field "$next" .generation)"
+check 'old attempt count retained' 1 "$(field "$cdelivery" .attempts)"
+check 'old run retained' "$oldrun" "$(field "$cdelivery" .run)"
+check 'continuation receipt replay is idempotent' "$next" "$(@ "$c" continue: 'Resume the remaining fixture' afterDelivery: "$cdelivery" key: recover-silent)"
+check 'continuation count survives replay' 1 "$(@ "$c" continuationCount)"
+reject 'different key cannot replay a stale delivery' @ "$c" continue: again afterDelivery: "$cdelivery" key: another
+unset TRASHTALK_RUN_TOKEN
+export DELEGATION_MODE=complete
+# Fail if the worker resumes old provider context instead of launching fresh.
+__Agent__ShellDriver__class__resume_promptFile_run_token_() { echo 'FAIL: recovery resumed stale provider context' >&2; return 1; }
+must settle_session "$child"
+check 'continuation reaches explicit completion' completed "$(field "$c" .state)"
+check 'completed continuation retains two generations' 2 "$(field "$c" '.history | length')"
+check 'completed continuation retains both runs' 2 "$(field "$c" '[.history[].runs | length] | add')"
+check 'fresh prompt carries checkpoint reason' true "$(rg -q 'Resume the remaining fixture' "$DELEGATION_MARK.prompt" && echo true || echo false)"
+export TRASHTALK_RUN_TOKEN="$token"
+check 'late duplicate acknowledges completed continuation' "$next" "$(@ "$c" continue: 'Resume the remaining fixture' afterDelivery: "$cdelivery" key: recover-silent)"
+unset TRASHTALK_RUN_TOKEN
+
 echo "=== $passed delegation checks passed ==="

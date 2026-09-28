@@ -412,19 +412,35 @@ Session subclass: Object
     ^ self , ' ' , handle , ' ' , lifecycleState , ' ws=' , workspace , ' pending=' , count , ' run=' , run
   ]
 
-  # Human-only: put a failed or uncertain delivery back in the queue, e.g. after
-  # fixing whatever made it fail. The next tick claims it again.
+  # Ordinary delivery retries are owner-only. Assignment recovery preserves
+  # attempt history and allowance through its own continuation transaction.
   method: requeue: deliveryId [
-    | owner state |
-    owner := @ deliveryId session.
-    (owner ~= self) ifTrue: [
-      @ SessionError signal: 'Delivery ' , deliveryId , ' does not belong to session ' , self
-    ].
-    state := @ deliveryId state.
-    ((state ~= 'failed') and: [state ~= 'uncertain']) ifTrue: [
-      @ SessionError signal: 'Delivery ' , deliveryId , ' is ' , state , '; only failed or uncertain deliveries can be requeued'
-    ].
-    (@ deliveryId transitionTo: 'pending' with: '{"attempts":0}') ifFailed: [:e | @ e signal ].
+    @ Agent::Queue ensureSchema.
+    ^ @ Store transaction: self sending: 'requeueWithin:' with: deliveryId replaying: true
+  ]
+
+  method: requeueWithin: deliveryId [
+    | actor session identity d state runs value |
+    @ Store requireTransaction.
+    actor := @ Agent::Run actingContext.
+    @ Require equal: (actor objectAt: 'run') to: ''.
+    session := @ Store read: self class: 'Agent::Session'.
+    identity := @ session identity.
+    identity := @ Store read: identity class: 'Agent::Identity'.
+    value := @ identity owner.
+    @ Require equal: (actor objectAt: 'human') to: value.
+    @ Agent::Session requireCurrentWithin: session.
+    d := @ Store read: deliveryId class: 'Agent::Delivery'.
+    value := @ d session.
+    @ Require equal: value to: session.
+    value := @ d assignment.
+    (value notEmpty) ifTrue: [^ @ Require reject: 'Use Assignment continue:afterDelivery:key: to preserve recovery history and allowance'].
+    state := @ d state.
+    @ Require member: state of: '["failed","uncertain"]'.
+    runs := @ Agent::Run activeFor: session except: ''.
+    @ Require equal: runs to: '[]'.
+    @ d state: 'pending'.
+    @ d save.
     ^ 'pending'
   ]
 

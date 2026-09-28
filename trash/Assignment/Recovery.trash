@@ -1,0 +1,132 @@
+package: Assignment
+
+# Continuation is distinct from replaying creation. All policy is DSL; Store
+# guards the old attempt, authority, negative run queries and publication.
+Recovery trait
+  method: continue: reason afterDelivery: previousDelivery key: key [
+    | args |
+    @ Agent::Queue ensureSchema.
+    args := #{reason: reason previous: previousDelivery key: key} asJson.
+    ^ @ Store transaction: self sending: 'continueWithin:' with: args replaying: true
+  ]
+
+  method: continuationLimit [
+    | value |
+    value := @ self continuationAllowance.
+    (value isEmpty) ifTrue: [^ 3].
+    ^ value
+  ]
+
+  method: continuationCount [
+    | count entries kind |
+    count := 0.
+    entries := @ self events.
+    entries arrayEach: [:event |
+      kind := event objectAt: 'kind'.
+      (kind = 'continued') ifTrue: [count := count + 1]
+    ].
+    ^ count
+  ]
+
+  method: continueWithin: args [
+    | actor sender reason previous key entries kind found session d run state runs questions count limit next now event identity role aData dData sData iData roleData rData |
+    @ Store requireTransaction.
+    @ Store read: self class: 'Assignment'.
+    actor := @ Agent::Run actingContext.
+    sender := @ self authorizeCoordinator: actor.
+    reason := args objectAt: 'reason'.
+    previous := args objectAt: 'previous'.
+    key := args objectAt: 'key'.
+    @ Require text: reason. @ Require text: previous. @ Require text: key.
+    # Receipt replay stays read-only, even after this attempt has completed.
+    entries := @ self events.
+    found := ''.
+    entries arrayEach: [:entry |
+      kind := entry objectAt: 'kind'.
+      (kind = 'continued') ifTrue: [
+        kind := entry objectAt: 'key'.
+        (kind = key) ifTrue: [
+          @ Require equal: (entry objectAt: 'body') to: reason.
+          @ Require equal: (entry objectAt: 'previousDelivery') to: previous.
+          @ Require equal: (entry objectAt: 'actor') to: sender.
+          found := entry objectAt: 'delivery'
+        ]
+      ]
+    ].
+    (found notEmpty) ifTrue: [^ found].
+    @ self requireOpen.
+    aData := @ self asJson.
+    d := @ self delivery.
+    (d ~= previous) ifTrue: [^ @ Require reject: 'Stale continuation: inspect the current Assignment delivery before retrying'].
+    d := @ Store read: d class: 'Agent::Delivery'.
+    dData := @ d asJson.
+    @ Require equal: (dData objectAt: 'assignment') to: self.
+    @ Require equal: (dData objectAt: 'generation') to: (aData objectAt: 'generation').
+    state := @ d state.
+    @ Require member: state of: '["failed","uncertain"]'.
+    session := @ Assignment::Participation eligibleSession: (aData objectAt: 'currentSession') for: self.
+    sData := @ session asJson.
+    @ Require equal: (dData objectAt: 'session') to: session.
+    @ Agent::Session requireCurrentWithin: session.
+    identity := @ Store read: (sData objectAt: 'identity') class: 'Agent::Identity'.
+    iData := @ identity asJson.
+    @ Require equal: (iData objectAt: 'owner') to: (aData objectAt: 'owner').
+    role := @ Store read: (sData objectAt: 'role') class: 'Agent::Role'.
+    roleData := @ role asJson.
+    @ Require equal: (roleData objectAt: 'revision') to: (sData objectAt: 'roleRevision').
+    @ Require member: 'assignment.work' of: (roleData jsonAt: 'capabilities').
+    runs := @ Agent::Run activeFor: session except: ''.
+    (runs ~= '[]') ifTrue: [^ @ Require reject: 'An active or recovering run must finish or be stopped before continuation'].
+    run := @ d run.
+    (run notEmpty) ifTrue: [
+      run := @ Store read: run class: 'Agent::Run'.
+      rData := @ run asJson.
+      @ Require equal: (rData objectAt: 'session') to: session.
+      @ Require member: (rData objectAt: 'state') of: '["succeeded","unsettled","failed","interrupted","waiting_for_user"]'
+    ].
+    questions := @ Agent::Queue unansweredForAssignment: self.
+    (questions ~= '[]') ifTrue: [^ @ Require reject: 'Answer the Assignment question before continuing'].
+    count := @ self continuationCount.
+    limit := @ self continuationLimit.
+    (count < limit) ifFalse: [^ @ Require reject: 'Continuation allowance exhausted; the owner must explicitly raise it with allowContinuations:reason:'].
+    @ d state: 'skipped'.
+    @ d note: 'Superseded by an explicit Assignment continuation'.
+    @ d save.
+    @ Assignment::Participation publishFor: self session: session sender: sender.
+    next := @ self delivery.
+    @ next freshConversation: 'true'.
+    @ next save.
+    now := @ Time nowISO.
+    event := #{kind: 'continued' body: reason actor: sender run: (actor objectAt: 'run') key: key
+      previousDelivery: previous delivery: next generation: (@ self generation) at: now} asJson.
+    @ self appendEvent: event.
+    @ self save.
+    ^ next
+  ]
+
+  method: allowContinuations: total reason: reason [
+    | args |
+    args := #{total: total reason: reason} asJson.
+    ^ @ Store transaction: self sending: 'allowContinuationsWithin:' with: args
+  ]
+
+  method: allowContinuationsWithin: args [
+    | actor sender total reason current now event |
+    @ Store requireTransaction.
+    @ Store read: self class: 'Assignment'.
+    actor := @ Agent::Run actingContext.
+    sender := @ self authorize: actor operatorOnly: true.
+    @ self requireOpen.
+    total := args objectAt: 'total'.
+    reason := args objectAt: 'reason'.
+    @ Require text: reason.
+    (total =~ '^[1-9][0-9]{0,5}$') ifFalse: [^ @ Require reject: 'Continuation total must be an integer from 1 to 999999'].
+    current := @ self continuationLimit.
+    (total > current) ifFalse: [^ @ Require reject: 'Raise the total allowance; existing continuations are never reset'].
+    @ self continuationAllowance: total.
+    now := @ Time nowISO.
+    event := #{kind: 'continuation-allowance' body: reason actor: sender total: total at: now} asJson.
+    @ self appendEvent: event.
+    @ self save.
+    ^ total
+  ]

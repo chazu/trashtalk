@@ -386,8 +386,9 @@ Worker subclass: Object
     done
     if [[ "$has_offered" == true ]]; then
       final="unsettled"
+      outcome=$(jq -c '.stop_reason //= "unfinished" | .stop_detail //= "Provider turn ended without completing the Assignment or settling its delivery; budget exhaustion is not confirmed"' <<<"$outcome")
       owner=$(@ "$_RECEIVER" ownerInboxFor: "$session")
-      @ Inbox alert: "Run $run_id in session $session exited without settling every delivery; they are marked uncertain. Requeue or skip them on the session." to: "$owner" from: worker >/dev/null
+      @ Inbox alert: "Run $run_id in session $session exited without settling every delivery; they are marked uncertain. Inspect the recorded effects. For Assignment deliveries use Assignment continue:afterDelivery:key:; for ordinary deliveries use session requeue or skip." to: "$owner" from: worker >/dev/null
     elif [[ "$has_blocked" == true ]]; then
       final="waiting_for_user"
     else
@@ -478,6 +479,9 @@ Worker subclass: Object
     prompt_file="$run_dir/prompt.txt"
     @ "$_RECEIVER" writePrompt: "$prompt_file" run: "$run" session: "$session" deliveries: "$claimed"
     ref=$(@ "$session" lastConversationRef)
+    for d in $claimed; do
+      [[ "$(@ "$d" freshConversation)" != true ]] || ref=''
+    done
     if [[ -n "$ref" ]]; then
       pid=$(@ "$driver" resume: "$ref" promptFile: "$prompt_file" run: "$run" token: "$token")
     else
@@ -513,6 +517,7 @@ Worker subclass: Object
       printf 'When finished, settle each delivery: %s Agent::Run settle: %s\n' "$ts" "'<deliveryId>'"
       printf 'For ordinary deliveries send the appropriate reply before settling. Assignment instructions below override the ordinary reply/settle protocol. Use this run-specific launcher for every Trashtalk command; it supplies your private authority. Never print or read its contents.\n'
       printf 'Entrust background work durably with: %s Agent::Run delegate: %s criteria: %s key: %s\n' "$ts" "'objective'" "'completion criteria and evidence'" "'stable-key-for-this-request'"
+      @ Agent::Delegation recoveryInstructions
       printf 'Reuse the key when retrying the same request. One open child assignment per conversation; no recursive delegation. The returned Assignment is queued; report it as started only after its activity is running. Inspect with <launcher> <assignment> show.\n'
       printf 'Use delegation for entrusted work; ordinary send:to: is for conversation. Do not bypass Assignment by spawning another harness or changing stored lifecycle fields directly. On successful delegation, promptly acknowledge its handle and queued status to the human, then settle the originating ordinary delivery. Stay available: do not wait or poll for the specialist. Its durable outcome will arrive as another notification. If delegation fails, report the failure; do not claim an agent was started.\n'
       printf 'With agent.stop authority, stop an exact run with: %s Agent::Run stop: %s\n' "$ts" "'<runId>'"
@@ -524,6 +529,8 @@ Worker subclass: Object
         assignment=$(@ "$d" assignment)
         if [[ -n "$assignment" ]]; then
           printf 'Assignment: %s\nInspect: %s %q show\n' "$assignment" "$ts" "$assignment"
+          printf 'Durable Assignment snapshot (inspect existing changes before continuing):\n'
+          @ "$assignment" snapshot
           printf 'Record progress: %s %q progress: %s\n' "$ts" "$assignment" "'evidence and progress'"
           printf 'Ask and wait: %s %q ask: %s\n' "$ts" "$assignment" "'blocking question'"
           printf 'Complete this work: %s %q complete: %s\n' "$ts" "$assignment" "'outcome, evidence, tests and remaining risks'"
@@ -533,7 +540,11 @@ Worker subclass: Object
         for m in $(@ "$d" messageIdList); do
           kind=$(@ "$m" kind)
           if [[ -z "$assignment" && -n "$(@ "$m" assignment)" && ( "$kind" == result || "$kind" == note ) ]]; then
-            printf 'Assignment outcome notification: the durable outcome is already in the human inbox. Read it, report the result, evidence and limitations in this conversation, then settle this notification delivery. Do not reply to the specialist or create another inbox result. Completion does not imply human acceptance, merge, deployment or closing an external issue.\n'
+            if [[ "$(@ "$m" assignmentState)" == 'needs review' ]]; then
+              printf 'Assignment recovery notification: inspect current state, use continue:afterDelivery:key: if still applicable, and settle this notification. A stale notification must not start another attempt.\n'
+            else
+              printf 'Assignment outcome notification: the durable outcome is already in the human inbox. Read it, report the result, evidence and limitations in this conversation, then settle this notification delivery. Do not reply to the specialist or create another inbox result. Completion does not imply human acceptance, merge, deployment or closing an external issue.\n'
+            fi
           fi
           inbox=$(@ Inbox named: "$(@ "$m" to)")
           printf 'Message: %s\nRead: %s %q show: %q\n' "$m" "$ts" "$inbox" "$m"

@@ -65,17 +65,22 @@ claim_run=${lines[0]}
 @ "$claim_run" transitionTo: running >/dev/null
 @ Agent::Delivery claim: "$delivery" run: "$claim_run" >/dev/null
 @ "$delivery" transitionTo: failed >/dev/null
+check 'active run blocks ordinary requeue' '' "$(@ "$session" requeue: "$delivery" 2>/dev/null)"
+@ "$claim_run" finishWith: failed outcome: '{}' error: 'fixture failed delivery' >/dev/null
 printf '%s\n' "$session" pause retry "$delivery" retry back '' > "$PICKS"
 @ Agent::Session browse >/dev/null
 check 'pause is applied on the session instance' paused "$(@ "$session" lifecycleState)"
 check 'confirmed retry returns the delivery to pending' pending "$(@ "$delivery" state)"
-check 'confirmed retry resets attempts' 0 "$(@ "$delivery" attempts)"
+check 'confirmed retry preserves attempts' 1 "$(@ "$delivery" attempts)"
 contains 'retry requests a tick for the selected session' "$session" "$(cat "$TICKS")"
 printf '%s\n' "$session" resume back '' > "$PICKS"
 @ Agent::Session browse >/dev/null
 check 'resume is applied on the session instance' open "$(@ "$session" lifecycleState)"
 
 # Cancel the retry confirmation and reject a forged picker id.
+mapfile -t lines < <(@ Agent::Run startFor: "$session" profile: shell)
+claim_run=${lines[0]}
+@ "$claim_run" transitionTo: running >/dev/null
 @ Agent::Delivery claim: "$delivery" run: "$claim_run" >/dev/null
 @ "$delivery" transitionTo: uncertain >/dev/null
 printf '%s\n' "$session" retry "$delivery" '' back '' > "$PICKS"
@@ -112,4 +117,31 @@ __Agent__Browser__class__terminateResultFor_() { echo 'fixture harness has not s
 printf '%s\n' "terminate:$other" terminate '' > "$PICKS"
 @ Agent::Session browse >/dev/null
 contains 'termination failure is shown' 'fixture harness has not stopped' "$(cat "$PAGES")"
+
+# The same confirmed browser action uses Assignment continuation, not the
+# ordinary delivery requeue escape hatch. Worker ticking remains a spy.
+identity=$(@ Agent::Identity named: browser-specialist)
+@ "$identity" owner: browser-owner
+@ "$identity" save
+role=$(@ Agent::Role define: browser-specialist revision: 1 capabilities: '["assignment.work","inbox.read"]' workspacePolicy: '[]' runBudget: '{}')
+specialist=$(@ Agent::Session openFor: "$identity" archetype: "$(@ "$session" archetype)" role: "$role" workspace: "$root" profile: shell)
+a=$(@ Assignment draft: 'Finish browser fixture' in: "$root")
+@ "$a" assignTo: "$identity" >/dev/null
+@ "$a" dispatchMode: automatic
+@ "$a" save
+@ "$a" workIn: "$specialist" >/dev/null
+old=$(@ "$a" delivery)
+mapfile -t pair < <(@ Agent::Run startFor: "$specialist" profile: shell)
+@ "${pair[0]}" transitionTo: running >/dev/null
+@ Agent::Delivery claim: "$old" run: "${pair[0]}" >/dev/null
+@ "$old" transitionTo: uncertain >/dev/null
+@ "${pair[0]}" finishWith: unsettled outcome: '{}' error: '' >/dev/null
+printf '%s\n' "$old" retry > "$PICKS"
+@ Agent::Browser retryFor: "$specialist" in: "$tmp" >/dev/null
+next=$(@ "$a" delivery)
+check 'browser recovery publishes a pending attempt' pending "$(@ "$next" state)"
+check 'browser recovery supersedes original delivery' skipped "$(@ "$old" state)"
+check 'browser recovery consumes the continuation allowance' 1 "$(@ "$a" continuationCount)"
+check 'browser recovery retains the old attempt count' 1 "$(@ "$old" attempts)"
+contains 'assignment inspection shows remaining allowance' 'Continuations: 1 of 3' "$(@ "$a" show)"
 echo "=== $passed browser checks passed ==="
