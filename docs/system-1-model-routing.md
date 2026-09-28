@@ -114,6 +114,41 @@ The exact remote order is alias-specific. It can change when Jev provides the
 more compatible model, or when cost and latency data support a different
 choice. The configured order, not an implicit vendor preference, is the policy.
 
+### Minimum initial capability registry
+
+Start with a static, versioned configuration containing two text-only aliases.
+It is a small capability registry, not a database, a dynamic discovery service,
+or a general model catalogue.
+
+```text
+tt/system1/jev
+  deployment: OpenRouter, exact verified Jev model ID
+  capabilities: text, streaming only
+  route: OpenRouter only
+
+tt/system1/mapika-decider
+  deployment: one BC-250 OpenAI-compatible endpoint, exact verified model ID
+  capabilities: text, streaming only
+  route: local BC-250 only
+```
+
+Treat mapika/decider as one alias only if it is one deployed model artifact. If
+Mapika and Decider are independently selected models, create one alias for each.
+Do not fall back between Jev and mapika/decider. They have not yet established
+behavioral equivalence.
+
+Each deployment record must contain the exact provider model ID, non-secret
+endpoint reference, context and output limits, supported features, time to
+first-token timeout, and health policy. Before verification, mark JSON mode,
+structured output, tool calls, and cross-provider fallback as unsupported.
+Endpoint addresses and API-key references stay in separately managed runtime
+configuration, not in this registry.
+
+The first usable failure policy is intentionally narrow: if OpenRouter cannot
+serve Jev, return an unavailable result for `tt/system1/jev`; if the BC-250
+cannot serve mapika/decider, return an unavailable result for that alias. Add a
+fallback tier only after its model passes the alias compatibility contract.
+
 Within a local pool, use weighted or least-busy selection only among genuinely
 equivalent deployments. Do not enable latency-based routing until the system
 has stable measurements. A low observed latency can otherwise steer traffic to
