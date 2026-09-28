@@ -2632,6 +2632,8 @@ def generateHeader:
 def generateMetadata:
   funcPrefix as $prefix |
   qualifiedName as $qname |
+  def resolvedProtocol:
+    if contains("::") then . elif $qname | contains("::") then ($qname | split("::")[0]) + "::" + . else . end;
   # Qualify parent name with package if unqualified and class is in a package
   # Exception: core/global classes should never be qualified
   # These are base classes that exist at the global level, not in any package
@@ -2656,12 +2658,16 @@ def generateMetadata:
     "\($prefix)__classInstanceVars=\"\(.classInstanceVars | varsToString)\"",
     "\($prefix)__traits=\"\(.traits | join(" "))\"",
     "\($prefix)__sourceHash=\"\(.sourceHash // "")\"",
+    "\($prefix)__publicInstanceMethods=\([.methods[]? | select(.kind == "instance" and (.selector | startswith("_") | not)) | if (.keywords | length) > 0 then ([.keywords[] | . + ":"] | join("")) else .selector end] | join(" ") | @sh)",
     (if .package != null then
       "\($prefix)__package=\"\(.package)\"",
       "\($prefix)__qualifiedName=\"\($qname)\""
     else empty end),
     (if (.methodRequirements | length) > 0 then
       "\($prefix)__requires=\"\(.methodRequirements | join(" "))\""
+    else empty end),
+    (if (.implementedProtocols | length) > 0 then
+      "\($prefix)__protocols=\([.implementedProtocols[]?.protocol | resolvedProtocol] | join(" ") | @sh)"
     else empty end),
     # Generate method categories metadata: "selector:category selector:category ..."
     ([.methods[] | select(.category != null) | "\(.selector):\(.category)"] as $cats |
