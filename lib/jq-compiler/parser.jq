@@ -70,6 +70,7 @@ def isSyncPoint:
   current.value == "instanceVars:" or
   current.value == "classInstanceVars:" or
   current.value == "include:" or
+  current.value == "implements:" or
   current.value == "requires:" or
   current.value == "category:" or
   current.value == "alias:" or
@@ -401,6 +402,18 @@ def parseInclude:
     fail
   end;
 
+# Parse: implements: ProtocolName (may be qualified)
+def parseImplements:
+  if current.value == "implements:" then
+    {line: current.line, col: current.col} as $location |
+    advance | skipNewlines | parseClassRef |
+    if .result != null then
+      .result as $protocolRef |
+      .result = {type: "implements", protocol: formatClassRef($protocolRef),
+                 protocolPackage: $protocolRef.package, location: $location}
+    else fail end
+  else fail end;
+
 # Parse: requires: 'path' (file dependency) OR requires: methodSelector (protocol requirement)
 def parseRequires:
   if current.value == "requires:" then
@@ -422,6 +435,11 @@ def parseRequires:
       ) |
       .selector as $sel |
       .state | .result = {type: "methodRequirement", selector: $sel, location: $location}
+    elif current.type == "IDENTIFIER" then
+      # Unary protocol requirement. Semantic validation later rejects this on
+      # ordinary classes, where selector-form requires: has no meaning.
+      .result = {type: "methodRequirement", selector: current.value, location: $location} |
+      advance
     else
       fail
     end
@@ -695,7 +713,7 @@ def parsePrimitive:
 
 # Parse class body elements
 def parseClassBody:
-  {instanceVars: [], classInstanceVars: [], traits: [], requires: [], methodRequirements: [], methods: [], aliases: [], advice: [], classPragmas: [], errors: [], currentCategory: null, state: .} |
+  {instanceVars: [], classInstanceVars: [], traits: [], requires: [], methodRequirements: [], implementedProtocols: [], methods: [], aliases: [], advice: [], classPragmas: [], errors: [], currentCategory: null, state: .} |
   until((.state | atEnd);
     .state |= skipNewlines |
     if (.state | atEnd) then
@@ -760,6 +778,14 @@ def parseClassBody:
           token: (.state | current),
           context: "include"
         }] |
+        .state |= (advance | synchronize)
+      end
+    elif (.state | current.value) == "implements:" then
+      (.state | parseImplements) as $r |
+      if $r.result != null then
+        .implementedProtocols += [$r.result] | .state = $r
+      else
+        .errors += [{type: "parse_error", message: "Failed to parse implements declaration", token: (.state | current), context: "implements"}] |
         .state |= (advance | synchronize)
       end
     elif (.state | current.value) == "requires:" then
@@ -884,6 +910,7 @@ def parseClassBody:
     traits: .traits,
     requires: .requires,
     methodRequirements: .methodRequirements,
+    implementedProtocols: .implementedProtocols,
     methods: .methods,
     aliases: .aliases,
     advice: .advice,
@@ -957,7 +984,7 @@ def parseClass:
         $class + {package: null, imports: []}
       end)
     else
-      ($header + {instanceVars: [], classInstanceVars: [], traits: [], requires: [], methodRequirements: [], methods: [], aliases: [], advice: [], classPragmas: []}) as $class |
+      ($header + {instanceVars: [], classInstanceVars: [], traits: [], requires: [], methodRequirements: [], implementedProtocols: [], methods: [], aliases: [], advice: [], classPragmas: []}) as $class |
       .result = (if $pkgDecl != null then
         $class + {package: $pkgDecl.package, imports: $pkgDecl.imports}
       else
