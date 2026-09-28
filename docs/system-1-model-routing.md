@@ -258,11 +258,43 @@ boundary:
 - a structured result envelope that distinguishes unavailable, timeout,
   rejected request, and partial-stream outcomes.
 
-A future `Tools::LiteLLM` class can use the trait and expose a small
-OpenAI-compatible operation surface, for example model discovery, readiness,
-and chat completion with an alias. It can also use `Tool` process primitives
-when a locally managed LiteLLM binary or container needs explicit lifecycle
-control. The service trait must not require that local lifecycle.
+The protocol describes a service boundary. It must not perform HTTP itself.
+Add a distinct `ServiceTransport` primitive that accepts a structured request,
+owns HTTP execution, and returns either a normalized result or a stream event
+sequence. Its request contract must include an endpoint reference, method,
+path, non-secret headers, request body, connect deadline, total deadline, and
+whether the caller requests streaming. Its result contract must preserve the
+opaque request ID, status, normalized outcome, time to first byte, completion
+timing, and any partial-stream failure.
+
+Use a short-lived `curl` child for the first transport implementation. Its
+startup cost is negligible beside model time to first token, while it gives the
+first proof a simple failure and cancellation boundary. Run streaming curl with
+output buffering disabled and pass bytes through as they arrive. Cancellation
+must terminate the child process group. Do not buffer a completed response just
+to parse it as JSON.
+
+Do not put authorization headers or API keys in argv, result envelopes, or
+ordinary logs. Resolve credentials by a non-secret endpoint reference and pass
+them through protected runtime configuration or inherited process environment.
+If curl requires a header file, create it with restrictive permissions and
+remove it after the request. The first LiteLLM Proxy should bind locally, so
+the client may not need a separate client credential at all.
+
+A future `Tools::LiteLLM` class can compose the transport and expose a small
+OpenAI-compatible operation surface: endpoint identity, readiness, model
+discovery, completion, and streaming completion with an internal alias. It is
+not a `Tool` subclass merely because the first transport invokes curl. `Tool`
+models installable executables and argv operations. Keep LiteLLM service calls
+separate from a possible local proxy supervisor. If Trashtalk later launches a
+LiteLLM binary or container, that supervisor can use `Tool` process primitives
+without making request execution pretend to be a CLI.
+
+Do not add a persistent HTTP sidecar yet. Add connection pooling only if
+measurement shows that curl startup or lack of connection reuse affects the
+system 1 latency budget. The first transport proof must cover one loopback
+LiteLLM Proxy, successful streaming text, cancellation, timeout, and an
+unavailable result.
 
 Do not add the trait before the LiteLLM proof of concept identifies the shared
 needs. If LiteLLM remains the only service adapter, a narrow `Tools::LiteLLM`
