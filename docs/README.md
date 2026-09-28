@@ -26,6 +26,7 @@ implemented contracts from designs and historical evidence.
 
 ## Designs, research, and partial implementations
 
+- [Protocol fortification plan](protocol-fortification-plan.md): proposed build-time capability contracts with zero ordinary-send overhead.
 - [System 1 model routing](system-1-model-routing.md): proposed LiteLLM and HAProxy routing for Jev-compatible fast models, isolated from the existing agentic surface.
 - [Agent conversation improvements](agent-ui-future-improvements.md): Gusgus conversation creation is implemented; automatic dismissal (M, provisional) and detached-conversation notifications (L) remain parked.
 - [Workstation event implementation plan](workstation-event-attention-implementation-plan.md): detailed phases and Phase 0 to 2 task and acceptance gates.
