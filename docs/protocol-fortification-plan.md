@@ -73,6 +73,13 @@ the same required selector are a build error for a declared protocol unless a
 class-defined method disambiguates it. This is a protocol-validation rule, not
 a claim that the present trait runtime has conflict-resolution metadata.
 
+Static validation and dynamic conformance must use one specified dispatch-
+surface resolver. Phase 5 will replace `_class_has_method`, or make it delegate
+to the shared resolver. It must inspect class methods, direct traits in order,
+the class override rule, and then inherited class methods. Independent static
+and dynamic resolver algorithms are forbidden because they can disagree about
+trait-provided requirements.
+
 ### Use explicit contracts, but preserve duck typing
 
 `implements:` is optional. It supplies discoverability, a stable dependency
@@ -102,20 +109,27 @@ stored service directly. It does not check the protocol again.
 
 ### Grammar and AST
 
-1. Extend `requires:` to accept an identifier as a unary selector. Preserve its
-   canonical selector as `endpoint`. Retain string dependencies and keyword
-   selectors without changing their current spelling.
-2. Add repeatable `implements: ProtocolName` declarations to class bodies. Add
+1. Parse every `requires:` form into a generic, source-located declaration.
+   Extend selector-form `requires:` to accept an identifier as a unary selector.
+   Preserve its canonical selector as `endpoint`. Retain string dependencies
+   and keyword selectors without changing their current spelling.
+2. During semantic validation, permit selector-form `requires:` only on a
+   protocol. Permit string dependencies only where current class dependency
+   behavior permits them. Reject selector-form requirements on ordinary classes
+   rather than silently emitting protocol metadata for them.
+3. A v1 protocol must directly subclass the base `Protocol`. Reject a subclass
+   of a user-defined protocol and reject any ordinary class that subclasses a
+   user-defined protocol. Protocol inheritance and composition remain deferred.
+4. Protocol requirements are public selectors only. Reject a required selector
+   beginning `_`. Private methods and aliases never enter a protocol surface.
+5. Add repeatable `implements: ProtocolName` declarations to class bodies. Add
    it to parser synchronization and class-body parsing. Parse a class reference
    through the existing package-resolution path and retain source locations for
    diagnostics.
-3. Parse declarations into `implementedProtocols`, preserving source order and
+6. Parse declarations into `implementedProtocols`, preserving source order and
    rejecting duplicates. Resolve each reference before deciding whether it names
    a `Protocol` descendant. Reject declarations on traits and protocols after
    this resolution step.
-4. In a `Protocol` subclass, `requires:` means a required selector. In ordinary
-   classes, retain current dependency behavior until a separate cleanup design
-   changes it.
 
 The compiler must preserve canonical fully qualified protocol identities.
 Relative names follow the existing package-resolution rules.
@@ -134,23 +148,47 @@ branches, metadata reads, or conformance calls to generated message sends.
 The generated metadata serves inspection tools, source navigation, and the
 one-time runtime cache. It is not required by ordinary method dispatch.
 
+### Protocol manifest and resolver
+
+Before conformance validation, build a versioned compiled-artifact manifest.
+Each entry records canonical identity, source path, compiled artifact path,
+kind (`class`, `trait`, or `protocol`), package/import scope, API hash, and the
+ordinary build receipt identity. Update the manifest atomically with that
+receipt.
+
+The resolver consumes this manifest for both static and direct dynamic
+validation. V1 resolves a local package name first, then requires an explicitly
+qualified global name. It has no import search because Trashtalk has no import
+declaration. It rejects ambiguity, shadowing that changes a prior identity,
+stale receipt references, and an unregistered artifact. It never constructs a
+source path from an untrusted class or protocol name.
+
+The build graph uses canonical resolved identities from this resolver, not raw
+spelling. Dynamic validation uses the same manifest before it loads a compiled
+protocol artifact. This replaces the current direct path construction in
+`_conforms_to`.
+
 ### API summary for validation
 
 Use canonical DSL selector spelling, such as `endpoint` and `request:options:`.
 Do not compare requirements with emitted Bash symbols such as `request_options_`.
 
-During the build, compute an explicit effective dispatch-surface summary from:
+During the build, compute an explicit public effective dispatch-surface summary
+from:
 
 1. methods declared on the class;
 2. direct included traits in runtime declaration order;
 3. inherited selectors from its resolved parent;
 4. aliases that the current runtime dispatch exposes;
 5. generated instance-variable getter and setter selectors;
-6. class methods, because current `_class_has_method` accepts them. This is the
-   explicit v1 policy, not an inferred semantic equivalence.
+6. public instance methods only. V1 excludes class methods because an instance
+   capability contract must not certify a selector that callers can send only to
+   the class. A later design can add explicit class-side protocol requirements.
 
 V1 aliases remain unary only because that is the existing alias grammar. Extend
 alias syntax separately before allowing keyword aliases in protocol summaries.
+Exclude selectors beginning `_`, including private aliases, from every static
+and dynamic protocol surface.
 
 Compute this surface once in the compiler/build process. Do not recreate it by
 calling Bash `declare -f` while compiling. A protocol satisfies a class when
@@ -219,7 +257,7 @@ not persist across those sends. If a caller uses `_conforms_to` in such a path,
 cache hits are best-effort and can disappear. Do not claim a process-local cache
 persists there.
 
-Validate class and protocol identities against the compiled-artifact registry
+Validate class and protocol identities through the compiled-artifact manifest
 before sourcing them. Do not cache or source arbitrary input. Dynamic loading
 remains an explicit caller responsibility. The cache stores a verification
 result only and does not grant authority to invoke the class.
@@ -277,10 +315,12 @@ set the practical regression threshold after the baseline exists.
    and incremental dependency graph and its single receipt. Route hot reload
    through the graph coordinator. Add precise multi-selector diagnostics and
    cache invalidation tests.
-5. **Fortify dynamic checks.** Add hash-keyed caching to a direct boundary API
-   around `_conforms_to` and `Protocol isSatisfiedBy:`. Keep it opt-in. Test
-   invalidation after class, trait, parent, and protocol reload, plus documented
-   best-effort behavior from command-substitution paths.
+5. **Fortify dynamic checks.** Make `_conforms_to` and `Protocol isSatisfiedBy:`
+   use the shared public instance-side dispatch-surface resolver and artifact
+   manifest. Add hash-keyed caching to a direct boundary API. Keep it opt-in.
+   Test agreement with static validation for traits, invalidation after class,
+   trait, parent, and protocol reload, plus best-effort behavior from
+   command-substitution paths.
 6. **Benchmark and document.** Add the benchmark and a generated-code guard.
    Update `LANGUAGE.md`, `docs/README.md`, and protocol examples. Define the
    `ServiceClient` protocol only after the mechanism passes these gates.
@@ -296,10 +336,21 @@ measured.
 - A class satisfies a protocol through an included direct trait.
 - Trait ordering conflict, class override, and inherited-trait behavior match
   the documented v1 dispatch surface.
+- Static validation, `_conforms_to`, and `Protocol isSatisfiedBy:` agree for
+  direct traits, class overrides, trait ambiguity, and inherited traits.
 - A class satisfies a protocol through an existing alias.
+- A private method, alias, or required selector cannot satisfy or declare a
+  public protocol requirement.
+- A class-side-only method cannot satisfy an instance protocol requirement.
 - A class fails with every missing selector listed once.
 - A missing, non-protocol, duplicate, and incorrectly qualified declaration
   fails at compile time.
+- A user-defined protocol cannot be subclassed in v1.
+- Same-package, explicitly qualified, ambiguous, stale-manifest, and
+  unregistered protocol identities resolve or fail according to the manifest
+  rules.
+- Selector-form `requires:` on an ordinary class fails without emitting protocol
+  metadata.
 - A protocol requirement edit invalidates every declared implementation through
   the ordinary dependency DAG and receipt.
 - A trait or parent API edit invalidates affected descendants.
