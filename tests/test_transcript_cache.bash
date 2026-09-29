@@ -7,16 +7,16 @@ root=$TRASHTALK_DIR
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/logs/r1" "$tmp/logs/r2" "$tmp/cache"
-records='{"session":{"id":"s","title":"Gusgus"},"conversation_runs":["r1","r2"],"rows":[{"id":"m","seq":2.5,"data":{"class":"Message","from":"human","to":"session:s","body":"mail"}}],"has_earlier":0}'
+records='{"session":{"id":"s","title":"Maki"},"conversation_runs":["r1","r2"],"rows":[{"id":"m","seq":2.5,"data":{"class":"Message","from":"human","to":"session:s","body":"mail"}}],"has_earlier":0}'
 limit=400
 # Independent reference: full JSONL parse, global sort, then coalesce, as in the
 # pre-cache adapter. Tests with partial records assert their boundary separately.
 reference() {
-    printf '%s' "$records" | jq -c --arg mode rows --arg run '' --argjson seq 0 --arg profile '' --arg stream '' -f "$root/lib/agent-transcript.jq" > "$tmp/reference-rows"
+    printf '%s' "$records" | jq -c --arg mode rows --arg run '' --argjson seq 0 --arg profile '' --arg stream '' --arg agent "$(jq -r '.session.title // "Assistant"' <<< "$records")" -f "$root/lib/agent-transcript.jq" > "$tmp/reference-rows"
     for run in r1 r2; do
         [[ -f "$tmp/logs/$run/conversation.jsonl" ]] || continue
-        jq -Rc --arg run "$run" 'fromjson? | select(.kind=="user" or .kind=="assistant_delta") |
-          {id:($run+"/chat/"+(input_line_number|tostring)),kind:.kind,title:(if .kind=="user" then "You" else "Assistant" end),text:.text,run:$run,order:[.time,input_line_number]}' "$tmp/logs/$run/conversation.jsonl" >> "$tmp/reference-rows"
+        jq -Rc --arg run "$run" --arg agent "$(jq -r '.session.title // "Assistant"' <<< "$records")" 'fromjson? | select(.kind=="user" or .kind=="assistant_delta") |
+          {id:($run+"/chat/"+(input_line_number|tostring)),kind:.kind,title:(if .kind=="user" then "You" else $agent end),text:.text,run:$run,order:[.time,input_line_number]}' "$tmp/logs/$run/conversation.jsonl" >> "$tmp/reference-rows"
     done
     jq -sc --argjson records "$records" --argjson limit "$limit" 'sort_by(.order,.id) |
       reduce .[] as $entry ([]; if ($entry.kind|endswith("_delta")) and length>0 and .[-1].kind==$entry.kind and .[-1].run==$entry.run then .[-1].text += $entry.text else .+[$entry] end) |
@@ -32,6 +32,16 @@ check() {
 printf '%s\n' '{"kind":"assistant_delta","text":"first","time":1}' > "$tmp/logs/r1/conversation.jsonl"
 printf '%s\n' '{"kind":"user","text":"input","time":2}' > "$tmp/logs/r2/conversation.jsonl"
 check 'cold projection preserves interleaved runs and mail'
+[[ $(cached | jq -r '[.entries[] | select(.kind=="assistant_delta") | .title] | unique | join(",")') == Maki ]] || {
+    echo 'FAIL: native transcript uses the attached agent title'; exit 1;
+}
+printf 'PASS: native transcript uses the attached agent title\n'
+records=$(jq -c '.session.title="Violet"' <<< "$records")
+check 'renamed attached agent rebuilds cached transcript titles'
+[[ $(cached | jq -r '[.entries[] | select(.kind=="assistant_delta") | .title] | unique | join(",")') == Violet ]] || {
+    echo 'FAIL: cached transcript refreshes renamed agent titles'; exit 1;
+}
+printf 'PASS: cached transcript refreshes renamed agent titles\n'
 check 'unchanged refresh is identical'
 printf '%s\n' '{"kind":"assistant_delta","text":"later","time":3}' >> "$tmp/logs/r1/conversation.jsonl"
 check 'append does not merge across another speaker or mail'

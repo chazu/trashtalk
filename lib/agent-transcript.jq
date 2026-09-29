@@ -9,7 +9,7 @@ def native:
   [$seq,.line] as $order |
   if $stream == "stderr" then entry($id + "/stderr"; "error"; "Diagnostics"; $x; $order)
   elif ($x|type) != "object" then entry($id; "output"; "Output"; $x; $order)
-  elif $x.ev == "text_delta" then entry($id; "assistant_delta"; "Assistant"; $x.text; $order)
+  elif $x.ev == "text_delta" then entry($id; "assistant_delta"; $agent; $x.text; $order)
   elif $x.ev == "reasoning_delta" then entry($id; "reasoning_delta"; "Reasoning"; $x.text; $order)
   elif $x.ev == "tool_start" or $x.ev == "tool_exec" then entry($id; "tool"; ($x.name // "Tool"); ($x.ev + " " + ($x.call_id // "")); $order)
   elif $x.ev == "tool_input_delta" then entry($id; "tool_input_delta"; "Tool input"; $x.delta; $order)
@@ -19,17 +19,17 @@ def native:
   elif $x.type == "turn.failed" then entry($id; "error"; "Turn failed"; $x.error.message; $order)
   elif ($x.type == "item.completed" or $x.type == "item.started" or $x.type == "item.updated") then
     $x.item as $item |
-    if $item.type == "agent_message" then entry($id; "assistant"; "Assistant"; $item.text; $order)
+    if $item.type == "agent_message" then entry($id; "assistant"; $agent; $item.text; $order)
     elif $item.type == "reasoning" then entry($id; "reasoning"; "Reasoning"; $item.text; $order)
     elif $item.type == "command_execution" then entry($id; "tool"; ($item.command // "Command"); ($item.aggregated_output // $item.status); $order)
     elif $item.type == "file_change" then entry($id; "tool"; "File changes"; ($item.changes|tojson); $order)
     else empty end
   elif $x.type == "assistant" then
     ($x.message.content // [] | to_entries[]) as $part |
-    if $part.value.type == "text" then entry($id + "/" + ($part.key|tostring); "assistant"; "Assistant"; $part.value.text; $order)
+    if $part.value.type == "text" then entry($id + "/" + ($part.key|tostring); "assistant"; $agent; $part.value.text; $order)
     elif $part.value.type == "tool_use" then entry($id + "/" + ($part.key|tostring); "tool"; $part.value.name; ($part.value.input|tojson); $order)
     else empty end
-  elif $x.type == "stream_event" and $x.event.delta.type == "text_delta" then entry($id; "assistant_delta"; "Assistant"; $x.event.delta.text; $order)
+  elif $x.type == "stream_event" and $x.event.delta.type == "text_delta" then entry($id; "assistant_delta"; $agent; $x.event.delta.text; $order)
   elif $x.type == "result" then entry($id; "status"; "Run result"; ($x.result // $x.subtype); $order)
   elif $profile == "shell" then entry($id; "output"; "Output"; ($x|tojson); $order)
   else empty end;

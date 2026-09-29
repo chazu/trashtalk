@@ -9,23 +9,24 @@ cat > "$scratch/records.json"
 # Uncached callers use exactly the same projection with disposable state.
 [[ -n "$cache" ]] || cache="$scratch/cache"
 mkdir -p "$cache"
-key=$(jq -c --arg root "$root" --argjson limit "$limit" '{session:.session.id,root:$root,limit:$limit}' "$scratch/records.json")
+key=$(jq -c --arg root "$root" --argjson limit "$limit" '{session:.session.id,title:(.session.title // "Assistant"),root:$root,limit:$limit}' "$scratch/records.json")
+agent_title=$(jq -r '.session.title // "Assistant"' "$scratch/records.json")
 printf '{}\n' > "$scratch/previous.json"
 if [[ -f "$cache/state.json" ]] && jq -e --argjson key "$key" '
     .schema_version==1 and .key==$key and (.files|type)=="object"
     and (.entries|type)=="array" and (.rows|type)=="array"' "$cache/state.json" >/dev/null 2>&1; then
     cp "$cache/state.json" "$scratch/previous.json"
 fi
-jq -c --arg mode rows --arg run '' --argjson seq 0 --arg profile '' --arg stream '' \
+jq -c --arg mode rows --arg run '' --argjson seq 0 --arg profile '' --arg stream '' --arg agent "$agent_title" \
     -f "$base/agent-transcript.jq" "$scratch/records.json" > "$scratch/rows.jsonl"
 force=$(jq -ns --slurpfile previous "$scratch/previous.json" --slurpfile rows "$scratch/rows.jsonl" \
     'if $previous[0].rows==$rows then 0 else 1 end')
 for attempt in 1 2; do
     perl "$base/transcript-files.pl" "$scratch/records.json" "$scratch/previous.json" "$root" "$force" \
         "$scratch/lines" "$scratch/manifest.json"
-    jq -Rc 'split("\t") | .[0] as $run | (.[1]|tonumber) as $line | (.[2:]|join("\t")|fromjson?)
+    jq -Rc --arg agent "$agent_title" 'split("\t") | .[0] as $run | (.[1]|tonumber) as $line | (.[2:]|join("\t")|fromjson?)
       | select(.kind=="user" or .kind=="assistant_delta")
-      | {id:($run+"/chat/"+($line|tostring)),kind:.kind,title:(if .kind=="user" then "You" else "Assistant" end),
+      | {id:($run+"/chat/"+($line|tostring)),kind:.kind,title:(if .kind=="user" then "You" else $agent end),
          text:.text,run:$run,order:[.time,$line]}' "$scratch/lines" > "$scratch/additions.jsonl"
     jq -nc --argjson cache_key "$key" --argjson limit "$limit" \
         --slurpfile previous "$scratch/previous.json" --slurpfile manifest "$scratch/manifest.json" \

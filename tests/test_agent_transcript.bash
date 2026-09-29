@@ -15,6 +15,9 @@ project() { bash "$root/lib/agent-transcript.bash" 400; }
 result=$(jq -cn '{session:{id:"s",title:"Gusgus"},has_earlier:0,rows:[{id:"r",seq:1,data:{class:"Agent::Run",state:"running",backendProfile:"jcode",outputLog:"/not/read"}}]}' | project)
 check 'run logs are absent from the conversation projection' 0 "$(jq '.entries|length' <<< "$result")"
 
+native=$(printf '1\t{"ev":"text_delta","text":"Hello"}\n' | jq -Rc --arg mode native --arg run r --argjson seq 0 --arg profile jcode --arg stream stdout --arg agent Maki -f "$root/lib/agent-transcript.jq")
+check 'native agent events use the attached agent title' Maki "$(jq -r .title <<< "$native")"
+
 result=$(jq -cn '{session:{id:"s",title:"Gusgus"},has_earlier:0,rows:[
   {id:"from-human",seq:1,data:{class:"Message",from:"chazu",to:"session:s",created:"now",subject:"",body:"Hello Gusgus"}},
   {id:"from-agent",seq:2,data:{class:"Message",from:"session:s",to:"chazu",created:"now",subject:"",body:"Hello Chazu"}},
