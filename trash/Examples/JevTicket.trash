@@ -1,0 +1,15 @@
+# Minimal Jev example: three typed questions in one request.
+package: Examples
+
+JevTicket subclass: Object
+  classMethod: assess: ticket [
+    | questions |
+    questions := #{
+      team: #{type: "choice" instructions: "Which team should handle this ticket?"
+              criteria: #{billing: "Payments and refunds" technical: "Broken functionality" account: "Login and profile changes"}}
+      urgency: #{type: "score" instructions: "How urgent is this ticket?"
+                 criteria: #("Routine, no deadline" "Needs attention soon" "Blocked now or has an explicit deadline")}
+      refund: #{type: "noul" instructions: "Is the customer asking for money back?"}
+    } asJson.
+    ^ @ OpenRouter::Jev decide: ticket questions: questions
+  ]

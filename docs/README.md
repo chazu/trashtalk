@@ -28,7 +28,7 @@ implemented contracts from designs and historical evidence.
 
 - [jq replacement research](jq-replacement-research.md): jaq-first compiler-only evaluation and qj risk assessment.
 - [Protocol fortification plan](protocol-fortification-plan.md): implemented build validation, shared structural checks, and ordinary-send equivalence guard.
-- [System 1 model routing](system-1-model-routing.md): proposed LiteLLM and HAProxy routing for Jev-compatible fast models, isolated from the existing agentic surface.
+- [Jev via OpenRouter](system-1-model-routing.md): working Decisions API proof of concept with typed questions and a runnable Trashtalk example.
 - [Agent conversation improvements](agent-ui-future-improvements.md): Gusgus conversation creation is implemented; automatic dismissal (M, provisional) and detached-conversation notifications (L) remain parked.
 - [Workstation event implementation plan](workstation-event-attention-implementation-plan.md): detailed phases and Phase 0 to 2 task and acceptance gates.
 - [Workstation event, attention, and delegated-action layer](workstation-event-attention-delegation.md): proposed durable local subscriptions, grouped attention, and safely bounded delegated effects.

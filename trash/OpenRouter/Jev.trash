@@ -1,0 +1,75 @@
+# Jev's structured Decisions API, explicitly through OpenRouter.
+package: OpenRouter
+
+Jev subclass: Object
+  classMethod: model [
+    ^ 'typesafe/jev-1.13'
+  ]
+
+  # State is text; questions is an encoded JSON object of typed questions.
+  # Return the provider response intact: answers, served model, id and usage.
+  classMethod: decide: state questions: questions [
+    | model request trimmed |
+    trimmed := state trimmed.
+    trimmed isEmpty ifTrue: [^ @ Require reject: 'Jev state must be nonempty text'].
+    model := @ self model.
+    request := #{model: model state: state questions: (questions jsonValue)} asJson.
+    ^ @ self request: request
+  ]
+
+  # Raw boundary: curl, protected temporary files, HTTP status and JSON schema
+  # checks. The subshell scopes cleanup and umask without changing the caller.
+  rawClassMethod: request: request [
+    (
+      local request="$1" api_key="${OPENROUTER_API_KEY:-}" tmp status curl_status
+      local key_pattern='^[a-zA-Z0-9_-]+$'
+      if [[ ! "$api_key" =~ $key_pattern ]]; then
+        _throw ConfigurationError 'A valid OPENROUTER_API_KEY is required'
+        return 1
+      fi
+      if ! jq -e '.questions | type == "object" and length > 0' <<< "$request" >/dev/null; then
+        _throw PreconditionError 'Jev questions must be a nonempty JSON object'
+        return 1
+      fi
+      umask 077
+      tmp=$(mktemp -d "${TMPDIR:-/tmp}/trashtalk-jev.XXXXXX") || return 1
+      trap 'rm -rf "$tmp"' EXIT
+      printf '%s' "$request" > "$tmp/request.json"
+      {
+        printf '%s\n' 'silent' 'show-error' 'request = "POST"'
+        printf '%s\n' 'url = "https://openrouter.ai/api/alpha/decisions"'
+        printf '%s\n' 'header = "Content-Type: application/json"'
+        printf 'header = "Authorization: Bearer %s"\n' "$api_key"
+      } > "$tmp/curl.conf"
+      if status=$(curl --disable --config "$tmp/curl.conf" --connect-timeout 5 --max-time 90 \
+          --data-binary "@$tmp/request.json" --output "$tmp/response.json" \
+          --write-out '%{http_code}' 2>"$tmp/error"); then
+        :
+      else
+        curl_status=$?
+        jq -cn --argjson code "$curl_status" --rawfile error "$tmp/error" \
+          '{outcome:"transport_error",exit_code:$code,stderr:$error}'
+        return 1
+      fi
+      if [[ "${status:0:1}" != 2 ]]; then
+        jq -cn --arg status "$status" --rawfile body "$tmp/response.json" \
+          '{outcome:"http_error",status:($status | tonumber),body:$body}'
+        return 1
+      fi
+      # A chat response or a missing answer must never look like success.
+      if ! jq -e --slurpfile request "$tmp/request.json" '
+          . as $response | (.error == null) and
+          (.answers | type == "object") and
+          all($request[0].questions | to_entries[];
+            . as $q | $response.answers[$q.key] |
+            .type == $q.value.type and
+            (if .type == "noul" then (.noul | type == "number")
+             elif .type == "choice" then (.choice | type == "string")
+             elif .type == "score" then (.score | type == "number")
+             else false end))' "$tmp/response.json" >/dev/null 2>&1; then
+        jq -cn --rawfile body "$tmp/response.json" '{outcome:"response_shape_error",body:$body}'
+        return 1
+      fi
+      cat "$tmp/response.json"
+    )
+  ]
