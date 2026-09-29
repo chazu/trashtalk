@@ -1,0 +1,21 @@
+# One stateless decision stage. Applications supply questions and may override
+# stateFor: and interpret:. Each decide: makes exactly one Jev request.
+JevDecision trait
+  classMethod: decide: input [
+    | state questions response answers value |
+    state := (@ self stateFor: input) ifFailed: [:error | @ error signal].
+    questions := (@ self questions) ifFailed: [:error | @ error signal].
+    response := (@ self evaluate: state questions: questions) ifFailed: [:error | @ error signal].
+    answers := response jsonAt: 'answers'.
+    value := (@ self interpret: answers) ifFailed: [:error | @ error signal].
+    ^ #{value: (value jsonValue) response: (response jsonValue)} asJson
+  ]
+
+  classMethod: stateFor: input [ ^ input ]
+  classMethod: interpret: answers [ ^ answers ]
+  classMethod: questions [ @ DecisionError signal: 'The application must supply questions' ]
+
+  # A single explicit provider boundary, also the seam for offline replay.
+  classMethod: evaluate: state questions: questions [
+    ^ @ OpenRouter::Jev decide: state questions: questions
+  ]

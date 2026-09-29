@@ -1,0 +1,4 @@
+package: Decision
+
+HTTP subclass: Object
+  classPrimitive: send: method to: url body: body credential: credential required: required timeout: seconds calls: trash_decision_http

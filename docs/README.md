@@ -6,6 +6,8 @@ implemented contracts from designs and historical evidence.
 
 ## Current guides
 
+- [Typed decisions: Jev and CLM](typed-decisions.md): shared stages and local/BC-250 targets.
+
 | Topic | Reference |
 | --- | --- |
 | Compiler, supported syntax, and tests | [Capabilities](COMPILER_CAPABILITIES.md), [compiler internals](../lib/jq-compiler/README.md) |
@@ -29,6 +31,7 @@ implemented contracts from designs and historical evidence.
 - [jq replacement research](jq-replacement-research.md): jaq-first compiler-only evaluation and qj risk assessment.
 - [Protocol fortification plan](protocol-fortification-plan.md): implemented build validation, shared structural checks, and ordinary-send equivalence guard.
 - [Jev via OpenRouter](system-1-model-routing.md): working Decisions API proof of concept with typed questions and a runnable Trashtalk example.
+- [Gmail Jev experiment](gmail-jev-experiment.md): read-only Gmail category and attention proposals using a shared decision trait.
 - [Agent conversation improvements](agent-ui-future-improvements.md): Gusgus conversation creation is implemented; automatic dismissal (M, provisional) and detached-conversation notifications (L) remain parked.
 - [Workstation event implementation plan](workstation-event-attention-implementation-plan.md): detailed phases and Phase 0 to 2 task and acceptance gates.
 - [Workstation event, attention, and delegated-action layer](workstation-event-attention-delegation.md): proposed durable local subscriptions, grouped attention, and safely bounded delegated effects.

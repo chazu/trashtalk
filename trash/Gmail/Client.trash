@@ -1,0 +1,64 @@
+package: Gmail
+
+# A read-only gws adapter. The CLI owns OAuth; no credentials enter the DSL.
+Client subclass: Tool
+  classMethod: name [ ^ 'gws' ]
+
+  classMethod: profile [
+    | argv |
+    argv := #('gws' 'gmail' 'users' 'getProfile' '--params' '{"userId":"me"}') asJson.
+    ^ @ Tool runArgvJson: argv
+  ]
+
+  classMethod: requireAccount: expected [
+    | profile actual |
+    profile := (@ self profile) ifFailed: [:error | @ error signal].
+    actual := profile jsonTextAt: 'emailAddress'.
+    (actual ~= expected) ifTrue: [@ GmailAccountError signal: 'gws account is ' , actual , '; expected ' , expected].
+    ^ actual
+  ]
+
+  classMethod: search: query limit: limit [
+    | params argv |
+    (@ self requireLimit: limit) ifFailed: [:error | @ error signal].
+    params := #{userId: 'me' q: query maxResults: (limit jsonValue)} asJson.
+    argv := #('gws' 'gmail' 'users' 'messages' 'list' '--params' params) asJson.
+    ^ @ Tool runArgvJson: argv
+  ]
+
+  classMethod: message: messageId [
+    | params argv raw |
+    (@ Require text: messageId) ifFailed: [:error | @ error signal].
+    params := #{userId: 'me' id: messageId format: 'full'} asJson.
+    argv := #('gws' 'gmail' 'users' 'messages' 'get' '--params' params) asJson.
+    raw := (@ Tool runArgvJson: argv) ifFailed: [:error | @ error signal].
+    ^ @ self normalize: raw
+  ]
+
+  classMethod: requireLimit: limit [
+    ^ @ Require member: limit of: '["1","2","3","4","5","6","7","8","9","10"]'
+  ]
+
+  # MIME/JSON boundary: traverse multipart bodies, decode base64url text, and
+  # bound content before it reaches a model. Never fetch attachment bodies.
+  # HTML is converted to text by a parser without rendering or fetching URLs.
+  rawClassMethod: normalize: message [
+    printf '%s' "$1" | jq -ce '
+      def header($name): [.payload.headers[]? |
+        select((.name | ascii_downcase) == $name) | .value][0] // "";
+      def textparts($mime):
+        if (.filename // "") != "" then empty
+        elif .mimeType == $mime and (.body.data // "") != "" then
+          .body.data | gsub("-"; "+") | gsub("_"; "/") |
+          . + ("=" * ((4 - (length % 4)) % 4)) | @base64d
+        else .parts[]? | textparts($mime) end;
+      if type != "object" or (.id | type) != "string" or .id == "" or .error != null
+      then error("Malformed Gmail message") else . end |
+      ([.payload | textparts("text/plain")] | join("\n")) as $plain |
+      (if $plain == "" then [.payload | textparts("text/html")] | join("\n") else "" end) as $html |
+      (if $plain != "" then $plain elif $html != "" then $html else (.snippet // "") end) as $body |
+      {id, threadId, from:header("from"), subject:header("subject"), date:header("date"),
+       body:$body, snippet:(.snippet // ""),
+       bodySource:(if $plain != "" then "text/plain" elif $html != "" then "text/html" else "snippet" end)}' |
+      perl "${TRASHTALK_DIR:-$HOME/.trashtalk}/lib/gmail-body.pl"
+  ]

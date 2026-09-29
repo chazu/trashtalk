@@ -1,0 +1,10 @@
+package: Decision
+
+Answer subclass: Object
+  # The DSL has integer arithmetic only. Keep finite [0,1] decimal comparison
+  # in one jq primitive; applications own thresholds and all branch policy.
+  rawClassMethod: probability: probability atLeast: threshold [
+    jq -cn --argjson p "$1" --argjson t "$2" '
+      if ([$p,$t] | all(.[]; type == "number" and . >= 0 and . <= 1))
+      then $p >= $t else error("Probability and threshold must be in [0,1]") end'
+  ]

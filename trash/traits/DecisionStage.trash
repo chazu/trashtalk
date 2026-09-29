@@ -1,0 +1,26 @@
+# One stateless typed-decision stage; applications own questions and interpretation.
+DecisionStage trait
+  classMethod: decide: input [
+    | target |
+    target := (@ Decision::Target selected) ifFailed: [:error | @ error signal].
+    ^ @ self decide: input using: target
+  ]
+
+  classMethod: decide: input using: target [
+    | state questions response answers value |
+    state := (@ self stateFor: input) ifFailed: [:error | @ error signal].
+    questions := (@ self questions) ifFailed: [:error | @ error signal].
+    response := (@ self evaluate: state questions: questions using: target) ifFailed: [:error | @ error signal].
+    answers := response jsonAt: 'answers'.
+    value := (@ self interpret: answers) ifFailed: [:error | @ error signal].
+    ^ #{value: (value jsonValue) response: (response jsonValue) execution: (target jsonValue)} asJson
+  ]
+
+  classMethod: stateFor: input [ ^ input ]
+  classMethod: interpret: answers [ ^ answers ]
+  classMethod: questions [ @ DecisionError signal: 'The application must supply questions' ]
+
+  # Explicit provider boundary and offline replay seam.
+  classMethod: evaluate: state questions: questions using: target [
+    ^ @ Decision::Target decide: state questions: questions using: target
+  ]

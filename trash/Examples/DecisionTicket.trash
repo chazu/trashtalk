@@ -1,0 +1,14 @@
+package: Examples
+
+DecisionTicket subclass: Object
+  include: DecisionStage
+
+  classMethod: questions [
+    ^ #{
+      team: #{type: 'choice' instructions: 'Which team handles this ticket?'
+              criteria: #{billing: 'Payments and refunds' technical: 'Broken software' account: 'Login and profile changes'}}
+      urgency: #{type: 'score' instructions: 'How urgent is this ticket?'
+                 criteria: #('Routine, no deadline' 'Needs attention soon' 'Blocked or an imminent deadline')}
+      refund: #{type: 'noul' instructions: 'Is the customer asking for money back?'}
+    } asJson
+  ]

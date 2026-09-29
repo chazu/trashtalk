@@ -1,0 +1,13 @@
+package: Decision
+
+# Temporary JSON values; question construction never creates persisted objects.
+Question subclass: Object
+  classMethod: choice: instructions among: options [
+    ^ #{type: 'choice' instructions: instructions criteria: (options jsonValue)} asJson
+  ]
+  classMethod: score: instructions on: levels [
+    ^ #{type: 'score' instructions: instructions criteria: (levels jsonValue)} asJson
+  ]
+  classMethod: probability: proposition [
+    ^ #{type: 'noul' instructions: proposition} asJson
+  ]

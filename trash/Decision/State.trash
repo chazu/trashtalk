@@ -1,0 +1,13 @@
+package: Decision
+
+State subclass: Object
+  # Explicit JSON-to-readable-text conversion; providers never guess whether
+  # a string is encoded JSON. jq owns JSON traversal, not application policy.
+  rawClassMethod: textFromJson: json [
+    jq -er '
+      def text:
+        if type == "object" then to_entries | map(.key + ": " + (.value|text)) | join("\n")
+        elif type == "array" then map("- " + text) | join("\n")
+        elif type == "string" then . else tostring end;
+      text' <<< "$1"
+  ]

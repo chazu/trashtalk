@@ -1,0 +1,34 @@
+package: CLM
+
+# The same HTTP client works with an encoder on this Mac or on a BC-250.
+Client subclass: Object
+  classMethod: decide: state questions: questions [
+    | target |
+    target := @ Decision::Target named: 'clm-local'.
+    ^ @ self decide: state questions: questions using: target
+  ]
+
+  classMethod: decide: state questions: questions using: target [
+    | url model credential |
+    url := target jsonTextAt: 'url'.
+    model := target jsonTextAt: 'model'.
+    credential := target jsonTextAt: 'credential'.
+    url := url , '/v1/systemone'.
+    ^ @ Decision::Request decide: state questions: questions model: model endpoint: url credential: credential required: 'false'
+  ]
+
+  classMethod: ready: target [
+    | health url credential |
+    url := target jsonTextAt: 'url'.
+    url isEmpty ifTrue: [^ 'false'].
+    credential := target jsonTextAt: 'credential'.
+    url := url , '/health'.
+    health := (@ Decision::HTTP send: 'GET' to: url body: '' credential: credential required: 'false' timeout: 3) ifFailed: [^ 'false'].
+    ^ @ self health: health supports: (target jsonTextAt: 'model')
+  ]
+
+  # Health is a JSON protocol check, including the encoder and selected head.
+  rawClassMethod: health: health supports: model [
+    jq -c --arg model "$2" '.ok == true and .embedder == true and .mock != true and
+      (.models | type == "array" and index($model) != null)' <<< "$1"
+  ]

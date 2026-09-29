@@ -1,0 +1,53 @@
+package: Decision
+
+Request subclass: Object
+  classMethod: decide: state questions: questions model: model endpoint: endpoint credential: credential required: required [
+    | request |
+    request := #{model: model state: state questions: (questions jsonValue)} asJson.
+    (@ self validate: request) ifFailed: [:error | @ error signal].
+    ^ @ self send: request endpoint: endpoint credential: credential required: required
+  ]
+
+  # Preserve the transport's nonzero status AND its JSON error receipt across
+  # Bash capture. ifFailed: rethrows exceptions but does not forward that stdout.
+  rawClassMethod: send: request endpoint: endpoint credential: credential required: required [
+    local response
+    response=$(@ Decision::HTTP send: POST to: "$2" body: "$1" credential: "$3" required: "$4" timeout: 90) || {
+      printf '%s' "$response"; return 1;
+    }
+    @ Decision::Request response: "$response" for: "$1"
+  ]
+
+  # JSON schema checks are a jq boundary; no domain branching lives here.
+  rawClassMethod: validate: request [
+    jq -e '
+      (.state | type == "string" and test("\\S")) and
+      (.questions | type == "object" and length > 0 and all(.[];
+        (.instructions | type == "string" and test("\\S")) and
+        (if .type == "noul" then true
+         elif .type == "choice" then (.criteria | type == "object" and length >= 2)
+         elif .type == "score" then (.criteria | type == "array" and length >= 2)
+         else false end)))' <<< "$1" >/dev/null 2>&1 || {
+      _throw PreconditionError 'Expected nonempty state and typed decision questions'; return 1;
+    }
+  ]
+
+  rawClassMethod: response: response for: request [
+    if ! jq -e --argjson request "$2" '
+      def probability: type == "number" and . >= 0 and . <= 1;
+      . as $response | (.error == null) and (.answers | type == "object") and
+      all($request.questions | to_entries[];
+        . as $q | $response.answers[$q.key] |
+        .type == $q.value.type and
+        (if .type == "noul" then (.noul | probability)
+         elif .type == "choice" then (.choice as $c | $q.value.criteria | has($c))
+         elif .type == "score" then (.score | type == "number" and . >= 0 and . <= ($q.value.criteria | length)-1)
+         else false end) and
+        (if has("confidence") then (.confidence | probability) else true end) and
+        (if has("probabilities") then (.probabilities | type == "object" and all(.[]; probability)) else true end)
+      )' <<< "$1" >/dev/null 2>&1; then
+      jq -cn --arg body "$1" '{outcome:"response_shape_error",body:$body}'
+      return 1
+    fi
+    printf '%s\n' "$1"
+  ]

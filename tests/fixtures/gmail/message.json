@@ -1,0 +1,20 @@
+{
+  "id": "fixture-1",
+  "threadId": "thread-1",
+  "snippet": "A synthetic email for testing.",
+  "payload": {
+    "mimeType": "multipart/mixed",
+    "headers": [
+      {"name": "fRoM", "value": "Fixture Friend <friend@example.invalid>"},
+      {"name": "Subject", "value": "Dinner on Friday?"},
+      {"name": "Date", "value": "Mon, 28 Sep 2026 10:00:00 -0400"}
+    ],
+    "parts": [
+      {"mimeType": "multipart/alternative", "parts": [
+        {"mimeType": "text/plain", "body": {"data": "Q2FuIHlvdSBjb25maXJtIGRpbm5lciBvbiBGcmlkYXk_"}},
+        {"mimeType": "text/html", "body": {"data": "PHA-SFRNTCBhbHRlcm5hdGl2ZTwvcD4="}}
+      ]},
+      {"mimeType": "text/plain", "filename": "private.txt", "body": {"data": "QVRUQUNITUVOVCBTRUNSRVQ="}}
+    ]
+  }
+}
