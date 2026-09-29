@@ -1,503 +1,92 @@
-# Pure Trashtalk Patterns for Common Bash Idioms
+# DSL recipes
 
-**Status: DSL recipe reference.** For design choices and current domain examples,
-start with [The Way of Trashtalk](the-way-of-trashtalk.md).
+Use ordinary methods for control flow and domain behavior. These examples form
+one compilable class; the documentation smoke test checks their public results.
+See [LANGUAGE](../LANGUAGE.md) for syntax and
+[The Way of Trashtalk](the-way-of-trashtalk.md) for design idioms.
 
-Use `method:` for readable domain behavior with inferred field access. Keep
-`rawMethod:` at shell/process, filesystem, and serialization boundaries. Both
-compile to Bash; there is no native backend or fallback mode.
-
-## Loop Patterns
-
-### Bash: for loop with counter
-```bash
-# Bash
-for ((i=0; i<10; i++)); do
-  echo "Number: $i"
-done
-```
-
+<!-- smoke: recipes -->
 ```smalltalk
-# Trashtalk DSL
-method: countToTen [
-  | i |
-  i := 0.
-  [i < 10] whileTrue: [
-    @ Transcript print: i.
-    i := i + 1
+RecipeExamples subclass: Object
+  instanceVars: total:0
+
+  # Updating a field needs no _ivar/_ivar_set calls.
+  method: add: amount [
+    total := total + amount.
+    ^ total
   ]
-]
-```
 
-### Bash: iterating over array elements
-```bash
-# Bash
-for item in "${array[@]}"; do
-  process "$item"
-done
-```
-
-```smalltalk
-# Trashtalk DSL - use Array do:
-method: processAll [
-  @ items do: [:item |
-    @ self process: item
+  # The range excludes its upper bound. Accumulate in this method's shell.
+  classMethod: sumBelow: maximum [
+    | sum |
+    sum := 0.
+    1 to: maximum do: [:n | sum := sum + n].
+    ^ sum
   ]
-]
-```
 
-### Bash: while loop with condition
-```bash
-# Bash
-while [[ $count -lt $max ]]; do
-  ((count++))
-done
-```
-
-```smalltalk
-# Trashtalk DSL
-method: countUp [
-  [count < max] whileTrue: [
-    count := count + 1
+  # Printing multiple lines is intentional, so preserve every send's output.
+  classMethod: printRange [
+    pragma: stream
+    1 to: 4 do: [:n | @ Console print: n].
+    @ Console print: 'done'
   ]
-]
-```
 
-### Bash: repeat N times
-```bash
-# Bash
-for ((i=0; i<5; i++)); do
-  doWork
-done
-```
-
-```smalltalk
-# Trashtalk DSL
-method: doWorkFiveTimes [
-  5 timesRepeat: [
-    @ self doWork
+  classMethod: category: number [
+    (number > 0) and: [number < 10] ifTrue: [^ 'small positive'].
+    ^ 'other'
   ]
-]
-```
 
-### Bash: range iteration
-```bash
-# Bash
-for i in {1..10}; do
-  echo $i
-done
-```
-
-```smalltalk
-# Trashtalk DSL
-method: printOneToTen [
-  1 to: 10 do: [:i |
-    @ Transcript print: i
+  classMethod: label: text [
+    (text isEmpty) ifTrue: [^ 'unnamed'].
+    ^ text trimmed
   ]
-]
-```
 
----
-
-## Conditional Patterns
-
-### Bash: if-then
-```bash
-# Bash
-if [[ $value -gt 0 ]]; then
-  echo "positive"
-fi
-```
-
-```smalltalk
-# Trashtalk DSL
-method: checkPositive [
-  (value > 0) ifTrue: [
-    @ Transcript print: 'positive'
+  # Bind several fields in one JSON decode. Use jsonAt: for encoded JSON and
+  # jsonTextAt: for text when only one field is needed.
+  classMethod: describe: record [
+    record jsonUnpack: #('name' 'count') into: [:name :count |
+      ^ name , ': ' , count
+    ]
   ]
-]
-```
 
-### Bash: if-then-else
-```bash
-# Bash
-if [[ $x -eq $y ]]; then
-  echo "equal"
-else
-  echo "not equal"
-fi
-```
-
-```smalltalk
-# Trashtalk DSL
-method: compareXY [
-  (x = y) ifTrue: [
-    @ Transcript print: 'equal'
-  ] ifFalse: [
-    @ Transcript print: 'not equal'
+  classMethod: status: name [
+    ^ name caseOf: {
+      'ready' -> ['Ready to run'].
+      #('failed' 'cancelled') -> ['Needs review']
+    } otherwise: ['Pending']
   ]
-]
-```
 
-### Bash: compound conditions (AND)
-```bash
-# Bash
-if [[ $a -gt 0 && $b -gt 0 ]]; then
-  echo "both positive"
-fi
-```
-
-```smalltalk
-# Trashtalk DSL
-method: checkBothPositive [
-  (a > 0) and: [b > 0] ifTrue: [
-    @ Transcript print: 'both positive'
+  classMethod: requireName: name [
+    (name isEmpty) ifTrue: [@ InputError signal: 'A name is required'].
+    ^ name
   ]
-]
-```
 
-### Bash: compound conditions (OR)
-```bash
-# Bash
-if [[ $status = "done" || $status = "complete" ]]; then
-  echo "finished"
-fi
-```
-
-```smalltalk
-# Trashtalk DSL
-method: checkFinished [
-  (status = 'done') or: [status = 'complete'] ifTrue: [
-    @ Transcript print: 'finished'
+  classMethod: nameOrDefault: name [
+    ^ (@ self requireName: name) ifFailed: [^ 'anonymous']
   ]
-]
 ```
 
-### Bash: negation
-```bash
-# Bash
-if [[ ! -z "$value" ]]; then
-  process "$value"
-fi
-```
+For newline-separated IDs, `ids linesDo: [:id | @ id reload]` avoids splitting
+on spaces. For JSON arrays, use `arrayEach:`; for persistent Array objects, use
+`@ items do:`. Their collection and callback contracts are documented in
+[JSON values](json-values.md) and [LANGUAGE](../LANGUAGE.md#array-class).
+
+Use `ifFailed:` when subsequent work depends on a send succeeding. A handler
+can return a fallback or re-raise with `[:error | @ error signal]`. Failed
+process commands may instead return a result record: inspect that API's exit
+code contract rather than assuming all nonempty output means success.
+
+Keep unavoidable shell code small and say why it is raw. For example, this
+method needs an external command and output redirection:
 
 ```smalltalk
-# Trashtalk DSL
-method: processIfNotEmpty [
-  (value notEmpty) ifTrue: [
-    @ self process: value
-  ]
+rawClassMethod: write: data to: path [
+  printf '%s' "$1" > "$2"
 ]
 ```
 
----
-
-## String Patterns
-
-### Bash: empty string check
-```bash
-# Bash
-if [[ -z "$str" ]]; then
-  echo "empty"
-fi
-```
-
-```smalltalk
-# Trashtalk DSL
-method: checkEmpty [
-  (str isEmpty) ifTrue: [
-    @ Transcript print: 'empty'
-  ]
-]
-```
-
-### Bash: non-empty string check
-```bash
-# Bash
-if [[ -n "$str" ]]; then
-  process "$str"
-fi
-```
-
-```smalltalk
-# Trashtalk DSL
-method: processIfPresent [
-  (str notEmpty) ifTrue: [
-    @ self process: str
-  ]
-]
-```
-
-### Bash: string comparison
-```bash
-# Bash
-if [[ "$a" = "$b" ]]; then
-  echo "match"
-fi
-```
-
-```smalltalk
-# Trashtalk DSL
-method: compareStrings [
-  (a = b) ifTrue: [
-    @ Transcript print: 'match'
-  ]
-]
-```
-
-### Bash: pattern matching
-```bash
-# Bash
-if [[ "$str" =~ ^[0-9]+$ ]]; then
-  echo "is number"
-fi
-```
-
-```smalltalk
-# Trashtalk DSL
-method: checkIsNumber [
-  (str matches: '^[0-9]+$') ifTrue: [
-    @ Transcript print: 'is number'
-  ]
-]
-```
-
----
-
-## Array/Collection Patterns
-
-### Bash: get array length
-```bash
-# Bash
-len=${#array[@]}
-```
-
-```smalltalk
-# Trashtalk DSL
-method: getLength [
-  | len |
-  len := items arrayLength.
-  ^ len
-]
-```
-
-### Bash: get element at index
-```bash
-# Bash
-value="${array[$i]}"
-```
-
-```smalltalk
-# Trashtalk DSL
-method: getAt: index [
-  ^ items arrayAt: index
-]
-```
-
-### Bash: set element at index
-```bash
-# Bash
-array[$i]="$value"
-```
-
-```smalltalk
-# Trashtalk DSL
-method: at: index put: value [
-  items := items arrayAt: index put: value
-]
-```
-
-### Bash: append to array
-```bash
-# Bash
-array+=("$value")
-```
-
-```smalltalk
-# Trashtalk DSL
-method: add: value [
-  items := items arrayPush: value
-]
-```
-
-### Bash: transform array (map)
-```bash
-# Bash
-result=()
-for item in "${array[@]}"; do
-  result+=("$(transform "$item")")
-done
-```
-
-```smalltalk
-# Trashtalk DSL
-method: transformAll [
-  ^ @ items collect: [:item |
-    @ self transform: item
-  ]
-]
-```
-
-### Bash: filter array
-```bash
-# Bash
-result=()
-for item in "${array[@]}"; do
-  if [[ $(test "$item") = "true" ]]; then
-    result+=("$item")
-  fi
-done
-```
-
-```smalltalk
-# Trashtalk DSL
-method: filterValid [
-  ^ @ items select: [:item |
-    @ self isValid: item
-  ]
-]
-```
-
-### Bash: reduce/fold array
-```bash
-# Bash
-sum=0
-for item in "${array[@]}"; do
-  sum=$((sum + item))
-done
-```
-
-```smalltalk
-# Trashtalk DSL
-method: sum [
-  ^ @ items inject: 0 into: [:acc :item |
-    acc + item
-  ]
-]
-```
-
----
-
-## Instance Variable Patterns
-
-### Bash: get instance variable
-```bash
-# Bash (in rawMethod)
-value="$(_ivar myVar)"
-```
-
-```smalltalk
-# Trashtalk DSL - automatic inference
-method: getValue [
-  ^ myVar + 0
-]
-# Compiles to: echo "$(_ivar myVar)"
-```
-
-### Bash: set instance variable
-```bash
-# Bash (in rawMethod)
-_ivar_set myVar "$newValue"
-```
-
-```smalltalk
-# Trashtalk DSL - automatic inference
-method: setValue: val [
-  myVar := val + 0
-]
-# Compiles to: _ivar_set myVar "$val"
-```
-
----
-
-## Block Patterns
-
-### Bash: callback/closure
-```bash
-# Bash - complex, requires eval
-eval "$callback \"$arg\""
-```
-
-```smalltalk
-# Trashtalk DSL
-method: executeWith: arg [
-  @ callback valueWith: arg
-]
-```
-
-### Bash: two-argument callback
-```bash
-# Bash
-eval "$callback \"$arg1\" \"$arg2\""
-```
-
-```smalltalk
-# Trashtalk DSL
-method: executeWithBoth: a and: b [
-  @ callback valueWith: a and: b
-]
-```
-
----
-
-## Return Value Patterns
-
-### Bash: return string
-```bash
-# Bash
-echo "$result"
-return
-```
-
-```smalltalk
-# Trashtalk DSL
-method: getResult [
-  ^ result
-]
-```
-
-### Bash: return computed value
-```bash
-# Bash
-echo "$((a + b))"
-return
-```
-
-```smalltalk
-# Trashtalk DSL
-method: addAB [
-  ^ a + b
-]
-```
-
----
-
-## When rawMethod is Required
-
-Some patterns cannot be expressed in pure Trashtalk and require `rawMethod:`:
-
-1. **Heredocs**: Shell input redirection; use DSL triple strings for multiline values
-2. **File I/O redirection**: `>`, `>>`, `<`
-3. **Process substitution**: `<(...)`, `>(...)`
-4. **Complex pipes**: Multi-stage pipelines
-5. **Trap handlers**: Signal handling
-6. **Direct shell features**: `eval`, `exec`, complex quoting
-
-Example:
-```smalltalk
-rawMethod: writeToFile: path contents: data [
-  local path="$1" data="$2"
-  printf '%s' "$data" > "$path"
-]
-```
-
----
-
-See [compiler capabilities](COMPILER_CAPABILITIES.md) for the supported surface.
-
-## Choosing a boundary
-
-Prefer DSL control flow, collection messages, and inferred field access where
-they clearly express the operation. Use a Tool wrapper for external commands.
-Performance claims require measurements of a representative public workflow;
-changing `rawMethod:` to `method:` alone does not establish a speedup.
+Prefer an existing `File`, `Process`, or Tool message when it already provides
+the operation. Heredocs, traps, process substitution, and external command
+pipelines remain Bash boundaries. DSL triple strings handle multiline values
+without a heredoc. Converting raw code to DSL alone does not establish a
+performance improvement; measure the public workflow.

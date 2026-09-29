@@ -15,8 +15,8 @@ Junk subclass: Object
   classMethod: interpret: answers [
     | probability high possible suggestion |
     probability := answers jsonAt: 'junk.noul'.
-    high := (@ Decision::Answer probability: probability atLeast: '0.9') ifFailed: [:error | @ error signal].
-    possible := (@ Decision::Answer probability: probability atLeast: '0.2') ifFailed: [:error | @ error signal].
+    high := (@ Decision::Answer probability: probability atLeast: '0.9') ifFailed: [:error | ^ @ Decision::Request failure: error].
+    possible := (@ Decision::Answer probability: probability atLeast: '0.2') ifFailed: [:error | ^ @ Decision::Request failure: error].
     suggestion := 'uncertain'.
     (possible = 'false') ifTrue: [suggestion := 'likely_keep'].
     (high = 'true') ifTrue: [suggestion := 'likely_junk'].
@@ -30,14 +30,14 @@ Junk subclass: Object
 
   classMethod: assess: message examples: examples [
     | target |
-    target := (@ Decision::Target selected) ifFailed: [:error | @ error signal].
+    target := (@ Decision::Target selected) ifFailed: [:error | ^ @ Decision::Request failure: error].
     ^ @ self assess: message examples: examples using: target
   ]
 
   classMethod: assess: message examples: examples using: target [
     | context decision suggestion probability partial reason |
     context := #{email: (message jsonValue) preferenceExamples: (examples jsonValue)} asJson.
-    decision := (@ self decide: context using: target) ifFailed: [:error | @ error signal].
+    decision := (@ self decide: context using: target) ifFailed: [:error | ^ @ Decision::Request failure: error].
     suggestion := decision jsonTextAt: 'value.suggestion'.
     probability := decision jsonAt: 'value.junkProbability'.
     partial := 'false'.
@@ -62,6 +62,6 @@ Junk subclass: Object
 
   classMethod: assessMessage: messageId examples: examples [
     | message |
-    message := (@ Gmail::Client message: messageId) ifFailed: [:error | @ error signal].
+    message := (@ Gmail::Client message: messageId) ifFailed: [:error | ^ @ Decision::Request failure: error].
     ^ @ self assess: message examples: examples
   ]

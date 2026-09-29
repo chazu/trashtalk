@@ -60,7 +60,9 @@ fail_send() {
   local rc=0
   "$@" > "$scratch/failed.out" 2> "$scratch/failed.err" || rc=$?
   [[ $rc != 0 ]] || { echo 'FAIL: expected failed send'; exit 1; }
-  check 'failure does not emit a successful proposal' '' "$(cat "$scratch/failed.out")"
+  if [[ -s "$scratch/failed.out" ]]; then
+    jq -e '(.outcome | IN("http_error", "transport_error", "response_shape_error")) and (has("value") | not)' "$scratch/failed.out" >/dev/null
+  fi
 }
 check 'verifies selected account' fixture@example.invalid "$(@ Gmail::Client requireAccount: fixture@example.invalid)"
 fail_send @ Gmail::Client requireAccount: wrong@example.invalid

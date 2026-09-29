@@ -72,6 +72,9 @@ run_one_test() {
     local output exit_code=0
     output=$(timeout "$TIMEOUT" bash "$RUNNER_DIR/test-isolated.bash" "$test_file" 2>&1) || exit_code=$?
 
+    if [[ "${TRASH_TEST_TRACE:-0}" == 1 ]]; then
+        printf '%s\n' "$output"
+    fi
     if [[ $exit_code -eq 124 ]]; then
         echo "TIMEOUT" > "$result_file"
         echo "=== $test_name === TIMEOUT (${TIMEOUT}s)"

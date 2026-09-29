@@ -461,7 +461,7 @@ value ifNotNil: [@ self process: value].
 [running] whileTrue: [@ self process].
 [count < max] whileFalse: [@ self wait].
 
-# Range iteration
+# Range iteration (upper bound excluded: prints 1 through 9)
 1 to: 10 do: [:i |
   @ Console print: i
 ].

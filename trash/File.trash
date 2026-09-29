@@ -12,6 +12,13 @@ File subclass: Object
     echo "$id"
   ]
 
+  # Filesystem allocation and empty-directory removal require OS primitives.
+  rawClassMethod: tempDirectory [
+    mktemp -d "${TMPDIR:-/tmp}/trashtalk.XXXXXX"
+  ]
+
+  classPrimitive: removeEmptyDirectory: path calls: _trash_remove_empty_directory
+
   # Create a temporary file with optional prefix
   # Usage: file=$(@ File temp)
   # Usage: file=$(@ File tempWithPrefix: "st-inspect-")

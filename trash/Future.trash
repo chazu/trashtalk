@@ -1,142 +1,77 @@
-# Future - Simple async computation with result retrieval
+# Future runs a Bash/Trashtalk computation with combined output.
+# Process and Tool own child lifetime, private files, and completion receipts.
 Future subclass: Object
-  instanceVars: command pid result_file status exit_code
+  instanceVars: command pid result_file status exit_code resultDirectory
 
-  # Create a future for a command (does not start it yet)
-  # Usage: future=$(@ Future for: '@ Counter expensiveCalculation')
-  rawClassMethod: for: command [
-    local future_id
-    future_id=$(_generate_instance_id Future)
-
-    # Set up result file paths
-    local result_dir="/tmp/trashtalk/futures"
-    mkdir -p "$result_dir"
-    local result_file="$result_dir/$future_id"
-
-    # Create instance with command stored but not yet running
-    _create_instance Future "$future_id"
-    @ "$future_id" setCommand "$command"
-    @ "$future_id" setResult_file "$result_file"
-    @ "$future_id" setStatus "created"
-    @ "$future_id" setExit_code ""
-    @ "$future_id" setPid ""
-
-    echo "$future_id"
+  classMethod: for: command [
+    | id directory |
+    directory := (@ File tempDirectory) ifFailed: [:error | @ error signal].
+    id := (@ self new) ifFailed: [:error | @ File removeEmptyDirectory: directory. @ error signal].
+    (@ Runtime assign: (#{command: command resultDirectory: directory
+      result_file: (directory , '/stdout.log') status: 'created'} asJson) to: id) ifFailed: [:error | @ File removeEmptyDirectory: directory. @ id delete. @ error signal].
+    ^ id
   ]
 
-  # Start the computation in background
-  # Returns the PID of the background process
-  rawMethod: start [
-    local cmd result_file exit_file
-    cmd=$(_ivar command)
-    result_file=$(_ivar result_file)
-    exit_file="${result_file}.exit"
-
-    # Run command in background subshell
-    (eval "$cmd" > "$result_file" 2>&1; echo $? > "$exit_file") &
-    local bg_pid=$!
-
-    _ivar_set pid "$bg_pid"
-    _ivar_set status "pending"
-
-    echo "$bg_pid"
+  method: start [
+    (status ~= 'created') ifTrue: [@ ProcessError signal: 'Future has already started'].
+    pid := (@ Process launch: command in: resultDirectory combined: 'true') ifFailed: [:error | @ error signal].
+    status := 'pending'.
+    ^ pid
   ]
 
-  # Block until the computation completes, return result
-  rawMethod: await [
-    local pid result_file exit_file
-    pid=$(_ivar pid)
-    result_file=$(_ivar result_file)
-    exit_file="${result_file}.exit"
-
-    # Wait for process to complete
-    wait "$pid" 2>/dev/null
-
-    # Read exit code and update status
-    local exit_code
-    exit_code=$(cat "$exit_file" 2>/dev/null || echo "1")
-    _ivar_set exit_code "$exit_code"
-
-    if [[ "$exit_code" == "0" ]]; then
-      _ivar_set status "completed"
-    else
-      _ivar_set status "failed"
-    fi
-
-    # Return result
-    cat "$result_file"
+  method: await [
+    (status = 'created') ifTrue: [@ ProcessError signal: 'Future has not started'].
+    exit_code := (@ Process waitFor: pid in: resultDirectory) ifFailed: [:error | @ error signal].
+    (status ~= 'cancelled') ifTrue: [
+      status := 'failed'.
+      (exit_code = '0') ifTrue: [status := 'completed']
+    ].
+    ^ @ File read: result_file
   ]
 
-  # Check if computation is done without blocking
-  rawMethod: poll [
-    local pid
-    pid=$(_ivar pid)
+  method: poll [ ^ @ self status ]
 
-    if kill -0 "$pid" 2>/dev/null; then
-      echo "pending"
-    else
-      # Process finished, update status
-      @ "$_RECEIVER" await >/dev/null
-      echo "$(_ivar status)"
-    fi
-  ]
-
-  # Check if done (returns 0 if done, 1 if pending)
+  # Shell predicate contract: isDone returns an exit status, not boolean text.
   rawMethod: isDone [
-    local pid
-    pid=$(_ivar pid)
-    ! kill -0 "$pid" 2>/dev/null
+    local state
+    state=$(@ "$_RECEIVER" status) || return
+    [[ "$state" == completed || "$state" == failed || "$state" == cancelled ]]
   ]
 
-  # Cancel the computation
-  rawMethod: cancel [
-    local pid
-    pid=$(_ivar pid)
-
-    if kill -0 "$pid" 2>/dev/null; then
-      kill -TERM "$pid" 2>/dev/null
-      sleep 0.1
-      kill -KILL "$pid" 2>/dev/null
-      _ivar_set status "cancelled"
-      echo "Cancelled"
-    else
-      echo "Already completed"
-    fi
+  method: cancel [
+    | current |
+    current := (@ self status) ifFailed: [:error | @ error signal].
+    (current ~= 'pending') ifTrue: [^ 'Already completed'].
+    (@ Process signal: pid in: resultDirectory with: 'TERM') ifFailed: [:error | @ error signal].
+    @ Time sleep: '0.1'.
+    (@ Process signal: pid in: resultDirectory with: 'KILL') ifFailed: [:error | @ error signal].
+    (@ self await) ifFailed: [:error | @ error signal].
+    status := 'cancelled'.
+    ^ 'Cancelled'
   ]
 
-  # Get current status
-  rawMethod: status [
-    local pid status
-    status=$(_ivar status)
-    pid=$(_ivar pid)
-
-    # Update status if process finished
-    if [[ "$status" == "pending" ]] && ! kill -0 "$pid" 2>/dev/null; then
-      @ "$_RECEIVER" await >/dev/null
-      status=$(_ivar status)
-    fi
-
-    echo "$status"
+  method: status [
+    (status = 'pending') ifTrue: [
+      ((resultDirectory , '/exit') fileExists) ifTrue: [(@ self await) ifFailed: [:error | @ error signal] ] ifFalse: [
+        ((@ Process alive: pid in: resultDirectory) = 'false') ifTrue: [(@ self await) ifFailed: [:error | @ error signal] ]
+      ]
+    ].
+    ^ status
   ]
 
-  # Get exit code (empty if still pending)
-  method: exitCode [
-    ^ exit_code
-  ]
+  method: exitCode [ ^ exit_code ]
 
-  # Clean up resources
-  rawMethod: cleanup [
-    local result_file
-    result_file=$(_ivar result_file)
-    rm -f "$result_file" "${result_file}.exit" 2>/dev/null
-    @ "$_RECEIVER" delete
+  method: cleanup [
+    (status = 'pending') ifTrue: [(@ self cancel) ifFailed: [:error | @ error signal] ].
+    (@ Process cleanupDirectory: resultDirectory) ifFailed: [:error | @ error signal].
+    @ self delete
   ]
 
   # Show help
   rawClassMethod: help [
     echo "=== Future - Async Computation ==="
     echo ""
-    echo "Usage (two-call pattern - recommended):"
+    echo "Usage:"
     echo "  future=\$(@ Future for: 'command')   # Create future"
     echo "  @ \$future start                     # Start background process"
     echo "  result=\$(@ \$future await)          # Get result"

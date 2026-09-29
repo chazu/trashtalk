@@ -11,7 +11,7 @@ fi
 
 # Source shared test helper for standalone execution
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/test_helper.bash"
+source "$SCRIPT_DIR/helper.bash"
 
 DRIVER="$COMPILER_DIR/driver.bash"
 TMPFILE="/tmp/test_codegen_$$.trash"
@@ -164,7 +164,7 @@ INPUT_RETURN='Counter subclass: Object
   ]'
 
 run_test "return becomes echo" "true" \
-    "$(compile_contains "$INPUT_RETURN" 'echo 42')"
+    "$(compile_contains "$INPUT_RETURN" 'echo "42"; return')"
 
 INPUT_RETURN_VAR='Counter subclass: Object
   method: test [
@@ -173,7 +173,7 @@ INPUT_RETURN_VAR='Counter subclass: Object
   ]'
 
 run_test "return var" "true" \
-    "$(compile_contains "$INPUT_RETURN_VAR" 'echo $x')"
+    "$(compile_contains "$INPUT_RETURN_VAR" 'echo "$x"; return')"
 
 # ------------------------------------------------------------------------------
 # Self Transformation Tests
@@ -211,7 +211,7 @@ INPUT_ASSIGN='Counter subclass: Object
   ]'
 
 run_test "assignment := to =" "true" \
-    "$(compile_contains "$INPUT_ASSIGN" 'x=5')"
+    "$(compile_contains "$INPUT_ASSIGN" 'x="5"')"
 
 INPUT_ASSIGN_EXPR='Counter subclass: Object
   method: test [
@@ -220,7 +220,7 @@ INPUT_ASSIGN_EXPR='Counter subclass: Object
   ]'
 
 run_test "assignment with subshell" "true" \
-    "$(compile_contains "$INPUT_ASSIGN_EXPR" 'x=$(echo hello)')"
+    "$(compile_contains "$INPUT_ASSIGN_EXPR" 'x="$(echo hello)"')"
 
 # ------------------------------------------------------------------------------
 # Message Send Transformation Tests
@@ -275,7 +275,7 @@ INPUT_SUBSHELL='Counter subclass: Object
   ]'
 
 run_test "subshell preserved" "true" \
-    "$(compile_contains "$INPUT_SUBSHELL" 'x=$(@ $_RECEIVER getValue)')"
+    "$(compile_contains "$INPUT_SUBSHELL" 'x="$(@ "$_RECEIVER" getValue)"')"
 
 INPUT_SUBSHELL_KW='Counter subclass: Object
   method: test [
@@ -284,7 +284,7 @@ INPUT_SUBSHELL_KW='Counter subclass: Object
   ]'
 
 run_test "subshell keyword transformed" "true" \
-    "$(compile_contains "$INPUT_SUBSHELL_KW" '$(@ Store getClass $id)')"
+    "$(compile_contains "$INPUT_SUBSHELL_KW" '$(@ Store getClass: $id)')"
 
 # ------------------------------------------------------------------------------
 # Raw Method Tests
@@ -332,28 +332,7 @@ INPUT_PATH='Counter subclass: Object
 run_test "path /dev/null" "true" \
     "$(compile_contains "$INPUT_PATH" '>/dev/null')"
 
-# ------------------------------------------------------------------------------
-# Negative Number Argument Tests — SKIPPED (known issue, see CLAUDE.md)
-# ------------------------------------------------------------------------------
-# Parser treats trailing `-N` after a single-arg keyword message as a separate
-# statement (e.g. `@ obj compare: 0 -1` becomes two lines: `compare: 0` and `-1`).
-# Fixing this requires either Smalltalk-style binary message precedence in the
-# expression parser, or changing keyword-arg boundary detection. Neither is a
-# small change. Re-enable these tests once that work is done.
-#
-# INPUT_NEG_ARG='Counter subclass: Object
-#   method: test [
-#     @ obj compare: 0 -1
-#   ]'
-# run_test "negative arg preserved (0 -1)" "true" \
-#     "$(compile_contains "$INPUT_NEG_ARG" '0 -1')"
-#
-# INPUT_NEG_TWO='Counter subclass: Object
-#   method: test [
-#     @ obj range: 5 -3
-#   ]'
-# run_test "negative arg preserved (5 -3)" "true" \
-#     "$(compile_contains "$INPUT_NEG_TWO" '5 -3')"
+# Negative argument behavior is covered by test_known_issues.bash.
 
 # Test that character class ranges still work (the original purpose of the gsub)
 INPUT_CHAR_CLASS='Counter subclass: Object
@@ -375,7 +354,7 @@ INPUT_NEG_ASSIGN='Counter subclass: Object
   ]'
 
 run_test "negative assignment preserved" "true" \
-    "$(compile_contains "$INPUT_NEG_ASSIGN" 'x=-5')"
+    "$(compile_contains "$INPUT_NEG_ASSIGN" 'x="-5"')"
 
 # ------------------------------------------------------------------------------
 # Heredoc Indentation Tests (Issue: EOF terminators were indented, breaking bash)
@@ -398,16 +377,16 @@ compile_has_unindented_line() {
     fi
 }
 
-# Test that heredoc terminator is not indented in normal method
+# Test that heredoc terminator is not indented in a raw method
 INPUT_HEREDOC_NORMAL='TestHeredoc subclass: Object
-  method: withHeredoc [
+  rawMethod: withHeredoc [
     cat << EOF
 content
 EOF
   ]'
 
 # The EOF must be at start of line (not indented)
-run_test "heredoc EOF not indented (method)" "true" \
+run_test "heredoc EOF not indented (rawMethod)" "true" \
     "$(compile_has_unindented_line "$INPUT_HEREDOC_NORMAL" 'EOF')"
 
 # Test that heredoc content is not indented
@@ -427,7 +406,7 @@ run_test "heredoc MARKER not indented (rawMethod)" "true" \
 
 # Test quoted heredoc marker
 INPUT_HEREDOC_QUOTED='TestHeredoc subclass: Object
-  method: quotedHeredoc [
+  rawMethod: quotedHeredoc [
     cat << '\''END'\''
 quoted content
 END
@@ -438,7 +417,7 @@ run_test "quoted heredoc END not indented" "true" \
 
 # Test multiple heredocs in one method
 INPUT_HEREDOC_MULTI='TestHeredoc subclass: Object
-  method: multiHeredoc [
+  rawMethod: multiHeredoc [
     cat << A
 first
 A
@@ -607,7 +586,7 @@ INPUT_NESTED_SELF='Counter subclass: Object
   ]'
 
 run_test "nested: self in subshell" "true" \
-    "$(compile_contains "$INPUT_NESTED_SELF" '$(@ $_RECEIVER getValue)')"
+    "$(compile_contains "$INPUT_NESTED_SELF" '$(@ "$_RECEIVER" getValue)')"
 
 # Test single keyword method inside subshell
 INPUT_NESTED_SINGLE='Counter subclass: Object
@@ -618,7 +597,7 @@ INPUT_NESTED_SINGLE='Counter subclass: Object
   ]'
 
 run_test "nested: single keyword in subshell" "true" \
-    "$(compile_contains "$INPUT_NESTED_SINGLE" '$(@ Store get key)')"
+    "$(compile_contains "$INPUT_NESTED_SINGLE" '$(@ Store get: key)')"
 
 # Test single keyword with quoted arg
 INPUT_NESTED_QUOTED='Counter subclass: Object
@@ -629,7 +608,7 @@ INPUT_NESTED_QUOTED='Counter subclass: Object
   ]'
 
 run_test "nested: keyword with quoted arg" "true" \
-    "$(compile_contains "$INPUT_NESTED_QUOTED" '$(@ Store getClass "$id")')"
+    "$(compile_contains "$INPUT_NESTED_QUOTED" '$(@ Store getClass: "$id")')"
 
 # Test 2-keyword method inside subshell
 INPUT_NESTED_MULTI='Counter subclass: Object
@@ -640,7 +619,7 @@ INPUT_NESTED_MULTI='Counter subclass: Object
   ]'
 
 run_test "nested: 2-keyword method in subshell" "true" \
-    "$(compile_contains "$INPUT_NESTED_MULTI" '$(@ $_RECEIVER get_from key dict)')"
+    "$(compile_contains "$INPUT_NESTED_MULTI" '$(@ "$_RECEIVER" get: key from: dict)')"
 
 # Test nested subshells (subshell within subshell)
 INPUT_NESTED_DEEP='Counter subclass: Object
@@ -651,10 +630,10 @@ INPUT_NESTED_DEEP='Counter subclass: Object
   ]'
 
 run_test "nested: outer 2-keyword method" "true" \
-    "$(compile_contains "$INPUT_NESTED_DEEP" 'at_put 1')"
+    "$(compile_contains "$INPUT_NESTED_DEEP" 'at: 1 put:')"
 
 run_test "nested: inner 2-keyword method" "true" \
-    "$(compile_contains "$INPUT_NESTED_DEEP" 'get_from key dict')"
+    "$(compile_contains "$INPUT_NESTED_DEEP" 'get: key from: dict')"
 
 run_test "nested: self transformed in both" "true" \
-    "$(compile_contains "$INPUT_NESTED_DEEP" '$(@ $_RECEIVER at_put')"
+    "$(compile_contains "$INPUT_NESTED_DEEP" '$(@ "$_RECEIVER" at:')"

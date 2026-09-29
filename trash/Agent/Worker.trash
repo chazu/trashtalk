@@ -300,16 +300,14 @@ Worker subclass: Object
 
   # Reconcile the active run if any; then dispatch pending work. Prints the id
   # of a newly started run, or nothing.
-  rawClassMethod: tickOwnedSession: sessionId [
-    local session="$1" run outcome
-    run=$(@ "$session" activeRun)
-    if [[ -n "$run" ]]; then
-      outcome=$(@ "$_RECEIVER" reconcileRun: "$run")
-      if [[ "$outcome" == running ]]; then
-        return 0
-      fi
-    fi
-    @ "$_RECEIVER" dispatchOwnedSession: "$session"
+  classMethod: tickOwnedSession: sessionId [
+    | run outcome |
+    run := (@ sessionId activeRun) ifFailed: [:error | @ error signal].
+    (run notEmpty) ifTrue: [
+      outcome := (@ self reconcileRun: run) ifFailed: [:error | @ error signal].
+      (outcome = 'running') ifTrue: [^ '']
+    ].
+    ^ @ self dispatchOwnedSession: sessionId
   ]
 
   # ------------------------------------------------------------------
@@ -317,124 +315,117 @@ Worker subclass: Object
   # ------------------------------------------------------------------
 
   # Prints the run's resulting state: running (still alive) or a terminal state.
-  rawClassMethod: reconcileRun: runId [
-    local run_id="$1" session profile driver outcome exited code seen ref alive reason
-    local d st has_offered=false has_blocked=false final owner
-    if [[ "$(@ "$run_id" stopRequested)" == true ]]; then
-      final=$(@ Agent::Worker finishStop: "$run_id")
-      if [[ "$final" == interrupted ]]; then echo interrupted; else echo running; fi
-      return 0
-    fi
-    if [[ "$(@ "$run_id" state)" == starting ]]; then
-      @ "$_RECEIVER" failRun: "$run_id" error: "worker stopped before launch"
-      echo failed
-      return 0
-    fi
-    alive=$(@ "$run_id" isProcessAlive)
-    if [[ "$alive" == true ]]; then
-      @ "$run_id" markHeartbeat >/dev/null
-      echo running
-      return 0
-    fi
-    # Include deliveries that became processed and therefore no longer appear
-    # in offeredFor:. The harness may have committed after the initial tick snapshot.
-    @ Agent::Queue refresh || return 1
-    session=$(@ "$run_id" session)
-    profile=$(@ "$run_id" backendProfile)
-    driver=$(@ "$_RECEIVER" driverFor: "$profile") || return 1
-    outcome=$(@ "$driver" outcomeOf: "$run_id")
-    exited=$(jq -r '.exited' <<<"$outcome")
-    code=$(jq -r '.exit_code // "none"' <<<"$outcome")
-    seen=$(jq -r '.result_seen' <<<"$outcome")
-    ref=$(jq -r '.conversation_ref // ""' <<<"$outcome")
-    if [[ -n "$ref" ]]; then
-      @ Store patch: "$run_id" with: "$(jq -cn --arg ref "$ref" '{externalConversationRef:$ref}')"
-      @ Store patch: "$session" with: "$(jq -cn --arg ref "$ref" '{lastConversationRef:$ref}')"
-    fi
-    if [[ $(jq -r '.resident_unconfirmed // false' <<<"$outcome") == true ]]; then
-      # The resident harness may still be working after its adapter disappears.
-      # Fence authority and dispatch, retaining the exact active run for stop.
-      @ Store patch: "$run_id" with: '{"capabilityTokenHash":"","error":"Jcode connection lost without completion; stop the run before resuming"}' || return 1
-      [[ "$(@ "$session" lifecycleState)" != open ]] || @ "$session" pause >/dev/null
-      [[ "$(@ "$run_id" state)" != running ]] || @ "$run_id" transitionTo: recovering >/dev/null
-      echo running
-      return 0
-    fi
-    if [[ "$exited" != true ]]; then
-      @ "$_RECEIVER" failRun: "$run_id" error: "process vanished without an exit status; inspect logs before retrying"
-      echo failed
-      return 0
-    fi
-    if [[ "$code" != 0 || "$seen" != true ]]; then
-      reason=$(printf '%s' "$outcome" | jq -r '.error // empty')
-      [[ -n "$reason" ]] || reason="exit $code, result_seen=$seen"
-      @ "$_RECEIVER" failRun: "$run_id" error: "$reason"
-      echo failed
-      return 0
-    fi
-    for d in $(@ Agent::Delivery offeredFor: "$run_id"); do
-      # The harness can settle/block after work:'s initial snapshot but before
-      # its exit is observed. Read the final durable delivery state now.
-      @ "$d" reload >/dev/null || return 1
-      st=$(@ "$d" state)
-      if [[ "$st" == offered ]]; then
-        @ "$d" transitionTo: uncertain >/dev/null
-        has_offered=true
-      elif [[ "$st" == blocked ]]; then
-        has_blocked=true
-      fi
-    done
-    if [[ "$has_offered" == true ]]; then
-      final="unsettled"
-      outcome=$(jq -c '.stop_reason //= "unfinished" | .stop_detail //= "Provider turn ended without completing the Assignment or settling its delivery; budget exhaustion is not confirmed"' <<<"$outcome")
-      owner=$(@ "$_RECEIVER" ownerInboxFor: "$session")
-      @ Inbox alert: "Run $run_id in session $session exited without settling every delivery; they are marked uncertain. Inspect the recorded effects. For Assignment deliveries use Assignment continue:afterDelivery:key:; for ordinary deliveries use session requeue or skip." to: "$owner" from: worker >/dev/null
-    elif [[ "$has_blocked" == true ]]; then
-      final="waiting_for_user"
-    else
-      final="succeeded"
-    fi
-    @ "$run_id" finishWith: "$final" outcome: "$outcome" error: "" >/dev/null
-    echo "$final"
+  classMethod: reconcileRun: runId [
+    | session profile driver outcome final owner deliveries hasOffered hasBlocked resident reason detail |
+    ((@ runId stopRequested) = 'true') ifTrue: [
+      final := (@ self finishStop: runId) ifFailed: [:error | @ error signal].
+      (final = 'interrupted') ifTrue: [^ 'interrupted'].
+      ^ 'running'
+    ].
+    ((@ runId state) = 'starting') ifTrue: [
+      (@ self failRun: runId error: 'worker stopped before launch') ifFailed: [:error | @ error signal].
+      ^ 'failed'
+    ].
+    ((@ runId isProcessAlive) = 'true') ifTrue: [
+      (@ runId markHeartbeat) ifFailed: [:error | @ error signal].
+      ^ 'running'
+    ].
+    # Refresh durable delivery state: the harness may have settled after the tick snapshot.
+    (@ Agent::Queue refresh) ifFailed: [:error | @ error signal].
+    session := @ runId session.
+    profile := @ runId backendProfile.
+    driver := (@ self driverFor: profile) ifFailed: [:error | @ error signal].
+    outcome := (@ driver outcomeOf: runId) ifFailed: [:error | @ error signal].
+    resident := outcome jsonAt: 'resident_unconfirmed' ifAbsent: 'false'.
+    outcome jsonUnpack: #('exited' 'exit_code' 'result_seen' 'conversation_ref' 'error') into: [:exited :code :seen :ref :reason |
+      (ref = 'null') ifTrue: [ref := ''].
+      (ref notEmpty) ifTrue: [
+        (@ Store patch: runId with: (#{externalConversationRef: ref} asJson)) ifFailed: [:error | @ error signal].
+        (@ Store patch: session with: (#{lastConversationRef: ref} asJson)) ifFailed: [:error | @ error signal]
+      ].
+      (resident = 'true') ifTrue: [
+        # A resident harness may still be working after its adapter disappears.
+        # Fence its authority and dispatch, retaining the exact active run for stop.
+        (@ Store patch: runId with: (#{capabilityTokenHash: '' error: 'Jcode connection lost without completion; stop the run before resuming'} asJson)) ifFailed: [:error | @ error signal].
+        ((@ session lifecycleState) = 'open') ifTrue: [(@ session pause) ifFailed: [:error | @ error signal] ].
+        ((@ runId state) = 'running') ifTrue: [(@ runId transitionTo: 'recovering') ifFailed: [:error | @ error signal] ].
+        ^ 'running'
+      ].
+      (exited ~= 'true') ifTrue: [
+        (@ self failRun: runId error: 'process vanished without an exit status; inspect logs before retrying') ifFailed: [:error | @ error signal].
+        ^ 'failed'
+      ].
+      (code ~= '0') or: [seen ~= 'true'] ifTrue: [
+        (code = 'null') ifTrue: [code := 'none'].
+        (reason = 'null') ifTrue: [reason := ''].
+        (reason isEmpty) ifTrue: [reason := 'exit ' , code , ', result_seen=' , seen].
+        (@ self failRun: runId error: reason) ifFailed: [:error | @ error signal].
+        ^ 'failed'
+      ]
+    ].
+    hasOffered := 'false'.
+    hasBlocked := 'false'.
+    deliveries := @ Agent::Delivery offeredFor: runId.
+    deliveries linesDo: [:delivery |
+      (@ delivery reload) ifFailed: [:error | @ error signal].
+      (@ delivery state) caseOf: {
+        'offered' -> [
+          (@ delivery transitionTo: 'uncertain') ifFailed: [:error | @ error signal].
+          hasOffered := 'true'
+        ].
+        'blocked' -> [hasBlocked := 'true']
+      } otherwise: []
+    ].
+    (hasOffered = 'true') ifTrue: [
+      final := 'unsettled'.
+      reason := outcome jsonAt: 'stop_reason' ifAbsent: 'null'.
+      (reason = 'null') or: [reason = 'false'] ifTrue: [outcome := outcome objectAt: 'stop_reason' put: 'unfinished'].
+      detail := outcome jsonAt: 'stop_detail' ifAbsent: 'null'.
+      (detail = 'null') or: [detail = 'false'] ifTrue: [outcome := outcome objectAt: 'stop_detail' put: 'Provider turn ended without completing the Assignment or settling its delivery; budget exhaustion is not confirmed'].
+      owner := @ self ownerInboxFor: session.
+      (@ Inbox alert: ('Run ' , runId , ' in session ' , session , ' exited without settling every delivery; they are marked uncertain. Inspect the recorded effects. For Assignment deliveries use Assignment continue:afterDelivery:key:; for ordinary deliveries use session requeue or skip.') to: owner from: 'worker') ifFailed: [:error | @ error signal]
+    ] ifFalse: [
+      (hasBlocked = 'true') ifTrue: [final := 'waiting_for_user'] ifFalse: [final := 'succeeded']
+    ].
+    (@ runId finishWith: final outcome: outcome error: '') ifFailed: [:error | @ error signal].
+    ^ final
   ]
 
-  # Fail the run; offered deliveries fail and retry while attempts remain,
-  # otherwise the owner is alerted and the delivery stalls until skipped.
-  rawClassMethod: failRun: runId error: err [
-    local run_id="$1" err="$2" session role limit d st attempts owner ambiguous=false output lastfile oldstate driver outcome
-    session=$(@ "$run_id" session)
-    role=$(@ "$session" role)
-    limit=$(@ "$role" retryLimit | tr -cd '0123456789')
-    [[ -n "$limit" ]] || limit=2
-    oldstate=$(@ "$run_id" state)
-    output=$(@ "$run_id" outputLog)
-    lastfile=$(@ "$run_id" lastMessageFile)
-    # Once launch began, even a silent process may have produced effects.
-    # Only failures still in starting are known to be safe to auto-retry.
-    [[ "$oldstate" == starting ]] || ambiguous=true
-    for d in $(@ Agent::Delivery offeredFor: "$run_id"); do
-      @ "$d" reload >/dev/null || return 1
-      st=$(@ "$d" state)
-      [[ "$st" == offered ]] || continue
-      @ Store patch: "$d" with: "$(jq -cn --arg error "$err" '{lastError:$error}')"
-      if [[ "$ambiguous" == true ]]; then
-        @ "$d" transitionTo: uncertain >/dev/null
-        owner=$(@ "$_RECEIVER" ownerInboxFor: "$session")
-        @ Inbox alert: "Delivery $d needs review after run $run_id: $err. Inspect its logs before retrying." to: "$owner" from: worker >/dev/null
-        continue
-      fi
-      @ "$d" transitionTo: failed >/dev/null
-      attempts=$(@ "$d" attempts)
-      if [[ "$attempts" -lt "$limit" ]]; then
-        @ "$d" transitionTo: pending >/dev/null
-      else
-        owner=$(@ "$_RECEIVER" ownerInboxFor: "$session")
-        @ Inbox alert: "Delivery $d in session $session stalled after $attempts attempts: $err. Skip it with: @ $session skip: $d note: 'reason'" to: "$owner" from: worker >/dev/null
-      fi
-    done
-    driver=$(@ Agent::Worker driverFor: "$(@ "$run_id" backendProfile)")
-    outcome=$(@ "$driver" outcomeOf: "$run_id")
-    @ "$run_id" finishWith: failed outcome: "$outcome" error: "$err" >/dev/null
+  # Only a failure before launch is safe to retry automatically. Once launched,
+  # even a silent process may have produced effects; offered work becomes uncertain.
+  classMethod: failRun: runId error: err [
+    | session role limit oldstate deliveries owner attempts driver outcome profile |
+    session := @ runId session.
+    role := @ session role.
+    limit := @ role retryLimit.
+    (limit matches: '^[0-9]+$') ifFalse: [limit := 2].
+    oldstate := @ runId state.
+    deliveries := @ Agent::Delivery offeredFor: runId.
+    deliveries linesDo: [:delivery |
+      (@ delivery reload) ifFailed: [:error | @ error signal].
+      ((@ delivery state) = 'offered') ifTrue: [
+        (@ Store patch: delivery with: (#{lastError: err} asJson)) ifFailed: [:error | @ error signal].
+        (oldstate ~= 'starting') ifTrue: [
+          (@ delivery transitionTo: 'uncertain') ifFailed: [:error | @ error signal].
+          owner := @ self ownerInboxFor: session.
+          (@ Inbox alert: ('Delivery ' , delivery , ' needs review after run ' , runId , ': ' , err , '. Inspect its logs before retrying.') to: owner from: 'worker') ifFailed: [:error | @ error signal]
+        ] ifFalse: [
+          (@ delivery transitionTo: 'failed') ifFailed: [:error | @ error signal].
+          attempts := @ delivery attempts.
+          (attempts < limit) ifTrue: [
+            (@ delivery transitionTo: 'pending') ifFailed: [:error | @ error signal]
+          ] ifFalse: [
+            owner := @ self ownerInboxFor: session.
+            (@ Inbox alert: ('Delivery ' , delivery , ' in session ' , session , ' stalled after ' , attempts , ' attempts: ' , err , '. Skip it with: @ ' , session , ' skip: ' , delivery , ' note: reason') to: owner from: 'worker') ifFailed: [:error | @ error signal]
+          ]
+        ]
+      ]
+    ].
+    profile := @ runId backendProfile.
+    driver := (@ self driverFor: profile) ifFailed: [:error | @ error signal].
+    outcome := (@ driver outcomeOf: runId) ifFailed: [:error | @ error signal].
+    (@ runId finishWith: 'failed' outcome: outcome error: err) ifFailed: [:error | @ error signal].
+    ^ ''
   ]
 
   # ------------------------------------------------------------------

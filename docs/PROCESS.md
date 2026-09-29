@@ -1,209 +1,57 @@
-# Process API
+# Process
 
-**Status:** Current API reference for Process.
+Process runs shell commands and retains separate stdout, stderr, and exit code.
+Use Future when you want combined output; see [Future](FUTURE.md).
 
-Process provides an interface to spawn and manage external OS (POSIX) processes. Use it for running shell commands, capturing output, and managing background tasks.
+## Managed execution
 
-## Quick Execution (Class Methods)
-
-For simple one-off commands:
-
+<!-- smoke: process -->
 ```bash
-# Execute and get stdout
-output=$(@ Process exec: "ls -la")
-echo "$output"
-
-# Execute and get exit code
-@ Process run: "make test"
-echo "Exit code: $?"
-
-# Spawn in background, get PID
-pid=$(@ Process spawn: "long-running-task")
-echo "Started with PID: $pid"
-
-# Wait for a PID
-exit_code=$(@ Process waitPid: $pid)
-
-# Check if running
-@ Process isRunningPid: $pid  # => "true" or "false"
-
-# Kill a PID
-@ Process killPid: $pid
+proc=$(@ Process for: 'printf ready; printf diagnostic >&2; exit 42')
+pid=$(@ "$proc" start)
+code=$(@ "$proc" wait)
+[[ "$code" == 42 ]]
+[[ "$(@ "$proc" output)" == ready ]]
+[[ "$(@ "$proc" errors)" == diagnostic ]]
 ```
 
-## Managed Processes (Instance Methods)
+`start` returns a supervisor PID immediately. Launch several Process objects
+before waiting to run independent commands concurrently. Both captured and
+uncaptured sends work. Each launch owns a private directory under `TMPDIR`
+(default `/tmp`); `wait` reads its atomic completion receipt, stores the result
+on the object, and removes its owned files. Keep the parent runtime alive while
+children use its object cache.
 
-For processes you need to monitor, capture output from, or manage:
+| Message | Result |
+| --- | --- |
+| `Process for: command` | Create a wrapper with status `created` |
+| `run` | Run synchronously; return the command's numeric exit code as text |
+| `start` | Start asynchronously; return the supervisor PID |
+| `wait` | Await and collect output; return the numeric exit code as text |
+| `isRunning` | Return `true` or `false`; collect a finished run's result |
+| `output`, `errors`, `exitCode` | Read the collected results |
+| `succeeded` | Return `true` when the collected exit code is zero |
+| `signal: name` | Signal the recorded process group after checking PID identity |
+| `terminate`, `kill` | Send TERM/KILL, collect completion, mark the terminal status |
+| `info`, `help` | Print details or available operations |
 
-```bash
-# Create a process wrapper
-proc=$(@ Process for: "curl -s https://api.example.com/data")
+A nonzero **command** exit code is a result of `run`/`wait`, not a failed message
+send. Launch, missing-receipt, and collection errors fail the send. `terminate`
+waits for the child to honor TERM; use `kill` if forced termination is needed.
+A wrapper can run again after completion. Starting an already-running wrapper
+is an error.
 
-# Run (blocking) - captures stdout, stderr, exit code
-@ $proc run
+## Class shortcuts
 
-# Check result
-if [[ $(@ $proc succeeded) == "true" ]]; then
-    echo "Response: $(@ $proc output)"
-else
-    echo "Error: $(@ $proc errors)"
-    echo "Exit code: $(@ $proc exitCode)"
-fi
-```
+`Process exec:` delegates to `Shell execAll:` and returns stdout. `Process run:`
+delegates to `Shell run:` and returns the shell command's status while preserving
+its output. These differ from the instance `run` result contract above.
 
-### Background Execution
+The legacy PID-only messages (`spawn:`, `waitPid:`, `isRunningPid:`, `killPid:`)
+forward to Shell. They do not retain a completion receipt: Bash `wait` only
+works for a child of the calling shell, and a PID returned through a captured
+message is not such a child. Use a managed Process for asynchronous completion.
 
-```bash
-# Create process
-proc=$(@ Process for: "sleep 10 && echo done")
-
-# Start in background
-pid=$(@ $proc start)
-echo "Started with PID: $pid"
-
-# Do other work...
-
-# Check if still running
-@ $proc isRunning  # => "true" or "false"
-
-# Wait for completion
-exit_code=$(@ $proc wait)
-echo "Output: $(@ $proc output)"
-```
-
-### Signals
-
-```bash
-proc=$(@ Process for: "long-running-task")
-@ $proc start
-
-# Send SIGTERM
-@ $proc terminate
-
-# Send SIGKILL (if terminate doesn't work)
-@ $proc kill
-
-# Send any signal
-@ $proc signal: HUP
-@ $proc signal: USR1
-```
-
-### Process Information
-
-```bash
-@ $proc info
-
-# Output:
-# Command: curl -s https://api.example.com
-# PID: 12345
-# Status: completed
-# Exit Code: 0
-# Started: Fri Dec 19 12:00:00 EST 2025
-# Ended: Fri Dec 19 12:00:01 EST 2025
-# Duration: 1s
-```
-
-## Instance Variables
-
-| Variable | Description |
-|----------|-------------|
-| `command` | The shell command to execute |
-| `pid` | Process ID (when running in background) |
-| `status` | created, running, completed, terminated, killed |
-| `exitCode` | Exit code after completion |
-| `stdout` | Captured standard output |
-| `stderr` | Captured standard error |
-| `startTime` | Unix timestamp when started |
-| `endTime` | Unix timestamp when completed |
-
-## Examples
-
-### Run a build and check for errors
-
-```bash
-proc=$(@ Process for: "make build")
-@ $proc run
-
-if [[ $(@ $proc succeeded) == "true" ]]; then
-    echo "Build succeeded!"
-else
-    echo "Build failed:"
-    @ $proc errors
-fi
-```
-
-### Fetch data with timeout
-
-```bash
-proc=$(@ Process for: "curl -s --max-time 10 https://api.example.com")
-@ $proc run
-
-if [[ $(@ $proc exitCode) == "0" ]]; then
-    data=$(@ $proc output)
-    echo "Got data: $data"
-else
-    echo "Request failed with code $(@ $proc exitCode)"
-fi
-```
-
-### Run parallel tasks
-
-```bash
-# Start multiple processes
-proc1=$(@ Process for: "task1")
-proc2=$(@ Process for: "task2")
-proc3=$(@ Process for: "task3")
-
-@ $proc1 start
-@ $proc2 start
-@ $proc3 start
-
-# Wait for all
-@ $proc1 wait
-@ $proc2 wait
-@ $proc3 wait
-
-# Check results
-echo "Task 1: $(@ $proc1 exitCode)"
-echo "Task 2: $(@ $proc2 exitCode)"
-echo "Task 3: $(@ $proc3 exitCode)"
-```
-
-## Differences from Future
-
-| Process | Future |
-|---------|--------|
-| External OS process wrapper | Internal async computation |
-| Direct stdin/stdout capture | Captures via result files |
-| Runs any shell command | Runs Trashtalk code |
-| Full process control (signals) | Simple await/cancel |
-| `@ Process exec: "curl ..."` | `@ Future run: '@ Counter calc'` |
-
-## Quick Reference
-
-### Class Methods
-| Method | Description |
-|--------|-------------|
-| `@ Process for: <cmd>` | Create managed process |
-| `@ Process exec: <cmd>` | Run, return stdout |
-| `@ Process run: <cmd>` | Run, return exit code |
-| `@ Process spawn: <cmd>` | Background, return PID |
-| `@ Process waitPid: <pid>` | Wait for PID |
-| `@ Process isRunningPid: <pid>` | Check if PID is running |
-| `@ Process killPid: <pid>` | Kill PID |
-
-### Instance Methods
-| Method | Description |
-|--------|-------------|
-| `@ $proc run` | Run blocking |
-| `@ $proc start` | Run in background |
-| `@ $proc wait` | Wait for completion |
-| `@ $proc isRunning` | Check if running |
-| `@ $proc terminate` | Send SIGTERM |
-| `@ $proc kill` | Send SIGKILL |
-| `@ $proc signal: <sig>` | Send signal |
-| `@ $proc output` | Get stdout |
-| `@ $proc errors` | Get stderr |
-| `@ $proc exitCode` | Get exit code |
-| `@ $proc succeeded` | Check if exit 0 |
-| `@ $proc info` | Show process info |
+`Process withLock:receiver:selector:argument:` runs a public send under an OS
+lock; its `waiting:` variant bounds lock acquisition. The worker uses this
+boundary to serialize changes to its durable queue.

@@ -117,7 +117,7 @@ source='TestBool subclass: Object
     (x > 0) and: [y > 0] and: [z > 0] ifTrue: [ok := 1]
   ]'
 result=$(compile_method "$source" "test")
-if [[ "$result" == *'&& (( $y > 0 )) && (( $z > 0 ))'* ]]; then
+if [[ "$result" == *'&& (( $y > 0 )); } && (( $z > 0 ))'*  ]]; then
   pass "Chained and: operators"
 else
   fail "Chained and: operators" "... && ... && ..." "$result"
@@ -133,7 +133,7 @@ source='TestBool subclass: Object
     (x > 3) and: [y < 5] ifFalse: [ok := 1]
   ]'
 result=$(compile_method "$source" "test")
-if [[ "$result" == *'if ! (( $x > 3 )) && (( $y < 5 ))'* ]]; then
+if [[ "$result" == *'if ! { (( $x > 3 )) && (( $y < 5 )); };'*  ]]; then
   pass "and: with ifFalse: negates combined condition"
 else
   fail "and: with ifFalse: negates combined condition" "if ! ... && ..." "$result"
@@ -205,46 +205,8 @@ else
 fi
 
 echo ""
-echo "=== Runtime Tests ==="
-echo ""
+# Public runtime coverage: test_expression_behavior.bash.
 
-# Test 11: Runtime - and: both true
-echo "Test 11: Runtime - and: both true"
-if (( 5 > 3 )) && (( 10 < 15 )); then
-  pass "Runtime - and: with both true evaluates to true"
-else
-  fail "Runtime - and: with both true" "true" "false"
-fi
-
-# Test 12: Runtime - and: one false
-echo "Test 12: Runtime - and: one false"
-result="passed"
-if (( 5 > 3 )) && (( 10 > 15 )); then
-  result="failed"
-fi
-if [[ "$result" == "passed" ]]; then
-  pass "Runtime - and: with one false evaluates to false"
-else
-  fail "Runtime - and: with one false" "false" "true"
-fi
-
-# Test 13: Runtime - or: one true
-echo "Test 13: Runtime - or: one true"
-if (( 5 > 100 )) || (( 10 < 15 )); then
-  pass "Runtime - or: with one true evaluates to true"
-else
-  fail "Runtime - or: with one true" "true" "false"
-fi
-
-# Test 14: Runtime - mixed test and arithmetic
-echo "Test 14: Runtime - mixed test and arithmetic"
-if [[ -e "/etc/passwd" ]] && (( 5 > 3 )); then
-  pass "Runtime - mixed [[ ]] && (( )) works"
-else
-  fail "Runtime - mixed test and arithmetic" "true" "false"
-fi
-
-echo ""
 echo "=== Results ==="
 echo "Passed: $PASS"
 echo "Failed: $FAIL"

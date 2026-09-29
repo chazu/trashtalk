@@ -258,36 +258,8 @@ else
 fi
 
 echo ""
-echo "=== Runtime Integration Tests ==="
-echo ""
+# Public runtime coverage: test_expression_behavior.bash.
 
-# Test 15: Runtime - fileExists returns true for existing file
-echo "Test 15: Runtime - fileExists for existing file"
-if [[ -e "/etc/passwd" ]]; then
-  pass "Runtime - fileExists returns true for /etc/passwd (verified bash syntax)"
-else
-  fail "Runtime - fileExists returns true for /etc/passwd" "file exists" "file not found"
-fi
-
-# Test 16: Runtime - isEmpty with empty string
-echo "Test 16: Runtime - isEmpty with empty string"
-str=""
-if [[ -z "$str" ]]; then
-  pass "Runtime - isEmpty returns true for empty string (verified bash syntax)"
-else
-  fail "Runtime - isEmpty returns true for empty string" "empty" "not empty"
-fi
-
-# Test 17: Runtime - notEmpty with non-empty string
-echo "Test 17: Runtime - notEmpty with non-empty string"
-str="hello"
-if [[ -n "$str" ]]; then
-  pass "Runtime - notEmpty returns true for non-empty string (verified bash syntax)"
-else
-  fail "Runtime - notEmpty returns true for non-empty string" "not empty" "empty"
-fi
-
-echo ""
 echo "=== Results ==="
 echo "Passed: $PASS"
 echo "Failed: $FAIL"

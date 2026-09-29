@@ -1,1047 +1,123 @@
 <p align="center">
-  <img src="https://github.com/chazu/trashtalk/blob/main/img/logo.png">
+  <img src="img/logo.png" alt="Trashtalk logo">
 </p>
-
 
 # Trashtalk
 
-A Smalltalk-inspired message-passing system for Bash.
+A Smalltalk-inspired language and message-passing runtime for Bash. `.trash`
+classes compile to Bash functions; the `@` dispatcher provides inheritance,
+traits, and persistent objects backed by SQLite. The jq compiler is canonical.
 
-Trashtalk implements message passing, inheritance, traits, aspect-oriented programming and persistent instances - with bash.
+Trashtalk began as an experiment in expressive personal tool-making on the
+substrate of shell scripting. It now includes object browsing, process and file
+tools, inboxes, and agent workflows. It remains Bash-only.
 
-## Why would you do this?
+## Install
 
-I'm not a big fan of bash. I think POSIX is the computing environment we deserve, not the one we need. Bash's ubiquity is its strongest selling point, so strong in fact that bash scripting remains the more-or-less correct choice for a lot of situations, especially in my line of work. This really gets my goat.
+Required: Bash 4.4+, `jo`, jq 1.6+, `sqlite3`, `uuidgen`, Perl, `make`, and
+`shasum`. Perl uses core `JSON::PP`, `Digest::SHA`, and `Time::HiRes` modules.
+Tests also need `timeout` (GNU coreutils on macOS).
 
-I've seen others twist bash/sh into strange loops to give themselves superpowers - both in-person and from afar: a few small tricks, conventions or utilities can become a force-multiplier for software authorship. _Personal_ software authorship. Trashtalk started as a minimal message-passing implementation in bash, intended as an experiment in the direction of enabling expressive personal tool-making in the ugly substrate of shell-scripting.
-
-It lingered in my dotfiles repo for years.
-
-Then LLMs came. I said "Hey Claude, what do you think about this gewgaw over here?" Claude said "You're absolutely right!" and we were off - it morphed into a DSL transpiled into bash, then I added a compiler written in golang to provide native compilation for a subset of the DSL, then I started trying to add a TUI-based Smalltalk-style IDE on top of it. Things continued to get weirder and weirder, each day I travelled half the distance between here and v1.0, and eventually it dawned on me that I'd gone too far, so I dialed back Trashtalk and jettisoned the non-bash bits. More precisely, I spun them off into their own projects. Anyhow, here we are.
-
-## What's it good for?
-
-So far I've only really used Trashtalk to work on Trashtalk. I'll let you know when that changes. Until then, some things I'm thinking about doing include:
-
-- Exploring the idea of an acme-like editor as a substitute for the whiz-bang TUI I tried so desperately to make work
-- Building multi-process CLI tools using the Actor/Stream/EventBus classes (backed by [Honker](https://github.com/russellromney/honker) — pub/sub, work queues, and durable streams in SQLite)
-
-If you have any ideas that aren't terribly rude, I'd love to hear them!
-
-## Architecture
-
-Trashtalk uses a **DSL compiler** that transforms Smalltalk-inspired source files (`.trash`) into namespaced Bash functions. This way, we implement message passing without polluting the global namespace. Or, well, we pollute it _in a principled fashion_.
-
-```
-┌─────────────────┐     ┌──────────────┐     ┌─────────────────┐
-│  Source (.trash)│────▶│   Compiler   │────▶│ Compiled (bash) │
-│                 │     │              │     │                 │
-│ Counter subclass│     │  jq-compiler │     │ __Counter__     │
-│   method: inc   │     │              │     │   increment()   │
-└─────────────────┘     └──────────────┘     └─────────────────┘
-                                                      │
-                                                      ▼
-                                             ┌─────────────────┐
-                                             │   Dispatcher    │
-                                             │                 │
-                                             │ @ Counter inc   │
-                                             │       ▼         │
-                                             │ __Counter__     │
-                                             │   increment()   │
-                                             └─────────────────┘
-```
-
-### Key Components
-
-- **DSL Compiler** (`lib/jq-compiler/`) - Bash tokenizer and jq parser/code generator that transforms `.trash` source files into executable Bash
-- **Dispatcher** (`lib/trash.bash`) - Routes `@` message sends to the appropriate namespaced function
-- **Source Files** (`trash/*.trash`) - Human-readable class definitions
-- **Compiled Files** (`trash/.compiled/`) - Generated Bash code loaded by the runtime
-
-## Installation
-
-### Requirements
-
-- **Bash 4.4+** — macOS ships bash 3.2 at `/bin/bash`; install a modern one with
-  `brew install bash`, put it first on PATH (`export PATH="$(brew --prefix)/bin:$PATH"`),
-  then start it with `exec bash`. Build scripts also resolve `bash` from PATH.
-- Required tools: `jo`, `jq`, `sqlite3`, `uuidgen`; builds also need `make` and `shasum`
-  - Conversation log projection also uses Perl with its core `JSON::PP`,
-    `Digest::SHA`, and `Time::HiRes` modules for file reads and hashes.
-    Detached process launch and Jcode control bridges use Perl to keep
-    harnesses interruptible when their supervisor ignores interrupt signals.
-  - macOS: `brew install jo jq sqlite` (`uuidgen` is built in)
-  - Debian/Ubuntu: `sudo apt install bash jo jq sqlite3 uuid-runtime make perl libdigest-sha-perl`
-
-Clone or copy this repository to `~/.trashtalk`:
+- macOS: `brew install bash jo jq sqlite coreutils`. Put Homebrew's Bash first
+  on `PATH`, then run `exec bash`; `/bin/bash` 3.2 and Zsh are not supported.
+- Debian/Ubuntu: `sudo apt install bash jo jq sqlite3 uuid-runtime make perl libdigest-sha-perl coreutils`.
 
 ```bash
 git clone https://github.com/chazu/trashtalk.git ~/.trashtalk
-```
-
-Compile the bundled classes (required before first use — the runtime dispatches
-to generated bash in `trash/.compiled/`):
-
-```bash
-cd ~/.trashtalk && make
-```
-
-Add the following to your Bash startup file (`~/.bashrc`; source it from
-`~/.bash_profile` if you use login shells). Trashtalk must run in Bash:
-
-```bash
-source ~/.trashtalk/lib/trash.bash
-```
-
-Start a fresh Bash session or source the file above, then verify:
-
-```bash
-@ Trash doctor
+cd ~/.trashtalk
+make
+source lib/trash.bash
 @ Trash info
 ```
 
-The Bash floor comes from NUL-delimited `mapfile -d` in the Tool process
-boundary. macOS system Bash 3.2 and Zsh are not supported runtimes. See the
-[documentation index](docs/README.md) for current APIs, designs, and historical notes.
+Add `source ~/.trashtalk/lib/trash.bash` to your Bash startup file. If installed
+elsewhere, set `TRASHTALK_DIR` to that checkout before sourcing the runtime.
+`@ Trash doctor` checks dependencies and optional integrations; with the Maki
+profile selected, it can also install a missing Maki executable.
 
-## Troubleshooting
+## Try it
 
-If anything misbehaves, run the built-in diagnostics first:
-
-```bash
-@ Trash doctor      # or: make doctor
-```
-
-It checks bash version (needs 4.4+), required tools (`jo`/`jq`/`sqlite3`/`uuidgen`),
-whether the sqlite3 in use can load the optional honker extension, and whether
-classes have been compiled — and prints a clear OK/WARN/FAIL line for each.
-It checks Jcode, the default session harness. Install it from [jcode.sh](https://jcode.sh)
-if needed, then use `@ Jcode login` for OpenAI subscription authentication.
-When `TRASHTALK_GUSGUS_PROFILE=maki` is selected, doctor installs Maki if missing
-and verifies its executable. Maki login is `@ Maki loginToProvider: 'openai'`.
-
-Common fixes:
-
-- **`declare: -A: invalid option` / nothing works on macOS** — you're on the
-  system bash 3.2. `brew install bash` and use it (`exec "$(brew --prefix)/bin/bash"`).
-- **`unknown command "load"` / honker errors** — your `sqlite3` lacks extension
-  support (Apple's does). `brew install sqlite`, then
-  `export TRASH_SQLITE3="$(brew --prefix sqlite)/bin/sqlite3"`.
-- **`Unknown class '...'`** — run `make` to compile the classes.
-
-`@ Trash help` lists all system commands. Tab completion for `@` loads
-automatically in interactive shells.
-
-## Quick Start
-
-```bash
-# Send a message to an object
-@ Trash info
-
-# Create a counter instance
-counter=$(@ Counter new)
-@ $counter setValue 5
-@ $counter increment 3
-@ $counter show
-
-# Create an array
-arr=$(@ Array new)
-@ $arr push hello
-@ $arr push world
-@ $arr show
-
-# System introspection
-@ Trash listObjects
-@ Trash methodsFor Counter
-@ Trash help
-```
-
-## DSL Syntax
-
-Classes are defined in `.trash` files using a Smalltalk-inspired syntax:
-
-### Basic Class Definition
-
-```smalltalk
-# Counter - A simple counter class
-Counter subclass: Object
-  include: Debuggable
-  instanceVars: value:0 step:1
-
-  method: increment [
-    | newValue |
-    newValue := $(( $(_ivar value) + $(_ivar step) ))
-    _ivar_set value "$newValue"
-    echo "$newValue"
-  ]
-
-  method: setValue: val [
-    _ivar_set value "$val"
-  ]
-
-  method: show [
-    echo "Counter value: $(_ivar value)"
-  ]
-```
-
-### DSL Elements
-
-| Element | Syntax | Description |
-|---------|--------|-------------|
-| Class declaration | `ClassName subclass: SuperClass` | Declare a class with inheritance |
-| Trait declaration | `TraitName trait` | Declare a trait (mixin) |
-| Include trait | `include: TraitName` | Mix in a trait |
-| Instance variables | `instanceVars: name:default` | Declare instance vars with defaults |
-| Dependencies | `requires: 'path/to/file.bash'` | Source external dependencies |
-| Method | `method: name [body]` | Define an instance method |
-| Method with args | `method: foo: x bar: y [body]` | Keyword-style arguments |
-| Class method | `classMethod: name [body]` | Define a class method |
-| Raw method | `rawMethod: name [body]` | Pass-through (no transformation) |
-| Test method | `testMethod: name [body]` | Define an inline test (see Testing) |
-| Local variables | `\| var1 var2 \|` | Declare local variables |
-| Assignment | `var := value` | Assign to variable |
-| Self reference | `@ self methodName` | Message to self |
-
-### Method Body Transformations
-
-The compiler transforms DSL constructs to Bash:
-
-```smalltalk
-# DSL syntax:
-method: example: arg [
-  | result |
-  result := $(some_command)
-  @ self debug: "Got result: $result"
-  @ OtherClass doSomething: "$result" with: "$arg"
-]
-
-# Compiles to:
-__MyClass__example() {
-  local arg="$1"
-  local result
-  result=$(some_command)
-  @ "$_RECEIVER" debug "Got result: $result"
-  @ OtherClass doSomething_with "$result" "$arg"
-}
-```
-
-### Raw Methods
-
-Use `rawMethod:` for code that shouldn't be transformed (heredocs, traps, complex bash):
-
-```smalltalk
-rawMethod: createConfig: name [
-  cat > "$CONFIG_DIR/$name" << 'EOF'
-# Configuration file
-setting=value
-EOF
-  echo "Created config: $name"
-]
-```
-
-### Traits
-
-Traits provide reusable behavior without inheritance:
-
-```smalltalk
-Debuggable trait
-
-  method: debug: message [
-    [[ "${TRASH_DEBUG:-1}" == "0" ]] && return 0
-    local timestamp
-    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-    echo "[$timestamp] DEBUG ($_RECEIVER): $message" >&2
-  ]
-
-  method: inspect [
-    echo "Object: $_RECEIVER"
-    echo "Class: $_SUPERCLASS"
-  ]
-```
-
-### Aspect-Oriented Programming (AOP)
-
-Trashtalk supports before/after advice for cross-cutting concerns like logging, validation, or notifications:
-
-```smalltalk
-Account subclass: Object
-  instanceVars: balance:0
-
-  method: withdraw: amount [
-    balance := balance - amount
-  ]
-
-  method: deposit: amount [
-    balance := balance + amount
-  ]
-
-  # Run before withdraw: executes
-  before: withdraw: do: [
-    @ self log: "Attempting withdrawal"
-  ]
-
-  # Run after deposit: completes
-  after: deposit: do: [
-    @ self notifyBalanceChanged
-  ]
-```
-
-Advice hooks execute automatically - `before:do:` runs prior to the method, `after:do:` runs after it returns.
-
-### Inline Testing
-
-Trashtalk supports defining tests directly in class files using `testMethod:`.
-When `inmacs` is on `PATH`, `@ Trash edit: ClassName` opens the source in the
-Innards inline editor with Trashtalk syntax highlighting and two-space
-indentation. Saving compiles to a temporary artifact, checks the generated Bash,
-installs and reloads the class, then runs its inline tests. Compiler and test
-failures reopen the editor as annotations at the relevant source line; they are
-never inserted into the `.trash` source.
-
-If Innards is unavailable, the edit command falls back to `$VISUAL`, then
-`$EDITOR`, then `vi`. The fallback still uses the same compile, validation,
-reload, and test pipeline after the file changes. `@ Trash doctor` reports
-Innards availability as an optional capability.
-
-### Class, Method, and Instance Browser
-
-`@ Trash browse` opens the read-only Innards `inbrowser` applet. It derives its
-package, class, protocol, and method columns directly from the canonical jq
-compiler AST and displays source from the selected method. It has no edit,
-compile, or mutation path. Use arrow keys or `j`/`k` to select, Left/Right or
-Enter to move across columns, PageUp/PageDown to scroll source, and `q` to
-close. Install it with `cargo install --path . --bin inbrowser --locked --force`
-from the Innards checkout.
-
-```bash
-@ Trash browse                         # choose any symbol and open its source
-@ Trash browseClass: Counter           # browse one class and open a selection
-@ Trash pickMethod: Counter            # return a structured method selection
-@ Trash browseImplementorsOf: 'at:put:'
-@ Trash browseSendersOf: 'at:put:'
-@ Trash browseInstancesOf: Counter     # table of persisted instances, then inspect on Enter
-@ Trash inspectInstancesOf: Counter    # compatibility spelling for the same workflow
-@ Trash selectInstanceOf: Counter      # return a structured picker selection to scripts
-```
-
-Class, trait, instance-variable, class-variable, instance-method, class-method,
-and test-method records carry exact source positions. Namespaced classes and
-complete multi-keyword selectors remain intact. Enter in an instance table
-opens its navigable object inspector with declared values and nested containers,
-rather than printing the selected record JSON. Script-level picker methods
-return JSON; commands that open source feed the chosen path and line into the
-same transactional edit/compile/test loop described above.
-
-### Readline and shell shortcuts
-
-Readline's `.inputrc` cannot execute shell functions, so the shortcut comments
-live there and Bash's `bind -x` owns the actual bindings. This is the
-Trashtalk-specific portion of the local configuration:
-
-```inputrc
-# ~/.inputrc
-# Option-U is bound with bind -x in .bashrc to preserve the command line.
-# Option-Y is bound with bind -x in .bashrc to open the read-only code browser.
-```
-
-```bash
-# ~/.bashrc
-[ -f ~/.trashtalk/lib/trash.bash ] && source ~/.trashtalk/lib/trash.bash
-
-# Option-U opens the single current Gusgus view and preserves the command line.
-trashtalk_focus_gusgus() { @ Gusgus focusCurrent; }
-bind -x '"\eu": trashtalk_focus_gusgus'
-
-# Option-Y opens the read-only Trashtalk code browser and preserves the command line.
-trashtalk_browse_code() { @ Trash browse; }
-bind -x '"\ey": trashtalk_browse_code'
-
-# Alt-I browses the user inbox while preserving the command being edited.
-bind -x '"\ei": @ "$(@ Trash userInbox)" browse'
-```
-
-Reload the shell configuration, or run the two `bind -x` lines in the current
-Bash session. Option-Y then opens the browser and returns to the same command
-line when the browser closes.
-
-### Object Inspector
-
-With `ininspect` on `PATH`, any persisted object can open as a navigable inline
-tree. Containers expand in place and `e` on a scalar edits it as a JSON value:
-
-```bash
-counter=$(@ Counter create)
-@ "$counter" inspectInteractive
-```
-
-Innards only returns an edit proposal. Trashtalk checks that the object and its
-selected value have not changed, rejects unknown or command-bearing fields,
-and then applies the typed value through `Runtime`. Runtime metadata is not
-offered as editable state. Plain `@ "$counter" inspect` remains the textual
-fallback and never requires Innards.
-
-```smalltalk
-Counter subclass: Object
-  instanceVars: value:0 step:1
-
-  method: increment [
-    value := value + step.
-    ^ value
-  ]
-
-  method: setStep: s [
-    step := s
-  ]
-
-  testMethod: testIncrement [
-    pragma: primitive
-    local c result
-    c=$(@ Counter new)
-    result=$(@ "$c" increment)
-    _assert_eq "$result" "1" "increment returns 1"
-    @ "$c" destroy
-  ]
-
-  testMethod: testCustomStep [
-    pragma: primitive
-    local c
-    c=$(@ Counter new)
-    @ "$c" setStep: 5
-    _assert_eq "$(@ "$c" increment)" "5" "custom step works"
-    @ "$c" destroy
-  ]
-```
-
-#### Assertion Functions
-
-Tests use TAP (Test Anything Protocol) assertions:
-
-| Function | Description |
-|----------|-------------|
-| `_assert_eq "$actual" "$expected" "desc"` | Assert values are equal |
-| `_assert_neq "$actual" "$unexpected" "desc"` | Assert values are not equal |
-| `_assert_true "$value" "desc"` | Assert value is non-empty |
-| `_assert_false "$value" "desc"` | Assert value is empty |
-| `_assert_contains "$haystack" "$needle" "desc"` | Assert string contains substring |
-| `_assert_ok "command" "desc"` | Assert command succeeds (exit 0) |
-
-#### Running Tests
-
-```bash
-# Run tests for a class
-@ Trash runTestsFor: Counter
-
-# Check if a class has tests
-@ Trash hasTestsFor: Counter
-
-# Tests run automatically during edit flow
-@ Trash edit: Counter
-```
-
-Output follows TAP format:
-
-```
-# Running tests for Counter
-ok 1 - increment returns 1
-ok 2 - custom step works
-1..2
-# All 2 tests passed
-```
-
-## Code and session tools
-
-`Tools::Roam` provides checkout-local indexing and code-graph queries;
-`Tools::AstGrep` searches syntax patterns; `Tools::Cass` searches existing agent
-sessions. `Tools::Chad` wraps the local Chad harness for explicit headless tasks
-and plan mode. All use exact argument vectors and preserve process diagnostics.
-See [code and session Tool adapters](docs/code-and-session-tools.md) for setup,
-examples, result contracts, and qualification limits.
-
-## Live agent conversations
-
-Use `@ Agent::Session browse` and choose **Attach to conversation**, or send
-`focus` / `attach` to an existing session. The Innards `inagent` applet shows
-backlog and live harness output, offers an inbox-backed composer, and detaches
-without stopping work. Message actions also offer **Attach to sender session**
-when the sender can be resolved. See [session view controls and setup](docs/agent-session-view.md).
-
-## Gusgus: the assistant behind `@@`
-
-`@@` talks to Gusgus, a persistent assistant with one current conversation
-across directories. Every argument is message text; `@@` has no flags. It sends your message and returns immediately; Gusgus works in a
-managed Jcode session by default and answers into your inbox, in the same thread as
-your question. Replying to that message continues the same conversation.
-
-```bash
-false
-__='the command produced this output'
-@@ 'why did that fail?'                 # prints the message id and returns
-
-inbox=$(@ Trash userInbox)
-@ $inbox list                            # Gusgus's reply appears here
-@ $inbox show: $msg
-@ $msg reply: 'and how do I fix it?'     # resumes the same conversation
-@ $inbox thread: $msg                    # the whole exchange, oldest first
-
-@ Gusgus focusCurrent                   # Option-U toggles this view
-@ Gusgus fresh: "$PWD"                  # explicitly replace an idle conversation
-@ Gusgus help
-```
-
-Option-U opens the current global Gusgus conversation. If none exists, it opens
-an empty composer; the first C-c C-c creates the conversation and sends direct
-session input. Detaching before that first send creates nothing. Inside an
-attached view, Option-U detaches.
-The composer sends directly to the agent session with C-c C-c, including steering
-at the next safe point while Jcode is working. These inputs create no inbox mail.
-See [the session view](docs/agent-session-view.md) for controls and key setup.
-
-`inbox=$(@ Trash userInbox)` returns your persisted `Inbox` instance, using
-`TRASHTALK_USER` with `$USER` as the fallback. Other inboxes are instances of
-the same class, retrieved with `@ Inbox named: 'gusgus'`.
-
-`@ "$inbox" browse` opens that inbox in Innards: `inpick` lists the messages
-with a rendered preview of each. Displaying a preview marks that message read
-and clears its unread dot. Opening a thread marks its messages read too.
-**Ctrl-D** archives the highlighted message
-and refreshes the inbox; archived messages remain available in their threads.
-**Enter** opens actions for reply, viewing the thread in `inpage`, archive,
-or back. Reply composes
-in `inmacs` and sends the saved text into the thread, which resumes Gusgus
-when the message came from a session. Without Innards the same loop falls
-back to `fzf` and `$EDITOR`.
-
-`@ "$inbox" count` returns its total non-archived messages, including read
-messages. `@ "$inbox" unreadCount` counts only unread messages.
-`@ Inbox count` counts stored inbox instances. The `Inbox` class does not
-implicitly select the current user's inbox.
-
-Each `@@` becomes an `Agent::Delivery` on Gusgus's current `Agent::Session`.
-`Agent::Worker` notifies the configured harness with inbox message references;
-the agent reads their contents from Inbox and uses `Agent::Run result:forDelivery:`
-and `settle:` to respond and acknowledge work. Every run gets a private launcher
-for the common `trash-send` API. Busy sessions queue messages for the next prompt.
-Jcode is the default and uses a resident daemon, resuming the same native
-conversation across runs. Jcode and Maki run with your normal OS permissions.
-`@@` and inbox replies request foreground ticks. For queued work to continue
-without another command, run `bin/trash-worker` or install and start its user
-service with `bin/trash-worker-service install` and `bin/trash-worker-service start`.
-`@ Agent::Session browse` opens session activity, messages, run logs, and explicit
-pause/resume/retry actions in Innards. See [agent operations](docs/agent-operations.md)
-for recovery behavior, service controls, and validation. Gusgus uses OpenAI
-OAuth and medium reasoning effort. Configure with
-`TRASHTALK_JCODE_MODEL` (default `gpt-5.6-terra`),
-`TRASHTALK_USER` (your inbox name, default `$USER`), and
-`TRASHTALK_GUSGUS_PROFILE` (`jcode` by default; `maki` for Maki; `codex` or the legacy
-`assistant-low-power` for Codex; `shell` for a script in
-`TRASHTALK_SHELL_DRIVER`). Codex uses `TRASHTALK_CODEX_MODEL`
-(default `gpt-5.6-terra`). Maki uses `TRASHTALK_MAKI_MODEL`
-(default `openai/gpt-5.6-terra`). Jcode uses existing OpenAI subscription login.
-`@ Jcode login` starts interactive authentication. `@ "$run" stop` pauses its
-session and stops that exact run; agents use `Agent::Run stop:` with `agent.stop`
-role authority. Profiles are captured when a session opens;
-changing the default does not migrate existing conversations. See the
-[Jcode driver design](docs/jcode-session-driver.md),
-[Maki driver design](docs/maki-session-driver.md), and
-`docs/headless-agent-sessions-design.md`.
-
-`Assignment` adds durable work owned by an identity, with explicit session
-selection, progress, inbox questions, and atomic completion. Its first slice is
-manual: published work is held from harness dispatch. Follow the
-[Assignment walkthrough](docs/assignments.md) to try it from Bash.
-
-## Tracking failing commands and delegating them
-
-Wrap a command with `bin/trash-command --cwd "$PWD" --label 'unit tests' -- make test`
-and the worker turns repeated failures into one durable alert in your inbox,
-with a count for your prompt, acknowledge/snooze/resolve/suppress controls, and
-optional delegation to Gusgus or another agent you already run. See the
-[workstation guide](docs/workstation-guide.md).
-
-## One-shot agent questions
-
-`@ Agent ask:workingDirectory:status:lastResult:` sends one explicit, read-only
-request through the official Codex CLI with no memory. Pass the question,
-working directory, command status, and optional prior result explicitly.
-`Agent present:` displays the answer.
-
-```bash
-run=$(@ Agent ask: 'why did that fail?' workingDirectory: "$PWD" status: '1' lastResult: '')
-@ Agent present: "$(@ Agent answerFromRun: "$run")"
-
-# Inspect the exact context without making an LLM call.
-@ Agent dryRun: 'what context would you receive?' workingDirectory: "$PWD" status: '0' lastResult: ''
-```
-
-The backend defaults to `codex`; `TRASHTALK_AGENT_BACKEND=codex` is accepted
-for explicit configuration. Run `codex login` and select the ChatGPT login,
-then verify it with `codex login status`. The adapter refuses API-key
-authentication and removes `CODEX_API_KEY` and `OPENAI_API_KEY` from the child
-process so it cannot silently fall back to per-token API billing. It invokes
-`codex exec` ephemerally, ignores user tool configuration, and fixes the
-sandbox to read-only. See OpenAI's documentation for
-[authentication](https://learn.chatgpt.com/docs/auth) and
-[non-interactive Codex](https://learn.chatgpt.com/docs/non-interactive-mode).
-
-Codex failures preserve their original process status. A non-ChatGPT login is
-reported as configuration exit `2`, and a missing Codex CLI as `127`.
-
-## Reviewed source proposals
-
-Source mutation is a separate operation from `@@`. An explicit one-file `.trash`
-unified diff can be reviewed and applied through the guarded proposal gate:
-
-```bash
-run=$(@ Agent propose: 'make value return 2' for: Counter)
-proposal=$(printf '%s' "$run" | jq -r .result.content)
-@ Agent reviewAndApplyProposal: "$proposal"
-```
-
-Proposal schema v1 is closed and deliberately narrow:
-
-```json
-{
-  "schema_version": 1,
-  "kind": "trashtalk_source_patch",
-  "files": [{
-    "class_name": "Counter",
-    "path": "trash/Counter.trash",
-    "base_sha256": "<64 lowercase hex characters>",
-    "diff": "--- a/trash/Counter.trash\n+++ b/trash/Counter.trash\n..."
-  }]
-}
-```
-
-`indiff` only displays the diff and records zero-based accepted/rejected hunk
-indices. After an acceptance, Trashtalk validates that complete decision,
-rechecks the source hash, applies only accepted hunks to a temporary copy,
-compiles it with the canonical jq compiler, validates generated Bash, runs the
-candidate's tests, checks the hash again, and then installs source and artifact
-with rollback backups. Rejection, cancellation, stale hashes, invalid paths or
-headers, and failed gates leave the working source and compiled artifact
-unchanged. Command fields and multi-file proposals are rejected; no
-agent-authored command is executed.
-
-## Compiling Classes
-
-Compile a single class:
-
-```bash
-make single CLASS=MyClass
-```
-
-Compile all classes:
-
-```bash
-make compile
-```
-
-Or use the compiler directly:
-
-```bash
-lib/jq-compiler/driver.bash compile trash/MyClass.trash > trash/.compiled/MyClass
-```
-
-## Profiling
-
-Trashtalk includes a built-in profiling system to help identify performance bottlenecks and optimize method dispatch.
-
-### Enabling Profiling
-
-Runtime diagnostics default to warnings/errors on stderr. Use
-`TRASHTALK_LOG_LEVEL=debug` for method-resolution diagnostics or `trace` to
-include message arguments. Interactive slow operations show delayed progress
-on `/dev/tty`; `TRASHTALK_PROGRESS=0` disables it. See
-[performance and terminal output](docs/performance.md) for JSON-value
-construction, browser caching, and the isolated `bin/trash-bench` harness.
-
-Set `TRASH_PROFILE=1` to enable profiling output:
-
-```bash
-# Profile to stderr
-TRASH_PROFILE=1 @ Counter new
-
-# Profile to a file
-TRASH_PROFILE=1 TRASH_PROFILE_FILE=profile.log @ MyApp run
-```
-
-### Profile Output Format
-
-Profiling logs entry and exit points with timing:
-
-```
-[1767909948.119] → Counter.new [bash]
-[1767909948.295] ← Counter.new [bash] 176ms
-```
-
-- `→` marks method entry
-- `←` marks method exit with elapsed time
-- Routes identify Bash dispatch (`bash`) or caller-shell methods (`bash:direct`).
-
-### Environment Variables
-
-| Variable | Description |
-|----------|-------------|
-| `TRASH_PROFILE=1` | Enable profiling output |
-| `TRASH_PROFILE_FILE=path` | Write to file instead of stderr |
-| `TRASH_PROFILE_DEPTH=N` | Only log calls up to depth N |
-| `TRASH_PROFILE_MIN_MS=N` | Only log calls taking >= N milliseconds |
-
-### Profile Analyzer
-
-Use `bin/trash-profile-analyze` to generate reports from profile logs:
-
-```bash
-# Generate profile data
-TRASH_PROFILE=1 @ MyApp run 2>profile.log
-
-# Analyze the profile
-bin/trash-profile-analyze profile.log
-```
-
-The analyzer reports dispatch routes, slowest individual calls, the most-called
-methods, and classes by call count. Method times include nested calls, so their
-sum is not wall-clock duration. The report's timestamp span covers the first
-through last completed call. Use these measurements to choose a representative
-workflow to benchmark; the report does not infer subprocess counts or recommend
-another runtime.
-
-## Core Classes
-
-| Class | Description |
-|-------|-------------|
-| `Object` | Root class with new, findAll, count methods |
-| `Trash` | System introspection and management |
-| `Store` | SQLite-backed instance persistence |
-| `Array` | Dynamic array with push, pop, map, filter |
-| `Counter` | Simple counter with increment/decrement |
-| `File` | File system operations (read, write, temp files) |
-| `Future` | Async computation with result retrieval |
-| `Process` | External OS process management (subprocess-like) |
-| `ReplServer` | Socket-based REPL server for Emacs integration |
-| `Honker` | Pub/sub, work queues, streams, locks, rate limiting (requires honker extension) |
-| `EventBus` | Observer pattern via ephemeral pub/sub |
-| `Actor` | Mailbox-style actors with background dispatch and at-least-once delivery |
-| `Stream` | Cross-process durable streams with consumer offset tracking |
-| `Scheduler` | Cron-based periodic tasks with leader election |
-| `Inbox` | Durable named inboxes for messages between agents, humans, and processes |
-| `Message` | A persisted message: sender, recipient, kind, status, thread |
-| `Gusgus` | The persistent assistant behind `@@`: one global current conversation |
-| `Agent::Session` | Durable agent conversation bound to an identity, archetype, role, and workspace |
-| `Agent::Identity`, `Agent::Archetype`, `Agent::Role` | Who an agent is, what it is for, and what it may do |
-| `Agent::Run`, `Agent::Delivery` | One harness process, and the durable input batch it was offered |
-| `Agent::Worker` | Foreground dispatch and reconciliation: claim, launch, settle |
-| `Agent::JcodeDriver`, `Agent::MakiDriver`, `Agent::CodexDriver`, `Agent::ShellDriver` | Common session drivers for resident Jcode, Maki SDK, Codex, and test scripts |
-
-### Traits
-
-| Trait | Description |
-|-------|-------------|
-| `Persistable` | Save/reload, deletion, and Store queries |
-| `Debuggable` | Debug logging, inspection, ancestry tracing |
-| `Assignment::Authority`, `Assignment::Reporting`, `Assignment::Presentation` | Assignment authorization, progress/questions, and views |
-| `Observable` | Event emission, subscription, and atomic save+emit for any class |
-
-## Message Sending
-
-```bash
-# Basic syntax
-@ <Receiver> <selector> [args...]
-
-# Examples
-@ Trash info                      # No arguments
-@ Counter new                     # Returns instance ID
-@ "$counter" incrementBy: 5            # Instance method with arg
-@ Store getField: "$id" field: name # Public keyword message
-```
-
-## Instance Persistence
-
-`new` immediately saves an initial SQLite record. Subsequent mutations update
-the session cache and need an explicit `save` to become durable:
-
+<!-- smoke: walkthrough -->
 ```bash
 counter=$(@ Counter new)
-@ "$counter" value: 42
+@ "$counter" setValue: 5
+@ "$counter" incrementBy: 3
+@ "$counter" getValue                 # 8
 @ "$counter" save
-@ Counter findAll                 # List stored Counter instances
-@ Counter find: 'value > 10'       # Query durable state
-@ Counter count
+
+items=$(@ Array new)
+@ "$items" push: hello
+@ "$items" push: world
+@ "$items" at: 0                       # hello
+
+@ Trash methodsFor: Counter
 ```
 
-`Persistable` supplies save, reload, deletion, and query methods. See
-[object persistence](docs/persistence.md) for cache freshness, deletion, and
-Store transactions.
+Creation persists initial state. Later changes live in the runtime's session
+cache until saved; `reload` reads the durable state. See
+[persistence](docs/persistence.md) for ownership and transaction rules.
 
-## Honker Integration
+A class file expresses behavior in the DSL:
 
-Trashtalk optionally integrates with [Honker](https://github.com/russellromney/honker), a SQLite loadable extension that adds pub/sub, work queues, durable streams, distributed locks, rate limiting, and cron scheduling — all backed by the same SQLite database used for instance persistence. No extra processes or external brokers needed.
-
-### Installation
-
-The easiest way is the bundled installer, which clones honker, builds it with `cargo`, and drops the artifact into `~/.trashtalk/lib/vendor/honker/`:
-
-```bash
-bin/install-honker              # build from main + install
-bin/install-honker --ref v0.2   # pin to a tag/branch/commit
-```
-
-Requires `cargo` (Rust toolchain) and a `sqlite3` built with loadable-extension support. On macOS, the system `sqlite3` does **not** allow `.load`; install Homebrew's and put it ahead on `PATH`:
-
-```bash
-brew install sqlite
-export PATH="$(brew --prefix sqlite)/bin:$PATH"
-```
-
-Or install manually:
-
-```bash
-# Option 1: Project-local
-cp libhonker_ext.dylib ~/.trashtalk/lib/vendor/honker/  # macOS
-cp libhonker_ext.so ~/.trashtalk/lib/vendor/honker/     # Linux
-
-# Option 2: System-wide
-cp libhonker_ext.dylib /usr/local/lib/   # macOS
-cp libhonker_ext.so /usr/local/lib/      # Linux
-
-# Option 3: Explicit path
-export HONKER_EXT=/path/to/libhonker_ext
-```
-
-Trashtalk auto-detects honker at startup. Everything works without it — honker-dependent classes degrade gracefully, and tests skip automatically.
-
-### EventBus — Observer Pattern
-
-```bash
-# Create a named event bus
-bus=$(@ EventBus named: 'orders')
-
-# Subscribe with a handler block
-handler=$(@ Block params: '["payload"]' code: 'echo "Got: $payload"' captured: '{}')
-@ $bus on: 'created' do: $handler
-
-# Emit events
-@ $bus emit: 'created' payload: '{"id":42,"total":99.50}'
-@ $bus emit: 'shipped'                # no payload
-
-# Clean up
-@ $bus shutdown
-```
-
-### Observable Trait — Events on Any Class
-
+<!-- smoke: class -->
 ```smalltalk
-Order subclass: Object
-  include: Persistable
-  include: Observable
-  instanceVars: status:'pending' total:0
+Greeting subclass: Object
+  classMethod: for: name [
+    ^ 'Hello, ' , name
+  ]
 ```
+
+Save it as `trash/user/Greeting.trash`, run `make single CLASS=Greeting`, then
+send `@ Greeting for: Ada`. Prefer `method:` and `classMethod:` for domain
+logic. Keep `rawMethod:` and primitives at Bash, filesystem, process, and
+serialization boundaries. A method's stdout is its value; use `pragma: stream`
+when several statements intentionally print output.
+
+## Work on the code
 
 ```bash
-order=$(@ Order new)
-@ $order on: 'completed' do: $handler    # subscribe to this instance
-@ $order emit: 'completed'               # fire event
-@ $order saveAndEmit: 'saved'            # atomic persist + event in one transaction
+make                         # Build changed classes and dependencies
+make single CLASS=Counter    # Build one class through the same cache
+make verify                  # Build and run both isolated test suites
+make test-serial              # Runtime tests, one file at a time
+make test-verbose             # Runtime tests with Bash tracing
 ```
 
-### Actor — Mailbox Message Processing
+`TRASH_TEST_JOBS` and `TRASH_TEST_TIMEOUT` control test concurrency and per-file
+timeouts. Tests use disposable checkouts, databases, and caches. See
+[performance](docs/performance.md) for benchmarks and profiling.
 
-Each actor has a named queue. Messages are processed sequentially by a background dispatcher. Honker provides at-least-once delivery with retries and dead-lettering.
+Run `bin/trash` for a Readline REPL with history and completion. Optional Innards
+applets provide editing, browsing, inspection, and conversation views; see
+[development tools](docs/development-tools.md). Emacs users can add the `emacs/`
+directory to `load-path` and `(require 'trashtalk-mode)`.
 
-```bash
-actor=$(@ Actor named: 'order-processor')
-@ $actor start                            # start background dispatcher
+## Optional integrations
 
-@ $actor send: 'processOrder' with: '42'
-@ $actor send: 'cleanup'
-@ $actor pendingCount                     # check mailbox depth
+- `@@ message` sends a durable inbox message to Gusgus. Session setup, backend
+  selection, stop, and recovery are in [agent operations](docs/agent-operations.md).
+- One-shot `Agent` calls use the Codex CLI with ChatGPT authentication and an
+  ephemeral read-only execution boundary; see [tool adapters](docs/code-and-session-tools.md).
+- Honker adds SQLite-backed events, queues, streams, locks, and scheduling.
+  `bin/install-honker` builds it using Cargo. It requires an extension-capable
+  `sqlite3`; select one with `TRASH_SQLITE3` if necessary. Core object operations
+  do not require Honker; Honker-dependent features do.
+- [Workstation subscriptions](docs/workstation-guide.md) collect command failures
+  and support reviewed delegation. [Typed decisions](docs/typed-decisions.md)
+  provide shared question/answer workflows.
 
-@ $actor stop
-```
+## References
 
-### Stream — Cross-Process Durable Streams
+| Need | Read |
+| --- | --- |
+| Syntax and language limitations | [LANGUAGE.md](LANGUAGE.md) |
+| Small, executable DSL recipes | [Patterns](docs/trashtalk-patterns.md) |
+| Design idioms and domain examples | [The Way of Trashtalk](docs/the-way-of-trashtalk.md) |
+| Compiler architecture | [jq compiler](lib/jq-compiler/README.md) |
+| Current guides, designs, and history | [Documentation index](docs/README.md) |
+| Accepted cleanup work and validation | [Cleanup checklist](docs/cleanup-2026-09-29.md) |
 
-Two separate trashtalk programs sharing the same database can communicate through streams. Messages survive crashes, and consumers track their position with offsets.
-
-```bash
-# Terminal 1 (producer)
-producer=$(@ Stream named: 'metrics')
-@ $producer publish: '{"cpu":42,"host":"web1"}'
-
-# Terminal 2 (consumer)
-consumer=$(@ Stream named: 'metrics' consumer: 'dashboard')
-msgs=$(@ $consumer read)
-@ $consumer ack: 5                        # advance offset
-@ $consumer consumeDo: $handler           # continuous background consumption
-```
-
-### Scheduler — Cron Tasks with Leader Election
-
-```bash
-@ Scheduler every: '*/5 * * * *' call: 'cleanup_fn' named: 'cleanup'
-@ Scheduler start                         # start tick loop
-@ Scheduler stop
-```
-
-Multiple processes can run the scheduler — honker's leader election ensures each task fires exactly once.
-
-### Locks and Rate Limiting
-
-```bash
-@ Honker lock: 'deploy'                  # acquire distributed lock
-@ Honker unlock: 'deploy'
-
-allowed=$(@ Honker rateLimit: 'api-call' limit: 100 window: 60)
-```
-
-## Inboxes
-
-An `Inbox` is a durable, named mailbox that agents, humans, and deterministic
-processes all share the same way. Messages are ordinary `Persistable` objects,
-so they survive process exit and can be listed, read, replied to, and archived
-from any trashtalk process using the same Store. Inboxes are created on first
-use; names may contain letters, digits, `_ . : -`.
-
-```bash
-# An agent (or cron job) reports to a human
-@ Inbox send: 'all 71 tests pass' to: 'chazu' from: 'maki:abc123' subject: 'done' kind: 'result'
-@ Inbox alert: 'disk 95%' to: 'chazu' from: 'cron'
-
-# An agent asks a question and waits for the answer to land in its own inbox
-q=$(@ Inbox ask: 'ok to force-push?' to: 'chazu' from: 'maki:abc123')
-
-# The human reads and replies from the REPL
-inbox=$(@ Inbox named: 'chazu')
-@ $inbox list                     # unread messages, one line each
-@ $inbox show: $q                 # full message; marks it read
-@ $q reply: 'yes'                 # lands in maki:abc123's inbox, same thread
-
-# The agent finds the answer
-@ $(@ Inbox named: 'maki:abc123') unread
-@ $(@ Inbox named: 'maki:abc123') thread: $q      # question + reply, oldest first
-```
-
-Queries return instance ids, one per line: `unread`, `unreadCount`,
-`questions` (unread, kind `question`), `messages` / `messages: n` (recent,
-non-archived, newest first), `thread: id`. Bulk actions: `readAll`, and per
-message `markRead` / `archive`. Kinds are free-form; `note`, `question`,
-`alert`, and `result` are the conventions the helpers use.
-
-### Wakeups
-
-Delivery transports live outside the core. With the honker extension, an
-inbox can run a `Block` for every future delivery; the block receives the
-message as JSON. Put whatever reaches you there: `mosquitto_pub`, `tmux
-send-keys`, a desktop notifier, or a message send into another Trashtalk
-object.
-
-```bash
-handler=$(@ Block params: '["payload"]' \
-  code: 'mosquitto_pub -t "inbox/$(jq -r .to <<<"$payload")" -m "$(jq -r .body <<<"$payload")"' \
-  captured: '{}')
-@ $inbox onMessage: $handler      # background listener; returns its pid
-@ $inbox stopListening
-```
-
-Without honker, `send`/`read`/`reply` work unchanged; `onMessage:` warns and
-returns an empty pid. `@ Inbox help` and `@ Message help` list every message.
-
-## Development loop
-
-Run `bin/trash` for the REPL. It uses Bash Readline for editing, Up/Down history,
-and Tab completion of classes, live object variables, and methods; no rlwrap
-filter is required. History defaults to `~/.trash_history`; override it with
-`TRASHTALK_HISTORY_FILE`. `bin/trash --help` shows examples, and piped message
-input works without terminal setup.
-
-`make` skips unchanged compiled classes and rebuilds parent/trait dependencies
-before their dependents. `make single CLASS=Counter` uses the same build cache.
-Run `make verify` to build and check both runtime and compiler suites in isolated
-parallel test checkouts. See [performance](docs/performance.md) for controls and
-[JSON values](docs/json-values.md) for typed reads, bulk field binding, and
-collection traversal primitives.
-
-## Dependencies
-
-Vendored in `lib/vendor/`:
-- `sqlite-json.bash` - SQLite-based JSON document store and key-value persistence
-- `honker.bash` - Bash wrapper for the Honker SQLite extension (pub/sub, queues, streams)
-- `tuplespace/` - Event coordination (legacy; can be upgraded to honker via `tuplespace-honker.bash` shim)
-- `bsfl.sh` - Bash utility functions
-- `fun.sh` - Functional programming utilities
-
-External tools (install separately):
-- `jo` - JSON output from shell
-- `jq` - JSON processor
-- `sqlite3` - Database engine
-- `uuidgen` - UUID generation (usually pre-installed)
-- `perl` with `JSON::PP`, `Digest::SHA`, and `Time::HiRes` - conversation log file adapter and detached process launch
-- `libhonker_ext` - Honker SQLite extension (optional — enables EventBus, Actor, Stream, Scheduler)
-
-## Emacs Integration
-
-Trashtalk includes a major mode for Emacs with syntax highlighting, indentation, and REPL integration for interactive development.
-
-### Installation
-
-Add to your `init.el`:
-
-```elisp
-(add-to-list 'load-path "~/.trashtalk/emacs")
-(require 'trashtalk-mode)
-```
-
-Or with `use-package`:
-
-```elisp
-(use-package trashtalk-mode
-  :load-path "~/.trashtalk/emacs"
-  :mode "\\.trash\\'")
-```
-
-
-## File Structure
-
-```
-~/.trashtalk/
-├── emacs/
-│   └── trashtalk-mode.el    # Emacs major mode with REPL support
-├── lib/
-│   ├── trash.bash           # Main runtime & dispatcher
-│   ├── jq-compiler/         # jq-based DSL compiler
-│   │   ├── driver.bash      # CLI entry point
-│   │   ├── tokenizer.bash   # Source → JSON tokens
-│   │   ├── parser.jq        # Tokens → AST
-│   │   └── codegen.jq       # AST → Bash code
-│   └── vendor/              # Vendored dependencies
-│       ├── sqlite-json.bash # SQLite JSON document store
-│       ├── honker.bash      # Honker extension wrapper
-│       └── tuplespace/      # Legacy event coordination
-├── trash/
-│   ├── *.trash              # DSL source files
-│   ├── .compiled/           # Compiled output
-│   │   └── traits/          # Compiled traits
-│   └── traits/              # Trait source files
-│       ├── Debuggable.trash
-│       ├── Observable.trash # Event emission mixin
-│       └── ...
-└── tests/                   # Test scripts
-```
-
-## Version
-
-Supposedly v1.0.0
-
-## Author
-
-Chaz Straney
-
-### Retained Innards interfaces
-
-With `inui` installed, `@ UI::Events open` opens a 10,000-row synthetic live event
-inspector with native filtering, details and a plot. `UI::Surface` hosts ordinary
-Trashtalk handlers over bounded JSONL; editing and cached scrolling stay native.
-`UI::Node`, `UI::Form`, `UI::Signal`, `UI::Binding`, and `UI::Inspector` provide
-composition, bindings and navigable snapshot inspection. See the
-[toolkit guide](docs/innards-ui.md) for installation, public messages, the protocol
-and profiling on both sides. `bin/trash-bench-ui` measures the bulk bridge.
+Source classes live in `trash/`, generated artifacts in `trash/.compiled/`,
+the runtime in `lib/trash.bash`, and entry points in `bin/`. Generated artifacts
+are derived data. The retired native compiler, plugin mode, and `tt` daemon
+are not part of the build.

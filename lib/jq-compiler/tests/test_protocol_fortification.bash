@@ -187,13 +187,15 @@ build PrivateClient
 ! _class_has_method PrivateClient _hidden
 ! _class_has_method PrivateClient publicAlias
 ! _class_has_method PrivateClient classAlias
-# Ambiguous filenames and a changed registration are rejected before writing.
+# Live duplicate sources are rejected; a moved protocol retains its contract.
 mkdir -p "$TRASHDIR/user"
 cp "$TRASHDIR/Contract.trash" "$TRASHDIR/user/Contract.trash"
 reject Client 'Ambiguous build identity'
 rm "$TRASHDIR/user/Contract.trash"
 mv "$TRASHDIR/Contract.trash" "$TRASHDIR/user/Contract.trash"
-reject Client 'identity shadowed'
+build Client
+_conforms_to Client Contract > "$work/result"
+test "$(cat "$work/result")" = true
 mv "$TRASHDIR/user/Contract.trash" "$TRASHDIR/Contract.trash"
 # Unpromised protocols can change, invalidating a successful dynamic cache.
 _conforms_to Local::Consumer Remote::Ready > "$work/result"

@@ -2,36 +2,34 @@
 # Provides access to runtime context, object creation, and introspection
 #
 # Usage:
-#   className := @ Runtime class
+#   className := @ anObject class
 #   id := @ Runtime generateId: 'Counter'
 #   @ Runtime create: 'Counter' id: id
 #
 Runtime subclass: Object
 
   # ==========================================
-  # Context Access
+  # Nested-send diagnostics (retained for compatibility)
   # ==========================================
 
-  # Get the current class name in context
-  # Usage: className := @ Runtime class
+  # These expose Runtime's own send, not the caller. Use self / @ self class
+  # in DSL methods, or the dispatcher context directly at a raw boundary.
+  # Runtime class returns Runtime.
   rawClassMethod: class [
     echo "$_CLASS"
   ]
 
-  # Get the current instance ID in context
-  # Usage: instanceId := @ Runtime instance
+  # Runtime instance is empty because this is a class send.
   rawClassMethod: instance [
     echo "$_INSTANCE"
   ]
 
-  # Get the current receiver in context
-  # Usage: receiver := @ Runtime receiver
+  # Runtime receiver returns Runtime.
   rawClassMethod: receiver [
     echo "$_RECEIVER"
   ]
 
-  # Get the current selector being executed
-  # Usage: selector := @ Runtime selector
+  # Runtime selector returns the selector of this diagnostic send.
   rawClassMethod: selector [
     echo "$_SELECTOR"
   ]
@@ -141,60 +139,15 @@ Runtime subclass: Object
   # Usage: class := @ Runtime classFor: instanceId
   classPrimitive: classFor: instanceId calls: _get_instance_class
 
-  # Get superclass of a class
-  # Usage: super := @ Runtime superclassOf: 'Counter'
-  rawClassMethod: superclassOf: className [
-    local super_var="__${1}__superclass"
-    echo "${!super_var:-}"
-  ]
+  # Class existence loads current metadata without constructing an object.
+  classPrimitive: superclassOf: className calls: _trash_superclass_of
+  classPrimitive: classExists: className calls: _trash_class_exists
 
-  # Check if a class exists
-  # Usage: exists := @ Runtime classExists: 'Counter'
-  rawClassMethod: classExists: className [
-    local meta_var="__${1}__class"
-    if [[ -n "${!meta_var:-}" ]]; then
-      echo "true"
-    else
-      echo "false"
-    fi
-  ]
-
-  # Get all methods for a class (as JSON array)
-  # Usage: methods := @ Runtime methodsFor: 'Counter'
-  rawClassMethod: methodsFor: className [
-    local methods="[]"
-    local prefix="__${1}__"
-    while read -r func; do
-      local method="${func#*$prefix}"
-      methods=$(echo "$methods" | jq -c --arg m "$method" '. + [$m]')
-    done < <(declare -F | grep "$prefix" | awk '{print $3}')
-    echo "$methods"
-  ]
-
-  # Get methods matching a pattern (for test discovery)
-  # Usage: tests := @ Runtime methodsFor: 'TestCounter' matching: 'test*'
-  rawClassMethod: methodsFor: className matching: pattern [
-    local methods="[]"
-    local prefix="__${1}__"
-    while read -r func; do
-      local method="${func#*$prefix}"
-      if [[ "$method" == $2 ]]; then
-        methods=$(echo "$methods" | jq -c --arg m "$method" '. + [$m]')
-      fi
-    done < <(declare -F | grep "$prefix" | awk '{print $3}')
-    echo "$methods"
-  ]
-
-  # Check if a class has a specific method
-  # Usage: has := @ Runtime class: 'Counter' hasMethod: 'increment'
-  rawClassMethod: class: className hasMethod: methodName [
-    local func="__${1}__${2}"
-    if declare -F "$func" >/dev/null 2>&1; then
-      echo "true"
-    else
-      echo "false"
-    fi
-  ]
+  # Sorted compiled selector names, including direct traits and methods declared by ancestors.
+  # Class methods have the class__ prefix; keyword selectors end in underscore.
+  classPrimitive: methodsFor: className calls: _trash_methods_json
+  classPrimitive: methodsFor: className matching: pattern calls: _trash_methods_json
+  classPrimitive: class: className hasMethod: methodName calls: _trash_has_method
 
   # ==========================================
   # Call Stack

@@ -364,12 +364,12 @@ Tool subclass: Object
   # Detach into a run directory: stdout.log, stderr.log, pid, exit under runDir.
   classMethod: detachArgvJson: argvJson stdinFile: stdinPath dir: runDir [
     | out err pf ef pid |
-    @ File mkdir: runDir.
+    (@ File mkdir: runDir) ifFailed: [:error | @ error signal].
     out := runDir , '/stdout.log'.
     err := runDir , '/stderr.log'.
     pf := runDir , '/pid'.
     ef := runDir , '/exit'.
-    pid := @ self detachArgvJson: argvJson stdinFile: stdinPath stdoutFile: out stderrFile: err pidFile: pf exitFile: ef.
+    pid := (@ self detachArgvJson: argvJson stdinFile: stdinPath stdoutFile: out stderrFile: err pidFile: pf exitFile: ef) ifFailed: [:error | @ error signal].
     ^ pid
   ]
 
@@ -419,7 +419,10 @@ Tool subclass: Object
     fi
 
     futureCmd="${toolPath} ${args}"
-    @ Future value: "$futureCmd"
+    local future
+    future=$(@ Future for: "$futureCmd") || return
+    @ "$future" start >/dev/null || return
+    printf '%s\n' "$future"
   ]
 
   # Check if a command exists on the system (utility method)

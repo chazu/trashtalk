@@ -71,6 +71,16 @@ check test "$(db_get "$child" | jq -c .)" = "$(jq -c . <<< "$data")"
 # A failed persistent write must not publish an in-memory object.
 ( db_put() { return 1; }; _create_instance ManyDefaults failure_fixture >/dev/null 2>&1; test "$?" != 0 && test ! -e "$_ENV_DIR/failure_fixture" )
 check test "$?" = 0
+# Exercise the public constructor, including inherited class dispatch.
+for constructor in Object ManyDefaults; do
+    (
+        db_put() { return 1; }
+        _generate_instance_id() { printf 'constructor_failure\n'; }
+        if result=$(@ "$constructor" new 2>/dev/null); then exit 1; fi
+        [[ -z "$result" && ! -e "$_ENV_DIR/constructor_failure" ]]
+    )
+    check test "$?" = 0
+done
 block=$(@ Block params: '["x"]' code: 'printf "%s\n" "$x"' captured: '{}')
 block_argument="quote ' and newline
 second line"

@@ -40,13 +40,17 @@ never curl argv or execution receipts.
 Applications include `DecisionStage`, supply `questions`, and optionally override
 `stateFor:` and `interpret:`. The replay seam is `evaluate:questions:using:`.
 `decide:using:` returns `{value,response,execution}`: application interpretation,
-intact provider receipt, and selected target. Batcave CLM adds pinned model/head
+intact provider receipt, and selected target. Failed decision sends return nonzero
+with the original `{outcome,...}` failure receipt on stdout; stage and Gmail
+workflow callers retain HTTP status, transport details, or malformed response text. Batcave CLM adds pinned model/head
 provenance in `response.deployment`.
 
 `Decision::Question` constructs `choice:among:`, `score:on:` and `probability:`
 temporary JSON values. `Decision::Answer probability:atLeast:` compares decimals.
 Existing `Jev::Question`/`Jev::Answer` names inherit these implementations;
-`JevDecision` remains an explicitly Jev-only legacy trait.
+`DecisionStage` replaces the retired Jev-only trait. Select a Jev target explicitly
+when a stage must use that provider. `Jev::Question` and `Jev::Answer` remain
+supported aliases for the shared typed question/answer interfaces.
 
 ## State and confidence
 

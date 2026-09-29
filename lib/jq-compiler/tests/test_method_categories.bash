@@ -115,11 +115,11 @@ TestCatRuntime subclass: Object
   instanceVars: value:0
 
   category: "accessing"
-  method: getValue [^ $(_ivar value)]
-  method: setValue: val [_ivar_set value "$val"]
+  method: getValue [^ value]
+  method: setValue: val [value := val]
 
   category: "arithmetic"
-  method: increment [| v | v := $(( $(_ivar value) + 1 )). _ivar_set value "$v"]
+  method: increment [value := value + 1]
 EOF
 
 # Compile the test class

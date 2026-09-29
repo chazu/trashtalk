@@ -8,12 +8,13 @@ Request subclass: Object
     ^ @ self send: request endpoint: endpoint credential: credential required: required
   ]
 
-  # Preserve the transport's nonzero status AND its JSON error receipt across
-  # Bash capture. ifFailed: rethrows exceptions but does not forward that stdout.
+  # Bash status/stdout boundary: preserve the receipt and register it for
+  # explicit rethrow by higher-level decision workflows.
   rawClassMethod: send: request endpoint: endpoint credential: credential required: required [
     local response
     response=$(@ Decision::HTTP send: POST to: "$2" body: "$1" credential: "$3" required: "$4" timeout: 90) || {
-      printf '%s' "$response"; return 1;
+      if [[ -n "$response" ]]; then @ Decision::Request reject: "$response"; fi
+      return 1;
     }
     @ Decision::Request response: "$response" for: "$1"
   ]
@@ -46,8 +47,26 @@ Request subclass: Object
         (if has("confidence") then (.confidence | probability) else true end) and
         (if has("probabilities") then (.probabilities | type == "object" and all(.[]; probability)) else true end)
       )' <<< "$1" >/dev/null 2>&1; then
-      jq -cn --arg body "$1" '{outcome:"response_shape_error",body:$body}'
+      local receipt
+      receipt=$(jq -cn --arg body "$1" '{outcome:"response_shape_error",body:$body}')
+      @ Decision::Request reject: "$receipt"
       return 1
     fi
     printf '%s\n' "$1"
+  ]
+
+  # Register compact JSON as an error message so capture/rethrow retains it.
+  # These two primitives bridge Bash failure status and the JSON stdout contract.
+  rawClassMethod: reject: receipt [
+    _throw DecisionRequestError "$1"
+    printf '%s\n' "$1"
+    return 1
+  ]
+
+  rawClassMethod: failure: error [
+    if [[ "${1%%:*}" == DecisionRequestError ]]; then
+      @ Decision::Request reject: "${1#DecisionRequestError: }"
+      return 1
+    fi
+    _trash_rethrow "$1"
   ]

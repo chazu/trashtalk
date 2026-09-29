@@ -64,3 +64,8 @@ See [the implemented Assignment refactor](assignment-persistence-implementation.
 for its boundaries and [the manual walkthrough](assignments.md) for a domain
 example. `tests/test_persistable.bash` and `tests/test_assignment_transaction.bash`
 exercise these contracts against the production runtime.
+
+`Store setField:field:value:` updates a dot-separated object path. Paths and
+values are bound JSON data. Signed digit strings become JSON numbers, including
+`001` and `-0`, preserving the legacy coercion. Other input stays text, including
+`1e2` and `true`. Use `Store patch:with:` for explicitly typed JSON. Conversion and database failures return nonzero.

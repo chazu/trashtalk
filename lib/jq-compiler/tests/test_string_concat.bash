@@ -122,41 +122,8 @@ else
 fi
 
 echo ""
-echo "=== Runtime Tests ==="
-echo ""
+# Public runtime coverage: test_expression_behavior.bash.
 
-# Test 6: Runtime literal concatenation
-echo "Test 6: Runtime literal concatenation"
-test_result="Hello""World"
-if [[ "$test_result" == "HelloWorld" ]]; then
-  pass "Runtime literal concatenation"
-else
-  fail "Runtime literal concatenation" "HelloWorld" "$test_result"
-fi
-
-# Test 7: Runtime variable concatenation
-echo "Test 7: Runtime variable concatenation"
-a="Hello"
-b="World"
-test_result="${a}${b}"
-if [[ "$test_result" == "HelloWorld" ]]; then
-  pass "Runtime variable concatenation"
-else
-  fail "Runtime variable concatenation" "HelloWorld" "$test_result"
-fi
-
-# Test 8: Runtime with space
-echo "Test 8: Runtime with space"
-a="Hello"
-b="World"
-test_result="${a} ${b}"
-if [[ "$test_result" == "Hello World" ]]; then
-  pass "Runtime with space"
-else
-  fail "Runtime with space" "Hello World" "$test_result"
-fi
-
-echo ""
 echo "=== Results ==="
 echo "Passed: $PASS"
 echo "Failed: $FAIL"

@@ -206,17 +206,7 @@ Trash subclass: Object
   # Get methods available on a class
   rawMethod: methodsFor: class_name [
     local compiled_name="${class_name//::/__}"
-    local compiled_file="$TRASHDIR/.compiled/$compiled_name"
-    local runtime_file="$TRASHDIR/$class_name"
-
-    [[ -f "$compiled_file" ]] || compiled_file=$(_compiled_trait_path "$class_name")
-
-    # Check for compiled or runtime class file
-    if [[ -f "$compiled_file" ]]; then
-      source "$compiled_file"
-    elif [[ -f "$runtime_file" ]]; then
-      source "$runtime_file"
-    else
+    if ! _ensure_class_sourced "$class_name" && ! _ensure_trait_sourced "$class_name"; then
       echo "Class $class_name not found"
       return 1
     fi

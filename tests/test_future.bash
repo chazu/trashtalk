@@ -35,6 +35,15 @@ future=$(@ Future for: 'echo hello')
 assert_not_empty "for: returns future ID" "$future"
 assert_contains "future ID has future_ prefix" "future_" "$future"
 
+result_path=$(@ "$future" result_file)
+[[ "$result_path" == "$TMPDIR"/* ]] && pass 'Future uses isolated TMPDIR' || fail 'Future uses isolated TMPDIR' "$TMPDIR/*" "$result_path"
+other=$(@ Future for: 'echo untouched')
+other_path=$(@ "$other" result_file)
+printf sentinel > "$other_path"
+@ "$future" cleanup
+assert_eq 'cleanup preserves another Future' sentinel "$(cat "$other_path")"
+@ "$other" cleanup
+future=$(@ Future for: 'echo hello')
 status=$(@ $future status)
 assert_eq "initial status is created" "created" "$status"
 
@@ -183,7 +192,7 @@ assert_contains "help shows await" "await" "$help_output"
 
 # ------------------------------------------------------------------------------
 # Cleanup
-rm -rf /tmp/trashtalk/futures 2>/dev/null
+# Each test cleans up only its own Future.
 
 echo ""
 echo "================================"

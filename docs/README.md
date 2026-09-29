@@ -11,6 +11,7 @@ implemented contracts from designs and historical evidence.
 | Topic | Reference |
 | --- | --- |
 | Compiler, supported syntax, and tests | [Capabilities](COMPILER_CAPABILITIES.md), [compiler internals](../lib/jq-compiler/README.md) |
+| Editing, browsing, and object inspection | [Development tools](development-tools.md) |
 | DSL recipes and design idioms | [Patterns](trashtalk-patterns.md), [The Way](the-way-of-trashtalk.md) |
 | Cache, Store, save/reload, and transactions | [Persistence](persistence.md), [Assignment refactor](assignment-persistence-implementation.md) |
 | State transition validation and persistence boundaries | [StateMachine trait](state-machines.md) |
@@ -24,7 +25,7 @@ implemented contracts from designs and historical evidence.
 | Code and session search / CLI harness adapters | [Tool adapters](code-and-session-tools.md) |
 | Runtime/build behavior and dated measurements | [Performance](performance.md), [opt-in result passing](result-passing-design.md), [first performance tranche, 2026-09-15](performance-first-tranche-trashtalk-2026-09-15.md) |
 | Packages and qualified names | [Namespace implementation/design](namespaces-design.md) |
-| Removed APIs and cleanup evidence | [September cleanup](cleanup-2026-09.md) |
+| Removed APIs and cleanup evidence | [September cleanup](cleanup-2026-09.md), [29 September checklist](cleanup-2026-09-29.md) |
 
 ## Designs, research, and partial implementations
 

@@ -164,66 +164,8 @@ else
 fi
 
 echo ""
-echo "=== Runtime Tests ==="
-echo ""
+# Public runtime coverage: test_expression_behavior.bash.
 
-# Test 9: Runtime - string equality true
-echo "Test 9: Runtime - string equality true"
-str="hello"
-if [[ "$str" == "hello" ]]; then
-  result="matched"
-else
-  result="no_match"
-fi
-if [[ "$result" == "matched" ]]; then
-  pass "Runtime - string equality works"
-else
-  fail "Runtime - string equality" "matched" "$result"
-fi
-
-# Test 10: Runtime - string inequality
-echo "Test 10: Runtime - string inequality"
-str="hello"
-if [[ "$str" != "world" ]]; then
-  result="not_equal"
-else
-  result="equal"
-fi
-if [[ "$result" == "not_equal" ]]; then
-  pass "Runtime - string inequality works"
-else
-  fail "Runtime - string inequality" "not_equal" "$result"
-fi
-
-# Test 11: Runtime - regex match
-echo "Test 11: Runtime - regex match"
-email="test@example.com"
-if [[ "$email" =~ ^[^@]+@[^@]+$ ]]; then
-  result="valid"
-else
-  result="invalid"
-fi
-if [[ "$result" == "valid" ]]; then
-  pass "Runtime - regex match works"
-else
-  fail "Runtime - regex match" "valid" "$result"
-fi
-
-# Test 12: Runtime - regex no match
-echo "Test 12: Runtime - regex no match"
-str="hello123"
-if [[ "$str" =~ ^[a-z]+$ ]]; then
-  result="matched"
-else
-  result="no_match"
-fi
-if [[ "$result" == "no_match" ]]; then
-  pass "Runtime - regex non-match works"
-else
-  fail "Runtime - regex non-match" "no_match" "$result"
-fi
-
-echo ""
 echo "=== Results ==="
 echo "Passed: $PASS"
 echo "Failed: $FAIL"

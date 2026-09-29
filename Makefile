@@ -118,14 +118,7 @@ test-compiler: bash
 verify: test test-compiler
 
 test-verbose: bash
-	@echo "Running tests (verbose)..."
-	@for test in $(TESTS_DIR)/test_*.bash; do \
-		if [[ -f "$$test" ]]; then \
-			echo ""; \
-			echo "=== $$(basename $$test) ==="; \
-			TRASH_TEST_TRACE=1 bash $(LIB_DIR)/test-isolated.bash "$$test"; \
-		fi; \
-	done
+	@TRASH_TEST_TRACE=1 bash $(LIB_DIR)/run-tests.sh $(TESTS_DIR) --serial
 
 # =============================================================================
 # Watch Mode

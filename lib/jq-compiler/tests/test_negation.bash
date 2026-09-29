@@ -135,64 +135,8 @@ else
 fi
 
 echo ""
-echo "=== Runtime Tests ==="
-echo ""
+# Public runtime coverage: test_expression_behavior.bash.
 
-# Test 7: Runtime - negated true condition
-echo "Test 7: Runtime - negated true condition"
-x=15
-if ! (( $x > 10 )); then
-  result="not_executed"
-else
-  result="executed"
-fi
-if [[ "$result" == "executed" ]]; then
-  pass "Runtime - negated true condition does not fire"
-else
-  fail "Runtime - negated true condition" "executed" "$result"
-fi
-
-# Test 8: Runtime - negated false condition
-echo "Test 8: Runtime - negated false condition"
-x=5
-result="not_executed"
-if ! (( $x > 10 )); then
-  result="executed"
-fi
-if [[ "$result" == "executed" ]]; then
-  pass "Runtime - negated false condition fires"
-else
-  fail "Runtime - negated false condition" "executed" "$result"
-fi
-
-# Test 9: Runtime - double negation
-echo "Test 9: Runtime - double negation"
-x=15
-if ! ! (( $x > 10 )); then
-  result="executed"
-else
-  result="not_executed"
-fi
-if [[ "$result" == "executed" ]]; then
-  pass "Runtime - double negation cancels out"
-else
-  fail "Runtime - double negation" "executed" "$result"
-fi
-
-# Test 10: Runtime - negated file test
-echo "Test 10: Runtime - negated file test"
-if ! [[ -e "/nonexistent/file" ]]; then
-  result="executed"
-else
-  result="not_executed"
-fi
-if [[ "$result" == "executed" ]]; then
-  pass "Runtime - negated file test works"
-else
-  fail "Runtime - negated file test" "executed" "$result"
-fi
-
-echo ""
 echo "=== Results ==="
 echo "Passed: $PASS"
 echo "Failed: $FAIL"

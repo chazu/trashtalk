@@ -145,14 +145,14 @@ TestConforming subclass: Object
 
   method: increment [
     | newValue |
-    newValue := $(( $(_ivar value) + 1 )).
-    _ivar_set value "$newValue"
+    newValue := value + 1.
+    value := newValue
   ]
 
   method: incrementBy: amount [
     | newValue |
-    newValue := $(( $(_ivar value) + amount )).
-    _ivar_set value "$newValue"
+    newValue := value + amount.
+    value := newValue
   ]
 EOF
 
@@ -182,8 +182,8 @@ TestNonConforming subclass: Object
 
   method: increment [
     | newValue |
-    newValue := $(( $(_ivar value) + 1 )).
-    _ivar_set value "$newValue"
+    newValue := value + 1.
+    value := newValue
   ]
 EOF
 

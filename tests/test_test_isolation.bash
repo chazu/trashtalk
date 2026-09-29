@@ -27,4 +27,8 @@ cmp "$TRASHDIR/Counter.trash" "$TRASHTALK_DIR/counter-before"
 printf 'exit 7\n' > "$fixture_dir/test_fail.bash"
 if bash "$TRASHTALK_DIR/lib/run-tests.sh" "$fixture_dir" > "$TRASHTALK_DIR/failure.log"; then exit 1; fi
 rg -q 'Failed: 1' "$TRASHTALK_DIR/failure.log"
+# Alphabetical early failure followed by passes must fail in serial/trace mode.
+if TRASH_TEST_TRACE=1 bash "$TRASHTALK_DIR/lib/run-tests.sh" "$fixture_dir" --serial > "$TRASHTALK_DIR/verbose.log" 2>&1; then exit 1; fi
+rg -q 'Passed: 2, Failed: 1' "$TRASHTALK_DIR/verbose.log"
+rg -q '\+ exit 7' "$TRASHTALK_DIR/verbose.log"
 echo 'PASS: concurrent test checkouts isolate databases/sources and propagate failures'

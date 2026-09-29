@@ -4,15 +4,15 @@ package: Gmail
 Review subclass: Object
   classMethod: assess: message [
     | target |
-    target := (@ Decision::Target selected) ifFailed: [:error | @ error signal].
+    target := (@ Decision::Target selected) ifFailed: [:error | ^ @ Decision::Request failure: error].
     ^ @ self assess: message using: target
   ]
 
   classMethod: assess: message using: target [
     | category context attention review |
-    category := (@ Gmail::Categorizer decide: message using: target) ifFailed: [:error | @ error signal].
+    category := (@ Gmail::Categorizer decide: message using: target) ifFailed: [:error | ^ @ Decision::Request failure: error].
     context := #{email: (message jsonValue) categorization: ((category jsonAt: 'value') jsonValue)} asJson.
-    attention := (@ Gmail::Attention decide: context using: target) ifFailed: [:error | @ error signal].
+    attention := (@ Gmail::Attention decide: context using: target) ifFailed: [:error | ^ @ Decision::Request failure: error].
     review := category jsonAt: 'value.reviewNeeded'.
     ((attention jsonTextAt: 'value.suggestion') = 'review_uncertain') ifTrue: [review := 'true'].
     ((message jsonTextAt: 'bodySource') = 'snippet') ifTrue: [review := 'true'].
@@ -25,19 +25,20 @@ Review subclass: Object
 
   classMethod: assessMessage: messageId [
     | message |
-    message := (@ Gmail::Client message: messageId) ifFailed: [:error | @ error signal].
+    message := (@ Gmail::Client message: messageId) ifFailed: [:error | ^ @ Decision::Request failure: error].
     ^ @ self assess: message
   ]
 
   # Streaming JSONL keeps bounded reviews inspectable without persisted objects.
   classMethod: preview: query limit: limit [
     pragma: stream
-    | listing rows target message |
-    listing := (@ Gmail::Client search: query limit: limit) ifFailed: [:error | @ error signal].
+    | listing rows target message assessment |
+    listing := (@ Gmail::Client search: query limit: limit) ifFailed: [:error | ^ @ Decision::Request failure: error].
     rows := listing jsonAt: 'messages' ifAbsent: '[]'.
-    target := (@ Decision::Target selected) ifFailed: [:error | @ error signal].
+    target := (@ Decision::Target selected) ifFailed: [:error | ^ @ Decision::Request failure: error].
     rows jsonRows: #('id') into: [:id |
-      message := (@ Gmail::Client message: id) ifFailed: [:error | @ error signal].
-      (@ self assess: message using: target) ifFailed: [:error | @ error signal]
+      message := (@ Gmail::Client message: id) ifFailed: [:error | ^ @ Decision::Request failure: error].
+      assessment := (@ self assess: message using: target) ifFailed: [:error | ^ @ Decision::Request failure: error].
+      @ Console print: assessment
     ]
   ]

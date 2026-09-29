@@ -14,7 +14,7 @@ fi
 # ==============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/test_helper.bash"
+source "$SCRIPT_DIR/helper.bash"
 
 TOKENIZER="$COMPILER_DIR/tokenizer.bash"
 TEST_TMP=$(mktemp -d)

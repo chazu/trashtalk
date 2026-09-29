@@ -3,18 +3,44 @@
 # Pure Trashtalk wrapper around Shell primitives
 Process subclass: Object
   include: Debuggable
-  instanceVars: command pid status exitCode stdout stderr startTime endTime
+  instanceVars: command pid status exitCode stdout stderr startTime endTime resultDirectory
 
   # Create a new process wrapper for a command
   # Usage: proc=$(@ Process for: "curl -s https://example.com")
   classMethod: for: command [
     | id |
-    id := @ Runtime generateId: "Process"
-    @ Runtime create: "Process" id: id
-    @ $id setCommand: command
-    @ $id setStatus: "created"
+    id := (@ self new) ifFailed: [:error | @ error signal].
+    (@ id command: command) ifFailed: [:error | @ error signal].
+    (@ id status: 'created') ifFailed: [:error | @ error signal].
     ^ id
   ]
+
+  # Tool owns process groups, interrupt restoration, and atomic exit receipts.
+  classMethod: launch: command in: directory combined: combined [
+    | root script argv |
+    root := @ Env get: 'TRASHTALK_DIR'.
+    script := root , '/lib/process-command.bash'.
+    argv := #('bash' script command combined) asJson.
+    ^ @ Tool detachArgvJson: argv stdinFile: '/dev/null' dir: directory
+  ]
+
+  classMethod: waitFor: processId in: directory [
+    | exitFile alive |
+    exitFile := directory , '/exit'.
+    [exitFile fileExists] whileFalse: [
+      alive := @ self alive: processId in: directory.
+      (alive = 'false') ifTrue: [
+        exitFile fileExists ifFalse: [@ ProcessError signal: 'Process vanished without an exit receipt']
+      ].
+      @ Time sleep: '0.02'
+    ].
+    ^ @ File read: exitFile
+  ]
+
+  # PID identity, signals, and filesystem cleanup are Bash/OS primitives.
+  classPrimitive: alive: processId in: directory calls: _trash_process_alive
+  classPrimitive: signal: processId in: directory with: sig calls: _trash_process_signal
+  classPrimitive: cleanupDirectory: directory calls: _trash_process_cleanup
 
   # List running Process instances, one instance id per line
   # OS boundary: flock is held by this shell's open file description. Perl
@@ -66,116 +92,68 @@ Process subclass: Object
   # Start the command in the background (non-blocking)
   # Returns immediately, use wait or poll to check completion
   method: start [
-    | cmd instance tmpStdout tmpStderr bgPid |
-    cmd := $(_ivar command)
-    instance := $(@ Runtime instance)
-
-    tmpStdout := "/tmp/proc_${instance}_stdout"
-    tmpStderr := "/tmp/proc_${instance}_stderr"
-
-    @ self debug: "Starting background command: $cmd"
-    status := "running"
-    startTime := $(@ Time now)
-
-    # Use Shell spawn with separate stdout/stderr files
-    bgPid := $(@ Shell spawn: "$cmd" stdoutTo: "$tmpStdout" stderrTo: "$tmpStderr")
-    pid := "$bgPid"
-
-    ^ bgPid
+    (status = 'running') ifTrue: [@ ProcessError signal: 'Process is already running'].
+    resultDirectory isEmpty ifTrue: [resultDirectory := (@ File tempDirectory) ifFailed: [:error | @ error signal] ].
+    pid := (@ Process launch: command in: resultDirectory combined: 'false') ifFailed: [:error | @ error signal].
+    startTime := @ Time now.
+    status := 'running'.
+    ^ pid
   ]
 
-  # Wait for a background process to complete
   method: wait [
-    | instance tmpStdout tmpStderr stdoutVal stderrVal |
-
-    (status ~= 'running') ifTrue: [
-      @ self debug: "Process not running (status: $status)".
-      ^ exitCode
-    ].
-
-    pid isEmpty ifTrue: [
-      @ Console error: "Error: No PID - process was not started in background".
-      ^ '1'
-    ].
-
-    @ self debug: "Waiting for PID $pid".
-
-    # Poll until process completes
-    [(@ Shell isAlive: pid) = 'true'] whileTrue: [
-      @ Time sleep: '0.1'
-    ].
-
-    # Process completed - read captured output
-    instance := @ Runtime instance.
-    tmpStdout := "/tmp/proc_${instance}_stdout".
-    tmpStderr := "/tmp/proc_${instance}_stderr".
-
-    @ Time sleep: '0.05'.
-
-    stdoutVal := @ File read: tmpStdout.
-    stderrVal := @ File read: tmpStderr.
-    @ File delete: tmpStdout.
-    @ File delete: tmpStderr.
-
-    stdout := stdoutVal.
-    stderr := stderrVal.
-    exitCode := '0'.
+    (status ~= 'running') ifTrue: [^ exitCode].
+    exitCode := (@ Process waitFor: pid in: resultDirectory) ifFailed: [:error | @ error signal].
+    stdout := (@ File read: (resultDirectory , '/stdout.log')) ifFailed: [:error | @ error signal].
+    stderr := (@ File read: (resultDirectory , '/stderr.log')) ifFailed: [:error | @ error signal].
+    (@ Process cleanupDirectory: resultDirectory) ifFailed: [:error | @ error signal].
+    resultDirectory := ''.
     endTime := @ Time now.
     status := 'completed'.
-
     ^ exitCode
   ]
 
-  # Check if the process is still running
   method: isRunning [
-    | alive |
     (status ~= 'running') ifTrue: [^ 'false'].
-    alive := @ Shell isAlive: pid.
-    (alive = 'true') ifTrue: [^ 'true'].
-    # Process finished, update status
-    @ self wait.
+    ((resultDirectory , '/exit') fileExists) ifFalse: [
+      ((@ Process alive: pid in: resultDirectory) = 'true') ifTrue: [^ 'true']
+    ].
+    (@ self wait) ifFailed: [:error | @ error signal].
     ^ 'false'
   ]
 
-  # Send a signal to the process
   method: signal: sig [
-    pid isEmpty ifTrue: [
-      @ Console error: "Error: No PID".
-      ^ ''
-    ].
-    @ self debug: "Sending signal $sig to PID $pid".
-    ^ @ Shell signal: sig to: pid
+    ^ @ Process signal: pid in: resultDirectory with: sig
   ]
 
-  # Terminate the process (SIGTERM)
   method: terminate [
-    | procPid |
-    procPid := $(_ivar pid)
-    @ Shell terminate: "$procPid"
-    status := "terminated"
+    | code |
+    (@ self signal: 'TERM') ifFailed: [:error | @ error signal].
+    code := (@ self wait) ifFailed: [:error | @ error signal].
+    status := 'terminated'.
+    ^ code
   ]
 
-  # Kill the process (SIGKILL)
   method: kill [
-    | procPid |
-    procPid := $(_ivar pid)
-    @ Shell kill: "$procPid"
-    status := "killed"
+    | code |
+    (@ self signal: 'KILL') ifFailed: [:error | @ error signal].
+    code := (@ self wait) ifFailed: [:error | @ error signal].
+    status := 'killed'.
+    ^ code
   ]
 
   # Get stdout from the process
   method: output [
-    ^ $(_ivar stdout)
+    ^ stdout
   ]
 
   # Get stderr from the process
   method: errors [
-    ^ $(_ivar stderr)
+    ^ stderr
   ]
 
   # Get exit code
   method: exitCode [
-    ^ $(_ivar exitCode)
+    ^ exitCode
   ]
 
   # Check if process succeeded (exit code 0)

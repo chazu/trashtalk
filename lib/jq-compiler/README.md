@@ -1,6 +1,6 @@
 # Trashtalk jq compiler
 
-The canonical Bash-only compiler. Requires Bash 4.4+, jq 1.6+, and `shasum`.
+The canonical Bash-only compiler. Requires Bash 4.4+, jq 1.6+, Perl, `shasum`, and `uuidgen`.
 Runtime requirements and installation are in the [project README](../../README.md).
 
 ## Pipeline
@@ -9,6 +9,9 @@ Runtime requirements and installation are in the [project README](../../README.m
 .trash → tokenizer.bash → JSON tokens → parser.jq → class/trait AST
        → codegen.jq (including DSL expression parsing) → Bash
 ```
+
+All ordinary methods use the expression parser in `codegen.jq`; explicit raw
+methods use a separate Bash token reconstruction path.
 
 `parser.jq` contains its parsing combinators. There is no alternate expression,
 IR, or grammar-module pipeline. `symbols.jq` and `senders.jq` query ASTs for

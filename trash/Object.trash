@@ -3,13 +3,11 @@ Object subclass: nil
 
   # Create a new instance of this class
   # Subclasses inherit this - no need to define your own unless custom init needed
-  rawClassMethod: new [
-    local id
-    # Use $_CLASS directly - it's already set by dispatcher to the calling class
-    # Don't use @ Runtime class - that makes a nested send which changes $_CLASS
-    id=$(@ Runtime generateId: "$_CLASS")
-    @ Runtime create: "$_CLASS" id: "$id"
-    echo "$id"
+  classMethod: new [
+    | id |
+    id := (@ Runtime generateId: self) ifFailed: [:error | @ error signal].
+    (@ Runtime create: self id: id) ifFailed: [:error | @ error signal].
+    ^ id
   ]
 
   # Return a canonical string representation of this object

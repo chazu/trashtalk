@@ -1,79 +1,34 @@
-# Tools::Jq - Wrapper for the jq JSON processor
-# Example of how to subclass Tool for a specific external program
-# Built on Tool/Shell primitives - no raw bash required.
-#
-# Usage:
-#   @ Tools::Jq ensure
-#   @ Tools::Jq parse: '.name' on: '{"name": "test"}'
-#
+# jq command execution is an OS boundary; arguments never pass through eval.
 package: Tools
 
 Jq subclass: Tool
+  classMethod: name [ ^ 'jq' ]
+  classMethod: installCommand [ ^ 'brew install jq' ]
 
-  classMethod: name [
-    echo "jq"
+  rawClassMethod: parse: filter on: json [
+    local tool
+    tool=$(@ "$_RECEIVER" path) || return
+    [[ -n "$tool" ]] || { _throw ToolError 'jq is not installed'; return 1; }
+    printf '%s' "$2" | "$tool" "$1"
   ]
 
-  classMethod: installCommand [
-    echo "brew install jq"
+  rawClassMethod: parseFile: filepath with: filter [
+    local tool
+    tool=$(@ "$_RECEIVER" path) || return
+    [[ -n "$tool" ]] || { _throw ToolError 'jq is not installed'; return 1; }
+    "$tool" "$2" -- "$1"
   ]
 
-  # Parse JSON with a jq filter
-  classMethod: parse: filter on: json [
-    local filter="$1" json="$2" toolPath cmd
-    toolPath=$(@ "$_RECEIVER" path)
-
-    if [[ -z "$toolPath" ]]; then
-      _throw "ToolError" "jq is not installed"
-      echo ""
-      return
-    fi
-
-    cmd="echo '${json}' | ${toolPath} '${filter}'"
-    @ Shell exec: "$cmd"
+  rawClassMethod: compact: json [
+    local tool
+    tool=$(@ "$_RECEIVER" path) || return
+    [[ -n "$tool" ]] || { _throw ToolError 'jq is not installed'; return 1; }
+    printf '%s' "$1" | "$tool" -c '.'
   ]
 
-  # Parse JSON from a file
-  classMethod: parseFile: filepath with: filter [
-    local filepath="$1" filter="$2" toolPath cmd
-    toolPath=$(@ "$_RECEIVER" path)
-
-    if [[ -z "$toolPath" ]]; then
-      _throw "ToolError" "jq is not installed"
-      echo ""
-      return
-    fi
-
-    cmd="${toolPath} '${filter}' ${filepath}"
-    @ Shell exec: "$cmd"
-  ]
-
-  # Compact output (no pretty printing)
-  classMethod: compact: json [
-    local json="$1" toolPath cmd
-    toolPath=$(@ "$_RECEIVER" path)
-
-    if [[ -z "$toolPath" ]]; then
-      _throw "ToolError" "jq is not installed"
-      echo ""
-      return
-    fi
-
-    cmd="echo '${json}' | ${toolPath} -c '.'"
-    @ Shell exec: "$cmd"
-  ]
-
-  # Get a specific key from JSON (raw output)
-  classMethod: get: key from: json [
-    local key="$1" json="$2" toolPath cmd
-    toolPath=$(@ "$_RECEIVER" path)
-
-    if [[ -z "$toolPath" ]]; then
-      _throw "ToolError" "jq is not installed"
-      echo ""
-      return
-    fi
-
-    cmd="echo '${json}' | ${toolPath} -r '.${key}'"
-    @ Shell exec: "$cmd"
+  rawClassMethod: get: key from: json [
+    local tool
+    tool=$(@ "$_RECEIVER" path) || return
+    [[ -n "$tool" ]] || { _throw ToolError 'jq is not installed'; return 1; }
+    printf '%s' "$2" | "$tool" -r ".$1"
   ]

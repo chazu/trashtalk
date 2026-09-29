@@ -10,7 +10,7 @@ fi
 # and inside ifTrue: blocks.
 # ==============================================================================
 
-source "$(dirname "${BASH_SOURCE[0]}")/test_helper.bash"
+source "$(dirname "${BASH_SOURCE[0]}")/helper.bash"
 
 # Helper: compile source and return output
 compile() {

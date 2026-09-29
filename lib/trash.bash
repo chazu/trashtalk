@@ -23,7 +23,6 @@ fi
 if [[ "${BSFL_VERSION:-}" != "0.1.0" ]] || ! declare -F msg_info >/dev/null 2>&1; then
     source "$SCRIPT_DIR/vendor/bsfl.sh" || { echo "Error: cannot load bsfl.sh" >&2; return 1; }
 fi
-source "$SCRIPT_DIR/vendor/fun.sh" || { echo "Error: cannot load fun.sh" >&2; return 1; }
 source "$SCRIPT_DIR/vendor/sqlite-json.bash" || { echo "Error: cannot load sqlite-json.bash" >&2; return 1; }
 source "$SCRIPT_DIR/vendor/honker.bash" || { echo "Error: cannot load honker.bash" >&2; return 1; }
 
@@ -113,6 +112,7 @@ source "$SCRIPT_DIR/trash-json.bash" || return 1
 source "$SCRIPT_DIR/store-transaction.bash" || return 1
 source "$SCRIPT_DIR/agent-active-sessions.bash" || return 1
 source "$SCRIPT_DIR/decision-http.bash" || return 1
+source "$SCRIPT_DIR/process-artifacts.bash" || return 1
 
 # ============================================
 # Profiling Support
@@ -773,10 +773,6 @@ function wrapped_readlink {
   fi
 }
 
-function current_unit {
-  $BASH_SOURCE
-}
-
 # ============================================
 # Instance Variable Declaration
 # ============================================
@@ -829,6 +825,58 @@ function _compiled_methods_for {
   done < <(compgen -A function "$prefix")
 }
 export -f _compiled_methods_for
+
+# Reflection uses the same lazy loading, qualified names and function inventory
+# as dispatch/inspection. Method names retain their compiled spelling.
+_trash_class_exists() {
+    [[ $1 =~ ^[A-Za-z_][A-Za-z0-9_]*(::[A-Za-z_][A-Za-z0-9_]*)*$ ]] || { echo false; return; }
+    if _ensure_class_sourced "$1"; then echo true; else echo false; fi
+}
+_trash_superclass_of() {
+    [[ $(_trash_class_exists "$1") == true ]] || return 1
+    _ensure_class_sourced "$1" || return
+    local marker="__${1//::/__}__superclass"
+    printf '%s\n' "${!marker:-}"
+}
+_trash_method_names() {
+    local class=$1 pattern=${2:-'*'} current marker prefix name trait
+    local -a pending=("$class")
+    local -A visited=() emitted=()
+    [[ $class =~ ^[A-Za-z_][A-Za-z0-9_]*(::[A-Za-z_][A-Za-z0-9_]*)*$ ]] || return 1
+    while ((${#pending[@]})); do
+        current=${pending[0]}; pending=("${pending[@]:1}")
+        [[ -n $current && $current != nil && -z ${visited[$current]:-} ]] || continue
+        visited[$current]=1
+        _ensure_class_sourced "$current" || _ensure_trait_sourced "$current" || return 1
+        prefix="__${current//::/__}__"
+        while IFS= read -r name; do
+            name=${name#"$prefix"}
+            [[ $name == $pattern && -z ${emitted[$name]:-} ]] || continue
+            emitted[$name]=1
+            printf '%s\n' "$name"
+        done < <(_compiled_methods_for "$current")
+        marker="${prefix}traits"
+        # Ordinary dispatch consults only the receiver class's direct traits.
+        if [[ $current == "$class" ]]; then
+            for trait in ${!marker:-}; do pending+=("$trait"); done
+        fi
+        marker="${prefix}superclass"
+        [[ -z ${!marker:-} ]] || pending+=("${!marker}")
+    done
+}
+_trash_methods_json() {
+    local names
+    names=$(_trash_method_names "$@") || return
+    printf '%s' "$names" | jq -Rsc 'split("\n") | map(select(length>0)) | sort'
+}
+_trash_has_method() {
+    local class=$1 selector=${2//:/_} name names
+    names=$(_trash_method_names "$class") || return
+    while IFS= read -r name; do
+        if [[ $name == "$selector" || $name == "class__$selector" ]]; then echo true; return; fi
+    done <<< "$names"
+    echo false
+}
 
 # Ensure a class is sourced (for accessing its metadata)
 # Usage: _ensure_class_sourced ClassName
@@ -2391,7 +2439,7 @@ function _trash_dispatch {
   fi
 
   # Still echo the result so it's visible
-  [[ -n "$___result" ]] && echo "$___result"
+  [[ -n "$___result" ]] && printf '%s\n' "$___result"
 
   return $___exit_code
 }
@@ -2414,22 +2462,6 @@ function @@ {
   @ Gusgus chat: "$message" workingDirectory: "$PWD" \
     status: "$previous_status" lastResult: "$previous_result"
 }
-
-# Get list of functions defined in $1
-get_fcn_list () {
-  env -i bash --noprofile --norc -c '
-    source "'"$1"'"
-    typeset -f |
-    grep '\''^[^{} ].* () $'\'' |
-    awk "{print \$1}" |
-    while read -r fcn_name; do
-        type "$fcn_name" | head -n 1 | grep -q "is a function$" || continue
-        echo "$fcn_name"
-    done
-'
-}
-
-function join { local IFS=""; shift; echo "$*"; }
 
 function file_defines_function() {
   msg_debug "file_defines_function $@"
@@ -2468,11 +2500,6 @@ function include_trait() {
   fi
 }
 
-function create_object_stub() {
-  object_name=$1; shift
-  alias $object_name='@ $object_name $@'
-}
-
 function initialize_trash() {
   # Ensure trash directory exists
   if [[ ! -d "$TRASHDIR" ]]; then
@@ -2501,15 +2528,6 @@ function initialize_trash() {
     _db_sql -bail < "${TRASHTALK_DIR:-$HOME/.trashtalk}/lib/agent-session-schema.sql" || return 1
     _env_evict_prefix agentidentity_ agentsession_ agentrun_ agentdelivery_ agentarchetype_ agentrole_
   fi
-
-  # Create object stubs for all objects
-  for file in $TRASHDIR/*; do
-    if [[ -f "$file" ]]; then  # Only process files, not directories
-      object_name="${file##*/}"
-      msg_debug "Creating object stub for $object_name"
-      create_object_stub $object_name
-    fi
-  done
 
   msg_debug "Trash system initialized"
 }

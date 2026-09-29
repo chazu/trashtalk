@@ -1,6 +1,8 @@
 # Concurrency Refactor: Process, Future, and Tuplespace
 
-**Status:** Historical refactor design. Process, Future, and Tuplespace are implemented; use their current source and API guides rather than treating every sketch below as an existing selector.
+**Status:** Historical refactor design. Use the current [Process](PROCESS.md) and
+[Future](FUTURE.md) guides for available messages. The unused tuplespace prototype
+was removed; coordination uses Honker. The sketches below record the old proposal.
 
 ## Overview
 

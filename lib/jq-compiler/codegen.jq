@@ -142,27 +142,16 @@ def expr_string_keyword_ops:
    "upTo:", "upToLast:", "after:", "afterLast:", "replaceAll:", "replaceFirst:",
    "copyFrom:", "first:", "last:"];
 def expr_string_boolean_ops: ["startsWith", "endsWith", "includes"];
-def expr_test_predicates:
-  ["fileExists", "isFile", "isDirectory", "isFifo", "isSymlink",
-   "isReadable", "isWritable", "isExecutable", "isEmpty", "notEmpty",
-   "isSocket", "isBlockDevice", "isCharDevice"];
+def expr_test_flags:
+  {fileExists:"e", isFile:"f", isDirectory:"d", isFifo:"p", isSymlink:"L",
+   isReadable:"r", isWritable:"w", isExecutable:"x", isEmpty:"z", notEmpty:"n",
+   isSocket:"S", isBlockDevice:"b", isCharDevice:"c"};
+def expr_test_predicates: expr_test_flags | keys;
 
-# Bash test for a predicate or boolean string intrinsic. $arg is an already
-# quoted word (or "" for unary predicates).
+# Bash test for a predicate or boolean string intrinsic. $arg is already quoted.
 def test_expr_code($subj; $tname; $arg):
-  if $tname == "fileExists" then "[[ -e \"\($subj)\" ]]"
-  elif $tname == "isFile" then "[[ -f \"\($subj)\" ]]"
-  elif $tname == "isDirectory" then "[[ -d \"\($subj)\" ]]"
-  elif $tname == "isFifo" then "[[ -p \"\($subj)\" ]]"
-  elif $tname == "isSymlink" then "[[ -L \"\($subj)\" ]]"
-  elif $tname == "isReadable" then "[[ -r \"\($subj)\" ]]"
-  elif $tname == "isWritable" then "[[ -w \"\($subj)\" ]]"
-  elif $tname == "isExecutable" then "[[ -x \"\($subj)\" ]]"
-  elif $tname == "isEmpty" then "[[ -z \"\($subj)\" ]]"
-  elif $tname == "notEmpty" then "[[ -n \"\($subj)\" ]]"
-  elif $tname == "isSocket" then "[[ -S \"\($subj)\" ]]"
-  elif $tname == "isBlockDevice" then "[[ -b \"\($subj)\" ]]"
-  elif $tname == "isCharDevice" then "[[ -c \"\($subj)\" ]]"
+  (expr_test_flags[$tname]) as $flag |
+  if $flag != null then "[[ -\($flag) \"\($subj)\" ]]"
   elif $tname == "startsWith" then "[[ \"\($subj)\" == \($arg)* ]]"
   elif $tname == "endsWith" then "[[ \"\($subj)\" == *\($arg) ]]"
   elif $tname == "includes" then "[[ \"\($subj)\" == *\($arg)* ]]"
@@ -1185,6 +1174,8 @@ def expr_mark_stmts($tail; $stream):
     ($tail and $i == $n - 1) as $is_tail |
     if .type == "message_send" or .type == "cascade" then
       .discard = (($stream | not) and ($is_tail | not) and (expr_is_throw_send | not))
+    elif .type == "json_traversal" then
+      .tail = $is_tail | .stream = $stream
     elif .type == "control_flow" then
       .tail = $is_tail | .stream = $stream |
       if .kind == "if_failed" then
@@ -1260,6 +1251,10 @@ def subshell_transform_ivars($ivars; $locals):
     )
   end;
 
+# Literal text embedded in a Bash double-quoted word must not expand shell syntax.
+def shell_double_literal:
+  gsub("\\\\"; "\\\\") | gsub("\""; "\\\"") | gsub("\\$"; "\\$") | gsub("`"; "\\`");
+
 # Generate code for an expression
 def expr_gen($locals; $ivars; $cvars):
   # A single quoted Bash word for an expression: literals stay literal, so
@@ -1321,15 +1316,15 @@ def expr_gen($locals; $ivars; $cvars):
       else {code: "true", needs_wrapper: false}
       end) as $right |
       # Wrap each side appropriately
-      (if $left.needs_wrapper then "(( \($left.code) ))" else $left.code end) as $left_code |
-      (if $right.needs_wrapper then "(( \($right.code) ))" else $right.code end) as $right_code |
+      (if $left.needs_wrapper then "(( \($left.code) ))" elif $cond.left.type == "boolean_op" then "{ \($left.code); }" else $left.code end) as $left_code |
+      (if $right.needs_wrapper then "(( \($right.code) ))" elif $right.compound then "{ \($right.code); }" else $right.code end) as $right_code |
       (if $cond.op == "and" then "&&" else "||" end) as $bash_op |
-      {code: "\($left_code) \($bash_op) \($right_code)", needs_wrapper: false}
+      {code: "\($left_code) \($bash_op) \($right_code)", needs_wrapper: false, compound: true}
     elif $cond.type == "not" then
       # Boolean negation - negate the inner condition
       (gen_cond_part($cond.condition)) as $inner |
       # Wrap inner if needed, then negate
-      (if $inner.needs_wrapper then "! (( \($inner.code) ))" else "! \($inner.code)" end) as $negated |
+      (if $inner.needs_wrapper then "! (( \($inner.code) ))" elif $cond.condition.type == "boolean_op" then "! { \($inner.code); }" else "! \($inner.code)" end) as $negated |
       {code: $negated, needs_wrapper: false}
     elif $cond.type == "regex_match" then
       # Regex match: subject matches: 'pattern'. A literal pattern is emitted
@@ -1429,8 +1424,8 @@ def expr_gen($locals; $ivars; $cvars):
       # Each part needs to be suitable for embedding in double quotes
       def concat_part:
         if .type == "string" then
-          # String literal (single-quoted) - use raw value
-          .value
+          # Literal text cannot expand as shell code during concatenation
+          .value | shell_double_literal
         elif .type == "dstring" then
           # Double-quoted string - strip the quotes from value
           .value | .[1:-1]
@@ -1536,7 +1531,7 @@ def expr_gen($locals; $ivars; $cvars):
       elif $is_unary_arith then
         "(( \(.target) = \(.value | arith_code) ))"
       elif $is_collection then "\(.target)=\($val_code)"
-      elif $is_string then "\(.target)=\"\(.value.value)\""  # Use raw string value
+      elif $is_string then "\(.target)=\"\(.value.value | shell_double_literal)\""  # Use raw string value
       elif $is_dstring then "\(.target)=\($val_code)"  # dstrings already have quotes
       elif $is_message then "\(.target)=\"\($final_val)\""
       else "\(.target)=\"\($val_code)\""
@@ -1548,7 +1543,9 @@ def expr_gen($locals; $ivars; $cvars):
         "local __arith__; (( __arith__ = \(.value | arith_code) )); _ivar_set \(.target) \"$__arith__\""
       elif $is_unary_arith then
         "local __arith__; (( __arith__ = \(.value | arith_code) )); _ivar_set \(.target) \"$__arith__\""
-      elif $is_message then "_ivar_set \(.target) \"\($final_val)\""
+      elif $is_string then "_ivar_set \(.target) \(.value.value | @sh)"
+      elif $is_dstring then "_ivar_set \(.target) \($val_code)"
+      elif $is_message then "local __assigned__; __assigned__=\"\($final_val)\" && _ivar_set \(.target) \"$__assigned__\""
       else "_ivar_set \(.target) \"\($val_code)\""
       end
     elif expr_is_cvar(.target; $cvars) then
@@ -1557,7 +1554,9 @@ def expr_gen($locals; $ivars; $cvars):
         "local __arith__; (( __arith__ = \(.value | arith_code) )); _cvar_set \(.target) \"$__arith__\""
       elif $is_unary_arith then
         "local __arith__; (( __arith__ = \(.value | arith_code) )); _cvar_set \(.target) \"$__arith__\""
-      elif $is_message then "_cvar_set \(.target) \"\($final_val)\""
+      elif $is_string then "_cvar_set \(.target) \(.value.value | @sh)"
+      elif $is_dstring then "_cvar_set \(.target) \($val_code)"
+      elif $is_message then "local __assigned__; __assigned__=\"\($final_val)\" && _cvar_set \(.target) \"$__assigned__\""
       else "_cvar_set \(.target) \"\($val_code)\""
       end
     else
@@ -1566,7 +1565,7 @@ def expr_gen($locals; $ivars; $cvars):
       elif $is_unary_arith then
         "(( \(.target) = \(.value | arith_code) ))"
       elif $is_collection then "\(.target)=\($val_code)"
-      elif $is_string then "\(.target)=\"\(.value.value)\""  # Use raw string value
+      elif $is_string then "\(.target)=\"\(.value.value | shell_double_literal)\""  # Use raw string value
       elif $is_dstring then "\(.target)=\($val_code)"  # dstrings already have quotes
       elif $is_message then "\(.target)=\"\($final_val)\""
       else "\(.target)=\"\($val_code)\""
@@ -1579,11 +1578,11 @@ def expr_gen($locals; $ivars; $cvars):
       # Emit the serializer directly so malformed typed input retains its status.
       (.value | expr_gen($locals; $ivars; $cvars)) as $code |
       "\($code[2:-1]); return"
-    elif .value.type == "string" then "echo \"\(.value.value)\"; return"
+    elif .value.type == "string" then "printf '%s\\n' \(.value.value | @sh); return"
     elif .value.type == "symbol" then
       # Check if symbol is an instance variable
       if expr_is_ivar(.value.value; $ivars) then "echo \"$(_ivar \(.value.value))\"; return"
-      else "echo \"\(.value.value)\"; return"
+      else "echo \"\(.value.value | shell_double_literal)\"; return"
       end
     elif .value.type == "binary" then
       # Handle comparison returns - evaluate and echo true/false
@@ -1737,7 +1736,7 @@ def expr_gen($locals; $ivars; $cvars):
         (if ($last.type | IN("return", "message_send", "cascade", "control_flow", "assignment", "locals", "json_traversal", "passthrough")) then
           body_code($stmts; $bound)
         else
-          (if $last.type == "string" or $last.type == "symbol" then "echo \"\($last.value)\""
+          (if $last.type == "string" or $last.type == "symbol" then "echo \"\($last.value | shell_double_literal)\""
            else "echo \"\($last | expr_gen($bound; $ivars; $cvars))\"" end) as $echo |
           ([body_code($stmts[:-1]; $bound), $echo] | map(select(. != "")) | join("; "))
         end)
@@ -1855,7 +1854,8 @@ def expr_gen($locals; $ivars; $cvars):
       if $needs_wrapper then
         "if (( !(\($cond)) )); then \($block_code); fi"
       else
-        "if ! \($cond); then \($block_code); fi"
+        if .condition.type == "boolean_op" then "if ! { \($cond); }; then \($block_code); fi"
+        else "if ! \($cond); then \($block_code); fi" end
       end
     elif .kind == "if_else" then
       (if .true_block.tokens != null then
@@ -2031,7 +2031,9 @@ def expr_gen($locals; $ivars; $cvars):
     if any($params[]; startswith("__tj_") or startswith("__json_")) then error("reserved JSON binding name") else . end |
     ($locals + $params) as $bound |
     ({tokens:.block.tokens,pos:0} | expr_parse_stmts) as $body |
-    ([$body.body[] | expr_gen($bound; $ivars; $cvars)] | join("; ")) as $code |
+    (.tail // false) as $tail |
+    (if .stream == null then true else .stream end) as $stream |
+    ([$body.body | expr_mark_stmts($tail; $stream) | .[] | expr_gen($bound; $ivars; $cvars)] | join("; ")) as $code |
     if .operation == "jsonUnpack" or .operation == "jsonRows" then
       def constant:
         if .type == "array_literal" then .elements | map(constant)
@@ -2317,7 +2319,7 @@ def expr_gen_stmts($locals; $ivars; $cvars):
         elif $is_collection or $is_ansi_quoted then
           .lines += ["  \($stmt.target)=\($val_code)"]
         elif $is_string then
-          .lines += ["  \($stmt.target)=\"\($stmt.value.value)\""]  # Use raw string value
+          .lines += ["  \($stmt.target)=\"\($stmt.value.value | shell_double_literal)\""]  # Use raw string value
         elif $is_dstring then
           .lines += ["  \($stmt.target)=\($val_code)"]  # dstrings already have quotes
         elif $is_message then
@@ -2335,7 +2337,7 @@ def expr_gen_stmts($locals; $ivars; $cvars):
         elif $is_ansi_quoted then
           .lines += ["  _ivar_set \($stmt.target) \($val_code)"]
         elif $is_string then
-          .lines += ["  _ivar_set \($stmt.target) \"\($stmt.value.value)\""]  # Use raw string value
+          .lines += ["  _ivar_set \($stmt.target) \"\($stmt.value.value | shell_double_literal)\""]  # Use raw string value
         elif $is_dstring then
           .lines += ["  _ivar_set \($stmt.target) \($val_code)"]  # dstrings already have quotes
         elif $is_message then
@@ -2396,170 +2398,6 @@ def expr_gen_stmts($locals; $ivars; $cvars):
     end
   ) | .lines | join("\n");
 
-# Check if method body should use expression parsing
-# Returns true if body contains Smalltalk-style expressions AND no bash constructs
-def should_use_expr_parser:
-  . as $tokens |
-  if ($tokens | length) < 2 then false
-  else
-    # First, check for strong Smalltalk signals that should always use expr parser
-    # Collection literals, try:, triple-quoted strings, and test predicates are unambiguous Smalltalk syntax
-    # Test predicates are now IDENTIFIER tokens with specific values
-    def is_test_predicate: . as $v |
-      ["fileExists", "isFile", "isDirectory", "isFifo", "isSymlink",
-       "isReadable", "isWritable", "isExecutable", "isEmpty", "notEmpty",
-       "isSocket", "isBlockDevice", "isCharDevice"] | index($v) != null;
-    # JSON primitive keywords
-    def is_json_primitive_keyword: . as $v |
-      ["arrayPush:", "arrayPushJson:", "arrayAt:", "arrayRemoveAt:",
-       "objectAt:", "objectHasKey:", "objectRemoveKey:", "jsonPath:",
-       "jsonAt:", "jsonTextAt:", "jsonHas:", "jsonUnpack:", "jsonRows:", "arrayEach:", "objectEach:", "objectKeysEach:", "objectValuesEach:",
-       "arrayCollect:", "arraySelect:", "objectCollect:", "objectSelect:"] | index($v) != null;
-    # JSON primitive unary identifiers
-    def is_json_primitive_unary: . as $v |
-      ["arrayLength", "arrayFirst", "arrayLast", "arrayIsEmpty",
-       "objectKeys", "objectValues", "objectLength", "objectIsEmpty",
-       "stringToJsonArray", "asJson", "jsonValue"] | index($v) != null;
-    (any($tokens[]; .type == "SYMBOL" or .type == "HASH_LPAREN" or .type == "HASH_LBRACE" or .type == "TRIPLESTRING" or
-                    (.type == "IDENTIFIER" and (.value | is_test_predicate)))) as $has_collection_literals |
-    (any($tokens[]; .type == "KEYWORD" and .value == "try:")) as $has_try_catch |
-    # JSON primitives are strong Smalltalk signals
-    (any($tokens[]; (.type == "KEYWORD" and (.value | is_json_primitive_keyword)) or
-                    (.type == "IDENTIFIER" and (.value | is_json_primitive_unary)))) as $has_json_primitives |
-    # Block literals must use expr parser to compile to Block objects
-    (any(range(0; ($tokens | length) - 1) as $i |
-      $tokens[$i].type == "LBRACKET" and $tokens[$i + 1].type == "BLOCK_PARAM")) as $has_block_literal |
-    # String intrinsics, iteration and failure forms are unambiguous DSL syntax.
-    def is_bash_word: . as $v |
-      ["echo", "printf", "jq", "sed", "awk", "grep", "cat", "ls", "cd", "read", "eval", "exec",
-       "export", "source", "test", "local", "declare", "typeset", "unset", "shift", "return"] | index($v) != null;
-    (any(range(1; $tokens | length) as $i |
-      ($tokens[$i].type == "KEYWORD" and
-       (($tokens[$i].value | . as $v | expr_string_keyword_ops | index($v) != null) or
-        $tokens[$i].value == "linesDo:" or $tokens[$i].value == "caseOf:" or $tokens[$i].value == "ifFailed:") and
-       ($tokens[$i - 1].type == "IDENTIFIER" or $tokens[$i - 1].type == "STRING" or
-        $tokens[$i - 1].type == "DSTRING" or $tokens[$i - 1].type == "RPAREN"))
-      or
-      ($tokens[$i].type == "IDENTIFIER" and
-       ($tokens[$i].value | . as $v | expr_string_unary_ops | index($v) != null) and
-       $tokens[$i - 1].type == "IDENTIFIER" and (($tokens[$i - 1].value | is_bash_word) | not) and
-       (($tokens[$i + 1].type // "END") | IN("DOT", "NEWLINE", "RPAREN", "RBRACKET", "END", "GT", "LT", "GE", "LE", "EQ", "NE", "EQUALS", "COMMA")))
-    )) as $has_intrinsics |
-    if $has_collection_literals or $has_try_catch or $has_block_literal or $has_json_primitives or $has_intrinsics then true
-    else
-    # Check for exclusions: bash constructs that shouldn't use expr parser
-    # Bash commands that appear as bare identifiers (not after @)
-    def is_bash_command:
-      # Note: "wait" removed - commonly used as method name in OOP
-      # Note: "kill" removed - commonly used as method name in OOP
-      . as $v | ["echo", "printf", "jq", "sed", "awk", "grep", "cat", "ls", "cd",
-                 "read", "eval", "exec", "export", "source", "test", "true", "false",
-                 "local", "declare", "typeset", "unset", "shift", "exit", "return",
-                 "break", "continue", "trap", "set", "shopt"] | any(. == $v);
-
-    # Bash control keywords
-    def is_bash_control:
-      . as $v | ["if", "then", "else", "elif", "fi", "for", "in", "do", "done",
-                 "while", "until", "case", "esac", "function"] | any(. == $v);
-
-    # Check for bash construct exclusions
-    (any(range(0; $tokens | length) as $i |
-      # Bash control keyword anywhere
-      ($tokens[$i].type == "IDENTIFIER" and ($tokens[$i].value | is_bash_control))
-      or
-      # Bare bash command used as actual command at start of statement
-      # Only consider it a command if:
-      # 1. Preceded by NEWLINE or DOT (start of statement) or at position 0
-      # 2. NOT followed by := (which would make it an assignment target)
-      ($tokens[$i].type == "IDENTIFIER" and ($tokens[$i].value | is_bash_command) and
-       ($i == 0 or $tokens[$i - 1].type == "NEWLINE" or $tokens[$i - 1].type == "DOT") and
-       (($i + 1 >= ($tokens | length)) or $tokens[$i + 1].type != "ASSIGN"))
-    )) as $has_bash_constructs |
-
-    # Check for pipe used for command chaining (not local var decl)
-    # Local var decl pattern: PIPE IDENTIFIER+ PIPE (all on same logical unit)
-    # Command pipe: something | something (where something is a command output)
-    # We detect command pipes by: DSTRING PIPE or RPAREN PIPE patterns
-    (any(range(0; $tokens | length) as $i |
-      $tokens[$i].type == "PIPE" and
-      $i > 0 and
-      # Definitely command pipe if preceded by string output or subshell close
-      ($tokens[$i - 1].type == "DSTRING" or $tokens[$i - 1].type == "RPAREN")
-    )) as $has_command_pipe |
-
-    if $has_bash_constructs or $has_command_pipe then false
-    else
-      # Check for patterns that indicate new Smalltalk-like syntax:
-      # Note: Use length-1 to allow 2-token patterns like "^ session"
-      any(range(0; ($tokens | length) - 1) as $i |
-        # Pattern 1: identifier := identifier/string (ivar inference)
-        ($tokens[$i].type == "IDENTIFIER" and
-         $tokens[$i + 1].type == "ASSIGN" and
-         (($tokens[$i + 2].type == "IDENTIFIER" and
-           ($tokens[$i + 2].value != null) and
-           ($tokens[$i + 2].value | test("^[a-z]"))) or
-          $tokens[$i + 2].type == "STRING" or
-          $tokens[$i + 2].type == "DSTRING"))
-        or
-        # Pattern 2: identifier := number followed by DOT (Smalltalk-style)
-        ($tokens[$i].type == "IDENTIFIER" and
-         $tokens[$i + 1].type == "ASSIGN" and
-         $tokens[$i + 2].type == "NUMBER" and
-         (($tokens[$i + 3].type // null) == "DOT"))
-        or
-        # Pattern 3: Arithmetic operator between identifiers/numbers (not in subshell)
-        (($tokens[$i].type == "IDENTIFIER" or $tokens[$i].type == "NUMBER") and
-         ($tokens[$i + 1].type == "PLUS" or $tokens[$i + 1].type == "STAR" or
-          $tokens[$i + 1].type == "MINUS" or $tokens[$i + 1].type == "SLASH") and
-         ($tokens[$i + 2].type == "IDENTIFIER" or $tokens[$i + 2].type == "NUMBER"))
-        or
-        # Pattern 4: Cascade syntax - SEMI after identifier (@ self foo; bar)
-        ($tokens[$i].type == "IDENTIFIER" and
-         $tokens[$i + 1].type == "SEMI")
-        or
-        # Pattern 5: Return bare identifier - CARET IDENTIFIER (DOT or NEWLINE or RBRACKET or end)
-        ($tokens[$i].type == "CARET" and
-         $tokens[$i + 1].type == "IDENTIFIER" and
-         (($tokens[$i + 2].type // "END") == "DOT" or ($tokens[$i + 2].type // "END") == "NEWLINE" or ($tokens[$i + 2].type // "END") == "RBRACKET" or ($tokens[$i + 2].type // "END") == "END"))
-        or
-        # Pattern 6: Control flow keywords (ifTrue:, ifFalse:, whileTrue:, timesRepeat:, try:, and:, or:, ifNil:, ifNotNil:)
-        # Note: "to:" removed - conflicts with keyword messages like "from:to:"
-        ($tokens[$i].type == "KEYWORD" and
-         ($tokens[$i].value == "ifTrue:" or $tokens[$i].value == "ifFalse:" or
-          $tokens[$i].value == "whileTrue:" or $tokens[$i].value == "whileFalse:" or
-          $tokens[$i].value == "timesRepeat:" or $tokens[$i].value == "try:" or
-          $tokens[$i].value == "and:" or $tokens[$i].value == "or:" or
-          $tokens[$i].value == "ifNil:" or $tokens[$i].value == "ifNotNil:"))
-        or
-        # Pattern 7: Comparison operators between identifiers/numbers/strings
-        # Note: EQUALS is "=", EQ is "==", NE is "!="
-        (($tokens[$i].type == "IDENTIFIER" or $tokens[$i].type == "NUMBER" or $tokens[$i].type == "STRING" or $tokens[$i].type == "RPAREN") and
-         ($tokens[$i + 1].type == "GT" or $tokens[$i + 1].type == "LT" or
-          $tokens[$i + 1].type == "GE" or $tokens[$i + 1].type == "LE" or
-          $tokens[$i + 1].type == "EQ" or $tokens[$i + 1].type == "NE" or
-          $tokens[$i + 1].type == "EQUALS" or $tokens[$i + 1].type == "STR_NE") and
-         ($tokens[$i + 2].type == "IDENTIFIER" or $tokens[$i + 2].type == "NUMBER" or $tokens[$i + 2].type == "STRING"))
-        or
-        # Pattern 8: Collection literals - SYMBOL, HASH_LPAREN (#array), HASH_LBRACE (#dict)
-        ($tokens[$i].type == "SYMBOL" or
-         $tokens[$i].type == "HASH_LPAREN" or
-         $tokens[$i].type == "HASH_LBRACE")
-        or
-        # Pattern 9: Message send to variable - AT IDENTIFIER (KEYWORD or IDENTIFIER or NAMESPACE_SEP)
-        # e.g., @ aBlock valueWith: or @ aBlock value or @ Yutani::Widget new
-        # This enables proper variable expansion for message receivers
-        ($tokens[$i].type == "AT" and
-         $tokens[$i + 1].type == "IDENTIFIER" and
-         ($tokens[$i + 2].type == "KEYWORD" or $tokens[$i + 2].type == "IDENTIFIER" or $tokens[$i + 2].type == "NAMESPACE_SEP"))
-        or
-        # Pattern 10: Block literal - LBRACKET BLOCK_PARAM (e.g., [:x | ...])
-        ($tokens[$i].type == "LBRACKET" and
-         $tokens[$i + 1].type == "BLOCK_PARAM")
-      )
-    end
-    end  # close if $has_collection_literals
-  end;
-
 # Parse and generate method body with expression parser
 def expr_transform_body($className; $ivars; $cvars; $args; $stream):
   . as $tokens |
@@ -2579,10 +2417,6 @@ def expr_transform_body($className; $ivars; $cvars; $args; $stream):
 # ------------------------------------------------------------------------------
 # Helper Functions
 # ------------------------------------------------------------------------------
-
-# Get current timestamp in ISO format
-def timestamp:
-  now | strftime("%Y-%m-%dT%H:%M:%S");
 
 # Convert instance var list to space-separated string for metadata
 # Note: We escape double quotes so JSON defaults survive bash string parsing
@@ -2757,66 +2591,9 @@ def generateRequires:
 
 # Transform a sequence of tokens into bash code
 # This processes the raw tokens from the method body
-def transformMethodBody($className; $isRaw):
-  # Transform a single @ message send (handles multi-keyword methods)
-  # Input: string like "@ recv key1: arg1 key2: arg2"
-  # Output: string like "@ recv key1_key2 arg1 arg2"
-  def transformMessageSend:
-    if test("^@ [^ ]+ [a-zA-Z_][a-zA-Z0-9_]*:") then
-      # Multi-keyword method: @ recv key1: arg1 key2: arg2 → @ recv key1_key2 arg1 arg2
-      capture("^(?<prefix>@ [^ ]+ )(?<rest>.*)") |
-      .prefix as $prefix |
-      .rest |
-      {keywords: [], args: [], remaining: .} |
-      until(
-        (.remaining | test("^[a-zA-Z_][a-zA-Z0-9_]*:") | not);
-        if (.remaining | test("^[a-zA-Z_][a-zA-Z0-9_]*: ")) then
-          . as $state |
-          ($state.remaining | capture("^(?<kw>[a-zA-Z_][a-zA-Z0-9_]*): (?<arg>[^ \"']+|\"[^\"]*\"|'[^']*') *(?<rest>.*)")) |
-          {
-            keywords: ($state.keywords + [.kw]),
-            args: ($state.args + [.arg]),
-            remaining: .rest
-          }
-        else
-          .remaining = ""
-        end
-      ) |
-      if (.keywords | length) > 0 then
-        $prefix + (.keywords | join("_")) + " " + (.args | join(" ")) + (if .remaining != "" then " " + .remaining else "" end)
-      else
-        $prefix + .remaining
-      end
-    elif test("^@ [^ ]+ [a-zA-Z_][a-zA-Z0-9_]*$") then
-      # Unary method - already correct
-      .
-    else
-      .
-    end;
-
-  # Transform DSL constructs inside a subshell
-  # Handles: self → $_RECEIVER, keyword methods (including multi-keyword)
-  def transformSubshellContents:
-    # Replace self with $_RECEIVER
-    gsub("\\bself\\b"; "$_RECEIVER") |
-    # Transform multi-keyword methods by finding patterns and merging selectors
-    # Pattern: @ recv key1: arg1 key2: arg2 → @ recv key1_key2 arg1 arg2
-    # First, handle 2-keyword methods with simple args
-    gsub("(?<pre>@ [^ )\"']+ )(?<k1>[a-zA-Z_][a-zA-Z0-9_]*): (?<a1>[^ )\"':]+) (?<k2>[a-zA-Z_][a-zA-Z0-9_]*): (?<a2>[^ )\"':]+)(?<end>[)\"]|$)";
-      "\(.pre)\(.k1)_\(.k2) \(.a1) \(.a2)\(.end)") |
-    # Handle 2-keyword with quoted second arg
-    gsub("(?<pre>@ [^ )\"']+ )(?<k1>[a-zA-Z_][a-zA-Z0-9_]*): (?<a1>[^ )\"':]+) (?<k2>[a-zA-Z_][a-zA-Z0-9_]*): (?<a2>\"[^\"]*\")";
-      "\(.pre)\(.k1)_\(.k2) \(.a1) \(.a2)") |
-    # Handle single keyword method: @ recv method: arg → @ recv method arg
-    gsub("(?<pre>@ [^ )\"']+ )(?<m>[a-zA-Z_][a-zA-Z0-9_]*): (?<arg>[^ )\"':]+)(?<end>[) \"]|$)";
-      "\(.pre)\(.m) \(.arg)\(.end)") |
-    # Handle single keyword with quoted arg: @ recv method: "arg" → @ recv method "arg"
-    gsub("(?<pre>@ [^ )\"']+ )(?<m>[a-zA-Z_][a-zA-Z0-9_]*): (?<arg>\"[^\"]*\")";
-      "\(.pre)\(.m) \(.arg)");
-
-  # Unified token-to-string converter
-  # $raw: if true, preserve bash code (minimal transformation); if false, transform DSL
-  def tokensToString($raw):
+def transformRawMethodBody:
+  # Reconstruct explicit raw Bash bodies from tokens.
+  def tokensToString:
     # Token conversion phase
     reduce .[] as $tok ("";
       if $tok.type == "NAMESPACE_SEP" then
@@ -2828,11 +2605,11 @@ def transformMethodBody($className; $isRaw):
       else
       . + (
         if $tok.type == "NEWLINE" then "\n"
-        # Comment handling (raw only)
-        elif $tok.type == "COMMENT" then (if $raw then $tok.value else "" end)
-        # DSL tokens (normal only)
-        elif $tok.type == "AT" then (if $raw then $tok.value + " " else "@ " end)
-        elif $tok.type == "ASSIGN" then (if $raw then $tok.value + " " else " := " end)
+        # Comments
+        elif $tok.type == "COMMENT" then $tok.value
+        # Message and assignment tokens
+        elif $tok.type == "AT" then $tok.value + " "
+        elif $tok.type == "ASSIGN" then $tok.value + " "
         elif $tok.type == "CARET" then "^"
         # Brackets
         elif $tok.type == "PIPE" then "| "
@@ -2841,10 +2618,10 @@ def transformMethodBody($className; $isRaw):
         elif $tok.type == "DLBRACKET" then "[[ "
         elif $tok.type == "DRBRACKET" then " ]]"
         elif $tok.type == "LPAREN" then "("
-        elif $tok.type == "RPAREN" then (if $raw then ") " else ")" end)
-        # Subshell - transform in normal mode, preserve in raw
+        elif $tok.type == "RPAREN" then ") "
+        # Preserve subshell source
         elif $tok.type == "SUBSHELL" then
-          (if $raw then $tok.value else ($tok.value | transformSubshellContents) end)
+          $tok.value
         # Arithmetic
         elif $tok.type == "ARITHMETIC" then $tok.value
         elif $tok.type == "ARITH_CMD" then $tok.value
@@ -2869,7 +2646,7 @@ def transformMethodBody($className; $isRaw):
         elif $tok.type == "MATCH" then " =~ "
         elif $tok.type == "EQ" then " == "
         elif $tok.type == "NE" then " != "
-        elif $tok.type == "EQUALS" then (if $raw then "= " else "=" end)
+        elif $tok.type == "EQUALS" then "= "
         elif $tok.type == "BANG" then "! "
         elif $tok.type == "AMP" then " &"
         # Punctuation
@@ -2895,7 +2672,7 @@ def transformMethodBody($className; $isRaw):
       end
     ) |
     # Post-processing: normalization gsubs
-    # Common normalizations for both modes
+    # Normalize token spacing
     gsub(" +"; " ") |                  # Collapse multiple spaces
     gsub(" ;"; ";") |                  # Remove space before semicolon
     gsub(" \\]\\]"; " ]]") |           # Keep space before ]]
@@ -2903,9 +2680,6 @@ def transformMethodBody($className; $isRaw):
     gsub("\\[(?<a>[0-9]) -(?<b>[0-9])"; "[\(.a)-\(.b)") |  # Fix char class ranges like [0-9]
     gsub("(?<a>[a-zA-Z0-9]) \\](?<b>[^\\]])"; "\(.a)]\(.b)") |  # Remove space before ] not followed by ]
     gsub("(?<n>[0-9]) >"; "\(.n)>") |  # Fix number before redirect: 2> not 2 >
-    # Mode-specific normalizations
-    (if $raw then
-      # Raw mode: minimal normalization
       gsub("; ;"; ";;") |              # Fix double semicolon
       gsub("(?<a>[a-zA-Z_][a-zA-Z0-9_]*) \\[(?<b>[\"$])"; "\(.a)[\(.b)") |  # Fix array access: VAR ["$key"] → VAR["$key"]
       gsub(" \\]= "; "]=") |           # Fix array assignment: ]= → ]=
@@ -2923,102 +2697,8 @@ def transformMethodBody($className; $isRaw):
       gsub("(?<a>[a-zA-Z0-9_])= (?<c>true|false|yes|no)(?<d>[ \n;)$])"; "\(.a)=\(.c)\(.d)") |  # Fix bool: var= true → var=true
       gsub("(?<a>[a-zA-Z0-9_]) = (?<c>true|false|yes|no)(?<d>[ \n;)$])"; "\(.a)=\(.c)\(.d)") |  # Fix bool: var = true → var=true
       gsub("(?<a>[a-zA-Z0-9_]) = (?<c>[a-zA-Z])"; "\(.a)= \(.c)")   # Keep space for env var assignments: IFS= read
-    else
-      # Normal mode: full DSL normalization
-      gsub(" \\| "; " | ") |           # Normalize pipe spacing
-      # Fix regex quantifiers
-      gsub("\\] \\?"; "]?") |
-      gsub("\\] \\+"; "]+") |
-      gsub("\\] \\*"; "]*") |
-      gsub("\\$ \\?"; "$?") |
-      gsub("- \\?"; "-?") |
-      gsub("\\) \\?"; ")?") |
-      # Fix file paths
-      gsub("(?<pre>[a-zA-Z0-9_]) /(?<post>[a-zA-Z])"; "\(.pre)/\(.post)") |
-      gsub("> ?/"; ">/") |
-      gsub("2> ?/"; "2>/") |
-      # Fix assignment spacing
-      gsub(" =(?<c>[a-zA-Z0-9_$\"'])"; "=\(.c)")
-    end)
+
     ;
-
-  # Convenience wrappers for backwards compatibility
-  def tokensToCode: tokensToString(false);
-  def tokensToRawCode: tokensToString(true);
-
-  # Transform keyword method calls: @ recv key1: arg1 key2: arg2 → @ recv key1_key2 arg1 arg2
-  def transformKeywordMethod:
-    if test("^@ [^ ]+ [a-zA-Z_][a-zA-Z0-9_]*:") then
-      # Extract prefix (@ receiver) and rest
-      capture("^(?<prefix>@ [^ ]+ )(?<rest>.*)") |
-      .prefix as $prefix |
-      .rest |
-      # Iteratively extract keyword:arg pairs
-      {keywords: [], args: [], remaining: .} |
-      until(
-        (.remaining | test("^[a-zA-Z_][a-zA-Z0-9_]*:") | not);
-        if (.remaining | test("^[a-zA-Z_][a-zA-Z0-9_]*: ")) then
-          # Save current state before capture
-          . as $state |
-          ($state.remaining | capture("^(?<kw>[a-zA-Z_][a-zA-Z0-9_]*): (?<arg>[^ \"']+|\"[^\"]*\"|'[^']*') *(?<rest>.*)")) |
-          {
-            keywords: ($state.keywords + [.kw]),
-            args: ($state.args + [.arg]),
-            remaining: .rest
-          }
-        else
-          # Keyword without space after colon or malformed - stop
-          .remaining = ""
-        end
-      ) |
-      if (.keywords | length) > 0 then
-        $prefix + (.keywords | join("_")) + " " + (.args | join(" ")) + (if .remaining != "" then " " + .remaining else "" end)
-      else
-        $prefix + .remaining
-      end
-    else
-      .
-    end;
-
-  # Apply DSL transformations to a line
-  def transformLine:
-    # Trim leading/trailing whitespace
-    gsub("^\\s+|\\s+$"; "") |
-
-    # Skip empty lines
-    if . == "" then ""
-
-    # Local variable declaration: | var1 var2 |
-    elif test("^\\|.*\\|$") then
-      gsub("^\\|\\s*|\\s*\\|$"; "") |
-      "  local \(.)"
-
-    # Return statement: ^ expression
-    elif test("^\\^") then
-      gsub("^\\^\\s*"; "") |
-      # Replace self with $_RECEIVER
-      gsub("\\bself\\b"; "$_RECEIVER") |
-      "  echo \(.)"
-
-    # Assignment: var := expression
-    elif test(":=") then
-      gsub("\\bself\\b"; "$_RECEIVER") |
-      gsub("\\s*:=\\s*"; "=") |
-      "  \(.)"
-
-    # Message send starting with @
-    elif test("^@") then
-      # Replace self with $_RECEIVER
-      gsub("\\bself\\b"; "$_RECEIVER") |
-      # Quote $_RECEIVER in @ message sends
-      gsub("@ \\$_RECEIVER "; "@ \"$_RECEIVER\" ") |
-      "  \(.)"
-
-    # Other lines - pass through with self replacement
-    else
-      gsub("\\bself\\b"; "$_RECEIVER") |
-      "  \(.)"
-    end;
 
   # Helper to strip leading/trailing empty lines from array
   def stripEmptyLines:
@@ -3026,35 +2706,6 @@ def transformMethodBody($className; $isRaw):
     until(length == 0 or (.[0] | test("^\\s*$") | not); .[1:]) |
     # Remove trailing empty/whitespace-only lines
     until(length == 0 or (.[-1] | test("^\\s*$") | not); .[:-1]);
-
-  # Fix heredoc indentation - strips indent from heredoc content and terminators
-  # Heredoc content and terminators must not be indented in bash
-  def fixHeredocIndent:
-    reduce .[] as $line ({lines: [], heredoc: null};
-      if .heredoc != null then
-        # We're inside a heredoc
-        # Check if this line (after stripping indent) matches the terminator
-        ($line | gsub("^\\s+"; "")) as $stripped |
-        if $stripped == .heredoc then
-          # This is the terminator - output unindented
-          {lines: (.lines + [$stripped]), heredoc: null}
-        else
-          # Heredoc content - output unindented (strip any leading whitespace)
-          {lines: (.lines + [$stripped]), heredoc: .heredoc}
-        end
-      else
-        # Check if this line starts a heredoc
-        # Pattern: <<MARKER or <<'MARKER' or <<"MARKER" or <<-MARKER
-        if ($line | test("<<-?['\"]?[A-Za-z_][A-Za-z0-9_]*['\"]?\\s*$")) then
-          # Extract the heredoc marker (without quotes)
-          ($line | capture("<<-?['\"]?(?<marker>[A-Za-z_][A-Za-z0-9_]*)['\"]?\\s*$").marker) as $marker |
-          {lines: (.lines + [$line]), heredoc: $marker}
-        else
-          # Regular line - keep as-is
-          {lines: (.lines + [$line]), heredoc: .heredoc}
-        end
-      end
-    ) | .lines;
 
   # Smart indentation for raw methods - tracks nesting, continuation, and heredocs
   def smartIndent:
@@ -3117,17 +2768,8 @@ def transformMethodBody($className; $isRaw):
       end)
     ) | .lines;
 
-  # Process the tokens
-  if $isRaw then
-    # Raw method - minimal processing with raw-specific conversion
-    .tokens | tokensToRawCode | split("\n") | map(gsub("\\s+$"; "")) | smartIndent |
-    stripEmptyLines | join("\n")
-  else
-    # Normal method - apply transformations
-    .tokens | tokensToCode | split("\n") | map(transformLine) |
-    # Filter out null results, fix heredoc indentation, and strip empty lines
-    map(select(. != null)) | fixHeredocIndent | stripEmptyLines | join("\n")
-  end;
+  .tokens | tokensToString | split("\n") | map(gsub("\\s+$"; "")) | smartIndent |
+  stripEmptyLines | join("\n");
 
 # ------------------------------------------------------------------------------
 # Code Generation: Method
@@ -3205,7 +2847,7 @@ def generateMethod($funcPrefix; $ivars; $cvars):
   # Get method args for local variable tracking
   (.args // []) as $methodArgs |
 
-  # For transformMethodBody we need the class name (without prefix)
+  # Method generation needs the class name (without prefix)
   # Extract from funcPrefix: "__MyApp__Counter" -> "MyApp__Counter" or "__Counter" -> "Counter"
   ($funcPrefix | ltrimstr("__")) as $className |
 
@@ -3219,13 +2861,10 @@ def generateMethod($funcPrefix; $ivars; $cvars):
     "  \(.primitive)" + ([range(0; (.args | length)) | " \"$\(. + 1)\""] | join(""))
   elif $isRaw then
     # Raw method - use existing transformation
-    .body | transformMethodBody($className; true)
-  elif ((.body.tokens != null) and ((.body.tokens | should_use_expr_parser) // false)) then
-    # New Smalltalk-style syntax - use expression parser with ivar inference
-    .body.tokens | expr_transform_body($className; $ivars; $cvars; $methodArgs; $streamFlag)
+    .body | transformRawMethodBody
   else
-    # Legacy bash-style syntax - use existing transformation
-    .body | transformMethodBody($className; false)
+    # All ordinary methods have the same parsed DSL semantics.
+    .body.tokens | expr_transform_body($className; $ivars; $cvars; $methodArgs; $streamFlag)
   end) as $body |
 
   (valueSendCapability($ivars)) as $valueCapability |

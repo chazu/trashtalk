@@ -300,3 +300,16 @@ The public `@`, stdout, status, last-result and `pragma: direct` conventions
 remain. See [Result passing for compiled methods](result-passing-design.md) for
 measurements, the exact eligibility subset and the raw-integration invalidation
 contract. Option B's new result ABI remains deferred.
+
+## Message profiling
+
+```bash
+TRASH_PROFILE=1 TRASH_PROFILE_FILE=profile.log @ Counter new
+bin/trash-profile-analyze profile.log
+```
+
+`TRASH_PROFILE_DEPTH=N` limits call depth; `TRASH_PROFILE_MIN_MS=N` filters by
+elapsed time. Without `TRASH_PROFILE_FILE`, traces go to stderr. Entries record
+receiver, selector, dispatch route, and elapsed milliseconds. Method times
+include nested sends; their sum is not wall-clock duration. The analyzer reports
+slow calls and call counts, not subprocess counts.

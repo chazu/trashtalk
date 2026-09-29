@@ -40,20 +40,20 @@ Store subclass: Object
     [[ -n "$data" ]] && echo "$data" | jq -r ".$field // empty"
   ]
 
-  # Set a specific field on instance
-  # Usage: @ Store setField <instance_id> <field_name> <value>
+  # Dot-separated object path, bound as data. Signed digit strings become
+  # JSON numbers (including leading zeros); other input stays text.
+  # JSON conversion and persistence failures must propagate to the caller.
   rawClassMethod: setField: instance_id field: field value: value [
     local data updated
-    data=$(db_get "$instance_id")
+    data=$(db_get "$instance_id") || return 1
     if [[ -z "$data" ]]; then
-      echo "Error: Instance $instance_id not found" >&2
+      _throw StoreError "Instance $instance_id not found"
       return 1
     fi
-    if [[ "$value" =~ ^-?[0-9]+$ ]]; then
-      updated=$(echo "$data" | jq -c ".$field = $value")
-    else
-      updated=$(echo "$data" | jq -c ".$field = \"$value\"")
-    fi
+    updated=$(jq -c --arg path "$field" --arg value "$value" '
+      setpath($path | split(".");
+        $value | if test("^-?[0-9]+$") then tonumber else . end)
+      ' <<< "$data") || return 1
     db_put "$instance_id" "$updated"
   ]
 

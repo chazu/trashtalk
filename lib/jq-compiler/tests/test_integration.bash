@@ -11,7 +11,7 @@ fi
 
 # Source shared test helper for standalone execution
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/test_helper.bash"
+source "$SCRIPT_DIR/helper.bash"
 
 DRIVER="$COMPILER_DIR/driver.bash"
 TRASHTALK_DIR="$(dirname "$(dirname "$COMPILER_DIR")")"

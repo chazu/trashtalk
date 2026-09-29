@@ -131,6 +131,36 @@ cmd_build_worker() {
     fi
 }
 
+# Reconcile against the filesystem in a private snapshot. Only a successful
+# build publishes this retirement; existing source paths still own identities.
+_build_manifest_snapshot() {
+    local manifest="$TRASHTALK_COMPILED_DIR/.protocol-manifest.json" source
+    if [[ ! -f "$manifest" ]]; then
+        printf '{"schema":1,"entries":{}}\n' > "$build_work/previous-manifest.json"
+        return
+    fi
+    while IFS= read -r source; do
+        [[ ! -f "$source" ]] || printf '%s\n' "$source"
+    done < <(jq -r '.entries[].source' "$manifest") > "$build_work/live-sources"
+    jq --rawfile live "$build_work/live-sources" '
+      ($live|split("\n")) as $paths |
+      .entries |= with_entries(select(.value.source as $s | $paths|index($s)))
+      ' "$manifest" > "$build_work/previous-manifest.json"
+}
+
+# Remove only unchanged artifacts owned by retired entries. A moved source can
+# reuse the same output; the new manifest protects it from deletion.
+_build_retire_artifacts() {
+    local artifact receipt expected actual
+    while IFS= read -r -d '' artifact && IFS= read -r -d '' receipt && IFS= read -r -d '' expected; do
+        [[ "$artifact" == "$TRASHTALK_COMPILED_DIR/"* && -f "$artifact" ]] || continue
+        actual=$(shasum -a 256 "$artifact"); actual=${actual%% *}
+        [[ "$actual" == "$expected" ]] || continue
+        rm -f -- "$artifact"
+        [[ "$receipt" != "$TRASHTALK_COMPILED_DIR/"* ]] || rm -f -- "$receipt"
+    done < "$build_work/retired-artifacts.nul"
+}
+
 # Run the coordinator in a subshell so temporary files/traps and planner state
 # cannot escape into callers. compile-cached uses the same engine for one root.
 cmd_compile_many() (
@@ -147,6 +177,7 @@ cmd_compile_many() (
     build_work=$(mktemp -d "${TMPDIR:-/tmp}/trash-build.XXXXXX")
     trap 'rm -rf "$build_work"' EXIT
     mkdir -p "$build_work/meta" "$build_work/jobs"
+    _build_manifest_snapshot || return
     for source in "$@"; do
         source="$(cd "$(dirname "$source")" && pwd -P)/${source##*/}"
         [[ -f "$source" ]] || error "Source file not found: $source"
@@ -158,8 +189,9 @@ cmd_compile_many() (
             [[ -f "$source" ]] || continue
             build_requested[$source]=true
             requested+=("$source")
-        done < <(jq -r --args '
-          .entries as $entries | $ARGS.positional | unique |
+        done < <(jq -r --slurpfile live "$build_work/previous-manifest.json" --args '
+          .entries as $entries |
+          ($ARGS.positional + [$entries | to_entries[] | select($live[0].entries[.key] == null) | .value.source]) | unique |
           until(. == ( . as $roots | reduce $entries[] as $e ($roots;
             if any($e.receipt_data.dependencies|keys[]; . as $dep | $roots|index($dep)) then .+[$e.source] else . end) | unique);
             . as $roots | reduce $entries[] as $e ($roots;
@@ -188,7 +220,7 @@ cmd_compile_many() (
     done
     _build_plan final > "$build_work/plan.json" || return
     if [[ -f "$TRASHTALK_COMPILED_DIR/.protocol-manifest.json" ]]; then
-        jq -e --slurpfile old "$TRASHTALK_COMPILED_DIR/.protocol-manifest.json" '
+        jq -e --slurpfile old "$build_work/previous-manifest.json" '
           all(.[]; . as $n | $old[0].entries[$n.metadata.identity] as $e |
             if $e != null and $e.source != $n.source then error("Protocol manifest identity shadowed: " + $n.metadata.identity) else true end)
           ' "$build_work/plan.json" >/dev/null || return
@@ -268,9 +300,10 @@ _build_publish_manifest() {
     local -a receipts=()
     mapfile -t receipts < <(jq -r '.[].receipt' "$build_work/plan.json")
     jq -s '.' "${receipts[@]}" > "$build_work/final-receipts.json" || return
-    [[ -f "$manifest" ]] || printf '{"schema":1,"entries":{}}\n' > "$build_work/empty-manifest.json"
+    # Merge against the latest publication, including other completed builds.
+    _build_manifest_snapshot || return
     tmp=$(mktemp "$manifest.XXXXXX")
-    jq --slurpfile previous "$(if [[ -f "$manifest" ]]; then printf '%s' "$manifest"; else printf '%s' "$build_work/empty-manifest.json"; fi)" \
+    jq --slurpfile previous "$build_work/previous-manifest.json" \
        --slurpfile receipts "$build_work/final-receipts.json" '
       reduce .[] as $n ($previous[0]; .schema=1 |
         if .entries[$n.metadata.identity] != null and .entries[$n.metadata.identity].source != $n.source then
@@ -281,6 +314,13 @@ _build_publish_manifest() {
           api_hash:$n.api_hash,surface:$n.surface,requirements:$n.metadata.requirements,
           receipt_data:([$receipts[0][]|select(.source==$n.source)][0])})
       ' "$build_work/plan.json" > "$tmp" || { rm -f "$tmp"; return 1; }
+    : > "$build_work/retired-artifacts.nul"
+    if [[ -f "$manifest" ]]; then
+        jq -rj --slurpfile next "$tmp" '
+          .entries[] | select(.artifact as $a | all($next[0].entries[]; .artifact != $a)) |
+          .artifact,"\u0000",.receipt,"\u0000",.receipt_data.output_hash,"\u0000"
+          ' "$manifest" > "$build_work/retired-artifacts.nul" || { rm -f "$tmp"; return 1; }
+    fi
     if [[ -f "$manifest" ]] && jq -e --slurpfile old "$manifest" 'del(.generation)==($old[0]|del(.generation))' "$tmp" >/dev/null; then
         rm -f "$tmp"
     else
@@ -290,4 +330,5 @@ _build_publish_manifest() {
         mv -f "$tmp.publish" "$manifest"
         rm -f "$tmp"
     fi
+    _build_retire_artifacts
 }
