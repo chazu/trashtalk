@@ -14,13 +14,10 @@ content=$(@ File read: "/path/to/file.txt")
 
 # Write to a file
 @ File write: "content" to: "/path/to/file.txt"
-
-# Check if file exists
-@ File exists: "/path/to/file.txt"  # => "true" or "false"
-
-# Delete a file
-@ File delete: "/path/to/file.txt"
 ```
+
+In DSL methods, test paths with the compiler predicates (`path fileExists`,
+`path isFile`, `path isDirectory`, ...) instead of a message send.
 
 ## Managed Files (Instance Methods)
 
@@ -47,10 +44,6 @@ content=$(@ $file read)
 # Write (overwrites existing content)
 @ $file write: "new content"
 @ $file writeLine: "content with newline"
-
-# Append
-@ $file append: "more content"
-@ $file appendLine: "more content with newline"
 ```
 
 ### File Information
@@ -71,15 +64,12 @@ content=$(@ $file read)
 @ $file directory     # => "/path/to"
 @ $file basename      # => "file.txt"
 @ $file extension     # => "txt"
-@ $file stem          # => "file"
 ```
 
 ### File Operations
 
 ```bash
 @ $file delete                    # Remove the file
-@ $file copyTo: "/new/path.txt"   # Copy to new location
-@ $file moveTo: "/new/path.txt"   # Move/rename
 @ $file touch                     # Create or update timestamp
 @ $file info                      # Print file information
 ```
@@ -104,21 +94,12 @@ fi
 ```bash
 tmp=$(@ File temp)
 @ $tmp writeLine: "temporary data"
-@ $tmp appendLine: "more data"
 
 # Process the file
 cat "$(@ $tmp path)"
 
 # Clean up
 @ $tmp delete
-```
-
-### Log file with append
-
-```bash
-log=$(@ File at: "/var/log/myapp.log")
-@ $log appendLine: "$(date): Application started"
-@ $log appendLine: "$(date): Processing complete"
 ```
 
 ### Named pipe for IPC
@@ -150,8 +131,6 @@ message=$(@ $fifo read)
 | `@ File mkfifo: <path>` | Create named pipe |
 | `@ File read: <path>` | Read file contents |
 | `@ File write: <content> to: <path>` | Write to file |
-| `@ File exists: <path>` | Check if exists |
-| `@ File delete: <path>` | Delete file |
 
 ### Instance Methods
 | Method | Description |
@@ -159,8 +138,6 @@ message=$(@ $fifo read)
 | `@ $file read` | Read contents |
 | `@ $file write: <content>` | Write (overwrite) |
 | `@ $file writeLine: <content>` | Write with newline |
-| `@ $file append: <content>` | Append |
-| `@ $file appendLine: <content>` | Append with newline |
 | `@ $file exists` | Check existence |
 | `@ $file isFile` | Is regular file? |
 | `@ $file isDirectory` | Is directory? |
@@ -170,10 +147,7 @@ message=$(@ $fifo read)
 | `@ $file directory` | Get parent dir |
 | `@ $file basename` | Get filename |
 | `@ $file extension` | Get extension |
-| `@ $file stem` | Filename without ext |
 | `@ $file delete` | Delete file |
-| `@ $file copyTo: <path>` | Copy file |
-| `@ $file moveTo: <path>` | Move/rename |
 | `@ $file touch` | Create/update mtime |
 | `@ $file modificationTime` | Get mtime |
 | `@ $file info` | Show file info |

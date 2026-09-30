@@ -72,6 +72,10 @@ touch "$JCODE_TEST_GATE"
 settle
 check 'first native run succeeded' succeeded "$(field "$run" state)"
 check 'same native conversation retained' jcode-fixture-session "$(field "$session" lastConversationRef)"
+outcome=$(@ Agent::JcodeDriver outcomeOf: "$run")
+check 'shared outcome uses Jcode conversation receipt' jcode-fixture-session "$(jq -r .conversation_ref <<<"$outcome")"
+check 'shared outcome uses Jcode completion receipt' true "$(jq -r .result_seen <<<"$outcome")"
+check 'completed run is not resident' false "$(jq -r .resident_unconfirmed <<<"$outcome")"
 check 'exactly two queued prompts sent' 2 "$(jq -s '[.[] | select(.req=="send_message")] | length' "$host/fixture-calls.jsonl")"
 check 'native session only created once' 1 "$(jq -s '[.[] | select(.req=="create_session")] | length' "$host/fixture-calls.jsonl")"
 check 'first message actually read from Inbox' read "$(field "$msg" status)"

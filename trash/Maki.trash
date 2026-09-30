@@ -63,22 +63,6 @@ Maki subclass: Tool
     echo true
   ]
 
-  classMethod: version [
-    | executable argv |
-    executable := @ self path.
-    executable isEmpty ifTrue: [^ 'not installed'].
-    argv := #(executable '--version') asJson.
-    ^ @ self runArgvJson: argv
-  ]
-
-  classMethod: authStatus [
-    | executable argv |
-    executable := @ self path.
-    executable isEmpty ifTrue: [^ 'not installed'].
-    argv := #(executable 'auth' 'status') asJson.
-    ^ @ self runArgvJson: argv
-  ]
-
   # Interactive OS boundary: preserve terminal input/output and the CLI exit
   # status. Do not capture the login prompts or interpolate shell commands.
   rawClassMethod: loginToProvider: provider [

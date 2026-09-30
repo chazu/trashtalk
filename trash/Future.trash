@@ -29,7 +29,7 @@ Future subclass: Object
     ^ @ File read: result_file
   ]
 
-  method: poll [ ^ @ self status ]
+  alias: poll for: status
 
   # Shell predicate contract: isDone returns an exit status, not boolean text.
   rawMethod: isDone [
@@ -68,37 +68,37 @@ Future subclass: Object
   ]
 
   # Show help
-  rawClassMethod: help [
-    echo "=== Future - Async Computation ==="
-    echo ""
-    echo "Usage:"
-    echo "  future=\$(@ Future for: 'command')   # Create future"
-    echo "  @ \$future start                     # Start background process"
-    echo "  result=\$(@ \$future await)          # Get result"
-    echo ""
-    echo "Class Methods:"
-    echo "  for: <command>  - Create future (stores command, does not start)"
-    echo ""
-    echo "Instance Methods:"
-    echo "  start           - Start the background computation"
-    echo "  await           - Block until done, return result"
-    echo "  poll            - Check status without blocking"
-    echo "  isDone          - Returns 0 if done, 1 if pending"
-    echo "  cancel          - Kill the computation"
-    echo "  status          - Show status (created/pending/completed/failed/cancelled)"
-    echo "  exitCode        - Get exit code (empty if pending)"
-    echo "  cleanup         - Remove result files and delete future"
-    echo ""
-    echo "Example:"
-    echo "  # Create future for expensive computation"
-    echo "  f=\$(@ Future for: 'sleep 2 && echo done')"
-    echo "  @ \$f start  # Start it"
-    echo "  "
-    echo "  # Do other work while it runs..."
-    echo "  @ SomeClass doOtherStuff"
-    echo "  "
-    echo "  # Get result (blocks if not ready)"
-    echo "  result=\$(@ \$f await)"
-    echo '  echo "Result: $result"'
-    echo "  @ \$f cleanup"
+  classMethod: help [
+    ^ '''=== Future - Async Computation ===
+
+Usage:
+  future=$(@ Future for: 'command')   # Create future
+  @ $future start                     # Start background process
+  result=$(@ $future await)          # Get result
+
+Class Methods:
+  for: <command>  - Create future (stores command, does not start)
+
+Instance Methods:
+  start           - Start the background computation
+  await           - Block until done, return result
+  poll            - Check status without blocking
+  isDone          - Returns 0 if done, 1 if pending
+  cancel          - Kill the computation
+  status          - Show status (created/pending/completed/failed/cancelled)
+  exitCode        - Get exit code (empty if pending)
+  cleanup         - Remove result files and delete future
+
+Example:
+  # Create future for expensive computation
+  f=$(@ Future for: 'sleep 2 && echo done')
+  @ $f start  # Start it
+  
+  # Do other work while it runs...
+  @ SomeClass doOtherStuff
+  
+  # Get result (blocks if not ready)
+  result=$(@ $f await)
+  echo "Result: $result"
+  @ $f cleanup'''
   ]

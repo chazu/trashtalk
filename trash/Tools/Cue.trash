@@ -130,14 +130,8 @@ Cue subclass: Tool
     available := @ self isInstalled.
     (available ~= 'true') ifTrue: [^ @ self missingToolResult: 'export'].
     argv := @ self argvFor: 'export' files: files.
-    format notEmpty ifTrue: [
-      argv := argv arrayPush: '--out'.
-      argv := argv arrayPush: format
-    ].
-    expression notEmpty ifTrue: [
-      argv := argv arrayPush: '-e'.
-      argv := argv arrayPush: expression
-    ].
+    argv := @ self argv: argv option: '--out' value: format.
+    argv := @ self argv: argv option: '-e' value: expression.
     ^ @ self resultForArgv: argv command: 'export' failureOutcome: 'evaluation_error'
   ]
 
@@ -207,10 +201,7 @@ Cue subclass: Tool
     available := @ self isInstalled.
     (available ~= 'true') ifTrue: [^ @ self missingToolResult: 'eval'].
     argv := @ self argvFor: 'eval' files: files.
-    expression notEmpty ifTrue: [
-      argv := argv arrayPush: '-e'.
-      argv := argv arrayPush: expression
-    ].
+    argv := @ self argv: argv option: '-e' value: expression.
     ^ @ self resultForArgv: argv command: 'eval' failureOutcome: 'evaluation_error'
   ]
 

@@ -13,7 +13,14 @@ EventSourceAdapter subclass: Object
     @ Workstation::EventSourceAdapterError signal: 'Unknown or disabled event adapter kind'
   ]
   classMethod: kind [ @ Workstation::EventSourceAdapterError signal: 'Abstract event adapter selector' ]
-  classMethod: validateSubscription: subscription [ @ Workstation::EventSourceAdapterError signal: 'Abstract event adapter selector' ]
+  # Template: closed schema, the adapter's own policy, then enablement.
+  classMethod: validateSubscription: subscription [
+    (@ Workstation::Schema validate: subscription as: 'EventSubscription') ifFailed: [:error | @ error signal].
+    (@ self validatePolicy: subscription) ifFailed: [:error | @ error signal].
+    (@ Require equal: (subscription jsonTextAt: 'enabled') to: 'true') ifFailed: [:error | @ error signal].
+    ^ subscription
+  ]
+  classMethod: validatePolicy: subscription [ @ Workstation::EventSourceAdapterError signal: 'Abstract event adapter selector' ]
   classMethod: consumerFor: subscription [ @ Workstation::EventSourceAdapterError signal: 'Abstract event adapter selector' ]
   classMethod: read: consumer limit: limit [ @ Workstation::EventSourceAdapterError signal: 'Abstract event adapter selector' ]
   classMethod: normalize: record for: subscription [ @ Workstation::EventSourceAdapterError signal: 'Abstract event adapter selector' ]

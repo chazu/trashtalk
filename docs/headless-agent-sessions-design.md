@@ -642,11 +642,11 @@ A wake contains references rather than a duplicate transcript:
 Coalescing combines scheduling hints without dropping the underlying inputs.
 Create input and its wake/outbox record atomically. Existing
 [Inbox deliver:](../trash/Inbox.trash) saves a message and then emits a
-notification; it does not yet implement this transaction. The Observable
-trait's `saveAndEmit:payload:` and `saveAndEnqueue:payload:` helpers are
-atomic, but they persist the receiver (the Inbox) rather than the Message, so
-Inbox cannot adopt them as-is. They are a starting point, not proof of a
-transaction covering message, receipts, and audit records.
+notification; it does not yet implement this transaction. Honker's
+`honker_persist_and_notify` and `honker_persist_and_enqueue` primitives are
+atomic, but they persist one instance record with one event, so they do not
+cover the Message together with its receipts and audit records. They are a
+starting point, not proof of that transaction.
 
 Where one transaction cannot span publication and downstream routing, persist
 an outbox record with the input and reconcile it idempotently. A periodic
@@ -712,7 +712,7 @@ Current process responsibilities are spread across these implementations:
 |---|---|---|
 | [Tool](../trash/Tool.trash) | Exact-argv synchronous execution and separate captured output | Use its capture path unchanged in the first slice; add detached launch beside it; extract the shared core in Phase 2 |
 | [Process](../trash/Process.trash), [Shell](../trash/Shell.trash) | Command-string execution via eval and PID control | Phase 2: make Process the lifecycle facade with exact-argv and duplex support |
-| [Coproc](../trash/Coproc.trash) | FIFO duplex transport using eval and merged stderr | Migrate callers to the common core before retiring duplicated machinery |
+| Coproc (removed 2026-09-29; it had no callers) | FIFO duplex transport using eval and merged stderr | Build duplex support in the common core rather than reviving it |
 | [Actor](../trash/Actor.trash), [Scheduler](../trash/Scheduler.trash), [Stream](../trash/Stream.trash) | Separate background loops for queues, due tasks, and consumption | Retain domain behavior; consolidate process ownership, stop, wait, and cleanup |
 | [Future](../trash/Future.trash) | Async Trashtalk computation and result retrieval | Keep its distinct result contract; reuse lifecycle mechanics where compatible |
 

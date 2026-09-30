@@ -26,8 +26,8 @@ parameters are encoded as strings; number literals, `true`, `false`, and
 `jsonValue` to insert and validate an already encoded value, including a
 number supplied as a string. Malformed typed input fails the method without
 printing a partial result. Constructing these values does not allocate or
-persist `Json` instances. The existing `Json object` / `Json array` builder
-API remains available with its existing object semantics.
+persist `Json` instances; the former `Json object` / `Json array` builder
+has been removed in favor of these literals.
 
 Exact argv vectors use the same form:
 

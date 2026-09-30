@@ -303,8 +303,12 @@ def expr_parse_expr(min_bp):
   def parse_single_message:
     { state: ., selector: "", args: [], keywords: [] } |
     if (.state | expr_peek_type) == "KEYWORD" then
-      # Keyword method
-      until((.state | expr_peek_type) != "KEYWORD";
+      # Keyword method. As in Smalltalk, an argument never takes a keyword
+      # message, so every later keyword belongs to this selector; a control
+      # flow keyword after an argument applies to the whole send.
+      (.state.inArg // false) as $outer_in_arg |
+      until((.state | expr_peek_type) != "KEYWORD" or
+            (.selector != "" and (.state | expr_is_control_flow));
         ((.state | expr_peek.value) // "" | rtrimstr(":")) as $kw |
         .keywords += [$kw] |
         .selector = (if .selector == "" then $kw else "\(.selector)_\($kw)" end) |
@@ -312,10 +316,10 @@ def expr_parse_expr(min_bp):
         .state |= expr_skip_ws |
         if (.state | expr_is_arg_terminator) then .
         else
-          (.state | expr_parse_expr(0)) as $arg_result |
+          (.state | .inArg = true | expr_parse_expr(0)) as $arg_result |
           if $arg_result.result != null then
             .args += [$arg_result.result] |
-            .state = $arg_result.state
+            .state = ($arg_result.state | .inArg = $outer_in_arg)
           else .
           end
         end |
@@ -454,10 +458,11 @@ def expr_parse_expr(min_bp):
         ((.state | expr_peek.value) | rtrimstr(":")) as $key |
         .state |= expr_advance |
         .state |= expr_skip_ws |
-        # Parse value
-        (.state | expr_parse_expr(0)) as $val |
+        # Parse value; the next keyword is the next key, never a message.
+        (.state.inArg // false) as $in_arg |
+        (.state | .inArg = true | expr_parse_expr(0)) as $val |
         if $val.result != null then
-          .pairs += [{ key: $key, value: $val.result }] | .state = $val.state
+          .pairs += [{ key: $key, value: $val.result }] | .state = ($val.state | .inArg = $in_arg)
         else .
         end
       else
@@ -469,8 +474,10 @@ def expr_parse_expr(min_bp):
     (if (.state | expr_peek_type) == "RBRACE" then .state |= expr_advance else . end) |
     { state: .state, result: { type: "dict_literal", pairs: .pairs } }
   elif $tok.type == "LPAREN" then
-    (. | expr_advance) | expr_parse_expr(0) as $inner |
-    $inner.state |
+    # Parentheses start a full expression, even inside a keyword argument.
+    (.inArg // false) as $in_arg |
+    (. | expr_advance | .inArg = false) | expr_parse_expr(0) as $inner |
+    ($inner.state | .inArg = $in_arg) |
     if expr_peek_type == "RPAREN" then
       { state: (. | expr_advance), result: $inner.result }
     else
@@ -541,7 +548,10 @@ def expr_parse_expr(min_bp):
       .state |= expr_skip_ws |
       (.state | expr_is_control_flow) as $is_cf |
       (.state | expr_is_operator) as $is_op |
-      if $is_cf then
+      if (.state.inArg // false) and (.state | expr_peek_type) == "KEYWORD" then
+        # A keyword after a keyword argument continues the enclosing selector.
+        .
+      elif $is_cf then
         # Control flow keyword - parse block argument
         .result as $receiver |
         (.state | expr_peek.value) as $keyword |
@@ -1162,7 +1172,8 @@ def expr_gen_arith($locals; $ivars; $cvars):
 def expr_is_throw_send:
   .type == "message_send" and
   ((((.args // []) | length) == 1 and
-    ((.selector == "signal" and .receiver.type == "identifier" and (.receiver.name | test("Error$"))) or
+    ((.selector == "signal" and (.receiver.type == "identifier" or .receiver.type == "qualified_name") and
+      (.receiver.name | test("Error$"))) or
      (.selector == "error" and .receiver.type == "self"))) or
    # @ e signal re-raises the failure bound by ifFailed: [:e | ...] or catch: [:e | ...]
    (((.args // []) | length) == 0 and .selector == "signal" and
@@ -1294,6 +1305,14 @@ def expr_gen($locals; $ivars; $cvars):
     elif .type == "string" then .value
     else expr_gen($locals; $ivars; $cvars)
     end;
+  # Operand of a string comparison, embedded in double quotes: literal text
+  # stays literal and a send contributes its captured output.
+  def cmp_val:
+    if .type == "string" then .value | shell_double_literal
+    elif .type == "self" then "$_RECEIVER"
+    elif .type == "message_send" or .type == "cascade" then "$(\(expr_gen($locals; $ivars; $cvars)))"
+    else expr_gen($locals; $ivars; $cvars)
+    end;
   # Condition code for control flow, boolean returns, and boolean values.
   # Helper function to generate a condition with appropriate wrapper
   # Returns {code: "...", needs_wrapper: bool} where needs_wrapper indicates if (( )) is needed
@@ -1334,22 +1353,15 @@ def expr_gen($locals; $ivars; $cvars):
       {code: "[[ \"\($subj)\" =~ \($pat) ]]", needs_wrapper: false}
     elif $cond.type == "binary" then
       # String comparison operators generate [[ ]] syntax, arithmetic use (( ))
-      # Helper to get value - string literals use raw value, message sends wrapped in $(), others use expr_gen
-      def str_val:
-        if .type == "string" then .value
-        elif .type == "self" then "$_RECEIVER"
-        elif .type == "message_send" or .type == "cascade" then "$(\(expr_gen($locals; $ivars; $cvars)))"
-        else expr_gen($locals; $ivars; $cvars)
-        end;
       if $cond.op == "=" then
         # String equality
-        ($cond.left | str_val) as $left |
-        ($cond.right | str_val) as $right |
+        ($cond.left | cmp_val) as $left |
+        ($cond.right | cmp_val) as $right |
         {code: "[[ \"\($left)\" == \"\($right)\" ]]", needs_wrapper: false}
       elif $cond.op == "~=" then
         # String inequality
-        ($cond.left | str_val) as $left |
-        ($cond.right | str_val) as $right |
+        ($cond.left | cmp_val) as $left |
+        ($cond.right | cmp_val) as $right |
         {code: "[[ \"\($left)\" != \"\($right)\" ]]", needs_wrapper: false}
       elif $cond.op == "=~" then
         # Regex match; a literal pattern stays unquoted so it is a regex
@@ -1382,11 +1394,23 @@ def expr_gen($locals; $ivars; $cvars):
   def cond_code($cond):
     gen_cond_part($cond) as $c |
     if $c.needs_wrapper then "(( \($c.code) ))" else $c.code end;
+  # A comparison used as a value (returned, assigned, or passed) yields
+  # "true"/"false". = == ~= != compare text; < > <= >= compare integers.
+  def is_comparison:
+    .type == "binary" and (.op | IN("=", "==", "~=", "!=", "<", ">", "<=", ">=", "=~"));
+  def comparison_value:
+    (if .op == "=" or .op == "==" then "[[ \"\(.left | cmp_val)\" == \"\(.right | cmp_val)\" ]]"
+     elif .op == "~=" or .op == "!=" then "[[ \"\(.left | cmp_val)\" != \"\(.right | cmp_val)\" ]]"
+     elif .op == "=~" then cond_code(.)
+     else "(( \(.left | arith_code) \(.op) \(.right | arith_code) ))"
+     end) as $test |
+    "if \($test); then echo \"true\"; else echo \"false\"; fi";
   if . == null then ""
   elif .type == "arith_wrap" then .node | arith_code
   elif .type == "number" then .value
   elif .type == "string" then "'\(.value)'"
-  elif .type == "triplestring" then "$'\(.value | ansi_c_escape)'"
+  # Triple-quoted text is literal; callers embed it in double quotes.
+  elif .type == "triplestring" then .value | shell_double_literal
   elif .type == "dstring" then .value | dstring_transform_ivars($ivars)
   elif .type == "self" then "\"$_RECEIVER\""
   elif .type == "identifier" then
@@ -1419,7 +1443,8 @@ def expr_gen($locals; $ivars; $cvars):
       "\(.op)\(.operand | expr_gen($locals; $ivars; $cvars))"
     end
   elif .type == "binary" then
-    if .op == "," then
+    if is_comparison then "$(\(comparison_value))"
+    elif .op == "," then
       # String concatenation: generate proper bash string concat
       # Each part needs to be suitable for embedding in double quotes
       def concat_part:
@@ -1460,7 +1485,9 @@ def expr_gen($locals; $ivars; $cvars):
       "_trash_rethrow \(.receiver | word_code); return 1"
     else
       (.args[0] | word_code) as $message |
-      (if .receiver.type == "self" then "Error" else .receiver.name end) as $error_type |
+      (if .receiver.type == "self" then "Error"
+       elif .receiver.type == "qualified_name" then "\(.receiver.package)::\(.receiver.name)"
+       else .receiver.name end) as $error_type |
       "_throw '\($error_type)' \($message); return 1"
     end
   elif .type == "message_send" then
@@ -1475,7 +1502,7 @@ def expr_gen($locals; $ivars; $cvars):
       (.selector | split("_")) as $keywords |
       # Quote args that are variable expansions (start with $)
       ([(.args // [])[] | . as $arg | expr_gen($locals; $ivars; $cvars) |
-        if test("^\\$") or ($arg.type == "binary" and $arg.op == ",") then "\"\(.)\"" else . end]) as $arg_codes |
+        if test("^\\$") or ($arg.type == "binary" and $arg.op == ",") or $arg.type == "triplestring" then "\"\(.)\"" else . end]) as $arg_codes |
       ([$keywords, $arg_codes] | transpose | map("\(.[0]): \(.[1])") | join(" "))
     else
       # Unary method: just the selector
@@ -1491,7 +1518,7 @@ def expr_gen($locals; $ivars; $cvars):
     (.messages | map(
       (if ((.args // []) | length) > 0 then
         " " + ([(.args // [])[] | . as $arg | expr_gen($locals; $ivars; $cvars) |
-          if test("^\\$") or ($arg.type == "binary" and $arg.op == ",") then "\"\(.)\"" else . end] | join(" "))
+          if test("^\\$") or ($arg.type == "binary" and $arg.op == ",") or $arg.type == "triplestring" then "\"\(.)\"" else . end] | join(" "))
       else ""
       end) as $args |
       "@ \($recv) \(.selector // "")\($args)"
@@ -1579,31 +1606,14 @@ def expr_gen($locals; $ivars; $cvars):
       (.value | expr_gen($locals; $ivars; $cvars)) as $code |
       "\($code[2:-1]); return"
     elif .value.type == "string" then "printf '%s\\n' \(.value.value | @sh); return"
+    elif .value.type == "triplestring" then "printf '%s\\n' \"\(.value.value | shell_double_literal)\"; return"
     elif .value.type == "symbol" then
       # Check if symbol is an instance variable
       if expr_is_ivar(.value.value; $ivars) then "echo \"$(_ivar \(.value.value))\"; return"
       else "echo \"\(.value.value | shell_double_literal)\"; return"
       end
     elif .value.type == "binary" then
-      # Handle comparison returns - evaluate and echo true/false
-      # Helper to get value - string literals use raw value, others use expr_gen
-      def str_val: if .type == "string" then .value elif .type == "self" then "$_RECEIVER" else expr_gen($locals; $ivars; $cvars) end;
-      .value as $bin |
-      if $bin.op == "=" or $bin.op == "==" then
-        # String/value equality - use [[ ]] for safety with strings
-        ($bin.left | str_val) as $left |
-        ($bin.right | str_val) as $right |
-        "if [[ \"\($left)\" == \"\($right)\" ]]; then echo \"true\"; else echo \"false\"; fi; return"
-      elif $bin.op == "~=" or $bin.op == "!=" then
-        # Inequality
-        ($bin.left | str_val) as $left |
-        ($bin.right | str_val) as $right |
-        "if [[ \"\($left)\" != \"\($right)\" ]]; then echo \"true\"; else echo \"false\"; fi; return"
-      elif $bin.op == ">" or $bin.op == "<" or $bin.op == ">=" or $bin.op == "<=" then
-        # Numeric comparisons - use (( )) arithmetic
-        ($bin.left | arith_code) as $left |
-        ($bin.right | arith_code) as $right |
-        "if (( \($left) \($bin.op) \($right) )); then echo \"true\"; else echo \"false\"; fi; return"
+      if (.value | is_comparison) then "\(.value | comparison_value); return"
       else
         # Unknown binary op - fall through to expr_gen
         "echo \"\(.value | expr_gen($locals; $ivars; $cvars))\"; return"
@@ -2014,7 +2024,7 @@ def expr_gen($locals; $ivars; $cvars):
         ($node | expr_gen($locals; $ivars; $cvars)) as $code |
         (if $node.type == "message_send" or $node.type == "cascade" then "\"$(\($code))\""
          elif $node.type == "string" then ($node.value | @sh)
-         elif $node.type == "dstring" or $node.type == "triplestring" then $code
+         elif $node.type == "dstring" then $code
          else "\"\($code)\"" end) as $argument |
         {args: [(if $raw then "--argjson" else "--arg" end), "v\($next)", $argument],
          filter: "$v\($next)", next: ($next + 1)}
@@ -2300,7 +2310,6 @@ def expr_gen_stmts($locals; $ivars; $cvars):
       #   - For locals: use bash array syntax
       #   - For ivars: use JSON serialization
       ($stmt.value.type == "array_literal" or $stmt.value.type == "dict_literal") as $is_collection |
-      ($stmt.value.type == "triplestring") as $is_ansi_quoted |
       ($stmt.value.type == "string") as $is_string |
       ($stmt.value.type == "dstring") as $is_dstring |
       ($stmt.value.type == "message_send" or $stmt.value.type == "cascade") as $is_message |
@@ -2316,7 +2325,7 @@ def expr_gen_stmts($locals; $ivars; $cvars):
         if $is_arithmetic or $is_unary_arith then
           # Use (( var = expr )) to avoid subshell capture
           .lines += ["  (( \($stmt.target) = \($stmt.value | expr_gen_arith_full($current_locals; $ivars; $cvars)) ))"]
-        elif $is_collection or $is_ansi_quoted then
+        elif $is_collection then
           .lines += ["  \($stmt.target)=\($val_code)"]
         elif $is_string then
           .lines += ["  \($stmt.target)=\"\($stmt.value.value | shell_double_literal)\""]  # Use raw string value
@@ -2334,8 +2343,6 @@ def expr_gen_stmts($locals; $ivars; $cvars):
         elif $is_collection then
           # Use JSON serialization for collection ivars
           .lines += ["  _ivar_set \($stmt.target) '\($json_code)'"]
-        elif $is_ansi_quoted then
-          .lines += ["  _ivar_set \($stmt.target) \($val_code)"]
         elif $is_string then
           .lines += ["  _ivar_set \($stmt.target) \"\($stmt.value.value | shell_double_literal)\""]  # Use raw string value
         elif $is_dstring then
@@ -2352,8 +2359,6 @@ def expr_gen_stmts($locals; $ivars; $cvars):
         elif $is_collection then
           # Use JSON serialization for collection cvars
           .lines += ["  _cvar_set \($stmt.target) '\($json_code)'"]
-        elif $is_ansi_quoted then
-          .lines += ["  _cvar_set \($stmt.target) \($val_code)"]
         elif $is_message then
           .lines += ["  _cvar_set \($stmt.target) \"\($msg_code)\""]
         else
@@ -2364,7 +2369,7 @@ def expr_gen_stmts($locals; $ivars; $cvars):
         if $is_arithmetic or $is_unary_arith then
           # Use (( var = expr )) to avoid subshell capture
           .lines += ["  (( \($stmt.target) = \($stmt.value | expr_gen_arith_full($current_locals; $ivars; $cvars)) ))"]
-        elif $is_collection or $is_ansi_quoted then
+        elif $is_collection then
           .lines += ["  \($stmt.target)=\($val_code)"]
         elif $is_message then
           .lines += ["  \($stmt.target)=\"\($msg_code)\""]
@@ -2384,7 +2389,7 @@ def expr_gen_stmts($locals; $ivars; $cvars):
         $stmt.messages[] |
         (if ((.args // []) | length) > 0 then
           " " + ([(.args // [])[] | . as $arg | expr_gen($current_locals; $ivars; $cvars) |
-            if test("^\\$") or ($arg.type == "binary" and $arg.op == ",") then "\"\(.)\"" else . end] | join(" "))
+            if test("^\\$") or ($arg.type == "binary" and $arg.op == ",") or $arg.type == "triplestring" then "\"\(.)\"" else . end] | join(" "))
         else ""
         end) as $args |
         "  @ \($recv) \(.selector // "")\($args)\(if $stmt.discard == true then " >/dev/null" else "" end)"

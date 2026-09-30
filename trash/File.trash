@@ -5,11 +5,11 @@ File subclass: Object
 
   # Create a File object for a given path
   # Usage: file=$(@ File at: "/tmp/foo.txt")
-  rawClassMethod: at: filepath [
-    local id=$(_generate_instance_id File)
-    _create_instance File "$id"
-    @ "$id" setPath "$filepath"
-    echo "$id"
+  classMethod: at: filepath [
+    | file |
+    file := @ self new.
+    @ file path: filepath.
+    ^ file
   ]
 
   # Filesystem allocation and empty-directory removal require OS primitives.
@@ -24,35 +24,21 @@ File subclass: Object
   # Usage: file=$(@ File tempWithPrefix: "st-inspect-")
   rawClassMethod: temp [
     local tmpfile
-    tmpfile=$(mktemp)
-    local id=$(_generate_instance_id File)
-    _create_instance File "$id"
-    @ "$id" setPath "$tmpfile"
-    echo "$id"
+    tmpfile=$(mktemp) || return
+    @ "$_RECEIVER" at: "$tmpfile"
   ]
 
   rawClassMethod: tempWithPrefix: prefix [
     local tmpfile
-    tmpfile=$(mktemp -t "${prefix}XXXXXX")
-    local id=$(_generate_instance_id File)
-    _create_instance File "$id"
-    @ "$id" setPath "$tmpfile"
-    echo "$id"
+    tmpfile=$(mktemp -t "${prefix}XXXXXX") || return
+    @ "$_RECEIVER" at: "$tmpfile"
   ]
 
   # Create a named pipe (FIFO)
   # Usage: fifo=$(@ File mkfifo: "/tmp/myfifo")
   rawClassMethod: mkfifo: filepath [
     mkfifo "$filepath" 2>/dev/null
-    local id=$(_generate_instance_id File)
-    _create_instance File "$id"
-    @ "$id" setPath "$filepath"
-    echo "$id"
-  ]
-
-  # Get the file path
-  method: path [
-    ^ path
+    @ "$_RECEIVER" at: "$filepath"
   ]
 
   # Check if file exists
@@ -80,12 +66,6 @@ File subclass: Object
     cat "$(_ivar path)" 2>/dev/null
   ]
 
-  # Read file as lines (one per line)
-  rawMethod: readLines [
-    local p=$(_ivar path)
-    [[ -f "$p" ]] && cat "$p" || echo ""
-  ]
-
   # Write contents to file (overwrites)
   rawMethod: write: contents [
     local p=$(_ivar path)
@@ -96,18 +76,6 @@ File subclass: Object
   rawMethod: writeLine: contents [
     local p=$(_ivar path)
     printf '%s\n' "$contents" > "$p"
-  ]
-
-  # Append contents to file
-  rawMethod: append: contents [
-    local p=$(_ivar path)
-    printf '%s' "$contents" >> "$p"
-  ]
-
-  # Append contents with newline
-  rawMethod: appendLine: contents [
-    local p=$(_ivar path)
-    printf '%s\n' "$contents" >> "$p"
   ]
 
   # Delete the file
@@ -148,27 +116,6 @@ File subclass: Object
     else
       echo ""
     fi
-  ]
-
-  # Get filename without extension
-  rawMethod: stem [
-    local p=$(_ivar path)
-    local base
-    base=$(basename "$p")
-    echo "${base%.*}"
-  ]
-
-  # Copy file to destination
-  rawMethod: copyTo: destPath [
-    local p=$(_ivar path)
-    cp "$p" "$destPath"
-  ]
-
-  # Move/rename file
-  rawMethod: moveTo: destPath [
-    local p=$(_ivar path)
-    mv "$p" "$destPath"
-    _ivar_set path "$destPath"
   ]
 
   # Touch file (create empty or update timestamp)
@@ -217,95 +164,8 @@ File subclass: Object
   ]
 
   # String representation
-  rawMethod: printString [
-    local p=$(_ivar path)
-    echo "<File $p>"
-  ]
-
-  # ========================================
-  # Class Methods for File Tests
-  # ========================================
-  # These enable pure DSL code to test files without [[ ]]
-  # Usage: (@ File exists: myPath) ifTrue: [ ... ]
-
-  # Test if path exists (file, directory, symlink, etc.)
-  classMethod: exists: aPath [
-    ^ aPath fileExists
-  ]
-
-  # Test if path is a regular file
-  classMethod: isFile: aPath [
-    ^ aPath isFile
-  ]
-
-  # Test if path is a directory
-  classMethod: isDirectory: aPath [
-    ^ aPath isDirectory
-  ]
-
-  # Test if path is a symbolic link
-  classMethod: isSymlink: aPath [
-    ^ aPath isSymlink
-  ]
-
-  # Test if path is a named pipe (FIFO)
-  classMethod: isFifo: aPath [
-    ^ aPath isFifo
-  ]
-
-  # Test if path is a socket
-  classMethod: isSocket: aPath [
-    ^ aPath isSocket
-  ]
-
-  # Test if path is a block device
-  classMethod: isBlockDevice: aPath [
-    ^ aPath isBlockDevice
-  ]
-
-  # Test if path is a character device
-  classMethod: isCharDevice: aPath [
-    ^ aPath isCharDevice
-  ]
-
-  # Test if file is readable
-  classMethod: isReadable: aPath [
-    ^ aPath isReadable
-  ]
-
-  # Test if file is writable
-  classMethod: isWritable: aPath [
-    ^ aPath isWritable
-  ]
-
-  # Test if file is executable
-  classMethod: isExecutable: aPath [
-    ^ aPath isExecutable
-  ]
-
-  # Test if file is empty (zero size)
-  rawClassMethod: isEmpty: path [
-    [[ ! -s "$path" ]] && echo "true" || echo "false"
-  ]
-
-  # Test if file is not empty (has content)
-  rawClassMethod: notEmpty: path [
-    [[ -s "$path" ]] && echo "true" || echo "false"
-  ]
-
-  # Test if file1 is newer than file2
-  rawClassMethod: isNewer: path1 than: path2 [
-    [[ "$path1" -nt "$path2" ]] && echo "true" || echo "false"
-  ]
-
-  # Test if file1 is older than file2
-  rawClassMethod: isOlder: path1 than: path2 [
-    [[ "$path1" -ot "$path2" ]] && echo "true" || echo "false"
-  ]
-
-  # Test if two paths refer to the same file (same inode)
-  rawClassMethod: isSame: path1 as: path2 [
-    [[ "$path1" -ef "$path2" ]] && echo "true" || echo "false"
+  method: printString [
+    ^ '<File ' , path , '>'
   ]
 
   # ========================================
@@ -322,11 +182,6 @@ File subclass: Object
     printf '%s' "$contents" > "$filepath"
   ]
 
-  # Quick delete
-  rawClassMethod: delete: filepath [
-    rm -f "$filepath"
-  ]
-
   # Show help
   rawMethod: help [
     echo "=== File Operations ==="
@@ -339,31 +194,24 @@ File subclass: Object
     echo ""
     echo "Reading:"
     echo "  @ \$file read                          - Read entire contents"
-    echo "  @ \$file readLines                     - Read as lines"
     echo ""
     echo "Writing:"
     echo "  @ \$file write: \"content\"              - Write (overwrite)"
     echo "  @ \$file writeLine: \"content\"          - Write with newline"
-    echo "  @ \$file append: \"more\"                - Append"
-    echo "  @ \$file appendLine: \"more\"            - Append with newline"
     echo ""
     echo "Queries:"
     echo "  @ \$file exists                        - Check existence"
     echo "  @ \$file isFile / isDirectory / isFifo - Type checks"
     echo "  @ \$file size                          - Size in bytes"
     echo "  @ \$file path / directory / basename   - Path info"
-    echo "  @ \$file extension / stem              - Filename parts"
+    echo "  @ \$file extension                     - Filename extension"
     echo "  @ \$file modificationTime              - Unix timestamp"
     echo ""
     echo "Operations:"
     echo "  @ \$file delete                        - Remove file"
-    echo "  @ \$file copyTo: \"/dest\"               - Copy"
-    echo "  @ \$file moveTo: \"/dest\"               - Move/rename"
     echo "  @ \$file touch                         - Create/update timestamp"
     echo ""
     echo "Quick class methods:"
     echo "  @ File read: \"/path\"                  - Read file directly"
     echo "  @ File write: \"x\" to: \"/path\"         - Write directly"
-    echo "  @ File exists: \"/path\"                - Check directly"
-    echo "  @ File delete: \"/path\"                - Delete directly"
   ]

@@ -5,7 +5,7 @@
 # intrinsic in DSL code; these selectors remain for callers and raw code.
 #
 # Usage:
-#   (@ String isEmpty: myVar) ifTrue: [ ... ]
+#   (@ String startsWith: name prefix: 'test') ifTrue: [ ... ]
 #   (@ String contains: text substring: "error") ifTrue: [ ... ]
 #   result := @ String trimSuffix: ".trash" from: filename
 #
@@ -14,16 +14,6 @@ String subclass: Object
   # ========================================
   # String Tests
   # ========================================
-
-  # Test if string is empty (replaces [[ -z "$str" ]])
-  classMethod: isEmpty: aStr [
-    ^ aStr isEmpty
-  ]
-
-  # Test if string is not empty (replaces [[ -n "$str" ]])
-  classMethod: notEmpty: aStr [
-    ^ aStr notEmpty
-  ]
 
   # Test if string contains substring
   classMethod: contains: str substring: sub [
@@ -59,21 +49,6 @@ String subclass: Object
     ^ str withoutSuffix: pattern
   ]
 
-  # Remove shortest prefix match (replaces ${str#pattern})
-  classMethod: trimShortPrefix: pattern from: str [
-    ^ str withoutPrefix: pattern
-  ]
-
-  # Remove shortest suffix match (replaces ${str%pattern})
-  classMethod: trimShortSuffix: pattern from: str [
-    ^ str withoutSuffix: pattern
-  ]
-
-  # Replace first occurrence (replaces ${str/old/new})
-  classMethod: replace: old with: new in: str [
-    ^ str replaceFirst: old with: new
-  ]
-
   # Replace all occurrences (replaces ${str//old/new})
   classMethod: replaceAll: old with: new in: str [
     ^ str replaceAll: old with: new
@@ -98,27 +73,9 @@ String subclass: Object
     ^ str last: count
   ]
 
-  # Convert to uppercase
-  classMethod: uppercase: str [
-    ^ str asUppercase
-  ]
-
-  # Convert to lowercase
-  classMethod: lowercase: str [
-    ^ str asLowercase
-  ]
-
   # ========================================
   # String Splitting
   # ========================================
-
-  # Split string on delimiter, return as newline-separated values
-  rawClassMethod: split: str on: delim [
-    local IFS="$delim"
-    local parts
-    read -ra parts <<< "$str"
-    printf '%s\n' "${parts[@]}"
-  ]
 
   # Split string on delimiter, return as JSON array
   rawClassMethod: splitToArray: str on: delim [
@@ -168,22 +125,6 @@ String subclass: Object
     ^ a , b , c
   ]
 
-  # Join array elements with delimiter
-  rawClassMethod: join: delimiter values: values [
-    local IFS="$delimiter"
-    echo "$values"
-  ]
-
-  # Repeat string n times
-  rawClassMethod: repeat: str times: n [
-    local result=""
-    local i
-    for ((i=0; i<n; i++)); do
-      result="${result}${str}"
-    done
-    echo "$result"
-  ]
-
   # ========================================
   # JSON Operations
   # ========================================
@@ -217,11 +158,6 @@ String subclass: Object
   rawClassMethod: jsonLinesWhere: field equals: expected from: records [
     printf '%s\n' "$3" | jq -c --arg field "$1" --arg expected "$2" \
       'select(type == "object" and .[$field] == $expected)'
-  ]
-
-  # Convert a JSON array into one compact JSON record per line.
-  rawClassMethod: jsonArrayAsLines: arrayJson [
-    printf '%s' "$1" | jq -c '.[]'
   ]
 
   # Present persisted instance state as a compact key=value row for one-line
@@ -262,16 +198,4 @@ String subclass: Object
   # Trim leading and trailing whitespace (using extglob)
   classMethod: trim: str [
     ^ str trimmed
-  ]
-
-  # Trim leading whitespace (using extglob)
-  rawClassMethod: trimLeft: str [
-    shopt -s extglob
-    echo "${str##+([[:space:]])}"
-  ]
-
-  # Trim trailing whitespace (using extglob)
-  rawClassMethod: trimRight: str [
-    shopt -s extglob
-    echo "${str%%+([[:space:]])}"
   ]

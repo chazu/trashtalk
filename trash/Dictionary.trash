@@ -3,29 +3,6 @@ Dictionary subclass: Object
   include: Debuggable
   instanceVars: items:'{}'
 
-  # Create a new dictionary
-  classMethod: new [
-    | id |
-    id := @ Runtime generateId: "Dictionary"
-    @ Runtime create: "Dictionary" id: id
-    ^ id
-  ]
-
-  # Accessor for items ivar (raw JSON)
-  method: getItems [
-    ^ items
-  ]
-
-  # Setter for items ivar
-  method: setItems: newItems [
-    items := newItems
-  ]
-
-  # Private helper - get the raw items JSON object
-  method: _getItemsObject [
-    ^ items
-  ]
-
   # Get value at key
   # Usage: @ dict at: 'name'
   method: at: key [

@@ -327,7 +327,8 @@ _parse_single_file() {
         # interrupted write) must not be fed into codegen. If invalid, fall
         # through and re-parse, overwriting the bad entry below.
         if jq -e --arg strict "${TRASHTALK_STRICT:-}" \
-            'type == "object" and ($strict == "" or ((.warnings // []) | length) == 0)' "$cache_file" >/dev/null 2>&1; then
+            'type == "object" and ($strict == "" or ((.warnings // []) | length) == 0) and
+             ((.warnings // []) | any(.type == "unknown_token") | not)' "$cache_file" >/dev/null 2>&1; then
             cat "$cache_file"
             return 0
         fi
@@ -356,6 +357,16 @@ _parse_single_file() {
         errors_json=$(echo "$ast" | jq '.errors // []')
         show_errors_with_context "$source_file" "$errors_json" "$RED"
         echo "$ast" | jq '.partial // {}'
+        exit 1
+    fi
+
+    # Code outside a method (for example a send after the class body) would be
+    # dropped without ever running, so it is always an error.
+    if echo "$ast" | jq -e '(.warnings // []) | any(.type == "unknown_token")' >/dev/null 2>&1; then
+        echo -e "${RED}Parse errors in ${source_file}:${NC}" >&2
+        show_errors_with_context "$source_file" \
+            "$(echo "$ast" | jq '[.warnings[] | select(.type == "unknown_token")
+              | .message = "Code outside a method never runs; move it into a method"]')" "$RED"
         exit 1
     fi
 

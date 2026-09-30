@@ -2,31 +2,13 @@ package: Kube
 
 # Kubernetes Deployment resource.
 # Unpacks replica counts into ivars.
+# Persistable is included again; see Kube::Pod.
 Deployment subclass: Resource
-  instanceVars: rawJson kind name namespace cluster capturedAt identity
-                replicas readyReplicas unavailableReplicas
+  include: Persistable
+  instanceVars: replicas readyReplicas unavailableReplicas
 
-  rawClassMethod: fromJson: json cluster: clusterName [
-    local id k n ns replicas ready unavail
-    id=$(@ Runtime generateId: "$_CLASS")
-    @ Runtime create: "$_CLASS" id: "$id"
-    k="Deployment"
-    n=$(echo      "$json" | jq -r '.metadata.name // ""')
-    ns=$(echo     "$json" | jq -r '.metadata.namespace // ""')
-    replicas=$(echo  "$json" | jq '.spec.replicas // 0')
-    ready=$(echo     "$json" | jq '.status.readyReplicas // 0')
-    unavail=$(echo   "$json" | jq '.status.unavailableReplicas // 0')
-    @ "$id" setRawJson:             "$json"
-    @ "$id" setCluster:             "$clusterName"
-    @ "$id" setKind:                "$k"
-    @ "$id" setName:                "$n"
-    @ "$id" setNamespace:           "$ns"
-    @ "$id" setCapturedAt:          "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    @ "$id" setIdentity:            "$k/$ns/$n"
-    @ "$id" setReplicas:            "$replicas"
-    @ "$id" setReadyReplicas:       "$ready"
-    @ "$id" setUnavailableReplicas: "$unavail"
-    echo "$id"
+  classMethod: kindFields [
+    ^ '{kind: "Deployment", replicas: (.spec.replicas // 0), readyReplicas: (.status.readyReplicas // 0), unavailableReplicas: (.status.unavailableReplicas // 0)}'
   ]
 
   # available / progressing / degraded based on .status.conditions.
@@ -50,10 +32,8 @@ Deployment subclass: Resource
   ]
 
   # One-line status: ready/desired replicas and rollout status.
-  rawMethod: summary [
-    local r total status
-    r=$(_ivar readyReplicas)
-    total=$(_ivar replicas)
-    status=$(@ "$_RECEIVER" rolloutStatus)
-    echo "$r/$total $status"
+  method: summary [
+    | status |
+    status := @ self rolloutStatus.
+    ^ readyReplicas , '/' , replicas , ' ' , status
   ]

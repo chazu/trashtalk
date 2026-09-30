@@ -4,25 +4,20 @@ package: Agent
 # Runs $TRASHTALK_SHELL_DRIVER with `bash -c` in the run's execution workspace, prompt
 # on stdin, run token in the environment. Lets the whole delivery loop run
 # without a model: the script can call trash-send Agent::Run result:/settle:.
-# No conversation continuity; resume: simply launches again.
+# No conversation continuity; resume: launches again with the same shell ref.
 ShellDriver subclass: Agent::Driver
 
-  rawClassMethod: launch: promptFile run: runId token: token [
-    local prompt_file="$1" run_id="$2" token="$3" script session workspace argv bash_path
+  rawClassMethod: launchRef: ref promptFile: promptFile run: runId token: token [
+    local prompt_file="$2" run_id="$3" token="$4" script workspace argv bash_path
     script="${TRASHTALK_SHELL_DRIVER:-}"
     if [[ -z "$script" ]]; then
       _throw "DriverError" "TRASHTALK_SHELL_DRIVER is not set"
       return 1
     fi
-    session=$(@ "$run_id" session)
     workspace=$(@ "$run_id" executionWorkspace)
     bash_path=$(command -v bash)
     argv=$(jq -cn --arg bash "$bash_path" --arg body 'cd "$1" && eval "$2"' \
       --arg ws "$workspace" --arg script "$script" \
       '[$bash, "-c", $body, "shelldriver", $ws, $script]')
     @ "$_RECEIVER" launchArgv: "$argv" promptFile: "$prompt_file" run: "$run_id" token: "$token" ref: "shell-$run_id"
-  ]
-
-  rawClassMethod: resume: ref promptFile: promptFile run: runId token: token [
-    @ "$_RECEIVER" launch: "$2" run: "$3" token: "$4"
   ]

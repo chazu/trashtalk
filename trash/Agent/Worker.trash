@@ -29,14 +29,6 @@ Worker subclass: Object
     ^ (prefix = 'session') or: [prefix = 'agent']
   ]
 
-  classMethod: ownerInboxFor: sessionId [
-    | identity owner |
-    identity := @ sessionId identity.
-    owner := @ identity owner.
-    (owner isEmpty) ifTrue: [ owner := @ Env get: 'TRASHTALK_USER' default: (@ Env get: 'USER') ].
-    ^ owner
-  ]
-
   classMethod: sessionForInbox: inboxName [
     ^ @ Store findByClass: 'Agent::Session' matching: (#{inbox: inboxName} asJson)
         orderBy: 'created_at DESC' limit: 1
@@ -51,13 +43,6 @@ Worker subclass: Object
   # ------------------------------------------------------------------
   # Inbound: a message landed in a session or identity inbox
   # ------------------------------------------------------------------
-
-  # Inspection only; reply routing uses the question's persisted delivery links.
-  classMethod: blockedDeliveriesFor: sessionId [
-    ^ @ Store findByClass: 'Agent::Delivery'
-        matching: (#{session: sessionId state: 'blocked'} asJson)
-        orderBy: 'created_at ASC' limit: 100
-  ]
 
   rawClassMethod: deliverMessage: messageId toInbox: inboxName [
     local msg="$1" name="$2" prefix="${2%%:*}" session="" identity handle sessions count ids blocked
@@ -142,10 +127,6 @@ Worker subclass: Object
     ^ @ Process withLock: path receiver: self selector: 'work:' argument: sessionId
   ]
 
-  classMethod: dispatchSession: sessionId [
-    ^ @ self tickSession: sessionId
-  ]
-
   # Cooperative API authority. A local user may stop a run; an agent must have
   # agent.stop and share the target's owner. Recheck inside the worker lock.
   rawClassMethod: authorizeStop: run [
@@ -167,10 +148,11 @@ Worker subclass: Object
   ]
 
   # Whole seconds a user control operation queues behind a running tick.
-  rawClassMethod: controlWait [
-    local wait="${TRASHTALK_CONTROL_WAIT:-30}"
-    [[ "$wait" =~ ^[0-9]+$ && ${#wait} -le 4 ]] || wait=30
-    printf '%s\n' "$wait"
+  classMethod: controlWait [
+    | seconds |
+    seconds := @ Env get: 'TRASHTALK_CONTROL_WAIT' default: '30'.
+    (seconds matches: '^[0-9]{1,4}$') ifTrue: [^ seconds].
+    ^ 30
   ]
 
   rawClassMethod: stopRun: run [
@@ -204,22 +186,37 @@ Worker subclass: Object
   ]
 
   classMethod: finishStop: run [
+    | step |
+    step := @ self interrupt: run beforeLaunch: 'Run stopped before launch' launched: 'Run explicitly stopped'.
+    ^ step caseOf: {
+      'done' -> [ 'interrupted' ].
+      #('driver' 'interrupt') -> [ 'Stop remains unconfirmed; session paused. Retry stop on this run.' ].
+      'deliveries' -> [ 'Unable to record unsettled deliveries; retry stop.' ]
+    } otherwise: [ 'Unable to record stop outcome; retry stop.' ]
+  ]
+
+  # Shared stop tail: interrupt the harness, keep its conversation, mark
+  # unsettled deliveries, then record the run outcome. Answers 'done' or the
+  # step that failed: driver, interrupt, deliveries or outcome.
+  classMethod: interrupt: run beforeLaunch: early launched: late [
     | profile driver stopped result state |
     profile := @ run backendProfile.
     driver := @ self driverFor: profile.
+    driver isEmpty ifTrue: [^ 'driver'].
     stopped := @ driver interrupt: run.
-    (stopped = 'true') ifFalse: [^ 'Stop remains unconfirmed; session paused. Retry stop on this run.'].
+    (stopped = 'true') ifFalse: [^ 'interrupt'].
     @ self rememberConversationFor: run.
+    # Record unsettled work before closing the run so a failed write is retryable.
     result := @ Agent::Delivery interruptFor: run.
-    (result = 'true') ifFalse: [^ 'Unable to record unsettled deliveries; retry stop.'].
+    (result = 'true') ifFalse: [^ 'deliveries'].
     state := @ run state.
     (state = 'starting') ifTrue: [
-      result := @ run finishWith: 'failed' outcome: '{}' error: 'Run stopped before launch'
+      result := @ run finishWith: 'failed' outcome: '{}' error: early
     ] ifFalse: [
-      result := @ run finishWith: 'interrupted' outcome: '{}' error: 'Run explicitly stopped'
+      result := @ run finishWith: 'interrupted' outcome: '{}' error: late
     ].
-    result isEmpty ifTrue: [^ 'Unable to record stop outcome; retry stop.'].
-    ^ 'interrupted'
+    result isEmpty ifTrue: [^ 'outcome'].
+    ^ 'done'
   ]
 
   classMethod: rememberConversationFor: run [
@@ -252,7 +249,7 @@ Worker subclass: Object
   ]
 
   classMethod: terminateOwnedSession: session [
-    | state run alive profile driver stopped result |
+    | state run step |
     @ session reload.
     state := @ session lifecycleState.
     (state = 'terminated') ifFalse: [state := @ session transitionTo: 'terminated'].
@@ -260,23 +257,13 @@ Worker subclass: Object
     run := @ session activeRun.
     run isEmpty ifTrue: [^ 'terminated'].
     @ run reload.
-    profile := @ run backendProfile.
-    driver := @ self driverFor: profile.
-    driver isEmpty ifTrue: [^ 'Session terminated, but its harness driver is unavailable; process stop is unconfirmed.'].
-    stopped := @ driver interrupt: run.
-    (stopped = 'true') ifFalse: [^ 'Session terminated, but the harness has not stopped. Inspect its logs and retry termination.'].
-    @ self rememberConversationFor: run.
-    # Record unsettled work before closing the run so a failed write is retryable.
-    result := @ Agent::Delivery interruptFor: run.
-    (result = 'true') ifFalse: [^ 'Session terminated; unable to record unsettled deliveries.'].
-    state := @ run state.
-    (state = 'starting') ifTrue: [
-      result := @ run finishWith: 'failed' outcome: '{}' error: 'Session terminated before launch'
-    ] ifFalse: [
-      result := @ run finishWith: 'interrupted' outcome: '{}' error: 'Session terminated by the user'
-    ].
-    result isEmpty ifTrue: [^ 'Session terminated; unable to record the run stop outcome.'].
-    ^ 'terminated'
+    step := @ self interrupt: run beforeLaunch: 'Session terminated before launch' launched: 'Session terminated by the user'.
+    ^ step caseOf: {
+      'done' -> [ 'terminated' ].
+      'driver' -> [ 'Session terminated, but its harness driver is unavailable; process stop is unconfirmed.' ].
+      'interrupt' -> [ 'Session terminated, but the harness has not stopped. Inspect its logs and retry termination.' ].
+      'deliveries' -> [ 'Session terminated; unable to record unsettled deliveries.' ]
+    } otherwise: [ 'Session terminated; unable to record the run stop outcome.' ]
   ]
 
   # Work runs only while holding the OS lock; every tick repairs outbox routing.
@@ -382,7 +369,7 @@ Worker subclass: Object
       (reason = 'null') or: [reason = 'false'] ifTrue: [outcome := outcome objectAt: 'stop_reason' put: 'unfinished'].
       detail := outcome jsonAt: 'stop_detail' ifAbsent: 'null'.
       (detail = 'null') or: [detail = 'false'] ifTrue: [outcome := outcome objectAt: 'stop_detail' put: 'Provider turn ended without completing the Assignment or settling its delivery; budget exhaustion is not confirmed'].
-      owner := @ self ownerInboxFor: session.
+      owner := @ session ownerInbox.
       (@ Inbox alert: ('Run ' , runId , ' in session ' , session , ' exited without settling every delivery; they are marked uncertain. Inspect the recorded effects. For Assignment deliveries use Assignment continue:afterDelivery:key:; for ordinary deliveries use session requeue or skip.') to: owner from: 'worker') ifFailed: [:error | @ error signal]
     ] ifFalse: [
       (hasBlocked = 'true') ifTrue: [final := 'waiting_for_user'] ifFalse: [final := 'succeeded']
@@ -407,7 +394,7 @@ Worker subclass: Object
         (@ Store patch: delivery with: (#{lastError: err} asJson)) ifFailed: [:error | @ error signal].
         (oldstate ~= 'starting') ifTrue: [
           (@ delivery transitionTo: 'uncertain') ifFailed: [:error | @ error signal].
-          owner := @ self ownerInboxFor: session.
+          owner := @ session ownerInbox.
           (@ Inbox alert: ('Delivery ' , delivery , ' needs review after run ' , runId , ': ' , err , '. Inspect its logs before retrying.') to: owner from: 'worker') ifFailed: [:error | @ error signal]
         ] ifFalse: [
           (@ delivery transitionTo: 'failed') ifFailed: [:error | @ error signal].
@@ -415,7 +402,7 @@ Worker subclass: Object
           (attempts < limit) ifTrue: [
             (@ delivery transitionTo: 'pending') ifFailed: [:error | @ error signal]
           ] ifFalse: [
-            owner := @ self ownerInboxFor: session.
+            owner := @ session ownerInbox.
             (@ Inbox alert: ('Delivery ' , delivery , ' in session ' , session , ' stalled after ' , attempts , ' attempts: ' , err , '. Skip it with: @ ' , session , ' skip: ' , delivery , ' note: reason') to: owner from: 'worker') ifFailed: [:error | @ error signal]
           ]
         ]

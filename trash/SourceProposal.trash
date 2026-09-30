@@ -39,10 +39,18 @@ SourceProposal subclass: Object
     printf '%s\n' "$normalized"
   ]
 
+  # File digest at the OS boundary: coreutils when present, else Perl shasum.
+  rawClassMethod: sha256Of: file [
+    if command -v sha256sum >/dev/null 2>&1; then
+      sha256sum "$1" | cut -d' ' -f1
+    else
+      shasum -a 256 "$1" | cut -d' ' -f1
+    fi
+  ]
+
   # Validate path and diff headers, re-check the source hash after approval,
   # and apply the single-file patch to a private copy only.
   rawClassMethod: stage: validated source: source_file review: review_result [
-    pragma: direct
     local validated_json="$1" source_file="$2" review_result="$3"
     local root relative expected_hash diff current_hash candidate diff_file output
     local old_header new_header old_count new_count hunk_count accepted selected_diff
@@ -88,11 +96,7 @@ SourceProposal subclass: Object
       return 0
     fi
 
-    if command -v sha256sum >/dev/null 2>&1; then
-      current_hash=$(sha256sum "$source_file" | cut -d' ' -f1)
-    else
-      current_hash=$(shasum -a 256 "$source_file" | cut -d' ' -f1)
-    fi
+    current_hash=$(@ "$_RECEIVER" sha256Of: "$source_file")
     if [[ "$current_hash" != "$expected_hash" ]]; then
       jq -cn --arg expected "$expected_hash" --arg actual "$current_hash" \
         '{ok:false,phase:"stale",message:("Source hash changed; expected " + $expected + ", found " + $actual)}'
@@ -143,7 +147,6 @@ SourceProposal subclass: Object
   # second time to close the review-to-commit race. Any failure restores both
   # source and compiled artifact before returning.
   rawClassMethod: commit: candidate artifact: artifact source: source_file class: class_name expectedHash: expected_hash [
-    pragma: direct
     local candidate="$1" artifact="$2" source_file="$3" class_name="$4" expected_hash="$5"
     local current_hash compiled_name target source_backup target_backup source_next output
     if [[ ! -f "$candidate" || -L "$candidate" || ! -f "$artifact" || -L "$artifact" || \
@@ -158,11 +161,7 @@ SourceProposal subclass: Object
     else
       target="$TRASHDIR/.compiled/$compiled_name"
     fi
-    if command -v sha256sum >/dev/null 2>&1; then
-      current_hash=$(sha256sum "$source_file" | cut -d' ' -f1)
-    else
-      current_hash=$(shasum -a 256 "$source_file" | cut -d' ' -f1)
-    fi
+    current_hash=$(@ "$_RECEIVER" sha256Of: "$source_file")
     if [[ "$current_hash" != "$expected_hash" ]]; then
       rm -f "$candidate" "$artifact"
       jq -cn '{ok:false,phase:"stale",message:"Source changed after review; proposal was not committed"}'
@@ -230,7 +229,6 @@ SourceProposal subclass: Object
   ]
 
   classMethod: reviewAndApply: proposal [
-    pragma: direct
     | validated ok message className declaredPath diff sourceFile available review reviewOutcome staged candidate compileResult artifact gate commit phase candidateFile unused title baseHash validReview |
     validated := @ self validate: proposal.
     ok := @ String jsonPath: 'ok' from: validated.
@@ -239,9 +237,11 @@ SourceProposal subclass: Object
       ^ @ self result: 'invalid' phase: 'schema' message: message
     ].
 
-    className := @ String jsonPath: 'class_name' from: validated.
-    declaredPath := @ String jsonPath: 'path' from: validated.
-    diff := @ String jsonPath: 'diff' from: validated.
+    validated jsonUnpack: #('class_name' 'path') into: [:name :path |
+      className := name.
+      declaredPath := path
+    ].
+    diff := validated jsonTextAt: 'diff'.
     sourceFile := @ Trash sourceFileFor: className.
     sourceFile isEmpty ifTrue: [
       message := 'No source file found for ' , className.
@@ -277,7 +277,10 @@ SourceProposal subclass: Object
       (phase = 'stale') ifTrue: [^ @ self result: 'stale' phase: phase message: message].
       ^ @ self result: 'invalid' phase: phase message: message
     ].
-    candidate := @ String jsonPath: 'candidate' from: staged.
+    staged jsonUnpack: #('candidate' 'base_sha256') into: [:file :hash |
+      candidate := file.
+      baseHash := hash
+    ].
 
     compileResult := @ Trash compileClass: className source: candidate.
     ok := @ String jsonPath: 'ok' from: compileResult.
@@ -315,7 +318,6 @@ SourceProposal subclass: Object
       ^ @ self result: 'gate_failed' phase: 'test' message: message
     ].
 
-    baseHash := @ String jsonPath: 'base_sha256' from: staged.
     commit := @ self commit: candidate artifact: artifact source: sourceFile class: className expectedHash: baseHash.
     ok := @ String jsonPath: 'ok' from: commit.
     phase := @ String jsonPath: 'phase' from: commit.

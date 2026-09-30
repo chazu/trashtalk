@@ -89,10 +89,6 @@ Inbox subclass: Object
     ^ @ inbox deliver: msg
   ]
 
-  classMethod: send: text to: recipient from: sender subject: subj [
-    ^ @ Inbox send: text to: recipient from: sender subject: subj kind: 'note'
-  ]
-
   classMethod: send: text to: recipient from: sender [
     ^ @ Inbox send: text to: recipient from: sender subject: '' kind: 'note'
   ]
@@ -122,12 +118,11 @@ Inbox subclass: Object
   # Stamp, persist, and signal. Returns the message id. Inboxes named
   # `session:<id>` or `agent:<handle>` belong to agent sessions: the message
   # also becomes an Agent::Delivery and the worker ticks that session.
-  # Raw: the DSL cannot yet propagate a failed transaction's exit status.
   # Never report success or emit a wake when persistence failed.
-  rawMethod: deliver: message [
-    @ "$_RECEIVER" prepare: "$1" || return 1
-    @ Agent::Queue persist: "$1" || return 1
-    @ "$_RECEIVER" announce: "$1"
+  method: deliver: message [
+    (@ self prepare: message) ifFailed: [:error | @ error signal].
+    (@ Agent::Queue persist: message) ifFailed: [:error | @ error signal].
+    ^ @ self announce: message
   ]
 
   method: prepare: message [
@@ -140,12 +135,8 @@ Inbox subclass: Object
   ]
 
   method: announce: message [
-    | payload available routed |
-    available := @ Honker isAvailable.
-    (available = 'true') ifTrue: [
-      payload := @ message asJson.
-      @ self emit: 'message' payload: payload
-    ].
+    | routed |
+    @ self announceLocal: message.
     routed := @ Agent::Worker handlesInbox: name.
     (routed = 'true') ifTrue: [
       @ Agent::Worker deliverMessage: message toInbox: name

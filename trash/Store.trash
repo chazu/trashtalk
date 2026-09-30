@@ -87,16 +87,8 @@ Store subclass: Object
 
   # Get the class of an instance
   # Usage: @ Store getClass <instance_id>
-  rawClassMethod: getClass: instance_id [
-    @ Store getField: "$instance_id" field: "class"
-  ]
-
-  # Check if an ID is a valid instance
-  # Usage: @ Store isInstance <instance_id>
-  rawClassMethod: isInstance: instance_id [
-    local class_name
-    class_name=$(@ Store getClass: "$instance_id")
-    [[ -n "$class_name" ]]
+  classMethod: getClass: instance_id [
+    ^ @ self getField: instance_id field: 'class'
   ]
 
   # Find all instances of a class
@@ -120,24 +112,12 @@ Store subclass: Object
   # Usage: @ Store query <where_clause>
   classPrimitive: query: where_clause calls: db_query
 
-  # Raw query returning full data
-  # Usage: @ Store queryData <where_clause>
-  classPrimitive: queryData: where_clause calls: db_query_data
-
   # Ensure a virtual column and index exist
   # Usage: @ Store ensureIndex <column_name> <json_path>
   rawClassMethod: ensureIndex: column_name path: json_path [
     db_ensure_virtual_column "$column_name" "$json_path" 2>/dev/null || true
     db_create_index "$column_name" 2>/dev/null || true
   ]
-
-  # List all indices
-  # Usage: @ Store listIndices
-  classPrimitive: listIndices calls: db_list_indices
-
-  # List all columns
-  # Usage: @ Store listColumns
-  classPrimitive: listColumns calls: db_list_columns
 
   # Clear all instance data (dangerous!)
   # Usage: @ Store clear
@@ -196,12 +176,16 @@ Store subclass: Object
     _store_validate_snapshot "$1" "$2" "$3"
   ]
 
-  rawClassMethod: requireSnapshot [
-    [[ ${_STORE_SNAPSHOT_MODE:-0} == 1 ]] || { _throw TransactionError 'This operation requires snapshot validation'; return 1; }
+  classMethod: requireSnapshot [
+    | mode |
+    mode := @ Env get: '_STORE_SNAPSHOT_MODE'.
+    (mode = '1') ifFalse: [@ TransactionError signal: 'This operation requires snapshot validation']
   ]
 
-  rawClassMethod: requireTransaction [
-    [[ -n ${_STORE_TX:-} ]] || { _throw TransactionError 'This operation requires a Store transaction'; return 1; }
+  classMethod: requireTransaction [
+    | tx |
+    tx := @ Env get: '_STORE_TX'.
+    tx isEmpty ifTrue: [@ TransactionError signal: 'This operation requires a Store transaction']
   ]
 
   # Fresh, typed lookup; missing objects are precondition failures.

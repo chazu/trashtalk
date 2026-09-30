@@ -24,18 +24,14 @@ Stream subclass: Object
   include: Debuggable
   instanceVars: streamName:'' consumerName:'' readerPid:''
 
-  # Create a stream (producer end — no consumer tracking). Names are stored
-  # through Store so another process can find and reuse the handle; plain
-  # setters would only cache them in this session.
-  rawClassMethod: named: name [
-    local id
-    id=$(_generate_instance_id Stream)
-    _create_instance Stream "$id" || return 1
-    @ Store patch: "$id" with: "$(jq -cn --arg s "$1" '{streamName:$s,consumerName:"",readerPid:""}')" || return 1
-    echo "$id"
+  # Create a stream (producer end — no consumer tracking).
+  classMethod: named: name [
+    ^ @ self named: name consumer: ''
   ]
 
-  # Create a stream consumer (reader end — tracks offsets)
+  # Create a stream consumer (reader end — tracks offsets). Names are stored
+  # through Store so another process can find and reuse the handle; plain
+  # setters would only cache them in this session.
   rawClassMethod: named: name consumer: consumer [
     local id
     id=$(_generate_instance_id Stream)
@@ -47,20 +43,21 @@ Stream subclass: Object
   # Find or create the durable producer handle for a stream name, so repeated
   # publishes from short-lived processes do not each store a new row.
   rawClassMethod: producerNamed: name [
-    local existing filter
     [[ -n "$1" ]] || { _throw StreamError 'Stream producerNamed: requires a stream name'; return 1; }
-    filter=$(jq -cn --arg s "$1" '{streamName:$s,consumerName:""}')
-    existing=$(@ Store findByClass: Stream matching: "$filter" orderBy: 'created_at ASC, id ASC' limit: 1) || return 1
-    if [[ -n "$existing" ]]; then echo "$existing"; return 0; fi
-    @ Stream named: "$1"
+    @ "$_RECEIVER" _handleNamed: "$1" consumer: ''
   ]
 
   # Find or create the durable consumer handle for one (stream, consumer)
   # pair, as Inbox named: does. Honker owns the offset; the instance is only a
   # reusable handle, so callers must not create and delete one per read.
   rawClassMethod: consumerNamed: name consumer: consumer [
-    local existing filter
     [[ -n "$1" && -n "$2" ]] || { _throw StreamError 'Stream consumerNamed:consumer: requires a stream and consumer name'; return 1; }
+    @ "$_RECEIVER" _handleNamed: "$1" consumer: "$2"
+  ]
+
+  # Shared lookup for the named handles above; an empty consumer is a producer.
+  rawClassMethod: _handleNamed: name consumer: consumer [
+    local existing filter
     filter=$(jq -cn --arg s "$1" --arg c "$2" '{streamName:$s,consumerName:$c}')
     existing=$(@ Store findByClass: Stream matching: "$filter" orderBy: 'created_at ASC, id ASC' limit: 1) || return 1
     if [[ -n "$existing" ]]; then echo "$existing"; return 0; fi
@@ -68,10 +65,8 @@ Stream subclass: Object
   ]
 
   # Publish a message to the stream
-  rawMethod: publish: data [
-    local stream
-    stream=$(_ivar streamName)
-    honker_stream_publish "$stream" "default" "$1"
+  method: publish: data [
+    ^ @ self publish: data key: 'default'
   ]
 
   # Publish with an explicit key (for partitioning/filtering)
@@ -81,18 +76,9 @@ Stream subclass: Object
     honker_stream_publish "$stream" "$2" "$1"
   ]
 
-  # Read messages from the stream (uses consumer offset if set)
-  rawMethod: read [
-    local stream consumer offset
-    stream=$(_ivar streamName)
-    consumer=$(_ivar consumerName)
-    if [[ -n "$consumer" ]]; then
-      offset=$(honker_stream_get_offset "$consumer" "$stream" 2>/dev/null)
-      offset="${offset:-0}"
-    else
-      offset=0
-    fi
-    honker_stream_read "$stream" "$offset" 10
+  # Read up to 10 messages from the stream (uses consumer offset if set)
+  method: read [
+    ^ @ self read: 10
   ]
 
   # Read with explicit batch size
@@ -140,12 +126,25 @@ Stream subclass: Object
   # The handler receives each message payload via valueWith:
   rawMethod: consumeDo: handler [
     pragma: direct
-    local stream consumer handler_id="$1"
+    @ "$_RECEIVER" _consume: "$1" with: 'block'
+  ]
+
+  # Start consumption with a raw bash callback function (simpler than blocks)
+  rawMethod: consumeWith: callbackFn [
+    pragma: direct
+    @ "$_RECEIVER" _consume: "$1" with: 'function'
+  ]
+
+  # Shared background loop for consumeDo: (a Block, stderr discarded) and
+  # consumeWith: (a Bash function name). Offsets advance after each message.
+  rawMethod: _consume: target with: kind [
+    pragma: direct
+    local stream consumer
     stream=$(_ivar streamName)
     consumer=$(_ivar consumerName)
 
     if [[ -z "$consumer" ]]; then
-      echo "ERROR: consumeDo: requires a consumer name (use named:consumer: to create)" >&2
+      echo "ERROR: Stream consumption requires a consumer name (use named:consumer: to create)" >&2
       return 1
     fi
 
@@ -163,48 +162,12 @@ Stream subclass: Object
             msg_offset=$(echo "$msg" | jq -r '.offset // .id // empty' 2>/dev/null)
 
             if [[ -n "$payload" ]]; then
-              @ "$handler_id" valueWith: "$payload" 2>/dev/null
+              if [[ "$kind" == block ]]; then
+                @ "$target" valueWith: "$payload" 2>/dev/null
+              else
+                "$target" "$payload"
+              fi
             fi
-
-            if [[ -n "$msg_offset" ]]; then
-              honker_stream_save_offset "$consumer" "$stream" "$msg_offset"
-            fi
-          done
-        else
-          sleep 0.05
-        fi
-      done
-    ) &
-
-    _ivar_set readerPid "$!"
-  ]
-
-  # Start consumption with a raw bash callback function (simpler than blocks)
-  rawMethod: consumeWith: callbackFn [
-    pragma: direct
-    local stream consumer callback="$1"
-    stream=$(_ivar streamName)
-    consumer=$(_ivar consumerName)
-
-    if [[ -z "$consumer" ]]; then
-      echo "ERROR: consumeWith: requires a consumer name" >&2
-      return 1
-    fi
-
-    (
-      while true; do
-        local offset messages
-        offset=$(honker_stream_get_offset "$consumer" "$stream" 2>/dev/null)
-        offset="${offset:-0}"
-        messages=$(honker_stream_read "$stream" "$offset" 10)
-
-        if [[ -n "$messages" && "$messages" != "[]" && "$messages" != "null" ]]; then
-          echo "$messages" | jq -c '.[]' 2>/dev/null | while IFS= read -r msg; do
-            local payload msg_offset
-            payload=$(echo "$msg" | jq -r '.payload // empty' 2>/dev/null)
-            msg_offset=$(echo "$msg" | jq -r '.offset // .id // empty' 2>/dev/null)
-
-            [[ -n "$payload" ]] && "$callback" "$payload"
 
             if [[ -n "$msg_offset" ]]; then
               honker_stream_save_offset "$consumer" "$stream" "$msg_offset"

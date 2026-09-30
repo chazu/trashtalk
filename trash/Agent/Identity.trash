@@ -10,16 +10,9 @@ package: Agent
 #   @ $id inboxObject
 Identity subclass: Object
   include: Persistable
+  include: Agent::LegacyId
   instanceVars: handle:'' displayName:'' owner:'' enabled:'true' defaultArchetype:''
                 defaultRole:'' inbox:'' created:'' sessionScope:'workspace' currentSession:'' sessionPolicyRevision:0
-
-  # Stable authority IDs survive the namespace migration and existing validators.
-  classMethod: new [
-    | id |
-    id := @ Runtime generateId: 'AgentIdentity'.
-    @ Runtime create: 'Agent::Identity' id: id.
-    ^ id
-  ]
 
   # Compatibility defaults are read-only; migration remains explicit.
   method: sessionPolicyRevision [
@@ -71,10 +64,8 @@ Identity subclass: Object
     ^ identity
   ]
 
-  rawClassMethod: findByHandle: handle [
-    local esc
-    esc=$(_db_escape "$1")
-    @ Store findByClass: Agent::Identity where: "json_extract(data, '\$.handle') = '$esc'" orderBy: 'created_at ASC' limit: 1
+  classMethod: findByHandle: handle [
+    ^ @ Store findByClass: 'Agent::Identity' matching: (#{handle: handle} asJson) orderBy: 'created_at ASC' limit: 1
   ]
 
   method: inboxObject [

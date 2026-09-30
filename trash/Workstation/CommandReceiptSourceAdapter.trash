@@ -13,12 +13,6 @@ CommandReceiptSourceAdapter subclass: EventSourceAdapter
     (@ Require equal: (subscription jsonTextAt: 'grouping') to: 'opaque') ifFailed: [:error | @ error signal].
     ^ subscription
   ]
-  classMethod: validateSubscription: subscription [
-    (@ Workstation::Schema validate: subscription as: 'EventSubscription') ifFailed: [:error | @ error signal].
-    (@ self validatePolicy: subscription) ifFailed: [:error | @ error signal].
-    (@ Require equal: (subscription jsonTextAt: 'enabled') to: 'true') ifFailed: [:error | @ error signal].
-    ^ subscription
-  ]
   # One durable handle per subscription consumer; never one per tick.
   classMethod: consumerFor: subscription [
     | name consumer |
@@ -67,20 +61,21 @@ CommandReceiptSourceAdapter subclass: EventSourceAdapter
   # JSON/Honker serialization boundary. Honker calls its stream 'topic' and its
   # single-log partition tag 'key'. Preserve explicit partition when provided.
   rawClassMethod: decode: record for: subscription [
-    [[ ${#1} -le 65536 ]] || { _throw EventSourceAdapterError 'Receipt record exceeds 64 KiB'; return 1; }
+    [[ ${#1} -le 65536 ]] || { _throw Workstation::EventSourceAdapterError 'Receipt record exceeds 64 KiB'; return 1; }
     printf '%s' "$1" | jq -ce --argjson s "$2" '
       select(type=="object" and .topic==$s.streamName) |
       {coordinate:{subscription:$s.id,streamName:.topic,partition:(.partition // .key // "default"),offset:.offset},
        receipt:(.payload | if type=="string" then fromjson else . end)}' 2>/dev/null || {
-      _throw EventSourceAdapterError 'Malformed command receipt envelope'; return 1;
+      _throw Workstation::EventSourceAdapterError 'Malformed command receipt envelope'; return 1;
     }
   ]
-  rawClassMethod: validateLimit: limit [
-    [[ "$1" =~ ^[1-8]$ ]] || { _throw EventSourceAdapterError 'Receipt batch limit must be 1..8'; return 1; }
+  classMethod: validateLimit: limit [
+    (limit =~ '^[1-8]$') ifFalse: [@ Workstation::EventSourceAdapterError signal: 'Receipt batch limit must be 1..8'].
+    ^ limit
   ]
   rawClassMethod: bounded: records limit: limit [
-    [[ ${#1} -le 524288 ]] || { _throw EventSourceAdapterError 'Receipt batch exceeds 512 KiB'; return 1; }
+    [[ ${#1} -le 524288 ]] || { _throw Workstation::EventSourceAdapterError 'Receipt batch exceeds 512 KiB'; return 1; }
     printf '%s' "$1" | jq -ce --argjson n "$2" 'select(type=="array" and length<=$n)' 2>/dev/null || {
-      _throw EventSourceAdapterError 'Malformed receipt batch'; return 1;
+      _throw Workstation::EventSourceAdapterError 'Malformed receipt batch'; return 1;
     }
   ]

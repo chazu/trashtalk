@@ -7,7 +7,7 @@ Debuggable trait
   # Usage: @ self debug: 'Something happened'
   method: debug: message [
     | debugFlag timestamp output |
-    debugFlag := @ Env get: 'TRASH_DEBUG' default: '1'.
+    debugFlag := @ Env get: 'TRASH_DEBUG' default: '0'.
     (debugFlag == '0') ifFalse: [
       timestamp := @ Time nowFormatted: '%Y-%m-%d %H:%M:%S'.
       output := "[" , timestamp , "] DEBUG (" , self , "): " , message.
@@ -21,42 +21,4 @@ Debuggable trait
     | msg |
     msg := "Calling " , methodName , " with args: " , args.
     @ self debug: msg
-  ]
-
-  # Introspect object details - shows class and available methods
-  # Note: Use 'inspect' for instance variable values (from Object)
-  # Usage: @ self introspect
-  method: introspect [
-    pragma: stream
-    | className methods line |
-    className := @ Runtime classFor: self.
-    methods := @ Runtime methodsFor: className.
-    line := "Object: " , self.
-    @ Console print: line.
-    line := "Class: " , className.
-    @ Console print: line.
-    @ Console print: 'Methods:'.
-    line := "  " , methods.
-    @ Console print: line
-  ]
-
-  # Show the inheritance chain for this object's class
-  # Usage: @ self ancestry
-  method: ancestry [
-    pragma: stream
-    | className currentClass superclass line |
-    className := @ Runtime classFor: self.
-    line := "Inheritance chain for " , self.
-    @ Console print: line.
-    line := "  " , className.
-    @ Console print: line.
-    currentClass := className.
-    [currentClass notEmpty] whileTrue: [
-      superclass := @ Runtime superclassOf: currentClass.
-      superclass notEmpty ifTrue: [
-        line := "  " , superclass.
-        @ Console print: line
-      ].
-      currentClass := superclass
-    ]
   ]

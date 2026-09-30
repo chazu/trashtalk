@@ -49,10 +49,7 @@ Chad subclass: Tool
     argv := #(tool) asJson.
     (mode = 'plan') ifTrue: [argv := argv arrayPush: '--plan'].
     (continuing = 'true') ifTrue: [argv := argv arrayPush: '--continue'].
-    model notEmpty ifTrue: [
-      argv := argv arrayPush: '--model'.
-      argv := argv arrayPush: model
-    ].
+    argv := @ self argv: argv option: '--model' value: model.
     argv := argv arrayPush: '--'.
     ^ argv arrayPush: prompt
   ]

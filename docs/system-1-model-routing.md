@@ -16,8 +16,10 @@ bash examples/jev.bash 'The export button crashes, and payroll is blocked today.
 ```
 
 Each invocation makes one billable request. The example's behavior is in
-[`Examples::JevTicket`](../trash/Examples/JevTicket.trash): a DSL JSON literal
-asks for a team (`choice`), urgency (`score`), and refund intent (`noul`).
+[`Examples::JevTicket`](../trash/Examples/JevTicket.trash). It sends the DSL
+JSON literal from
+[`Examples::DecisionTicket questions`](../trash/Examples/DecisionTicket.trash),
+which asks for a team (`choice`), urgency (`score`), and refund intent (`noul`).
 The Bash script only loads the runtime and sends the message.
 
 From a loaded Trashtalk shell:

@@ -15,8 +15,7 @@ Review subclass: Object
     attention := (@ Gmail::Attention decide: context using: target) ifFailed: [:error | ^ @ Decision::Request failure: error].
     review := category jsonAt: 'value.reviewNeeded'.
     ((attention jsonTextAt: 'value.suggestion') = 'review_uncertain') ifTrue: [review := 'true'].
-    ((message jsonTextAt: 'bodySource') = 'snippet') ifTrue: [review := 'true'].
-    ((message jsonAt: 'truncated') = 'true') ifTrue: [review := 'true'].
+    ((@ Gmail::Client isPartial: message) = 'true') ifTrue: [review := 'true'].
     ^ #{reviewNeeded: (review jsonValue) messageId: (message jsonTextAt: 'id') subject: (message jsonTextAt: 'subject')
         sender: (message jsonTextAt: 'from') bodySource: (message jsonTextAt: 'bodySource')
         truncated: ((message jsonAt: 'truncated') jsonValue)

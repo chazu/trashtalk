@@ -24,43 +24,35 @@ EventBus subclass: Object
   ]
 
   # Default global bus (convenience)
-  rawClassMethod: default [
-    @ EventBus named: 'global'
+  classMethod: default [
+    ^ @ self named: 'global'
   ]
 
   # Subscribe to an event with a handler block
-  # The handler block receives the payload via valueWith:
+  # The handler block receives the payload via valueWith: (see Honker listen:do:)
   # Returns the listener PID
   rawMethod: on: eventName do: handler [
     pragma: direct
-    local topic handler_id="$2"
+    local topic pid pids
     topic="$(_ivar name).$1"
-
-    local wrapper="_eb_${_INSTANCE}_${RANDOM}"
-    eval "${wrapper}() { @ \"${handler_id}\" valueWith: \"\$1\"; }"
-    export -f "$wrapper"
-
-    local pid
-    pid=$(honker_listen "$topic" "$wrapper")
-
-    local pids
+    pid=$(@ Honker listen: "$topic" do: "$2") || return
     pids="$(_ivar listenerPids)"
     _ivar_set listenerPids "${pids:+$pids }$pid"
     echo "$pid"
   ]
 
   # Emit an event with a JSON payload
-  rawMethod: emit: eventName payload: data [
-    local topic
-    topic="$(_ivar name).$1"
-    honker_notify "$topic" "$2"
+  method: emit: eventName payload: data [
+    | topic |
+    topic := name , '.' , eventName.
+    ^ @ Honker notify: topic payload: data
   ]
 
   # Emit an event with no payload
-  rawMethod: emit: eventName [
-    local topic
-    topic="$(_ivar name).$1"
-    honker_notify "$topic" ""
+  method: emit: eventName [
+    | topic |
+    topic := name , '.' , eventName.
+    ^ @ Honker notify: topic payload: ''
   ]
 
   # Get the number of active listeners
@@ -90,22 +82,22 @@ EventBus subclass: Object
     @ self delete
   ]
 
-  rawClassMethod: help [
-    echo "=== EventBus - Observer Pattern ==="
-    echo ""
-    echo "Create a bus:"
-    echo "  bus=\$(@ EventBus named: 'orders')"
-    echo "  bus=\$(@ EventBus default)          # global singleton"
-    echo ""
-    echo "Subscribe:"
-    echo "  @ \$bus on: 'created' do: \$handlerBlock"
-    echo ""
-    echo "Emit:"
-    echo "  @ \$bus emit: 'created' payload: '{\"id\":42}'"
-    echo "  @ \$bus emit: 'created'             # no payload"
-    echo ""
-    echo "Manage:"
-    echo "  @ \$bus listenerCount"
-    echo "  @ \$bus shutdown"
-    echo "  @ \$bus destroy"
+  classMethod: help [
+    ^ '''=== EventBus - Observer Pattern ===
+
+Create a bus:
+  bus=$(@ EventBus named: 'orders')
+  bus=$(@ EventBus default)          # global singleton
+
+Subscribe:
+  @ $bus on: 'created' do: $handlerBlock
+
+Emit:
+  @ $bus emit: 'created' payload: '{"id":42}'
+  @ $bus emit: 'created'             # no payload
+
+Manage:
+  @ $bus listenerCount
+  @ $bus shutdown
+  @ $bus destroy'''
   ]

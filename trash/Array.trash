@@ -4,14 +4,6 @@ Array subclass: Object
   include: Persistable
   instanceVars: items:'[]'
 
-  # Create a new array
-  classMethod: new [
-    | id |
-    id := @ Runtime generateId: "Array"
-    @ Runtime create: "Array" id: id
-    ^ id
-  ]
-
   # Create array from newline-separated text
   # Usage: arr := @ Array fromLines: "a\nb\nc"
   # Returns array containing ["a", "b", "c"]
@@ -23,21 +15,6 @@ Array subclass: Object
 '.
     @ arr setItems: jsonArray.
     ^ arr
-  ]
-
-  # Accessor for items ivar
-  method: getItems [
-    ^ items
-  ]
-
-  # Setter for items ivar
-  method: setItems: newItems [
-    items := newItems
-  ]
-
-  # Private helper - get the raw items JSON array
-  method: _getItemsArray [
-    ^ items
   ]
 
   # Get element at index
@@ -129,12 +106,11 @@ Array subclass: Object
     ^ ''
   ]
 
+  # An empty detect: result (no match, or a matched empty element) runs the default.
   method: detect: aBlock ifNone: defaultBlock [
-    | result |
-    items arrayEach: [:element |
-      result := @ aBlock valueWith: element.
-      result notEmpty ifTrue: [^ element]
-    ].
+    | found |
+    found := @ self detect: aBlock.
+    found notEmpty ifTrue: [^ found].
     ^ @ defaultBlock value
   ]
 

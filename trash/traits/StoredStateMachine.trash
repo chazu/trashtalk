@@ -1,0 +1,24 @@
+# Durable compare-and-swap transitions over a persisted `state` field. The
+# including class also includes StateMachine (for requireTransitionFrom:to:)
+# and supplies transitionRules. Rejected or concurrent transitions write nothing.
+StoredStateMachine trait
+  method: transitionTo: newState [
+    ^ @ self transitionTo: newState with: '{}'
+  ]
+
+  # SQLite boundary: validate against the stored state, then apply the patch and
+  # the new state only while the stored state still matches.
+  rawMethod: transitionTo: newState with: patchJson [
+    local to="$1" from
+    _env_set "$_RECEIVER" "$(db_get "$_RECEIVER")"
+    from=$(_ivar state)
+    @ "$_RECEIVER" requireTransitionFrom: "$from" to: "$to" >/dev/null || return 1
+    local eid ef et changed patch
+    printf '%s' "$2" | jq -e 'type == "object"' >/dev/null || return 1
+    patch=$(_db_escape "$2")
+    eid=$(_db_escape "$_RECEIVER"); ef=$(_db_escape "$from"); et=$(_db_escape "$to")
+    changed=$(_db_sql "UPDATE instances SET data=json_set(json_patch(data,'$patch'),'$.state','$et') WHERE id='$eid' AND json_extract(data,'$.state')='$ef'; SELECT changes();") || return 1
+    [[ "$changed" == 1 ]] || { _throw "TransitionError" "Concurrent transition; reload and retry"; return 1; }
+    _env_set "$_RECEIVER" "$(db_get "$_RECEIVER")"
+    echo "$to"
+  ]

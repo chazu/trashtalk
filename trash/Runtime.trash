@@ -9,32 +9,6 @@
 Runtime subclass: Object
 
   # ==========================================
-  # Nested-send diagnostics (retained for compatibility)
-  # ==========================================
-
-  # These expose Runtime's own send, not the caller. Use self / @ self class
-  # in DSL methods, or the dispatcher context directly at a raw boundary.
-  # Runtime class returns Runtime.
-  rawClassMethod: class [
-    echo "$_CLASS"
-  ]
-
-  # Runtime instance is empty because this is a class send.
-  rawClassMethod: instance [
-    echo "$_INSTANCE"
-  ]
-
-  # Runtime receiver returns Runtime.
-  rawClassMethod: receiver [
-    echo "$_RECEIVER"
-  ]
-
-  # Runtime selector returns the selector of this diagnostic send.
-  rawClassMethod: selector [
-    echo "$_SELECTOR"
-  ]
-
-  # ==========================================
   # Object Lifecycle
   # ==========================================
 
@@ -114,23 +88,6 @@ Runtime subclass: Object
     _env_set "$2" "$1"
   ]
 
-  # Get an instance variable value
-  # Usage: value := @ Runtime ivar: 'count' of: instanceId
-  rawClassMethod: ivar: varName of: instanceId [
-    local data value
-    data=$(_env_get "$2")
-    echo "$data" | jq -r --arg k "$1" '.[$k] // empty'
-  ]
-
-  # Set an instance variable value
-  # Usage: @ Runtime ivar: 'count' of: instanceId set: 42
-  rawClassMethod: ivar: varName of: instanceId set: value [
-    local data
-    data=$(_env_get "$2")
-    data=$(echo "$data" | jq -c --arg k "$1" --arg v "$3" '.[$k] = $v')
-    _env_set "$2" "$data"
-  ]
-
   # ==========================================
   # Introspection
   # ==========================================
@@ -148,25 +105,6 @@ Runtime subclass: Object
   classPrimitive: methodsFor: className calls: _trash_methods_json
   classPrimitive: methodsFor: className matching: pattern calls: _trash_methods_json
   classPrimitive: class: className hasMethod: methodName calls: _trash_has_method
-
-  # ==========================================
-  # Call Stack
-  # ==========================================
-
-  # Get current call depth
-  rawClassMethod: callDepth [
-    echo "${_CALL_DEPTH:-0}"
-  ]
-
-  # Get call stack as JSON array
-  rawClassMethod: callStack [
-    local stack="[]"
-    local i
-    for ((i=0; i<${#_CALL_STACK[@]}; i++)); do
-      stack=$(echo "$stack" | jq -c --arg s "${_CALL_STACK[$i]}" '. + [$s]')
-    done
-    echo "$stack"
-  ]
 
   # Print stack trace to stderr
   classPrimitive: printStackTrace calls: _print_stack_trace

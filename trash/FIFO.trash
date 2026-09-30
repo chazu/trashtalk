@@ -4,12 +4,11 @@ FIFO subclass: Object
   instanceVars: path:'' keeperPid:'' writerPid:'' readerPid:''
 
   # Create a FIFO instance for a given path (does not create the pipe yet)
-  rawClassMethod: at: aPath [
-    local id
-    id=$(_generate_instance_id FIFO)
-    _create_instance FIFO "$id"
-    @ "$id" _setPath: "$aPath"
-    echo "$id"
+  classMethod: at: aPath [
+    | fifo |
+    fifo := @ self new.
+    @ fifo path: aPath.
+    ^ fifo
   ]
 
   # Create the named pipe on disk
@@ -21,14 +20,8 @@ FIFO subclass: Object
   ]
 
   # Check if the pipe exists on disk
-  rawMethod: exists [
-    local p
-    p="$(_ivar path)"
-    if [[ -p "$p" ]]; then
-      echo "true"
-    else
-      echo "false"
-    fi
+  method: exists [
+    ^ path isFifo
   ]
 
   # Remove the pipe from disk
@@ -174,9 +167,4 @@ FIFO subclass: Object
       kill -9 "$reader_pid" 2>/dev/null
       _ivar_set readerPid ""
     fi
-  ]
-
-  # Private setter
-  method: _setPath: aPath [
-    path := aPath
   ]

@@ -31,3 +31,22 @@ build "$TRASHTALK_DIR/trash/Alpha.trash" >/dev/null
 source "$TRASHTALK_COMPILED_DIR/Alpha"
 [[ "$(__Alpha__value)" == 2 ]]
 echo 'PASS: moved/deleted sources reconcile; live clashes fail without publication'
+
+# A full build removes generated artifacts no manifest entry owns once their
+# source is gone (e.g. output from before manifest tracking). Other files and
+# artifacts whose source still exists survive, and partial builds prune nothing.
+mkdir -p "$TRASHTALK_COMPILED_DIR/traits" "$TRASHTALK_DIR/trash/Pkg"
+printf 'Beta subclass: Object\n  method: value [ ^ 3 ]\n' > "$TRASHTALK_DIR/trash/Pkg/Beta.trash"
+for orphan in Ghost Pkg__Ghost traits/Ghost Pkg__Beta; do
+    cp "$TRASHTALK_COMPILED_DIR/Alpha" "$TRASHTALK_COMPILED_DIR/$orphan"
+done
+printf 'hand written\n' > "$TRASHTALK_COMPILED_DIR/notes"
+build "$TRASHTALK_DIR/trash/Alpha.trash" >/dev/null
+[[ -e "$TRASHTALK_COMPILED_DIR/Ghost" ]] || { echo 'FAIL: partial build pruned an orphan'; exit 1; }
+TRASH_BUILD_PRUNE_ORPHANS=1 build "$TRASHTALK_DIR/trash/Alpha.trash" > "$TMPDIR/prune.log"
+for orphan in Ghost Pkg__Ghost traits/Ghost; do
+    [[ ! -e "$TRASHTALK_COMPILED_DIR/$orphan" ]] || { echo "FAIL: orphan $orphan survived"; exit 1; }
+    grep -qx "  - removed orphaned $orphan" "$TMPDIR/prune.log"
+done
+[[ -e "$TRASHTALK_COMPILED_DIR/Pkg__Beta" && -e "$TRASHTALK_COMPILED_DIR/notes" && -e "$TRASHTALK_COMPILED_DIR/Alpha" ]]
+echo 'PASS: full builds prune unowned artifacts of deleted sources'

@@ -11,14 +11,8 @@ Inmacs subclass: Tool
     | argv toolPath |
     toolPath := @ self path.
     argv := #(toolPath '--result-json' '--syntax' 'trashtalk' '--tab-width' '2') asJson.
-    annotationsPath notEmpty ifTrue: [
-      argv := argv arrayPush: '--annotations'.
-      argv := argv arrayPush: annotationsPath
-    ].
-    line notEmpty ifTrue: [
-      argv := argv arrayPush: '--line'.
-      argv := argv arrayPush: line
-    ].
+    argv := @ self argv: argv option: '--annotations' value: annotationsPath.
+    argv := @ self argv: argv option: '--line' value: line.
     argv := argv arrayPush: path.
 
     ^ @ self runArgvJson: argv
@@ -29,10 +23,7 @@ Inmacs subclass: Tool
     | argv toolPath |
     toolPath := @ self path.
     argv := #(toolPath '--stdin' '--result-json' '-o' outputPath '--syntax' 'markdown' '--tab-width' '2') asJson.
-    title notEmpty ifTrue: [
-      argv := argv arrayPush: '--title'.
-      argv := argv arrayPush: title
-    ].
+    argv := @ self argv: argv option: '--title' value: title.
     ^ @ self runArgvJson: argv input: ''
   ]
 

@@ -50,10 +50,7 @@ Roam subclass: Tool
     available := @ self isInstalled.
     (available ~= 'true') ifTrue: [^ @ self missingJsonToolResult: command].
     argv := @ self argvFor: command.
-    target notEmpty ifTrue: [
-      argv := argv arrayPush: '--'.
-      argv := argv arrayPush: target
-    ].
+    argv := @ self argv: argv option: '--' value: target.
     ^ @ self captureJsonArgv: argv command: command inDirectory: directory
   ]
 

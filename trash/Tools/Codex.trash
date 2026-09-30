@@ -8,13 +8,8 @@ Codex subclass: Tool
   ]
 
   # Installation and ChatGPT authentication are explicit user operations.
-  classMethod: ensure [
-    | available guidance |
-    available := @ self isInstalled.
-    (available = 'true') ifTrue: [^ 'true'].
-    guidance := 'Codex CLI is not installed. Install it from the official OpenAI Codex documentation, then run: codex login'.
-    @ Console error: guidance.
-    ^ 'false'
+  classMethod: installGuidance [
+    ^ 'Codex CLI is not installed. Install it from the official OpenAI Codex documentation, then run: codex login'
   ]
 
   classMethod: authStatus [
@@ -68,7 +63,7 @@ Codex subclass: Tool
 
   classMethod: missingToolResult [
     | result guidance |
-    guidance := 'Codex CLI is not installed. Install it from the official OpenAI Codex documentation, then run: codex login'.
+    guidance := @ self installGuidance.
     result := #{schema_version: 1 backend: 'codex' outcome: 'missing_tool' exit_code: 127 stdout: '' stderr: guidance result: null} asJson.
     ^ result
   ]

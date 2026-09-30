@@ -134,7 +134,36 @@ assert_eq "second consumer offset advanced" "2" "$offset_c2"
 
 # ==========================================
 echo ""
-echo "7. Destroy Stream"
+echo "7. Continuous Consumption"
+# ==========================================
+
+consumed_file="/tmp/test_stream_consumed_$$"
+record_payload() { printf '%s\n' "$1" >> "$consumed_file"; }
+live=$(@ Stream named: 'live' consumer: 'recorder')
+@ "$live" consumeWith: record_payload
+assert_eq "consumeWith: starts the loop" "true" "$(@ "$live" isConsuming)"
+@ "$live" publish: '{"n":1}' >/dev/null
+for _ in $(seq 1 60); do [[ -s "$consumed_file" ]] && break; sleep 0.05; done
+assert_eq "consumeWith: delivers the payload" '{"n":1}' "$(head -1 "$consumed_file" 2>/dev/null)"
+@ "$live" stopConsuming
+assert_eq "stopConsuming stops the loop" "false" "$(@ "$live" isConsuming)"
+handler=$(@ Block params: '["payload"]' code: "printf 'block:%s\\n' \"\$payload\" >> '$consumed_file'" captured: '{}')
+@ "$live" consumeDo: "$handler"
+@ "$live" publish: '{"n":2}' >/dev/null
+for _ in $(seq 1 60); do grep -q block: "$consumed_file" 2>/dev/null && break; sleep 0.05; done
+assert_eq "consumeDo: delivers the payload to the block" 'block:{"n":2}' "$(grep block: "$consumed_file" 2>/dev/null)"
+@ "$live" stopConsuming
+if @ "$producer" consumeWith: record_payload 2>/dev/null; then
+    fail "consumption requires a consumer name" "failure" "success"
+else
+    pass "consumption requires a consumer name"
+fi
+@ "$live" destroy
+rm -f "$consumed_file"
+
+# ==========================================
+echo ""
+echo "8. Destroy Stream"
 # ==========================================
 
 @ "$producer" destroy

@@ -10,9 +10,17 @@ CommandReceipt subclass: Object
     ^ document
   ]
   # Lexical canonical-path validation permits replay after a workspace disappears.
-  rawClassMethod: validateWorkspace: path [
-    local parent="/../" dot="/./" double="//"
-    [[ "$1" == /* && "$1" != *"$parent"* && "$1" != *"$dot"* && "$1" != *"$double"* && "$1" != */.. && "$1" != */. && ( "$1" == / || "$1" != */ ) ]] || { _throw EventSourceAdapterError 'Receipt workspace must be canonical absolute text'; return 1; }
+  classMethod: validateWorkspace: path [
+    | reason |
+    reason := 'Receipt workspace must be canonical absolute text'.
+    (path startsWith: '/') ifFalse: [@ Workstation::EventSourceAdapterError signal: reason].
+    (path includes: '/../') ifTrue: [@ Workstation::EventSourceAdapterError signal: reason].
+    (path includes: '/./') ifTrue: [@ Workstation::EventSourceAdapterError signal: reason].
+    (path includes: '//') ifTrue: [@ Workstation::EventSourceAdapterError signal: reason].
+    (path endsWith: '/..') ifTrue: [@ Workstation::EventSourceAdapterError signal: reason].
+    (path endsWith: '/.') ifTrue: [@ Workstation::EventSourceAdapterError signal: reason].
+    ((path endsWith: '/') and: [path ~= '/']) ifTrue: [@ Workstation::EventSourceAdapterError signal: reason].
+    ^ path
   ]
   classMethod: publish: document [
     | stream name |

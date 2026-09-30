@@ -11,10 +11,7 @@ Indiff subclass: Tool
     | argv toolPath |
     toolPath := @ self path.
     argv := #(toolPath '--result-json') asJson.
-    title notEmpty ifTrue: [
-      argv := argv arrayPush: '--title'.
-      argv := argv arrayPush: title
-    ].
+    argv := @ self argv: argv option: '--title' value: title.
 
     ^ @ self runArgvJson: argv input: diff
   ]

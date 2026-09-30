@@ -13,42 +13,16 @@ package: Agent
 #   @ $d transitionTo: processed
 Delivery subclass: Object
   include: Persistable
+  include: Agent::LegacyId
   include: StateMachine
+  include: StoredStateMachine
   instanceVars: session:'' run:'' messageIds:'[]' deliveryKey:'' state:'pending' attempts:0
                 lastError:'' note:'' created:'' assignment:'' generation:0 dispatchMode:'automatic'
                 freshConversation:'false' executionWorkspace:'' authorizationRole:'' authorizationRevision:'' authorizationWorkspacePolicy:''
 
-  # Stable authority IDs survive the namespace migration and existing validators.
-  classMethod: new [
-    | id |
-    id := @ Runtime generateId: 'AgentDelivery'.
-    @ Runtime create: 'Agent::Delivery' id: id.
-    ^ id
-  ]
-
   # Common transition rule: check the table, set, save, echo the new state.
   method: transitionRules [
     ^ '["pending:offered","pending:failed","offered:processed","offered:blocked","offered:uncertain","offered:pending","offered:failed","blocked:processed","blocked:pending","failed:pending","failed:skipped","uncertain:pending","uncertain:processed","uncertain:skipped"]'
-  ]
-
-  method: transitionTo: newState [
-    ^ @ self transitionTo: newState with: '{}'
-  ]
-
-  # Atomic state transition plus associated fields; rejected transitions write nothing.
-  rawMethod: transitionTo: newState with: patchJson [
-    local to="$1" from
-    _env_set "$_RECEIVER" "$(db_get "$_RECEIVER")"
-    from=$(_ivar state)
-    @ "$_RECEIVER" requireTransitionFrom: "$from" to: "$to" >/dev/null || return 1
-    local eid ef et changed patch
-    printf '%s' "$2" | jq -e 'type == "object"' >/dev/null || return 1
-    patch=$(_db_escape "$2")
-    eid=$(_db_escape "$_RECEIVER"); ef=$(_db_escape "$from"); et=$(_db_escape "$to")
-    changed=$(_db_sql "UPDATE instances SET data=json_set(json_patch(data,'$patch'),'$.state','$et') WHERE id='$eid' AND json_extract(data,'$.state')='$ef'; SELECT changes();") || return 1
-    [[ "$changed" == 1 ]] || { _throw "TransitionError" "Concurrent transition; reload and retry"; return 1; }
-    _env_set "$_RECEIVER" "$(db_get "$_RECEIVER")"
-    echo "$to"
   ]
 
   # Create (or return the existing) delivery for these message ids.
@@ -64,16 +38,14 @@ Delivery subclass: Object
   ]
 
   # Deliveries a run is currently holding (offered or blocked), oldest first
-  rawClassMethod: offeredFor: runId [
-    local esc
-    esc=$(_db_escape "$1")
-    @ Store findByClass: Agent::Delivery where: "json_extract(data, '\$.run') = '$esc' AND json_extract(data, '\$.state') IN ('offered', 'blocked')" orderBy: "json_extract(data, '\$.created') ASC, rowid ASC" limit: 1000
+  classMethod: offeredFor: runId [
+    ^ @ Store findByClass: 'Agent::Delivery'
+        matching: (#{run: runId state: #('offered' 'blocked')} asJson)
+        orderBy: "json_extract(data, '$.created') ASC, rowid ASC" limit: 1000
   ]
 
-  rawClassMethod: forKey: key [
-    local esc
-    esc=$(_db_escape "$1")
-    @ Store findByClass: Agent::Delivery where: "json_extract(data, '\$.deliveryKey') = '$esc'" orderBy: 'created_at ASC' limit: 1
+  classMethod: forKey: key [
+    ^ @ Store findByClass: 'Agent::Delivery' matching: (#{deliveryKey: key} asJson) orderBy: 'created_at ASC' limit: 1
   ]
 
   # SQLite boundary: stopping a launched run never infers successful processing.
@@ -115,11 +87,12 @@ Delivery subclass: Object
     printf '%s' "$ids" | jq -r 'if type == "string" then (fromjson? // []) else . end | .[]'
   ]
 
-  rawMethod: senderOfFirstMessage [
-    local first
-    first=$(@ "$_RECEIVER" messageIdList | head -n 1)
-    [[ -n "$first" ]] || return 0
-    @ "$first" from
+  method: senderOfFirstMessage [
+    | first |
+    first := @ self messageIdList.
+    first := first firstLine.
+    (first isEmpty) ifTrue: [^ ''].
+    ^ @ first from
   ]
 
   classMethod: forAssignment: assignment session: session generation: generation message: message [

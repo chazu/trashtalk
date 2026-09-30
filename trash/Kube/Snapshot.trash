@@ -64,11 +64,8 @@ Snapshot subclass: Object
   ]
 
   # Append a resource instance ID to the resourceIds array.
-  rawMethod: _addResourceId: resourceId [
-    local current new
-    current=$(_ivar resourceIds)
-    new=$(echo "$current" | jq --arg id "$1" '. + [$id]')
-    _ivar_set resourceIds "$new"
+  method: _addResourceId: resourceId [
+    resourceIds := resourceIds arrayPush: resourceId
   ]
 
   # Return resource IDs as newline-separated list.
@@ -89,13 +86,13 @@ Snapshot subclass: Object
   ]
 
   # Count of resources in this snapshot.
-  rawMethod: size [
-    _ivar resourceIds | jq 'length'
+  method: size [
+    ^ resourceIds arrayLength
   ]
 
   # Return a JSON object mapping identity strings to resource IDs.
   # Used by Kube::Diff to align resources across two snapshots.
-  rawMethod: _identityMap [
+  rawMethod: identityMap [
     local ids id data identity map
     ids=$(_ivar resourceIds)
     map='{}'

@@ -1,0 +1,14 @@
+package: Agent
+
+# Stable authority ids survive the namespace migration and existing validators:
+# Agent records keep their pre-namespace prefix (agentrun_, agentsession_, ...),
+# which is the qualified class name without its `::` separator.
+LegacyId trait
+  classMethod: new [
+    | className prefix id |
+    className := self.
+    prefix := className replaceAll: '::' with: ''.
+    id := @ Runtime generateId: prefix.
+    @ Runtime create: className id: id.
+    ^ id
+  ]

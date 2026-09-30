@@ -19,7 +19,3 @@ Surface subclass: Object
     ^ #{schema_version: 1 type: 'init' view: view revision: (revision jsonValue)
         root: (root jsonValue) collections: (collections jsonValue)} asJson
   ]
-
-  classMethod: reply: frames context: context [
-    ^ #{frames: (frames jsonValue) context: (context jsonValue)} asJson
-  ]

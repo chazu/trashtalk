@@ -16,21 +16,22 @@ Cluster subclass: Object
   ]
 
   # Create a Cluster for the current kubectl context.
-  rawClassMethod: current [
-    local _Kubectl="Kube::Kubectl" ctx
-    ctx=$(@ "$_Kubectl" currentContext)
-    @ "$_RECEIVER" named: "$ctx"
+  classMethod: current [
+    | ctx |
+    ctx := @ Kube::Kubectl currentContext.
+    ^ @ self named: ctx
   ]
 
   # Create a Cluster for each available kubectl context.
-  rawClassMethod: all [
-    local _Kubectl="Kube::Kubectl" arr ctx
-    arr=$(@ Array new)
-    while IFS= read -r ctx; do
-      [[ -z "$ctx" ]] && continue
-      @ "$arr" push: "$(@ "$_RECEIVER" named: "$ctx")"
-    done < <(@ "$_Kubectl" listContexts)
-    echo "$arr"
+  classMethod: all [
+    | contexts arr cluster |
+    contexts := @ Kube::Kubectl listContexts.
+    arr := @ Array new.
+    contexts linesDo: [:ctx |
+      cluster := @ self named: ctx.
+      @ arr push: cluster
+    ].
+    ^ arr
   ]
 
   # Set namespace and return self (for cascade configuration).
@@ -41,43 +42,35 @@ Cluster subclass: Object
 
   # Fetch all resources of a kind, returning an Array of typed Resource instances.
   # Kind may be plural or singular (e.g. 'pods', 'pod', 'deployments').
-  rawMethod: fetch: kind [
-    local _Kubectl="Kube::Kubectl"
-    local ns ctx resourceClass arr line resource
-    ns=$(_ivar namespace)
-    ctx=$(_ivar context)
-    resourceClass=$(_kube_class_for_kind "$kind")
-    arr=$(@ Array new)
-    while IFS= read -r line; do
-      [[ -z "$line" ]] && continue
-      resource=$(@ "$resourceClass" fromJson: "$line" cluster: "$ctx")
-      @ "$arr" push: "$resource"
-    done < <(@ "$_Kubectl" list: "$kind" namespace: "$ns" context: "$ctx")
-    echo "$arr"
+  method: fetch: kind [
+    | resourceClass items arr resource |
+    resourceClass := @ Kube::Cluster classForKind: kind.
+    items := @ Kube::Kubectl list: kind namespace: namespace context: context.
+    arr := @ Array new.
+    items linesDo: [:line |
+      resource := @ resourceClass fromJson: line cluster: context.
+      @ arr push: resource
+    ].
+    ^ arr
   ]
 
-  # Fetch a single named resource.
-  rawMethod: fetch: kind named: name [
-    local _Kubectl="Kube::Kubectl"
-    local ns ctx raw resourceClass
-    ns=$(_ivar namespace)
-    ctx=$(_ivar context)
-    raw=$(@ "$_Kubectl" get: "$kind" name: "$name" namespace: "$ns" context: "$ctx")
-    [[ -z "$raw" ]] && return
-    resourceClass=$(_kube_class_for_kind "$kind")
-    @ "$resourceClass" fromJson: "$raw" cluster: "$ctx"
+  # Fetch a single named resource; empty when kubectl finds none.
+  method: fetch: kind named: name [
+    | raw resourceClass |
+    raw := @ Kube::Kubectl get: kind name: name namespace: namespace context: context.
+    raw isEmpty ifTrue: [^ ''].
+    resourceClass := @ Kube::Cluster classForKind: kind.
+    ^ @ resourceClass fromJson: raw cluster: context
   ]
 
-  # Map a kind string to its Kube:: class name.
-  classPrimitive: _classForKind: kind calls: _kube_class_for_kind
-
-# Helper function (not a method) — maps kind strings to resource classes.
-_kube_class_for_kind() {
-  case "${1,,}" in
-    pod|pods)                     echo "Kube::Pod" ;;
-    deployment|deployments)       echo "Kube::Deployment" ;;
-    node|nodes)                   echo "Kube::Node" ;;
-    service|services|svc)         echo "Kube::Service" ;;
-    *)                            echo "Kube::Resource" ;;
-  esac
-}
+  # Map a kind string (singular, plural, or short, any case) to its Kube:: class.
+  classMethod: classForKind: kind [
+    | lower |
+    lower := kind asLowercase.
+    ^ lower caseOf: {
+      #('pod' 'pods') -> [ 'Kube::Pod' ].
+      #('deployment' 'deployments') -> [ 'Kube::Deployment' ].
+      #('node' 'nodes') -> [ 'Kube::Node' ].
+      #('service' 'services' 'svc') -> [ 'Kube::Service' ]
+    } otherwise: [ 'Kube::Resource' ]
+  ]

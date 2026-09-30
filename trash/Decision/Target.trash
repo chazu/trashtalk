@@ -11,7 +11,10 @@ Target subclass: Object
   classMethod: named: name [
     | url model credential target |
     name caseOf: {
-      'jev' -> [^ #{name: name provider: 'jev' model: 'typesafe/jev-1.13'} asJson].
+      'jev' -> [
+        model := @ OpenRouter::Jev model.
+        ^ #{name: name provider: 'jev' model: model} asJson
+      ].
       'clm-local' -> [url := @ Env get: 'CLM_BASE_URL' default: 'http://127.0.0.1:8700'. credential := 'CLM_API_KEY'].
       'clm-bc250' -> [url := @ Env get: 'CLM_BC250_URL'. credential := 'CLM_BC250_API_KEY'].
       'clm-prefer-bc250' -> [

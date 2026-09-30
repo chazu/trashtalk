@@ -20,8 +20,14 @@ Tool subclass: Object
 
   # Override in subclasses to return the install command
   # e.g., "brew install jq" or "apt-get install -y jq"
-  rawClassMethod: installCommand [
-    echo ""
+  classMethod: installCommand [
+    ^ ''
+  ]
+
+  # Override in subclasses that must never install themselves. A non-empty
+  # guidance makes ensure report it on stderr and answer 'false' instead.
+  classMethod: installGuidance [
+    ^ ''
   ]
 
   # Check if the tool is installed and on PATH
@@ -38,81 +44,75 @@ Tool subclass: Object
     ^ @ Env which: toolName
   ]
 
-  # Get the version of the tool (override for tool-specific parsing)
+  # First stdout line of the tool's version flag. Tries --version, then
+  # -version, then -V; stderr is ignored. Override for tool-specific parsing.
   classMethod: version [
-    | toolName toolPath result |
-    toolName := @ self name.
+    | toolPath result |
     toolPath := @ self path.
     (toolPath isEmpty) ifTrue: [ ^ 'not installed' ].
-    result := @ Shell exec: toolPath , ' --version 2>/dev/null | head -1'.
+    result := @ self firstLineWithFlag: '--version'.
     (result notEmpty) ifTrue: [ ^ result ].
-    result := @ Shell exec: toolPath , ' -version 2>/dev/null | head -1'.
+    result := @ self firstLineWithFlag: '-version'.
     (result notEmpty) ifTrue: [ ^ result ].
-    result := @ Shell exec: toolPath , ' -V 2>/dev/null | head -1'.
+    result := @ self firstLineWithFlag: '-V'.
     (result notEmpty) ifTrue: [ ^ result ].
     ^ 'unknown'
   ]
 
-  # Install the tool - override in subclasses for custom behavior
-  rawClassMethod: install [
-    local installCmd toolName
-    installCmd=$(@ "$_RECEIVER" installCommand)
-    toolName=$(@ "$_RECEIVER" name)
+  classMethod: firstLineWithFlag: flag [
+    | toolPath argv capture stdout |
+    toolPath := @ self path.
+    argv := #(toolPath flag) asJson.
+    capture := @ self captureArgvJson: argv.
+    stdout := capture jsonTextAt: 'stdout'.
+    ^ stdout firstLine
+  ]
 
-    if [[ -z "$installCmd" ]]; then
-      _throw "InstallError" "No install command defined for $toolName"
-      echo ""
-      return
-    fi
+  # Output of `<tool> auth status`, or 'not installed'. Tools with another
+  # authentication command override this (see Tools::Codex).
+  classMethod: authStatus [
+    | executable argv |
+    executable := @ self path.
+    executable isEmpty ifTrue: [^ 'not installed'].
+    argv := #(executable 'auth' 'status') asJson.
+    ^ @ self runArgvJson: argv
+  ]
 
-    @ Console print: "Installing $toolName..."
-
-    if @ Shell succeeds: "$installCmd"; then
-      @ Console print: "Successfully installed $toolName"
-      echo "true"
-    else
-      _throw "InstallError" "Failed to install $toolName"
-      echo ""
-    fi
+  # Install the tool with its installCommand - override for custom behavior
+  classMethod: install [
+    pragma: stream
+    | installCmd toolName ok |
+    installCmd := @ self installCommand.
+    toolName := @ self name.
+    installCmd isEmpty ifTrue: [@ InstallError signal: 'No install command defined for ' , toolName].
+    @ Console print: 'Installing ' , toolName , '...'.
+    ok := @ Shell succeeds: installCmd.
+    (ok = 'true') ifFalse: [@ InstallError signal: 'Failed to install ' , toolName].
+    @ Console print: 'Successfully installed ' , toolName.
+    ^ 'true'
   ]
 
   # Ensure the tool is installed and available
   # - Checks if installed
-  # - Installs if not
-  # - Verifies it's on PATH after install
-  # Returns: "true" on success, throws error on failure
-  rawClassMethod: ensure [
-    local toolName isInstalledVal
-    toolName=$(@ "$_RECEIVER" name)
-
-    if [[ -z "$toolName" ]]; then
-      _throw "ToolError" "Tool name not set"
-      echo ""
-      return
-    fi
-
-    # Check if already installed
-    isInstalledVal=$(@ "$_RECEIVER" isInstalled)
-    if [[ "$isInstalledVal" == "true" ]]; then
-      echo "true"
-      return
-    fi
-
-    # Try to install
-    @ Console error: "$toolName not found, attempting install..."
-    @ "$_RECEIVER" install
-
-    # Refresh command hash table
-    @ Shell silent: "hash -r"
-
-    # Verify installation succeeded
-    isInstalledVal=$(@ "$_RECEIVER" isInstalled)
-    if [[ "$isInstalledVal" == "true" ]]; then
-      echo "true"
-    else
-      _throw "PathError" "$toolName installed but not found on PATH"
-      echo ""
-    fi
+  # - Reports installGuidance and answers 'false' when a guidance is defined
+  # - Otherwise installs it and verifies it is on PATH afterwards
+  # Returns: "true" on success, fails on install or PATH errors
+  classMethod: ensure [
+    | toolName installed guidance |
+    toolName := @ self name.
+    toolName isEmpty ifTrue: [@ ToolError signal: 'Tool name not set'].
+    installed := @ self isInstalled.
+    (installed = 'true') ifTrue: [^ 'true'].
+    guidance := @ self installGuidance.
+    guidance notEmpty ifTrue: [
+      @ Console error: guidance.
+      ^ 'false'
+    ].
+    @ Console error: toolName , ' not found, attempting install...'.
+    (@ self install) ifFailed: [:error | @ error signal].
+    installed := @ self isInstalled.
+    (installed = 'true') ifFalse: [@ PathError signal: toolName , ' installed but not found on PATH'].
+    ^ 'true'
   ]
 
   # Run the tool with arguments (synchronous)
@@ -122,15 +122,6 @@ Tool subclass: Object
     toolPath := @ self path.
     (toolPath isEmpty) ifTrue: [ @ ToolError signal: toolName , ' is not installed' ].
     ^ @ Shell exec: toolPath , ' ' , args
-  ]
-
-  # Run the tool with arguments, capturing stdout and stderr
-  classMethod: runCapture: args [
-    | toolName toolPath |
-    toolName := @ self name.
-    toolPath := @ self path.
-    (toolPath isEmpty) ifTrue: [ @ ToolError signal: toolName , ' is not installed' ].
-    ^ @ Shell execAll: toolPath , ' ' , args
   ]
 
   # Execute an exact argv vector represented as JSON. The DSL builds the typed
@@ -407,29 +398,15 @@ Tool subclass: Object
   ]
 
   # Run the tool asynchronously, returning a Future
-  rawClassMethod: runAsync: args [
-    local args="$1" toolName toolPath futureCmd
-    toolName=$(@ "$_RECEIVER" name)
-    toolPath=$(@ "$_RECEIVER" path)
-
-    if [[ -z "$toolPath" ]]; then
-      _throw "ToolError" "$toolName is not installed"
-      echo ""
-      return
-    fi
-
-    futureCmd="${toolPath} ${args}"
-    local future
-    future=$(@ Future for: "$futureCmd") || return
-    @ "$future" start >/dev/null || return
-    printf '%s\n' "$future"
-  ]
-
-  # Check if a command exists on the system (utility method)
-  rawClassMethod: commandExists: commandName [
-    local commandName="$1" checkCmd
-    checkCmd="command -v ${commandName}"
-    @ Shell succeeds: "$checkCmd"
+  classMethod: runAsync: args [
+    | toolName toolPath command future |
+    toolName := @ self name.
+    toolPath := @ self path.
+    toolPath isEmpty ifTrue: [@ ToolError signal: toolName , ' is not installed'].
+    command := toolPath , ' ' , args.
+    future := (@ Future for: command) ifFailed: [:error | @ error signal].
+    (@ future start) ifFailed: [:error | @ error signal].
+    ^ future
   ]
 
   # ---------------------------------------------------------------------------
@@ -463,6 +440,13 @@ Tool subclass: Object
       ]
     ].
     ^ argv arrayPush: values
+  ]
+
+  # Append `option value` to a JSON argv when value is non-empty.
+  classMethod: argv: argv option: option value: value [
+    value isEmpty ifTrue: [^ argv].
+    argv := argv arrayPush: option.
+    ^ argv arrayPush: value
   ]
 
   # Result for a tool that is not on PATH. Never installs anything.

@@ -41,12 +41,6 @@ Object subclass: nil
     echo "false"
   ]
 
-  # Check if this object conforms to a protocol
-  rawMethod: conformsTo: protocolName [
-    local class="$_CLASS"
-    _conforms_to "$class" "$1"
-  ]
-
   # Delete this object from memory. A nested class send has no instance, so
   # read the raw instance context directly.
   rawMethod: delete [
@@ -69,14 +63,6 @@ Object subclass: nil
     fi
   ]
 
-  # Write inspection output to a file
-  rawMethod: inspectTo: filepath [
-    local output filepath="$1"
-    output=$(@ "$_RECEIVER" inspect)
-    @ File write: "$output" to: "$filepath"
-    echo "$filepath"
-  ]
-
   # Open the Innards tree inspector. Unlike inspect, this is explicitly
   # interactive; any leaf edit is returned as a proposal and validated by
   # Trashtalk before object state changes.
@@ -85,8 +71,8 @@ Object subclass: nil
   ]
 
   # Return this object's data as JSON
-  rawMethod: asJson [
-    @ Runtime dataFor: "$_RECEIVER"
+  method: asJson [
+    ^ @ Runtime dataFor: self
   ]
 
   # ==========================================
@@ -110,46 +96,4 @@ Object subclass: nil
   # Usage: @ self perform: 'at:put:' with: 'key' with: 'value'
   rawMethod: perform: selector with: arg1 with: arg2 [
     @ "$_RECEIVER" "$1" "$2" "$3"
-  ]
-
-  # Send a message with three arguments
-  rawMethod: perform: selector with: arg1 with: arg2 with: arg3 [
-    @ "$_RECEIVER" "$1" "$2" "$3" "$4"
-  ]
-
-  # Edit this class's source file and recompile if changed
-  rawClassMethod: edit [
-    local class source_file trait_source file_to_edit editor
-    class="$_CLASS"
-    source_file="$TRASHDIR/${class}.trash"
-    trait_source="$TRASHDIR/traits/${class}.trash"
-    file_to_edit=""
-
-    # Find source file
-    if [[ -f "$source_file" ]]; then
-      file_to_edit="$source_file"
-    elif [[ -f "$trait_source" ]]; then
-      file_to_edit="$trait_source"
-    else
-      @ Console error: "Error: No source file found for $class"
-      return 1
-    fi
-
-    # Get modification time before editing
-    local before_mtime after_mtime
-    before_mtime=$(@ File modificationTime: "$file_to_edit")
-
-    # Open in editor
-    editor=$(@ Env editor)
-    "$editor" "$file_to_edit" </dev/tty >/dev/tty
-
-    # Check if modified and recompile
-    after_mtime=$(@ File modificationTime: "$file_to_edit")
-
-    if [[ "$before_mtime" != "$after_mtime" ]]; then
-      @ Console print: "File modified, compiling..."
-      @ Trash compileAndReload: "$class"
-    else
-      @ Console print: "No changes detected"
-    fi
   ]

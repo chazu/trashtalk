@@ -19,20 +19,14 @@ package: Agent
 #   @ Agent::Run settle: $delivery
 Run subclass: Object
   include: Persistable
+  include: Agent::LegacyId
   include: StateMachine
+  include: StoredStateMachine
   instanceVars: session:'' state:'starting' archetypeRevision:'' roleRevision:''
                 backendProfile:'' externalConversationRef:'' ownerGeneration:0 workerId:''
                 capabilityTokenHash:'' purpose:'work' processPid:0 pidFile:'' exitFile:'' outputLog:''
                 errorLog:'' promptFile:'' lastMessageFile:'' priorRun:'' started:''
                 heartbeatAt:'' finished:'' outcome:'' error:'' stopRequested:'false' executionWorkspace:''
-
-  # Stable authority IDs survive the namespace migration and existing validators.
-  classMethod: new [
-    | id |
-    id := @ Runtime generateId: 'AgentRun'.
-    @ Runtime create: 'Agent::Run' id: id.
-    ^ id
-  ]
 
   method: executionWorkspace [
     | value |
@@ -44,26 +38,6 @@ Run subclass: Object
   # Common transition rule over state.
   method: transitionRules [
     ^ '["starting:running","starting:failed","running:recovering","running:succeeded","running:waiting_for_user","running:unsettled","running:failed","running:interrupted","recovering:running","recovering:failed","recovering:unsettled","recovering:succeeded","recovering:waiting_for_user","recovering:interrupted"]'
-  ]
-
-  method: transitionTo: newState [
-    ^ @ self transitionTo: newState with: '{}'
-  ]
-
-  # Atomic state transition plus associated fields; rejected transitions write nothing.
-  rawMethod: transitionTo: newState with: patchJson [
-    local to="$1" from
-    _env_set "$_RECEIVER" "$(db_get "$_RECEIVER")"
-    from=$(_ivar state)
-    @ "$_RECEIVER" requireTransitionFrom: "$from" to: "$to" >/dev/null || return 1
-    local eid ef et changed patch
-    printf '%s' "$2" | jq -e 'type == "object"' >/dev/null || return 1
-    patch=$(_db_escape "$2")
-    eid=$(_db_escape "$_RECEIVER"); ef=$(_db_escape "$from"); et=$(_db_escape "$to")
-    changed=$(_db_sql "UPDATE instances SET data=json_set(json_patch(data,'$patch'),'$.state','$et') WHERE id='$eid' AND json_extract(data,'$.state')='$ef'; SELECT changes();") || return 1
-    [[ "$changed" == 1 ]] || { _throw "TransitionError" "Concurrent transition; reload and retry"; return 1; }
-    _env_set "$_RECEIVER" "$(db_get "$_RECEIVER")"
-    echo "$to"
   ]
 
   # Create a run for a session and mint its token. Prints two lines: the run
@@ -114,10 +88,11 @@ Run subclass: Object
     ^ run
   ]
 
-  rawMethod: finishWith: state outcome: o error: e [
-    local patch
-    patch=$(jq -cn --arg outcome "$2" --arg error "$3" --arg now "$(@ Time nowISO)" '{outcome:$outcome,error:$error,finished:$now}')
-    @ "$_RECEIVER" transitionTo: "$1" with: "$patch"
+  method: finishWith: finalState outcome: o error: e [
+    | now patch |
+    now := @ Time nowISO.
+    patch := #{outcome: o error: e finished: now} asJson.
+    ^ @ self transitionTo: finalState with: patch
   ]
 
   method: markHeartbeat [
@@ -200,25 +175,21 @@ Run subclass: Object
       FROM instances WHERE id='$(_db_escape "$1")'"
   ]
 
-  # Inbox name of the identity owner behind a run (env TRASHTALK_USER / $USER
-  # when the identity has no owner).
+  # Inbox name of the identity owner behind a run (the local user when the
+  # run has no session or its identity has no owner).
   classMethod: ownerInboxFor: runId [
-    | sid identity owner |
+    | sid |
     sid := @ runId session.
-    identity := ''.
-    (sid notEmpty) ifTrue: [ identity := @ sid identity ].
-    owner := ''.
-    (identity notEmpty) ifTrue: [ owner := @ identity owner ].
-    (owner isEmpty) ifTrue: [ owner := @ Env get: 'TRASHTALK_USER' default: (@ Env get: 'USER' default: 'user') ].
-    ^ owner
+    (sid isEmpty) ifTrue: [^ @ Agent::Focus localUser].
+    ^ @ sid ownerInbox
   ]
 
   # ------------------------------------------------------------------
   # Agent-facing (require TRASHTALK_RUN_TOKEN)
   # ------------------------------------------------------------------
 
-  rawClassMethod: settle: deliveryId [
-    @ Agent::Run settle: "$1" note: ''
+  classMethod: settle: deliveryId [
+    ^ @ self settle: deliveryId note: ''
   ]
 
   classMethod: settle: deliveryId note: text [
@@ -393,15 +364,14 @@ Run subclass: Object
     @ "$inbox" announce: "$msg"
   ]
 
-  rawClassMethod: inbox [
-    local run sid ib
-    run=$(@ Agent::Run current) || {
-      _throw "RunTokenError" "Agent::Run inbox requires a valid TRASHTALK_RUN_TOKEN"
-      return 1
-    }
-    sid=$(@ "$run" session)
-    ib=$(@ "$sid" inboxObject)
-    @ "$ib" list
+  classMethod: inbox [
+    | run sid ib |
+    run := @ Agent::Run current ifFailed: [
+      @ RunTokenError signal: 'Agent::Run inbox requires a valid TRASHTALK_RUN_TOKEN'
+    ].
+    sid := @ run session.
+    ib := @ sid inboxObject.
+    ^ @ ib list
   ]
 
   # Environment boundary: a present but invalid token never becomes a human.
@@ -412,7 +382,7 @@ Run subclass: Object
       hash=$(printf '%s' "${TRASHTALK_RUN_TOKEN#*:}" | shasum -a 256 | cut -d' ' -f1)
       jq -cn --arg run "$run" --arg hash "$hash" '{run:$run,hash:$hash,human:""}'
     else
-      jq -cn --arg human "${TRASHTALK_USER:-${USER:-user}}" '{run:"",hash:"",human:$human}'
+      jq -cn --arg human "$(@ Agent::Focus localUser)" '{run:"",hash:"",human:$human}'
     fi
   ]
 

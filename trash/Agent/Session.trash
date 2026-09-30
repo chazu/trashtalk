@@ -13,18 +13,11 @@ package: Agent
 #   @ Agent::Session findFor: $identity workspace: /path
 Session subclass: Object
   include: Persistable
+  include: Agent::LegacyId
   instanceVars: identity:'' archetype:'' archetypeRevision:'' instructionsHash:'' role:''
                 roleRevision:'' backendProfile:'' executionPolicy:'single' workspace:''
                 lifecycleState:'open' inbox:'' lastConversationRef:'' parentSession:''
                 created:'' lastActivityAt:'' sessionPolicyRevision:0 supersededBy:''
-
-  # Stable authority IDs survive the namespace migration and existing validators.
-  classMethod: new [
-    | id |
-    id := @ Runtime generateId: 'AgentSession'.
-    @ Runtime create: 'Agent::Session' id: id.
-    ^ id
-  ]
 
   # Scalar persisted-state count, shared with the jq-free shell API.
   # SQL aggregation/index access is the storage boundary, not DSL iteration.
@@ -329,11 +322,10 @@ Session subclass: Object
   ]
 
   # Open or paused sessions for identity + workspace, newest first
-  rawClassMethod: findFor: identityId workspace: path [
-    local eid ews
-    eid=$(_db_escape "$1")
-    ews=$(_db_escape "$2")
-    @ Store findByClass: Agent::Session where: "json_extract(data, '\$.identity') = '$eid' AND json_extract(data, '\$.workspace') = '$ews' AND json_extract(data, '\$.lifecycleState') IN ('open', 'paused')" orderBy: "json_extract(data, '\$.created') DESC, rowid DESC" limit: 1000
+  classMethod: findFor: identityId workspace: path [
+    ^ @ Store findByClass: 'Agent::Session'
+        matching: (#{identity: identityId workspace: path lifecycleState: #('open' 'paused')} asJson)
+        orderBy: "json_extract(data, '$.created') DESC, rowid DESC" limit: 1000
   ]
 
   # Git toplevel when dir is inside a repo, otherwise the real path of dir
@@ -363,9 +355,7 @@ Session subclass: Object
     ^ @ self transitionTo: 'closed'
   ]
 
-  method: reopen [
-    ^ @ self transitionTo: 'open'
-  ]
+  alias: reopen for: resume
 
   method: terminate [
     ^ @ Agent::Worker terminateSession: self
@@ -392,15 +382,22 @@ Session subclass: Object
         orderBy: "json_extract(data, '$.started') DESC, rowid DESC" limit: 1
   ]
 
-  # Number of pending deliveries. Raw: counts lines without touching stdin.
-  rawMethod: pendingCount [
-    local ids
-    ids=$(@ Agent::Delivery pendingFor: "$_RECEIVER")
-    if [[ -z "$ids" ]]; then
-      echo 0
-    else
-      printf '%s\n' "$ids" | wc -l | tr -d ' '
-    fi
+  # Number of pending deliveries.
+  method: pendingCount [
+    | ids count |
+    ids := @ Agent::Delivery pendingFor: self.
+    count := 0.
+    ids linesDo: [:id | count := count + 1].
+    ^ count
+  ]
+
+  # Inbox name of this session's identity owner, or the local user.
+  method: ownerInbox [
+    | owner |
+    owner := ''.
+    (identity notEmpty) ifTrue: [owner := @ identity owner].
+    (owner isEmpty) ifTrue: [^ @ Agent::Focus localUser].
+    ^ owner
   ]
 
   method: summary [
@@ -459,8 +456,7 @@ Session subclass: Object
     (@ deliveryId transitionTo: 'skipped' with: (#{note: text lastError: text} asJson)) ifFailed: [:e | @ e signal ].
     # Record the skip where the human reads, not in the session inbox: a message
     # to the session would become a new delivery.
-    inboxName := @ Agent::Worker ownerInboxFor: self.
-    (inboxName isEmpty) ifTrue: [ inboxName := @ Env get: 'TRASHTALK_USER' default: (@ Env get: 'USER') ].
+    inboxName := @ self ownerInbox.
     line := 'skipped ' , deliveryId , ' in session ' , self , ': ' , text.
     @ Inbox send: line to: inboxName from: 'worker' subject: 'skipped' kind: 'note'.
     ^ 'skipped'
@@ -476,10 +472,6 @@ Session subclass: Object
 
   method: stalledCount [
     ^ @ self deliveryCountIn: '["failed","uncertain"]'
-  ]
-
-  method: questionCount [
-    ^ @ self deliveryCountIn: '["blocked"]'
   ]
 
   # Single and batch snapshots share one indexed SQL projection. The requested
@@ -541,7 +533,7 @@ Session subclass: Object
   ]
 
   method: focus [ ^ @ Agent::Focus open: self ]
-  method: attach [ ^ @ self focus ]
+  alias: attach for: focus
 
   # Storage migration boundary: guards, retirement, revision, and membership
   # publication must commit in this order. No deliveries or provider data move.

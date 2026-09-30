@@ -71,8 +71,7 @@ Attention subclass: Object
     @ self validateWithin: document.
     id := document jsonTextAt: 'id'.
     @ Store read: id class: 'Workstation::Attention'.
-    old := @ Store getInstance: id.
-    old := @ Workstation::Schema document: old.
+    old := @ Workstation::Schema documentOf: id.
     '["id","subscription","groupKey","message","firstCoordinate","lastCoordinate","eventCount","createdAt","schema_version","schemaDigest","lastResolvedSession","workspace","origin","lineageDepth","delegationRevision","delegatedMessage","delegatedSession","delegatedIdentity","routingNote"]' arrayEach: [:field |
       @ Require equal: (document jsonAt: field ifAbsent: 'null') to: (old jsonAt: field ifAbsent: 'null')
     ].
@@ -94,8 +93,7 @@ Attention subclass: Object
   ]
   method: transitionTo: state until: wakeTime note: reason [
     | document patch actor now |
-    document := @ Store getInstance: self.
-    document := @ Workstation::Schema document: document.
+    document := @ Workstation::Schema documentOf: self.
     actor := @ Agent::Focus human.
     now := @ Time nowISO.
     patch := #{state: state snoozeUntil: wakeTime note: reason actor: actor updatedAt: now} asJson.
@@ -114,7 +112,7 @@ Attention subclass: Object
   method: resolveWithNote: note [ ^ @ self transitionTo: 'resolved' until: '' note: note ]
   method: suppress: note [ ^ @ self transitionTo: 'suppressed' until: '' note: note ]
   method: reopen [ ^ @ self transitionTo: 'open' until: '' note: '' ]
-  method: summary [ ^ @ self display ]
+  alias: summary for: display
   method: display [
     ^ #{id: self subscription: subscription groupKey: groupKey state: state eventCount: (eventCount jsonValue) updatedAt: updatedAt workspace: workspace delegationRevision: (delegationRevision jsonValue) delegatedSession: delegatedSession routingNote: routingNote} asJson
   ]
@@ -173,9 +171,12 @@ Attention subclass: Object
     @ Workstation::Schema ensureSchema || return 1
     _WORKSTATION_VALIDATED_JSON="$candidate" _WORKSTATION_ACCEPTANCE="$1" @ Store transaction: Workstation::Attention sending: 'acceptWithin:' with: "$1" replaying: true
   ]
-  rawClassMethod: requireAcceptance: bundle [
-    @ Store requireTransaction || return 1
-    [[ -n ${_WORKSTATION_ACCEPTANCE:-} && "$1" == "$_WORKSTATION_ACCEPTANCE" ]] || { _throw WorkstationSchemaError 'Attention acceptance requires exact prevalidation'; return 1; }
+  classMethod: requireAcceptance: bundle [
+    | prepared |
+    (@ Store requireTransaction) ifFailed: [:error | @ error signal].
+    prepared := @ Env get: '_WORKSTATION_ACCEPTANCE'.
+    ((prepared notEmpty) and: [bundle = prepared]) ifFalse: [@ WorkstationSchemaError signal: 'Attention acceptance requires exact prevalidation'].
+    ^ bundle
   ]
   classMethod: acceptWithin: bundle [
     | event subscription candidate coordinate existing id group matches attention message display inbox |

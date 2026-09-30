@@ -117,8 +117,8 @@ define each envelope once:
 Trashtalk reads shell-style configuration (`TRASHTALK_AGENT_BACKEND`,
 `TRASHTALK_VALUE_SEND`, test knobs). A CUE-checked config could:
 
-- validate `.trashrc`-style settings exported as JSON (`@ Env allWithPrefix:
-  'TRASHTALK_'` is already there) against a definition of known keys and
+- validate `.trashrc`-style settings exported as JSON (the `TRASHTALK_*`
+  environment variables) against a definition of known keys and
   allowed values, and produce a `doctor` finding for typos;
 - render the same config to YAML or JSON for other tools with `convert:from:to:`;
   test that currently greps for `write_file|edit_file|run_command` becomes a

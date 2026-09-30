@@ -4,10 +4,6 @@
 AgentWorkboard subclass: Object
 
   classMethod: status [
-    ^ @ AgentWorkboard statusWithin: ''
-  ]
-
-  classMethod: statusWithin: unused [
     | human attentionIds attentionItems assignmentIds assignmentItems id attention assignment snapshot execution row activity running waiting review manual |
     human := @ Agent::Focus human.
     attentionIds := @ Workstation::Attention localOpen.

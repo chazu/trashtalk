@@ -2,7 +2,7 @@ package: Kube
 
 # Base class for all Kubernetes resources.
 # Stores full raw kubectl JSON and unpacks common metadata fields into ivars.
-# Subclasses add kind-specific accessors on top.
+# Subclasses add kind-specific fields through kindFields and accessors on top.
 #
 # Usage:
 #   resource=$(@ Kube::Resource fromJson: "$json" cluster: 'prod')
@@ -10,39 +10,41 @@ package: Kube
 #   @ $resource get: '.status.phase'   # jsonPath into rawJson
 #   @ $resource save           # persist snapshot to SQLite
 #   @ Kube::Resource history   # all snapshots ordered by capturedAt
+#   @ Kube::Pod latestFor: 'Pod/default/api'   # newest snapshot of one resource
 Resource subclass: Object
   include: Persistable
   include: Snapshotable
   instanceVars: rawJson kind name namespace cluster capturedAt identity
 
   # Virtual columns for fast querying across snapshots.
-  rawClassMethod: indexedColumns [
-    echo '[
-      {"name": "kube_kind",      "path": "$.kind"},
-      {"name": "kube_name",      "path": "$.name"},
-      {"name": "kube_namespace", "path": "$.namespace"},
-      {"name": "kube_cluster",   "path": "$.cluster"},
-      {"name": "captured_at",    "path": "$.capturedAt"}
-    ]'
+  classMethod: indexedColumns [
+    ^ '[{"name":"kube_kind","path":"$.kind"},{"name":"kube_name","path":"$.name"},{"name":"kube_namespace","path":"$.namespace"},{"name":"kube_cluster","path":"$.cluster"},{"name":"captured_at","path":"$.capturedAt"}]'
+  ]
+
+  # Hook: a jq object expression, evaluated against the raw kubectl JSON, for
+  # kind and any kind-specific ivars. Values become text.
+  classMethod: kindFields [
+    ^ '{kind: (.kind // "")}'
   ]
 
   # Factory: create a Resource (or subclass instance) from raw kubectl JSON.
   # capturedAt is stamped at fetch time, not save time.
-  rawClassMethod: fromJson: json cluster: clusterName [
-    local id k n ns
-    id=$(@ Runtime generateId: "$_CLASS")
-    @ Runtime create: "$_CLASS" id: "$id"
-    k=$(echo  "$json" | jq -r '.kind // ""')
-    n=$(echo  "$json" | jq -r '.metadata.name // ""')
-    ns=$(echo "$json" | jq -r '.metadata.namespace // ""')
-    @ "$id" setRawJson:    "$json"
-    @ "$id" setCluster:    "$clusterName"
-    @ "$id" setKind:       "$k"
-    @ "$id" setName:       "$n"
-    @ "$id" setNamespace:  "$ns"
-    @ "$id" setCapturedAt: "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    @ "$id" setIdentity:   "$k/$ns/$n"
-    echo "$id"
+  classMethod: fromJson: json cluster: clusterName [
+    | filter fields id |
+    filter := @ self kindFields.
+    fields := (@ self fieldsFrom: json cluster: clusterName kindFields: filter) ifFailed: [:error | @ error signal].
+    id := (@ self new) ifFailed: [:error | @ error signal].
+    (@ id rawJson: json) ifFailed: [:error | @ error signal].
+    (@ Runtime assign: fields to: id) ifFailed: [:error | @ error signal].
+    ^ id
+  ]
+
+  # jq boundary: one pass derives the common metadata, the kindFields
+  # expression, and identity (kind/namespace/name) as a flat text object.
+  rawClassMethod: fieldsFrom: json cluster: clusterName kindFields: filter [
+    local common='{name: (.metadata.name // ""), namespace: (.metadata.namespace // ""), cluster: $cluster, capturedAt: (now | floor | todate)}'
+    local finish='.identity = (.kind + "/" + .namespace + "/" + .name) | map_values(tostring)'
+    printf '%s' "$1" | jq -c --arg cluster "$2" "($common) + ($3) | $finish"
   ]
 
   # Extract a value from rawJson using a jq path expression.
@@ -83,14 +85,6 @@ Resource subclass: Object
   ]
 
   # Compare this snapshot with another Resource instance field-by-field.
-  rawMethod: diffWith: other [
-    local _Diff="Kube::Diff"
-    @ "$_Diff" compareResource: "$_RECEIVER" with: "$other"
+  method: diffWith: other [
+    ^ @ Kube::Diff compareResource: self with: other
   ]
-
-  # Find all snapshots of a specific resource by identity string (kind/namespace/name).
-  rawClassMethod: historyFor: identity [
-    @ "$_RECEIVER" latestFor: "$identity"
-  ]
-
-@ Kube::Resource initializeSchema

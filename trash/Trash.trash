@@ -17,9 +17,12 @@ Trash subclass: Object
     @ AgentWorkboard show
   ]
 
-  # Resolve the user's durable Inbox instance. Raw: shell environment lookup.
-  rawClassMethod: userInbox [
-    @ Inbox named: "${TRASHTALK_USER:-$USER}"
+  # Resolve the user's durable Inbox instance: TRASHTALK_USER, else USER.
+  classMethod: userInbox [
+    | user |
+    user := @ Env get: 'TRASHTALK_USER'.
+    user isEmpty ifTrue: [user := @ Env get: 'USER'].
+    ^ @ Inbox named: user
   ]
 
   # Get system information
@@ -357,56 +360,6 @@ Trash subclass: Object
     fi
   ]
 
-  # Create a new class file with modern .trash syntax
-  rawMethod: createObject: object_name super: superclass [
-    local trash_file="$TRASHDIR/${object_name}.trash"
-    superclass="${superclass:-Object}"
-
-    if [[ -f "$trash_file" ]]; then
-      echo "Class $object_name already exists"
-      return 1
-    fi
-
-    cat > "$trash_file" << EOF
-# $object_name - Created by Trash system
-$object_name subclass: $superclass
-
-  rawMethod: example [
-    echo "Hello from $object_name"
-  ]
-
-  rawClassMethod: new [
-    local id=\$(_generate_instance_id "$object_name")
-    _create_instance "$object_name" "\$id"
-    echo "\$id"
-  ]
-EOF
-
-    echo "Created $trash_file (inherits from $superclass)"
-    echo "Compiling..."
-    "$SCRIPT_DIR/jq-compiler/driver.bash" compile "$trash_file" > "$TRASHDIR/.compiled/$object_name" 2>/dev/null
-    source "$TRASHDIR/.compiled/$object_name"
-    echo "✓ $object_name ready to use"
-  ]
-
-  # Remove an object (with confirmation)
-  rawMethod: removeObject: object_name [
-    local object_file confirmation
-    object_file="$TRASHDIR/$object_name"
-    if [[ ! -f "$object_file" ]]; then
-      echo "Object $object_name not found"
-      return 1
-    fi
-    echo "Are you sure you want to remove object $object_name? (y/N)"
-    read -r confirmation
-    if [[ "$confirmation" =~ ^[Yy]$ ]]; then
-      rm "$object_file"
-      echo "Removed object $object_name"
-    else
-      echo "Cancelled"
-    fi
-  ]
-
   # Reload all object stubs
   rawMethod: reload [
     echo "Reloading all object stubs..."
@@ -546,13 +499,6 @@ EOF
     echo "KV store size: $(du -sh "$KV_USER_DIR" 2>/dev/null | cut -f1 || echo "0B")"
   ]
 
-  # Clean up system
-  rawMethod: cleanup [
-    echo "Cleaning up trash system..."
-    @ Process listProcesses >/dev/null 2>&1
-    echo "Cleanup complete"
-  ]
-
   # Show help
   rawMethod: help [
     echo "=== Trash System Commands ==="
@@ -565,15 +511,11 @@ EOF
     echo "@ Trash hierarchyFor: <class>       - Show inheritance hierarchy"
     echo "@ Trash new: <class>                - Create class skeleton and edit"
     echo "@ Trash edit: <class>               - Edit class and recompile on save"
-    echo "@ Trash createObject: <name> super: <super> - Create new object (no edit)"
-    echo "@ Trash removeObject: <name>        - Remove object"
     echo "@ Trash reload                      - Reload all object stubs"
     echo "@ Trash reloadClass: <class>        - Hot reload a single class"
     echo "@ Trash compileAndReload: <class>   - Compile and reload from .trash"
     echo "@ Trash stats                       - Show system statistics"
-    echo "@ Trash cleanup                     - Clean up system"
     echo "@ Trash version                     - Show version information"
-    echo "@ Trash inspect: <class>            - Detailed object inspection"
     echo "@ Trash repl                        - Launch interactive REPL"
     echo ""
     echo "=== Instance Queries (use class methods) ==="
@@ -581,10 +523,6 @@ EOF
     echo "@ <Class> find: '<predicate>'       - Find with predicate"
     echo "@ <Class> count                     - Count instances of class"
     echo "@ Store listClasses                 - List classes with instances"
-    echo ""
-    echo "=== Debugging ==="
-    echo "@ Trash showStack                   - Show current call stack"
-    echo "@ Trash clearStack                  - Clear call stack"
     echo ""
     echo "=== Source Introspection ==="
     echo "@ Trash sourceFor: <class>          - Get source code from .trash file"
@@ -604,23 +542,13 @@ EOF
     echo "System: $(uname -s) $(uname -r)"
   ]
 
-  # Get the source code for a class from .trash file
+  # Get the source code for a class from its .trash file
   # Usage: @ Trash sourceFor: Counter
-  rawMethod: sourceFor: class_name [
-    local source_file="$TRASHDIR/${class_name}.trash"
-    local user_file="$TRASHDIR/user/${class_name}.trash"
-    local trait_file="$TRASHDIR/traits/${class_name}.trash"
-
-    if [[ -f "$user_file" ]]; then
-      cat "$user_file"
-    elif [[ -f "$source_file" ]]; then
-      cat "$source_file"
-    elif [[ -f "$trait_file" ]]; then
-      cat "$trait_file"
-    else
-      echo "Error: Source file for $class_name not found"
-      return 1
-    fi
+  method: sourceFor: className [
+    | sourceFile |
+    sourceFile := @ self sourceFileFor: className.
+    sourceFile isEmpty ifTrue: [@ SourceError signal: 'Source file for ' , className , ' not found'].
+    ^ @ File read: sourceFile
   ]
 
   # Read-only browser snapshot. The canonical jq parser supplies every class
@@ -806,36 +734,6 @@ EOF
     fi
   ]
 
-  # Detailed object inspection
-  rawMethod: inspect: object_name [
-    local object_file traits state
-    if [[ -z "$object_name" ]]; then
-      echo "Usage: @ Trash inspect <object_name>"
-      return 1
-    fi
-    echo "=== Detailed Inspection: $object_name ==="
-    object_file="$TRASHDIR/$object_name"
-    if [[ ! -f "$object_file" ]]; then
-      echo "Object $object_name not found"
-      return 1
-    fi
-    echo "File: $object_file"
-    echo "Size: $(wc -l < "$object_file") lines"
-    echo "Modified: $(stat -f "%Sm" "$object_file" 2>/dev/null || stat -c "%y" "$object_file" 2>/dev/null)"
-    echo ""
-    @ "$_RECEIVER" hierarchyFor: "$object_name"
-    echo ""
-    @ "$_RECEIVER" methodsFor: "$object_name"
-    echo ""
-    traits=$(grep "^include" "$object_file" | awk '{print $2}')
-    if [[ -n "$traits" ]]; then
-      echo "Traits:"
-      echo "$traits" | sed 's/^/  /'
-    else
-      echo "Traits: none"
-    fi
-  ]
-
   # Create a new class with minimal skeleton and open in editor
   # New classes are created in the user directory (trash/user/)
   rawMethod: new: class_name [
@@ -865,13 +763,6 @@ EOF
     cat > "$user_file" <<EOF
 ${class_name} subclass: Object
   instanceVars:
-
-  classMethod: new [
-    | id |
-    id := @ Runtime generateId: '${class_name}'.
-    @ Runtime create: '${class_name}' id: id.
-    ^ id
-  ]
 
   method: example [
     ^ 'Hello from ${class_name}'
@@ -1000,15 +891,12 @@ EOF
     fi
   ]
 
-  rawMethod: testClassForEdit: className [
-    local output status
-    output=$(@ "$_RECEIVER" runTestsFor: "$className" 2>&1)
-    status=$?
-    if [[ $status -eq 0 ]]; then
-      jq -cn --arg message "$output" '{ok:true,phase:"test",line:1,message:$message}'
-    else
-      jq -cn --arg message "$output" '{ok:false,phase:"test",line:1,message:$message}'
-    fi
+  # Test the installed artifact through the same gate as a candidate.
+  method: testClassForEdit: className [
+    | compiledName artifact |
+    compiledName := className replaceAll: '::' with: '__'.
+    artifact := (@ Env get: 'TRASHDIR') , '/.compiled/' , compiledName.
+    ^ @ self testCompiledCandidate: artifact class: className
   ]
 
   method: annotationsFor: message line: line phase: phase [
@@ -1022,10 +910,6 @@ EOF
     result jsonUnpack: #('message' 'line' 'phase') into: [:message :line :phase |
       ^ @ self annotationsFor: message line: line phase: phase
     ]
-  ]
-
-  method: diagnosticsFromTestResult: result [
-    ^ @ self diagnosticsFromCompileResult: result
   ]
 
   # Parse every source through the canonical jq compiler. File discovery and
@@ -1180,11 +1064,6 @@ EOF
     ^ @ self inspectObject: objectId
   ]
 
-  # Compatibility spelling for the inspector workflow.
-  method: inspectInstancesOf: className [
-    ^ @ self browseInstancesOf: className
-  ]
-
   method: openBrowserResult: result [
     | outcome sourceFile className line |
     outcome := @ String jsonPath: 'outcome' from: result.
@@ -1296,7 +1175,7 @@ EOF
               @ Console print: message.
               ^ 'saved'
             ] ifFalse: [
-              diagnostics := @ self diagnosticsFromTestResult: testResult.
+              diagnostics := @ self diagnosticsFromCompileResult: testResult.
               line := '1'.
               message := @ String jsonPath: 'message' from: testResult.
               @ Console error: message
@@ -1365,101 +1244,4 @@ EVALEOF
     local code
     code=$(cat "$1")
     @ Trash eval: "$code"
-  ]
-
-  # Quick class creation with template
-  rawMethod: quickCreate: class_name template: template [
-    template="${template:-basic}"
-    local trash_file="$TRASHDIR/${class_name}.trash"
-
-    if [[ -f "$trash_file" ]]; then
-      echo "Class $class_name already exists"
-      return 1
-    fi
-
-    case "$template" in
-      "service")
-        cat > "$trash_file" << EOF
-# $class_name - Service template
-$class_name subclass: Object
-  include: Debuggable
-
-  rawMethod: start [
-    @ self debug: "Starting service..."
-    echo "Service started"
-  ]
-
-  rawMethod: stop [
-    @ self debug: "Stopping service..."
-    echo "Service stopped"
-  ]
-
-  method: status [
-    ^ "Service is running"
-  ]
-
-  rawMethod: restart [
-    @ "\$_RECEIVER" stop
-    @ "\$_RECEIVER" start
-  ]
-
-  rawClassMethod: new [
-    local id=\$(_generate_instance_id "$class_name")
-    _create_instance "$class_name" "\$id"
-    echo "\$id"
-  ]
-EOF
-        ;;
-      "actor")
-        cat > "$trash_file" << EOF
-# $class_name - Actor template (for use with Process)
-$class_name subclass: Object
-  include: Debuggable
-  instanceVars: status:active
-
-  rawMethod: receive: message [
-    @ self debug: "Received message: \$message"
-    case "\$message" in
-      "ping") echo "pong" ;;
-      "status") echo "active" ;;
-      *) echo "Unknown message: \$message" ;;
-    esac
-  ]
-
-  rawMethod: initialize [
-    @ self debug: "Actor initialized"
-  ]
-
-  rawClassMethod: new [
-    local id=\$(_generate_instance_id "$class_name")
-    _create_instance "$class_name" "\$id"
-    echo "\$id"
-  ]
-EOF
-        ;;
-      *)
-        # Basic template
-        cat > "$trash_file" << EOF
-# $class_name - Created by Trash system
-$class_name subclass: Object
-
-  rawMethod: example [
-    echo "Hello from $class_name"
-  ]
-
-  rawClassMethod: new [
-    local id=\$(_generate_instance_id "$class_name")
-    _create_instance "$class_name" "\$id"
-    echo "\$id"
-  ]
-EOF
-        ;;
-    esac
-
-    echo "Created $trash_file using $template template"
-    echo "Compiling..."
-    mkdir -p "$TRASHDIR/.compiled"
-    "$SCRIPT_DIR/jq-compiler/driver.bash" compile "$trash_file" > "$TRASHDIR/.compiled/$class_name" 2>/dev/null
-    source "$TRASHDIR/.compiled/$class_name"
-    echo "✓ $class_name ready to use"
   ]

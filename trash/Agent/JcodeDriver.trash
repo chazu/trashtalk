@@ -31,17 +31,7 @@ JcodeDriver subclass: Agent::Driver
     printf '%s' "$1" | bash "${TRASHTALK_DIR:-$HOME/.trashtalk}/lib/jcode-input.bash" send "$(@ Agent::Driver runDirFor: "$2")"
   ]
 
-  rawClassMethod: model [
-    printf '%s\n' "${TRASHTALK_JCODE_MODEL:-gpt-5.6-terra}"
-  ]
-
-  classMethod: launch: promptFile run: run token: token [
-    ^ @ self launchRef: '' promptFile: promptFile run: run token: token
-  ]
-
-  classMethod: resume: ref promptFile: promptFile run: run token: token [
-    ^ @ self launchRef: ref promptFile: promptFile run: run token: token
-  ]
+  classMethod: model [ ^ @ Env get: 'TRASHTALK_JCODE_MODEL' default: 'gpt-5.6-terra' ]
 
   # Filesystem/CLI boundary. Private homes exclude ambient Jcode config and
   # share only OAuth files (symlinks preserve credential refresh). Runtime paths
@@ -87,13 +77,11 @@ JcodeDriver subclass: Agent::Driver
       '{executable:$executable,home:$home,runtime:$runtime,workspace:$workspace,model:$model,ref:$ref,bash:$bash}' > "$directory/jcode.json"
   ]
 
-  rawClassMethod: launchRef: ref promptFile: promptFile run: run token: token [
+  # Agent::Driver launchRef: has created the run directory and captures stderr.
+  rawClassMethod: launchPreparedRef: ref promptFile: promptFile run: run token: token [
     local directory argv
     directory=$(@ Agent::Driver runDirFor: "$3")
-    mkdir -p "$directory" || return 1
-    @ "$3" errorLog: "$directory/stderr.log"
-    @ "$3" save
-    @ Agent::JcodeDriver prepare: "$3" ref: "$1" 2>"$directory/stderr.log" || return 1
+    @ Agent::JcodeDriver prepare: "$3" ref: "$1" || return 1
     [[ "$2" == "$directory/prompt.txt" ]] || cp "$2" "$directory/prompt.txt" || return 1
     argv=$(jq -cn --arg bash "$(command -v bash)" --arg script "${TRASHTALK_DIR:-$HOME/.trashtalk}/lib/jcode-api.bash" \
       --arg directory "$directory" '[$bash,$script,"run",$directory]') || return 1
@@ -117,13 +105,11 @@ JcodeDriver subclass: Agent::Driver
   rawClassMethod: outcomeOf: run [
     local directory outcome resident=false
     directory=$(@ Agent::Driver runDirFor: "$1")
-    outcome=$(@ Agent::Driver outcomeOf: "$1")
-    # Base dispatch uses its receiver for hooks; supply this driver's receipts.
-    outcome=$(jq -c --arg ref "$(@ Agent::JcodeDriver conversationRefFor: "$1")" \
-      --argjson seen "$(@ Agent::JcodeDriver resultSeenFor: "$1")" '.conversation_ref=$ref | .result_seen=$seen' <<<"$outcome")
+    # The shared outcome dispatches this driver's receipt hooks.
+    outcome=$(@ "$_RECEIVER" processOutcomeOf: "$1") || return 1
     # Context maintenance has no inbox deliveries or tool execution. Losing its
     # observer can fail maintenance, but must not stall ordinary conversation.
-    if [[ "$(@ "$1" purpose)" != compact && -e "$directory/send-intent" && ! -e "$directory/request-rejected" && "$(@ Agent::JcodeDriver resultSeenFor: "$1")" != true ]]; then resident=true; fi
+    if [[ "$(@ "$1" purpose)" != compact && -e "$directory/send-intent" && ! -e "$directory/request-rejected" && "$(jq -r .result_seen <<<"$outcome")" != true ]]; then resident=true; fi
     jq -c --argjson resident "$resident" '.resident_unconfirmed=$resident' <<<"$outcome"
   ]
 

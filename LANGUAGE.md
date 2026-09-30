@@ -24,15 +24,15 @@ Classes can be organized into namespaces:
 ```smalltalk
 package: Tools
 
-Netcat subclass: Tool
+Tmux subclass: Tool
   # ...
 ```
 
 Reference namespaced classes with `::`:
 
 ```smalltalk
-@ Tools::Netcat listen: 8080
-@ Tools::Curl get: "https://example.com"
+@ Tools::Tmux listSessions
+@ Http get: "https://example.com"      # classes outside a package need no prefix
 ```
 
 ## Methods
@@ -319,6 +319,12 @@ The `@` operator sends messages to objects:
 @ $myCounter getValue               # Message to instance in variable
 ```
 
+A keyword argument is one operand, as in Smalltalk: every later keyword
+continues the selector, so `@ self join: a after: b` sends `join:after:` even
+though `after:` is also a string intrinsic. Parenthesize a keyword message on an
+argument: `@ Console print: (line upTo: ':')`. A control-flow keyword after the
+last argument (`ifTrue:`, `ifFalse:`, `ifFailed:`, ...) applies to the whole send.
+
 ### Cascades
 
 Send multiple messages to the same receiver with `;`:
@@ -539,6 +545,14 @@ Trashtalk distinguishes between string and numeric comparisons:
 (str matches: 'pattern') ifTrue: [@ self matched].
 ```
 
+A comparison used as a value (returned, assigned, or passed as an argument)
+yields `true` or `false`. Either side may be a send:
+
+```smalltalk
+same := (@ a digest) = (@ b digest).
+^ count < limit
+```
+
 ### Arithmetic Operators
 
 ```smalltalk
@@ -653,6 +667,9 @@ text := '''This is a
 multi-line string
 with preserved newlines'''
 
+# The text is literal in every position: $, backticks, and quotes never expand
+^ '''Usage: x=$(@ Tool run)'''
+
 # Can also be used in instance variable defaults
 instanceVars: template:'''default
 multi-line
@@ -758,7 +775,8 @@ mode. `Runtime delete:` removes only the cached copy. See
 ### Raising and Handling in DSL Methods
 
 A method fails by signalling an error. Any class-like name ending in `Error`
-works as the type; `@ self error:` raises a plain `Error`. The method sets the
+works as the type, qualified or not (`@ Pkg::ParseError signal:` records
+`Pkg::ParseError`); `@ self error:` raises a plain `Error`. The method sets the
 runtime error state and returns 1, so callers see a failed send.
 
 ```smalltalk
@@ -1022,9 +1040,12 @@ task=$(@ Task titled "Write docs")
   the method. Guard it with `ifFailed:` or raise with `@ SomeError signal:` at
   effect boundaries. A Store transaction rejects commit after any failed send,
   even if later code succeeds.
-- **Keyword sends and trailing keywords:** `ifTrue:`, `ifFailed:`, `linesDo:`,
-  and `caseOf:` after a keyword send need parentheses:
-  `(@ d transitionTo: 'x') ifFailed: [...]`. A unary send does not.
+- **Keyword sends and trailing keywords:** control-flow keywords such as
+  `ifTrue:` and `ifFailed:` after a keyword send apply to the whole send.
+  `linesDo:` and `caseOf:` would continue the selector, so they need
+  parentheses: `(@ d ids: x) linesDo: [...]`.
+- **Code outside a method** (a statement after the class body) is a compile
+  error; it would never run. Put setup in a class method.
 - **`caseOf:` keys** are literals only; **`linesDo:`** skips empty lines.
 - **Arithmetic:** Bash arithmetic operates on integers; JSON numbers do not add
   floating point arithmetic to DSL expressions.

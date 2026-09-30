@@ -47,10 +47,10 @@ is an error.
 delegates to `Shell run:` and returns the shell command's status while preserving
 its output. These differ from the instance `run` result contract above.
 
-The legacy PID-only messages (`spawn:`, `waitPid:`, `isRunningPid:`, `killPid:`)
-forward to Shell. They do not retain a completion receipt: Bash `wait` only
-works for a child of the calling shell, and a PID returned through a captured
-message is not such a child. Use a managed Process for asynchronous completion.
+Process has no PID-only shortcuts. A bare PID does not retain a completion
+receipt: Bash `wait` only works for a child of the calling shell, and a PID
+returned through a captured message is not such a child. Use a managed Process
+for asynchronous completion; `Tool isAlivePid:` answers liveness for a PID.
 
 `Process withLock:receiver:selector:argument:` runs a public send under an OS
 lock; its `waiting:` variant bounds lock acquisition. The worker uses this

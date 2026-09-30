@@ -47,7 +47,6 @@ from the Innards checkout.
 @ Trash browseImplementorsOf: 'at:put:'
 @ Trash browseSendersOf: 'at:put:'
 @ Trash browseInstancesOf: Counter     # table of persisted instances, then inspect on Enter
-@ Trash inspectInstancesOf: Counter    # compatibility spelling for the same workflow
 @ Trash selectInstanceOf: Counter      # return a structured picker selection to scripts
 ```
 

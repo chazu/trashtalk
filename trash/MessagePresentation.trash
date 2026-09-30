@@ -122,12 +122,6 @@ MessagePresentation subclass: Object
     printf '%s' "$1" | jq -Rrs 'gsub("[\u0000-\u001f\u007f-\u009f]"; " ") | gsub("\\s+"; " ") | sub("^ +"; "") | sub(" +$"; "")'
   ]
 
-  rawClassMethod: firstLine: text [
-    local line
-    line=$(printf '%s' "$1" | jq -Rrs 'split("\n") | map(select(test("\\S"))) | .[0] // ""')
-    @ MessagePresentation singleLine: "$line"
-  ]
-
   # Unicode slicing at the jq boundary: Bash substring under LC_ALL=C may
   # split a UTF-8 name mid-character. Preserve the full name in the preview.
   rawClassMethod: rowName: name [

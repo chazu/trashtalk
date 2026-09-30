@@ -39,10 +39,6 @@ Message subclass: Object
     ^ msg
   ]
 
-  classMethod: to: recipient from: sender subject: subj body: text [
-    ^ @ Message to: recipient from: sender subject: subj body: text kind: 'note'
-  ]
-
   method: isUnread [
     (status = 'unread') ifTrue: [^ 'true'].
     ^ 'false'
@@ -81,21 +77,23 @@ Message subclass: Object
   ]
 
   # Address lookup only: no identity/session creation for legacy or unknown mail.
-  rawMethod: originSession [
-    local sender session
-    sender=$(_ivar from)
-    [[ "${sender%%:*}" == session ]] || return 0
-    session=${sender#*:}
-    [[ $(db_get "$session" | jq -r '.class // ""') == Agent::Session ]] || return 0
-    printf '%s\n' "$session"
+  method: originSession [
+    | sender session |
+    sender := from.
+    ((sender upTo: ':') = 'session') ifFalse: [^ ''].
+    session := sender after: ':'.
+    ((@ Store exists: session) = 'true') ifFalse: [^ ''].
+    ((@ Store getClass: session) = 'Agent::Session') ifTrue: [^ session].
+    ^ ''
   ]
 
-  rawMethod: senderIdentity [
-    local sender session
-    sender=$(_ivar from)
-    session=$(@ "$_RECEIVER" originSession)
-    if [[ -n "$session" ]]; then @ "$session" identity
-    elif [[ "${sender%%:*}" == agent ]]; then @ Agent::Identity findByHandle: "${sender#*:}"; fi
+  method: senderIdentity [
+    | sender session |
+    session := @ self originSession.
+    (session notEmpty) ifTrue: [^ @ session identity].
+    sender := from.
+    ((sender upTo: ':') = 'agent') ifTrue: [^ @ Agent::Identity findByHandle: (sender after: ':')].
+    ^ ''
   ]
 
   # Prefer the exact originating conversation while it is current. Otherwise
@@ -280,8 +278,7 @@ Message subclass: Object
     human := @ Agent::Focus human.
     @ Require equal: owner to: human.
     @ Store read: attention class: 'Workstation::Attention'.
-    data := @ Store getInstance: attention.
-    data := @ Workstation::Schema document: data.
+    data := @ Workstation::Schema documentOf: attention.
     message := data jsonTextAt: 'message'.
     title := display jsonTextAt: 'title'.
     summary := display jsonTextAt: 'summary'.
@@ -407,8 +404,7 @@ Message subclass: Object
     human := @ Agent::Focus human.
     id := 'message_' , attention , '_delegation_' , revision.
     @ Store read: attention class: 'Workstation::Attention'.
-    data := @ Store getInstance: attention.
-    data := @ Workstation::Schema document: data.
+    data := @ Workstation::Schema documentOf: attention.
     session := admission jsonTextAt: 'session'.
     recipient := 'session:' , session.
     root := data jsonTextAt: 'message'.

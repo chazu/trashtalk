@@ -13,10 +13,7 @@ Cass subclass: Tool
     | tool argv |
     tool := @ self path.
     argv := #(tool '--color' 'never' '--progress' 'none' command '--json') asJson.
-    directory notEmpty ifTrue: [
-      argv := argv arrayPush: '--data-dir'.
-      argv := argv arrayPush: directory
-    ].
+    argv := @ self argv: argv option: '--data-dir' value: directory.
     ^ argv
   ]
 
@@ -61,14 +58,8 @@ Cass subclass: Tool
     argv := @ self argv: argv appendEach: '["--mode","lexical","--no-daemon","--robot-meta","--timeout","5000","--max-content-length","2000"]'.
     argv := argv arrayPush: '--limit'.
     argv := argv arrayPush: limit.
-    workspace notEmpty ifTrue: [
-      argv := argv arrayPush: '--workspace'.
-      argv := argv arrayPush: workspace
-    ].
-    agent notEmpty ifTrue: [
-      argv := argv arrayPush: '--agent'.
-      argv := argv arrayPush: agent
-    ].
+    argv := @ self argv: argv option: '--workspace' value: workspace.
+    argv := @ self argv: argv option: '--agent' value: agent.
     argv := argv arrayPush: '--'.
     argv := argv arrayPush: query.
     ^ @ self captureJsonArgv: argv command: 'search' inDirectory: ''

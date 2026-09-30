@@ -56,17 +56,17 @@ Request subclass: Object
   ]
 
   # Register compact JSON as an error message so capture/rethrow retains it.
-  # These two primitives bridge Bash failure status and the JSON stdout contract.
+  # This primitive bridges Bash failure status and the JSON stdout contract.
   rawClassMethod: reject: receipt [
     _throw DecisionRequestError "$1"
     printf '%s\n' "$1"
     return 1
   ]
 
-  rawClassMethod: failure: error [
-    if [[ "${1%%:*}" == DecisionRequestError ]]; then
-      @ Decision::Request reject: "${1#DecisionRequestError: }"
-      return 1
-    fi
-    _trash_rethrow "$1"
+  # Decision request failures keep their receipt; any other error is rethrown.
+  classMethod: failure: error [
+    ((error upTo: ':') = 'DecisionRequestError') ifTrue: [
+      ^ @ self reject: (error withoutPrefix: 'DecisionRequestError: ')
+    ].
+    @ error signal
   ]

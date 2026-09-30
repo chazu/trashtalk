@@ -85,38 +85,6 @@ Time subclass: Object
     fi
   ]
 
-  # Format timestamp as human-readable relative time
-  # Usage: str := @ Time formatRelative: timestamp  # "5 minutes ago"
-  rawClassMethod: formatRelative: timestamp [
-    local now diff
-    now=$(date +%s)
-    diff=$((now - $1))
-
-    if [[ $diff -lt 60 ]]; then
-      echo "${diff} seconds ago"
-    elif [[ $diff -lt 3600 ]]; then
-      echo "$((diff / 60)) minutes ago"
-    elif [[ $diff -lt 86400 ]]; then
-      echo "$((diff / 3600)) hours ago"
-    else
-      echo "$((diff / 86400)) days ago"
-    fi
-  ]
-
-  # ==========================================
-  # Parsing
-  # ==========================================
-
-  # Parse a date string to Unix timestamp
-  # Usage: ts := @ Time parse: '2024-01-15' format: '%Y-%m-%d'
-  rawClassMethod: parse: dateString format: format [
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-      date -j -f "$2" "$1" +%s 2>/dev/null || echo ""
-    else
-      date -d "$1" +%s 2>/dev/null || echo ""
-    fi
-  ]
-
   # ==========================================
   # Delays
   # ==========================================
@@ -127,100 +95,12 @@ Time subclass: Object
     sleep "$1"
   ]
 
-  # Sleep for specified milliseconds
-  # Usage: @ Time sleepMillis: 100
-  # Note: rawClassMethod due to bc pipe that confuses compiler
-  rawClassMethod: sleepMillis: millis [
-    sleep "$(echo "scale=3; $1 / 1000" | bc)"
-  ]
-
   # ==========================================
   # Duration/Arithmetic
   # ==========================================
-
-  # Calculate duration between two timestamps
-  # Usage: duration := @ Time since: startTime
-  classMethod: since: startTime [
-    ^ (@ Time now) - startTime
-  ]
 
   # Calculate duration between two timestamps
   # Usage: duration := @ Time from: startTime to: endTime
   classMethod: from: startTime to: endTime [
     ^ endTime - startTime
   ]
-
-  # Add seconds to a timestamp
-  # Usage: future := @ Time add: 3600 to: timestamp
-  classMethod: add: seconds to: timestamp [
-    ^ timestamp + seconds
-  ]
-
-  # Subtract seconds from a timestamp
-  # Usage: past := @ Time subtract: 3600 from: timestamp
-  classMethod: subtract: seconds from: timestamp [
-    ^ timestamp - seconds
-  ]
-
-  # ==========================================
-  # Components
-  # ==========================================
-
-  # Get year from timestamp
-  classMethod: yearOf: timestamp [
-    ^ @ self format: timestamp as: '%Y'
-  ]
-
-  # Get month from timestamp (1-12)
-  classMethod: monthOf: timestamp [
-    ^ @ self format: timestamp as: '%-m'
-  ]
-
-  # Get day of month from timestamp (1-31)
-  classMethod: dayOf: timestamp [
-    ^ @ self format: timestamp as: '%-d'
-  ]
-
-  # Get hour from timestamp (0-23)
-  classMethod: hourOf: timestamp [
-    ^ @ self format: timestamp as: '%-H'
-  ]
-
-  # Get minute from timestamp (0-59)
-  classMethod: minuteOf: timestamp [
-    ^ @ self format: timestamp as: '%-M'
-  ]
-
-  # Get second from timestamp (0-59)
-  classMethod: secondOf: timestamp [
-    ^ @ self format: timestamp as: '%-S'
-  ]
-
-  # Get day of week (0=Sunday, 6=Saturday)
-  classMethod: weekdayOf: timestamp [
-    ^ @ self format: timestamp as: '%w'
-  ]
-
-  # ==========================================
-  # Convenience
-  # ==========================================
-
-  # Get timestamp for start of today
-  rawClassMethod: today [
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-      date -j -f "%Y-%m-%d" "$(date +%Y-%m-%d)" +%s
-    else
-      date -d "$(date +%Y-%m-%d)" +%s
-    fi
-  ]
-
-  # Get timestamp for start of tomorrow
-  classMethod: tomorrow [
-    ^ (@ self today) + 86400
-  ]
-
-  # Get timestamp for start of yesterday
-  classMethod: yesterday [
-    ^ (@ self today) - 86400
-  ]
-

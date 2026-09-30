@@ -1,13 +1,10 @@
 # Agent - authenticated Codex one-shot facade.
 # @@ uses persistent Gusgus sessions by default; @@ --one-shot uses this facade.
-# TRASHTALK_AGENT_BACKEND may be codex or CodexAgent; Codex is the only supported one-shot backend.
+# Codex is the only one-shot backend; `@ Trash doctor` warns about any other
+# TRASHTALK_AGENT_BACKEND value, which still resolves to CodexAgent.
 # See docs/agent-operations.md for persistent sessions and live attachment.
 Agent subclass: Object
   classMethod: oneShotBackend [
-    | configured |
-    configured := @ Env get: 'TRASHTALK_AGENT_BACKEND' default: 'codex'.
-    (configured = 'codex') ifTrue: [^ 'CodexAgent'].
-    (configured = 'CodexAgent') ifTrue: [^ 'CodexAgent'].
     ^ 'CodexAgent'
   ]
 
@@ -24,10 +21,9 @@ Agent subclass: Object
   ]
 
   classMethod: ask: question [
-    | workingDirectory backend |
+    | workingDirectory |
     workingDirectory := @ Env cwd.
-    backend := @ self oneShotBackend.
-    ^ @ backend ask: question workingDirectory: workingDirectory status: '0' lastResult: ''
+    ^ @ self ask: question workingDirectory: workingDirectory status: '0' lastResult: ''
   ]
 
   classMethod: ask: question workingDirectory: workingDirectory status: status lastResult: lastResult [
@@ -37,10 +33,9 @@ Agent subclass: Object
   ]
 
   classMethod: dryRun: question [
-    | workingDirectory backend |
+    | workingDirectory |
     workingDirectory := @ Env cwd.
-    backend := @ self oneShotBackend.
-    ^ @ backend dryRun: question workingDirectory: workingDirectory status: '0' lastResult: ''
+    ^ @ self dryRun: question workingDirectory: workingDirectory status: '0' lastResult: ''
   ]
 
   classMethod: dryRun: question workingDirectory: workingDirectory status: status lastResult: lastResult [

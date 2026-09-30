@@ -24,7 +24,8 @@ in `trash/.compiled/`; edit source and rebuild with `make bash`.
 | `signal:`, `self error:`, `ifFailed:`, re-raise, error recovery from captured sends | `test_failure_forms` |
 | Statement value discipline, `pragma: stream`, `linesDo:`, `caseOf:`, literal `Env get:` | `test_statement_values` |
 | Declared primitives (`primitive:` / `classPrimitive:` ... `calls:`) | `test_primitives` |
-| Build receipts, dependency planning, symbol cache | `test_build_cache`, `test_symbol_cache` |
+| Build receipts, dependency planning, symbol cache, pruning of unowned artifacts | `test_build_cache`, `test_symbol_cache`, `test_build_moves` |
+| Comparisons as values, keyword-argument boundaries, literal triple-quoted text, qualified error signals, rejection of code outside methods | `test_value_forms` |
 
 Each test name above has a `.bash` suffix. Runtime tests additionally cover
 qualified traits, persistence, transactions, and public domain APIs.

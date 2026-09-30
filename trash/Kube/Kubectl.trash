@@ -4,8 +4,8 @@ package: Kube
 # Context and namespace default to empty (kubectl uses current config defaults).
 Kubectl subclass: Tool
 
-  rawClassMethod: name [
-    echo "kubectl"
+  classMethod: name [
+    ^ 'kubectl'
   ]
 
   classMethod: installCommand [
@@ -37,12 +37,12 @@ Kubectl subclass: Tool
 
   # Return the current kubectl context name.
   rawClassMethod: currentContext [
-    kubectl config current-context 2>/dev/null
+    kubectl config 'current-context' 2>/dev/null
   ]
 
   # Return all available context names, one per line.
   rawClassMethod: listContexts [
-    kubectl config get-contexts -o name 2>/dev/null
+    kubectl config 'get-contexts' -o name 2>/dev/null
   ]
 
   # Return all namespace names in a cluster, one per line.

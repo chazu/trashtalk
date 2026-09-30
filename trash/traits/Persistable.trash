@@ -52,11 +52,6 @@ Persistable trait
     @ Runtime setData: data for: self
   ]
 
-  # Return this object's data as JSON
-  method: asJson [
-    ^ @ Runtime dataFor: self
-  ]
-
   # Convenience: new already saves defaults; save again before returning
   # Usage: counter=$(@ Counter create)
   classMethod: create [
@@ -86,12 +81,3 @@ Persistable trait
     predicate isEmpty ifTrue: [^ @ self findAll].
     ^ @ Store findByClass: self where: predicate
   ]
-
-  # Load all persisted instances of this class into memory
-  # Usage: @ Counter loadAll
-  classMethod: loadAll [
-    | ids |
-    ids := @ Store findByClass: self.
-    ids linesDo: [:id | @ id reload]
-  ]
-

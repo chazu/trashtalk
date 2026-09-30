@@ -18,23 +18,16 @@ Shell subclass: Object
     eval "$1"
   ]
 
-  # Execute command, return stdout, capture exit code in $?
+  # Same as exec:; the command's exit status is the send's status.
   # Usage: output := @ Shell run: 'make test'
-  rawClassMethod: run: command [
-    eval "$1"
+  classMethod: run: command [
+    ^ @ self exec: command
   ]
 
   # Execute command silently (discard output)
   # Usage: @ Shell silent: 'rm -f temp.txt'
   rawClassMethod: silent: command [
     eval "$1" >/dev/null 2>&1
-  ]
-
-  # Execute command and return exit code only
-  # Usage: code := @ Shell exitCode: 'make test'
-  rawClassMethod: exitCode: command [
-    eval "$1" >/dev/null 2>&1
-    echo $?
   ]
 
   # Execute command and return true/false based on success
@@ -47,16 +40,6 @@ Shell subclass: Object
     fi
   ]
 
-  # Execute command and return true/false based on failure
-  # Usage: failed := @ Shell fails: 'make test'
-  rawClassMethod: fails: command [
-    if eval "$1" >/dev/null 2>&1; then
-      echo "false"
-    else
-      echo "true"
-    fi
-  ]
-
   # ==========================================
   # Output Capture
   # ==========================================
@@ -66,13 +49,6 @@ Shell subclass: Object
   # Note: Using bash -c to avoid tokenizer mangling 2>&1 into 2 >& 1
   rawClassMethod: execAll: command [
     bash -c "$1 2>&1"
-  ]
-
-  # Execute command and return stderr only
-  # Usage: errors := @ Shell execErr: 'make test'
-  # Note: Using bash -c to avoid tokenizer mangling redirects
-  rawClassMethod: execErr: command [
-    bash -c "$1 2>&1 >/dev/null"
   ]
 
   # Execute command and return JSON with stdout, stderr, exitCode
@@ -102,21 +78,6 @@ Shell subclass: Object
   # Note: Using subshell to avoid tokenizer mangling redirects
   rawClassMethod: spawn: command [
     ( eval "$1" ) > /dev/null &
-    echo $!
-  ]
-
-  # Spawn with output to file, return PID
-  # Usage: pid := @ Shell spawn: 'long-task' outputTo: '/tmp/out.log'
-  # Note: Using subshell to avoid tokenizer mangling redirects
-  rawClassMethod: spawn: command outputTo: filepath [
-    ( eval "$1" ) > "$2" &
-    echo $!
-  ]
-
-  # Spawn with separate stdout and stderr files, return PID
-  # Usage: pid := @ Shell spawn: 'cmd' stdoutTo: '/tmp/out' stderrTo: '/tmp/err'
-  rawClassMethod: spawn: command stdoutTo: stdoutFile stderrTo: stderrFile [
-    ( eval "$1" ) > "$2" 2> "$3" &
     echo $!
   ]
 
@@ -150,114 +111,6 @@ Shell subclass: Object
 
   # Send SIGTERM to a PID
   # Usage: @ Shell terminate: pid
-  rawClassMethod: terminate: pid [
-    kill -TERM "$1" 2>/dev/null
+  classMethod: terminate: pid [
+    ^ @ self signal: 'TERM' to: pid
   ]
-
-  # Send SIGKILL to a PID
-  # Usage: @ Shell kill: pid
-  rawClassMethod: kill: pid [
-    kill -KILL "$1" 2>/dev/null
-  ]
-
-  # Send SIGSTOP to a PID (pause)
-  # Usage: @ Shell pause: pid
-  rawClassMethod: pause: pid [
-    kill -STOP "$1" 2>/dev/null
-  ]
-
-  # Send SIGCONT to a PID (resume)
-  # Usage: @ Shell resume: pid
-  rawClassMethod: resume: pid [
-    kill -CONT "$1" 2>/dev/null
-  ]
-
-  # ==========================================
-  # Piping and Chaining
-  # ==========================================
-
-  # Execute command and pipe output through another command
-  # Usage: result := @ Shell exec: 'cat file.txt' pipeTo: 'grep pattern'
-  rawClassMethod: exec: command pipeTo: pipeCommand [
-    eval "$1" | eval "$2"
-  ]
-
-  # Execute command and pipe through two more commands
-  # Usage: result := @ Shell exec: 'cat file' pipeTo: 'grep x' pipeTo: 'wc -l'
-  rawClassMethod: exec: command pipeTo: pipe1 pipeTo: pipe2 [
-    eval "$1" | eval "$2" | eval "$3"
-  ]
-
-  # ==========================================
-  # Input/Output
-  # ==========================================
-
-  # Execute command with stdin from string
-  # Usage: result := @ Shell exec: 'wc -w' withInput: 'hello world'
-  rawClassMethod: exec: command withInput: input [
-    echo "$2" | eval "$1"
-  ]
-
-  # Execute command with stdin from file
-  # Usage: result := @ Shell exec: 'wc -l' withInputFrom: '/tmp/data.txt'
-  rawClassMethod: exec: command withInputFrom: filepath [
-    eval "$1" < "$2"
-  ]
-
-  # Execute command with stdout to file
-  # Usage: @ Shell exec: 'ls -la' outputTo: '/tmp/listing.txt'
-  rawClassMethod: exec: command outputTo: filepath [
-    eval "$1" > "$2"
-  ]
-
-  # Execute command with stdout appended to file
-  # Usage: @ Shell exec: 'echo line' appendTo: '/tmp/log.txt'
-  rawClassMethod: exec: command appendTo: filepath [
-    eval "$1" >> "$2"
-  ]
-
-  # ==========================================
-  # Conditional Execution
-  # ==========================================
-
-  # Execute command only if another succeeds
-  # Usage: @ Shell if: 'test -f file' then: 'rm file'
-  rawClassMethod: if: condition then: command [
-    if eval "$1" >/dev/null 2>&1; then
-      eval "$2"
-    fi
-  ]
-
-  # Execute command only if another fails
-  # Usage: @ Shell unless: 'test -f file' then: 'touch file'
-  rawClassMethod: unless: condition then: command [
-    if ! eval "$1" >/dev/null 2>&1; then
-      eval "$2"
-    fi
-  ]
-
-  # Execute command with timeout
-  # Usage: result := @ Shell exec: 'slow-command' timeout: 5
-  rawClassMethod: exec: command timeout: seconds [
-    timeout "$2" bash -c "$1"
-  ]
-
-  # ==========================================
-  # Current Shell State
-  # ==========================================
-
-  # Get the current process ID
-  rawClassMethod: pid [
-    echo $$
-  ]
-
-  # Get the parent process ID
-  rawClassMethod: ppid [
-    echo $PPID
-  ]
-
-  # Get the last exit code
-  rawClassMethod: lastExitCode [
-    echo $?
-  ]
-

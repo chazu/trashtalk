@@ -65,28 +65,21 @@ Process subclass: Object
   # Run the command in the foreground (blocking)
   # Captures stdout/stderr and exit code
   method: run [
-    | cmd result exitCodeVal stdoutVal stderrVal |
-    cmd := $(_ivar command)
+    | result |
+    @ self debug: 'Running command: ' , command.
+    status := 'running'.
+    startTime := @ Time now.
 
-    @ self debug: "Running command: $cmd"
-    status := "running"
-    startTime := $(@ Time now)
-
-    # Use Shell execFull to capture stdout, stderr, and exit code
-    result := $(@ Shell execFull: "$cmd")
-
-    # Parse JSON result using jq
-    stdoutVal := $(@ Tools::Jq get: "stdout" from: "$result")
-    stderrVal := $(@ Tools::Jq get: "stderr" from: "$result")
-    exitCodeVal := $(@ Tools::Jq get: "exitCode" from: "$result")
-
-    exitCode := "$exitCodeVal"
-    stdout := "$stdoutVal"
-    stderr := "$stderrVal"
-    endTime := $(@ Time now)
-    status := "completed"
-
-    ^ exitCodeVal
+    # Shell execFull: captures stdout, stderr, and exit code as one JSON object
+    result := @ Shell execFull: command.
+    result jsonUnpack: #('stdout' 'stderr' 'exitCode') into: [:stdoutVal :stderrVal :exitCodeVal |
+      exitCode := exitCodeVal.
+      stdout := stdoutVal.
+      stderr := stderrVal
+    ].
+    endTime := @ Time now.
+    status := 'completed'.
+    ^ exitCode
   ]
 
   # Start the command in the background (non-blocking)
@@ -151,11 +144,6 @@ Process subclass: Object
     ^ stderr
   ]
 
-  # Get exit code
-  method: exitCode [
-    ^ exitCode
-  ]
-
   # Check if process succeeded (exit code 0)
   method: succeeded [
     ^ exitCode = '0'
@@ -198,30 +186,6 @@ Process subclass: Object
   # Usage: @ Process run: "make test"
   classMethod: run: command [
     ^ @ Shell run: command
-  ]
-
-  # Run a command in background, return PID
-  # Usage: pid=$(@ Process spawn: "long-running-task")
-  classMethod: spawn: command [
-    ^ @ Shell spawn: command
-  ]
-
-  # Wait for a PID to complete
-  # Usage: @ Process waitPid: $pid
-  classMethod: waitPid: pid [
-    ^ @ Shell wait: pid
-  ]
-
-  # Check if a PID is running
-  # Usage: @ Process isRunningPid: $pid
-  classMethod: isRunningPid: pid [
-    ^ @ Shell isAlive: pid
-  ]
-
-  # Kill a PID
-  # Usage: @ Process killPid: $pid
-  classMethod: killPid: pid [
-    ^ @ Shell terminate: pid
   ]
 
   # Show help

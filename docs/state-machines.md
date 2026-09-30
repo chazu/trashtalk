@@ -51,8 +51,8 @@ save does not prevent another process changing the state between those steps.
 
 | Host | Durable transition operation |
 | --- | --- |
-| [Agent::Run](../trash/Agent/Run.trash) | `transitionTo:with:` reads current state, validates the edge, then conditionally updates the record only if the stored state still matches. |
-| [Agent::Delivery](../trash/Agent/Delivery.trash) | `transitionTo:` validates the edge and conditionally updates the stored state. |
+| [Agent::Run](../trash/Agent/Run.trash) | [StoredStateMachine](../trash/traits/StoredStateMachine.trash) `transitionTo:with:` reads the stored `state`, validates the edge, then conditionally applies the patch and state only if the stored state still matches. |
+| [Agent::Delivery](../trash/Agent/Delivery.trash) | The same StoredStateMachine compare-and-swap; `transitionTo:` applies no other fields. |
 | [Assignment](../trash/Assignment.trash) | `complete:` and `cancel:` validate and write their outcome, delivery settlement and result publication in a guarded Store transaction. |
 
 These objects retain separate state spaces. A successful Run does not complete

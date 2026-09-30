@@ -115,35 +115,35 @@ Honker subclass: Object
 
   # --- Help ---
 
-  rawClassMethod: help [
-    echo "=== Honker - SQLite Pub/Sub, Queues, Streams ==="
-    echo ""
-    echo "Availability:"
-    echo "  @ Honker isAvailable"
-    echo "  @ Honker bootstrap"
-    echo ""
-    echo "Pub/Sub:"
-    echo "  @ Honker notify: 'channel' payload: '{\"msg\":\"hi\"}'"
-    echo "  pid=\$(@ Honker listen: 'channel' do: \$handler)"
-    echo "  @ Honker unlisten: \$pid"
-    echo ""
-    echo "Work Queue:"
-    echo "  @ Honker enqueue: 'queue' payload: '{\"task\":\"go\"}'"
-    echo "  claimed=\$(@ Honker claim: 'queue')"
-    echo "  @ Honker ack: '[\$jobId]'"
-    echo ""
-    echo "Streams:"
-    echo "  @ Honker publish: 'stream' payload: '{\"data\":1}'"
-    echo "  msgs=\$(@ Honker readStream: 'stream')"
-    echo ""
-    echo "Locks:"
-    echo "  @ Honker lock: 'mylock'"
-    echo "  @ Honker unlock: 'mylock'"
-    echo ""
-    echo "Rate Limiting:"
-    echo "  allowed=\$(@ Honker rateLimit: 'action' limit: 10 window: 60)"
-    echo ""
-    echo "Scheduler:"
-    echo "  @ Honker schedule: 'name' task: 'task' cron: '*/5 * * * *' payload: '{}'"
-    echo "  @ Honker tick"
+  classMethod: help [
+    ^ '''=== Honker - SQLite Pub/Sub, Queues, Streams ===
+
+Availability:
+  @ Honker isAvailable
+  @ Honker bootstrap
+
+Pub/Sub:
+  @ Honker notify: 'channel' payload: '{"msg":"hi"}'
+  pid=$(@ Honker listen: 'channel' do: $handler)
+  @ Honker unlisten: $pid
+
+Work Queue:
+  @ Honker enqueue: 'queue' payload: '{"task":"go"}'
+  claimed=$(@ Honker claim: 'queue')
+  @ Honker ack: '[$jobId]'
+
+Streams:
+  @ Honker publish: 'stream' payload: '{"data":1}'
+  msgs=$(@ Honker readStream: 'stream')
+
+Locks:
+  @ Honker lock: 'mylock'
+  @ Honker unlock: 'mylock'
+
+Rate Limiting:
+  allowed=$(@ Honker rateLimit: 'action' limit: 10 window: 60)
+
+Scheduler:
+  @ Honker schedule: 'name' task: 'task' cron: '*/5 * * * *' payload: '{}'
+  @ Honker tick'''
   ]

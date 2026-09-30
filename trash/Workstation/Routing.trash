@@ -17,8 +17,7 @@ Routing subclass: Object
     | data admission links |
     @ Store requireTransaction.
     @ Store read: attention class: 'Workstation::Attention'.
-    data := @ Store getInstance: attention.
-    data := @ Workstation::Schema document: data.
+    data := @ Workstation::Schema documentOf: attention.
     admission := @ self admitWithin: data.
     links := @ self linksWithin: data.
     ^ @ Workstation::Schema merge: admission with: links
@@ -34,8 +33,7 @@ Routing subclass: Object
     human := @ Agent::Focus human.
     subscription := data jsonTextAt: 'subscription'.
     sub := @ Store read: subscription class: 'Workstation::EventSubscription'.
-    sub := @ Store getInstance: sub.
-    sub := @ Workstation::Schema document: sub.
+    sub := @ Workstation::Schema documentOf: sub.
     owner := sub jsonTextAt: 'owner'.
     mode := @ Workstation::EventSubscription delegationModeOf: sub.
     limit := @ Workstation::EventSubscription lineageLimitOf: sub.
@@ -236,8 +234,7 @@ Routing subclass: Object
     revision := status jsonTextAt: 'delegationRevision'.
     revision := revision + 1.
     message := 'message_' , attention , '_delegation_' , revision.
-    data := @ Store getInstance: attention.
-    data := @ Workstation::Schema document: data.
+    data := @ Workstation::Schema documentOf: attention.
     now := @ Time nowISO.
     candidate := @ Workstation::Schema merge: data with: (#{delegationRevision: (revision jsonValue) delegatedMessage: message
       delegatedSession: (status jsonTextAt: 'session') delegatedIdentity: (status jsonTextAt: 'targetIdentity')
@@ -254,8 +251,7 @@ Routing subclass: Object
     @ Workstation::Schema requireValidated: candidate.
     id := candidate jsonTextAt: 'id'.
     @ Store read: id class: 'Workstation::Attention'.
-    current := @ Store getInstance: id.
-    current := @ Workstation::Schema document: current.
+    current := @ Workstation::Schema documentOf: id.
     @ Require equal: (current jsonTextAt: 'subscription') to: (candidate jsonTextAt: 'subscription').
     existing := current jsonAt: 'delegatedMessage' ifAbsent: '""'.
     existing := existing jsonTextAt: ''.
@@ -277,8 +273,7 @@ Routing subclass: Object
     @ Store requireTransaction.
     mode := @ Workstation::EventSubscription delegationModeOf: subscription.
     (mode = 'automatic') ifFalse: [^ ''].
-    data := @ Store getInstance: attention.
-    data := @ Workstation::Schema document: data.
+    data := @ Workstation::Schema documentOf: attention.
     state := data jsonTextAt: 'state'.
     (state = 'open') ifFalse: [^ ''].
     delegated := data jsonAt: 'delegatedMessage' ifAbsent: '""'.
@@ -326,8 +321,7 @@ Routing subclass: Object
     @ Store requireTransaction.
     attention := args objectAt: 'attention'.
     @ Store read: attention class: 'Workstation::Attention'.
-    data := @ Store getInstance: attention.
-    data := @ Workstation::Schema document: data.
+    data := @ Workstation::Schema documentOf: attention.
     human := @ Agent::Focus human.
     sub := @ Store read: (data jsonTextAt: 'subscription') class: 'Workstation::EventSubscription'.
     owner := @ sub owner.
@@ -355,8 +349,7 @@ Routing subclass: Object
   classMethod: focus: attention [
     | data session |
     @ Store read: attention class: 'Workstation::Attention'.
-    data := @ Store getInstance: attention.
-    data := @ Workstation::Schema document: data.
+    data := @ Workstation::Schema documentOf: attention.
     session := data jsonTextAt: 'delegatedSession'.
     (session isEmpty) ifTrue: [^ @ Require reject: 'Attention has no delegated conversation'].
     ^ @ Agent::Focus open: session
@@ -384,7 +377,9 @@ Routing subclass: Object
     _db_sql "SELECT max(1, coalesce((SELECT max(json_extract(m.data,'$.attentionLineageDepth')) FROM instances d, json_each(json_extract(d.data,'$.messageIds')) j JOIN instances m ON m.id=j.value WHERE d.class='Agent::Delivery' AND json_extract(d.data,'$.run')='$erun' AND m.class='Message'),0));"
   ]
   # Foreground dispatch after an explicit delegation, unless suppressed.
-  rawClassMethod: wake: session [
-    if [[ -z "$1" || "${TRASHTALK_NO_AUTOTICK:-}" == 1 ]]; then return 0; fi
-    @ Agent::Worker tickSession: "$1" >/dev/null || true
+  classMethod: wake: session [
+    (session isEmpty) ifTrue: [^ ''].
+    ((@ Env get: 'TRASHTALK_NO_AUTOTICK') = '1') ifTrue: [^ ''].
+    (@ Agent::Worker tickSession: session) ifFailed: [^ ''].
+    ^ ''
   ]

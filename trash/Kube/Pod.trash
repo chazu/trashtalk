@@ -2,33 +2,15 @@ package: Kube
 
 # Kubernetes Pod resource.
 # Unpacks phase, restart count, and container readiness into ivars for fast access.
+# The runtime does not resolve a superclass's traits for subclass receivers,
+# so each resource kind includes Persistable again (for save). Snapshotable is
+# not repeated: a trait method would shadow Resource's indexedColumns.
 Pod subclass: Resource
-  instanceVars: rawJson kind name namespace cluster capturedAt identity
-                phase restartCount readyCount totalCount
+  include: Persistable
+  instanceVars: phase restartCount readyCount totalCount
 
-  rawClassMethod: fromJson: json cluster: clusterName [
-    local id k n ns phase restarts ready total
-    id=$(@ Runtime generateId: "$_CLASS")
-    @ Runtime create: "$_CLASS" id: "$id"
-    k="Pod"
-    n=$(echo   "$json" | jq -r '.metadata.name // ""')
-    ns=$(echo  "$json" | jq -r '.metadata.namespace // ""')
-    phase=$(echo    "$json" | jq -r '.status.phase // "Unknown"')
-    restarts=$(echo "$json" | jq '[.status.containerStatuses[]?.restartCount // 0] | add // 0')
-    ready=$(echo    "$json" | jq '[.status.containerStatuses[]? | select(.ready == true)] | length')
-    total=$(echo    "$json" | jq '.spec.containers | length')
-    @ "$id" setRawJson:      "$json"
-    @ "$id" setCluster:      "$clusterName"
-    @ "$id" setKind:         "$k"
-    @ "$id" setName:         "$n"
-    @ "$id" setNamespace:    "$ns"
-    @ "$id" setCapturedAt:   "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    @ "$id" setIdentity:     "$k/$ns/$n"
-    @ "$id" setPhase:        "$phase"
-    @ "$id" setRestartCount: "$restarts"
-    @ "$id" setReadyCount:   "$ready"
-    @ "$id" setTotalCount:   "$total"
-    echo "$id"
+  classMethod: kindFields [
+    ^ '{kind: "Pod", phase: (.status.phase // "Unknown"), restartCount: ([.status.containerStatuses[]?.restartCount // 0] | add // 0), readyCount: ([.status.containerStatuses[]? | select(.ready == true)] | length), totalCount: (.spec.containers | length)}'
   ]
 
   # true if all containers are ready.
@@ -49,10 +31,6 @@ Pod subclass: Resource
   ]
 
   # Fetch current logs via kubectl (requires cluster context).
-  rawMethod: logs [
-    local n ns ctx
-    n=$(_ivar name)
-    ns=$(_ivar namespace)
-    ctx=$(_ivar cluster)
-    @ Kube::Kubectl logs: "$n" namespace: "$ns" context: "$ctx"
+  method: logs [
+    ^ @ Kube::Kubectl logs: name namespace: namespace context: cluster
   ]

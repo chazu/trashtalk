@@ -717,7 +717,7 @@ tokenize() {
                     local arith_start_i=$i
                     ((i += 2))
                     ((col += 2))
-                    local paren_depth=2
+                    local paren_depth=2 inner_closed=0
                     while ((i < len)) && ((paren_depth > 0)); do
                         local c="${chars[i]}"
                         arith+="$c"
@@ -725,14 +725,17 @@ tokenize() {
                             ((paren_depth++))
                         elif [[ "$c" == ")" ]]; then
                             ((paren_depth--))
+                            # The inner "(" closed before the final "))".
+                            ((paren_depth == 1)) && [[ "${chars[i+1]:-}" != ")" ]] && inner_closed=1
                         fi
                         ((i++))
                         ((col++))
                     done
-                    # A Bash arithmetic command always closes with "))". Anything
-                    # else, such as ((a isEmpty) or: [b]), is nested Smalltalk
-                    # grouping: emit a single LPAREN and rescan from the next char.
-                    if [[ "$arith" == *"))" ]]; then
+                    # A Bash arithmetic command always closes with "))" and its
+                    # second "(" stays open until then. Anything else, such as
+                    # ((a isEmpty) or: [b]) or ((@ x a) = (@ x b)), is nested
+                    # Smalltalk grouping: emit a single LPAREN and rescan.
+                    if [[ "$arith" == *"))" ]] && ((inner_closed == 0)); then
                         add_token "ARITH_CMD" "$arith" "$line" "$arith_start_col"
                     else
                         i=$arith_start_i

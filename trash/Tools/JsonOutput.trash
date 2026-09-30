@@ -5,16 +5,6 @@ package: Tools
 JsonOutput trait
   classMethod: jsonShape [ ^ 'object' ]
 
-  classMethod: version [
-    | available argv capture |
-    available := @ self isInstalled.
-    (available ~= 'true') ifTrue: [^ 'not installed'].
-    argv := @ self baseArgv.
-    argv := argv arrayPush: '--version'.
-    capture := @ self captureArgvJson: argv.
-    ^ @ String trim: (capture jsonTextAt: 'stdout')
-  ]
-
   classMethod: missingJsonToolResult: command [
     | result |
     result := @ self missingToolResult: command.

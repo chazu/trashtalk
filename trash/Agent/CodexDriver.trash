@@ -20,14 +20,13 @@ CodexDriver subclass: Agent::Driver
     ^ '["-u","CODEX_API_KEY","-u","OPENAI_API_KEY"]'
   ]
 
-  rawClassMethod: model [
-    printf '%s\n' "${TRASHTALK_CODEX_MODEL:-gpt-5.6-terra}"
-  ]
+  classMethod: model [ ^ @ Env get: 'TRASHTALK_CODEX_MODEL' default: 'gpt-5.6-terra' ]
 
-  rawClassMethod: codexPath [
-    local path
-    path=$(command -v codex) || { _throw "DriverError" "codex is not installed"; return 1; }
-    printf '%s\n' "$path"
+  classMethod: codexPath [
+    | path |
+    path := @ Tools::Codex path.
+    (path isEmpty) ifTrue: [^ @ DriverError signal: 'codex is not installed'].
+    ^ path
   ]
 
   # Flags shared by launch and resume. The prompt arrives on stdin ('-').
@@ -48,23 +47,20 @@ CodexDriver subclass: Agent::Driver
        "-o", $out, "-"]'
   ]
 
-  rawClassMethod: launch: promptFile run: runId token: token [
-    local prompt_file="$1" run_id="$2" token="$3" codex session workspace tail argv
-    codex=$(@ "$_RECEIVER" codexPath) || return 1
-    session=$(@ "$run_id" session)
-    workspace=$(@ "$run_id" executionWorkspace)
-    tail=$(@ "$_RECEIVER" tailArgv: "$run_id")
-    argv=$(jq -cn --arg codex "$codex" --arg ws "$workspace" --argjson tail "$tail" \
-      '[$codex, "exec", "-C", $ws] + $tail')
-    @ "$_RECEIVER" launchArgv: "$argv" promptFile: "$prompt_file" run: "$run_id" token: "$token" ref: ""
-  ]
-
-  rawClassMethod: resume: ref promptFile: promptFile run: runId token: token [
-    local ref="$1" prompt_file="$2" run_id="$3" token="$4" codex tail argv
+  # A fresh thread runs in the execution workspace; `exec resume` continues
+  # the recorded thread.
+  rawClassMethod: launchRef: ref promptFile: promptFile run: runId token: token [
+    local ref="$1" prompt_file="$2" run_id="$3" token="$4" codex workspace tail argv
     codex=$(@ "$_RECEIVER" codexPath) || return 1
     tail=$(@ "$_RECEIVER" tailArgv: "$run_id")
-    argv=$(jq -cn --arg codex "$codex" --arg ref "$ref" --argjson tail "$tail" \
-      '[$codex, "exec", "resume", $ref] + $tail')
+    if [[ -n "$ref" ]]; then
+      argv=$(jq -cn --arg codex "$codex" --arg ref "$ref" --argjson tail "$tail" \
+        '[$codex, "exec", "resume", $ref] + $tail')
+    else
+      workspace=$(@ "$run_id" executionWorkspace)
+      argv=$(jq -cn --arg codex "$codex" --arg ws "$workspace" --argjson tail "$tail" \
+        '[$codex, "exec", "-C", $ws] + $tail')
+    fi
     @ "$_RECEIVER" launchArgv: "$argv" promptFile: "$prompt_file" run: "$run_id" token: "$token" ref: "$ref"
   ]
 

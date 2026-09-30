@@ -19,22 +19,10 @@ Inpick subclass: Tool
     | argv toolPath |
     toolPath := @ self path.
     argv := #(toolPath '--result-json' '--root' root) asJson.
-    query notEmpty ifTrue: [
-      argv := argv arrayPush: '--query'.
-      argv := argv arrayPush: query
-    ].
-    title notEmpty ifTrue: [
-      argv := argv arrayPush: '--title'.
-      argv := argv arrayPush: title
-    ].
-    action notEmpty ifTrue: [
-      argv := argv arrayPush: '--ctrl-d-action'.
-      argv := argv arrayPush: action
-    ].
-    hook notEmpty ifTrue: [
-      argv := argv arrayPush: '--preview-hook'.
-      argv := argv arrayPush: hook
-    ].
+    argv := @ self argv: argv option: '--query' value: query.
+    argv := @ self argv: argv option: '--title' value: title.
+    argv := @ self argv: argv option: '--ctrl-d-action' value: action.
+    argv := @ self argv: argv option: '--preview-hook' value: hook.
 
     ^ @ self runArgvJson: argv input: records
   ]

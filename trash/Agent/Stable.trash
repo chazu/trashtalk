@@ -68,13 +68,6 @@ Stable trait
     ^ @ Agent::Session ensureFor: identity archetype: archetype role: role workspace: workspace profile: profile
   ]
 
-  classMethod: focusCurrent [
-    | session |
-    session := @ self currentFor: '.'.
-    (session isEmpty) ifTrue: [^ @ Require reject: 'No current conversation; send a message first'].
-    ^ @ session focus
-  ]
-
   # Replace only an idle current session. Outstanding work stays on the closed
   # session and remains inspectable; no work is silently moved or stopped.
   classMethod: fresh: dir [

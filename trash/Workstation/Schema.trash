@@ -46,9 +46,12 @@ Schema subclass: Object
     _WORKSTATION_VALIDATED_JSON="$checked" @ Store transaction: "$target" sending: "$3" with: "$checked"
   ]
 
-  rawClassMethod: requireValidated: json [
-    @ Store requireTransaction || return
-    [[ -n ${_WORKSTATION_VALIDATED_JSON:-} && "$1" == "$_WORKSTATION_VALIDATED_JSON" ]] || { _throw WorkstationSchemaError 'Mutation requires the exact prevalidated document'; return 1; }
+  classMethod: requireValidated: json [
+    | validated |
+    (@ Store requireTransaction) ifFailed: [:error | @ error signal].
+    validated := @ Env get: '_WORKSTATION_VALIDATED_JSON'.
+    ((validated notEmpty) and: [json = validated]) ifFalse: [@ WorkstationSchemaError signal: 'Mutation requires the exact prevalidated document'].
+    ^ json
   ]
 
   # Same idempotent DDL installation boundary as Agent::Session.ensureSchema.
@@ -66,6 +69,12 @@ Schema subclass: Object
           | .delegatedMessage //= "" | .delegatedSession //= "" | .delegatedIdentity //= "" | .routingNote //= ""
           | .origin = (if .origin == "null" then null else .origin end)) else . end
       | if has("adapterKind") then .delegation //= {} else . end'
+  ]
+  # A stored record as its closed workstation document.
+  classMethod: documentOf: id [
+    | data |
+    data := @ Store getInstance: id.
+    ^ @ self document: data
   ]
   rawClassMethod: merge: data with: patch [
     printf '%s' "$1" | jq -ce --argjson patch "$2" '. + $patch'

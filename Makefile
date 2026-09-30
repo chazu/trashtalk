@@ -69,7 +69,7 @@ doctor: bash
 
 bash: $(COMPILED_DIR) $(COMPILED_DIR)/traits
 	@echo "Compiling to bash ($(NPROCS) parallel jobs)..."
-	@TRASHTALK_DIR="$(CURDIR)" bash $(JQ_COMPILER) compile-many $(COMPILED_DIR) $(NPROCS) $(ALL_SOURCES)
+	@TRASHTALK_DIR="$(CURDIR)" TRASH_BUILD_PRUNE_ORPHANS=1 bash $(JQ_COMPILER) compile-many $(COMPILED_DIR) $(NPROCS) $(ALL_SOURCES)
 	@echo "✓ Compilation complete"
 
 # =============================================================================

@@ -1,34 +1,7 @@
 # jq command execution is an OS boundary; arguments never pass through eval.
+# JSON reads in DSL methods use jsonAt:/jsonTextAt:/jsonUnpack: instead.
 package: Tools
 
 Jq subclass: Tool
   classMethod: name [ ^ 'jq' ]
   classMethod: installCommand [ ^ 'brew install jq' ]
-
-  rawClassMethod: parse: filter on: json [
-    local tool
-    tool=$(@ "$_RECEIVER" path) || return
-    [[ -n "$tool" ]] || { _throw ToolError 'jq is not installed'; return 1; }
-    printf '%s' "$2" | "$tool" "$1"
-  ]
-
-  rawClassMethod: parseFile: filepath with: filter [
-    local tool
-    tool=$(@ "$_RECEIVER" path) || return
-    [[ -n "$tool" ]] || { _throw ToolError 'jq is not installed'; return 1; }
-    "$tool" "$2" -- "$1"
-  ]
-
-  rawClassMethod: compact: json [
-    local tool
-    tool=$(@ "$_RECEIVER" path) || return
-    [[ -n "$tool" ]] || { _throw ToolError 'jq is not installed'; return 1; }
-    printf '%s' "$1" | "$tool" -c '.'
-  ]
-
-  rawClassMethod: get: key from: json [
-    local tool
-    tool=$(@ "$_RECEIVER" path) || return
-    [[ -n "$tool" ]] || { _throw ToolError 'jq is not installed'; return 1; }
-    printf '%s' "$2" | "$tool" -r ".$1"
-  ]

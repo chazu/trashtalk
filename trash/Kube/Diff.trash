@@ -18,15 +18,15 @@ Diff subclass: Object
   # Returns a Diff whose 'changed' ivar holds [{path, from, to}] JSON.
   rawClassMethod: compareResource: a with: b [
     local rawA rawB patch id
-    rawA=$(@ Store getField: "$a" field: "rawJson")
-    rawB=$(@ Store getField: "$b" field: "rawJson")
+    rawA=$(@ "$a" rawJson)
+    rawB=$(@ "$b" rawJson)
 
     patch=$(printf '%s\n%s' "$rawA" "$rawB" | jq -s '
       .[0] as $a | .[1] as $b |
       def noisy: test(
         "metadata\\.resourceVersion|metadata\\.generation|metadata\\.managedFields|metadata\\.annotations\\.kubectl|metadata\\.creationTimestamp"
       );
-      [ path($b | .. | scalars) as $p
+      [ ($b | path(.. | scalars)) as $p
         | ($p | join(".")) as $pstr
         | select($pstr | noisy | not)
         | select(($a | getpath($p)) != ($b | getpath($p)))
@@ -48,8 +48,8 @@ Diff subclass: Object
     id=$(@ Runtime generateId: "$_CLASS")
     @ Runtime create: "$_CLASS" id: "$id"
 
-    mapA=$(@ "$snapA" _identityMap)
-    mapB=$(@ "$snapB" _identityMap)
+    mapA=$(@ "$snapA" identityMap)
+    mapB=$(@ "$snapB" identityMap)
 
     local added removed
     added=$(printf '%s\n%s' "$mapA" "$mapB" | jq -s '
@@ -66,7 +66,7 @@ Diff subclass: Object
       ridA=$(echo "$mapA" | jq -r --arg k "$identity" '.[$k]')
       ridB=$(echo "$mapB" | jq -r --arg k "$identity" '.[$k]')
       rdiff=$(@ "$_RECEIVER" compareResource: "$ridA" with: "$ridB")
-      patch=$(@ Store getField: "$rdiff" field: "changed")
+      patch=$(@ "$rdiff" changed)
       if echo "$patch" | jq -e 'length > 0' >/dev/null 2>&1; then
         shared_diffs=$(echo "$shared_diffs" | jq --arg id "$identity" --argjson c "$patch" \
           '. + [{identity: $id, changes: $c}]')

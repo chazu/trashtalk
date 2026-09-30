@@ -8,13 +8,8 @@ Git subclass: Tool
 
   # Git is normally supplied by the OS or developer toolchain. Do not guess a
   # privileged package-manager command from inside Trashtalk.
-  classMethod: ensure [
-    | available guidance |
-    available := @ self isInstalled.
-    (available = 'true') ifTrue: [^ 'true'].
-    guidance := 'Git is not installed. Install Git using your operating system or developer toolchain.'.
-    @ Console error: guidance.
-    ^ 'false'
+  classMethod: installGuidance [
+    ^ 'Git is not installed. Install Git using your operating system or developer toolchain.'
   ]
 
   # All inspection methods require the checkout explicitly. The caller's shell

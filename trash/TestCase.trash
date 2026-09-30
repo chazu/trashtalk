@@ -4,13 +4,6 @@
 TestCase subclass: Object
   instanceVars: passed:0 failed:0 skipped:0 currentTest:'unknown'
 
-  classMethod: new [
-    | id |
-    id := @ Runtime generateId: self.
-    @ Runtime create: self id: id.
-    ^ id
-  ]
-
   # Override in subclass for test setup
   method: setUp [
     ^ nil
@@ -27,22 +20,12 @@ TestCase subclass: Object
 
   method: assert: actual equals: expected [
     (actual = expected) ifTrue: [@ self _pass]
-                        ifFalse: [@ self _fail: 'Values not equal']
-  ]
-
-  # Snake_case alias for positional args: @ self assert_equals "a" "b"
-  method: assert_equals: actual to: expected [
-    @ self assert: actual equals: expected
+                        ifFalse: [@ self fail: 'Values not equal']
   ]
 
   method: assert: actual notEquals: expected [
     (actual ~= expected) ifTrue: [@ self _pass]
-                         ifFalse: [@ self _fail: 'Values should not be equal']
-  ]
-
-  # Snake_case alias for positional args
-  method: assert_not_equals: actual to: expected [
-    @ self assert: actual notEquals: expected
+                         ifFalse: [@ self fail: 'Values should not be equal']
   ]
 
   # ==========================================
@@ -52,23 +35,13 @@ TestCase subclass: Object
   method: assertTrue: condition [
     (condition = 'true') or: [condition = '1']
       ifTrue: [@ self _pass]
-      ifFalse: [@ self _fail: 'Expected true']
-  ]
-
-  # Snake_case alias - delegates to Smalltalk version
-  method: assert_true: condition [
-    @ self assertTrue: condition
+      ifFalse: [@ self fail: 'Expected true']
   ]
 
   method: assertFalse: condition [
     (condition = 'false') or: [condition = '0'] or: [condition isEmpty]
       ifTrue: [@ self _pass]
-      ifFalse: [@ self _fail: 'Expected false']
-  ]
-
-  # Snake_case alias - delegates to Smalltalk version
-  method: assert_false: condition [
-    @ self assertFalse: condition
+      ifFalse: [@ self fail: 'Expected false']
   ]
 
   # ==========================================
@@ -77,22 +50,12 @@ TestCase subclass: Object
 
   method: assertNil: value [
     (value isEmpty) or: [value = 'null'] ifTrue: [@ self _pass]
-                                         ifFalse: [@ self _fail: 'Expected nil/empty value']
-  ]
-
-  # Snake_case alias - delegates to Smalltalk version
-  method: assert_nil: value [
-    @ self assertNil: value
+                                         ifFalse: [@ self fail: 'Expected nil/empty value']
   ]
 
   method: assertNotNil: value [
     (value notEmpty) and: [value ~= 'null'] ifTrue: [@ self _pass]
-                                            ifFalse: [@ self _fail: 'Expected non-nil value']
-  ]
-
-  # Snake_case alias - delegates to Smalltalk version
-  method: assert_not_nil: value [
-    @ self assertNotNil: value
+                                            ifFalse: [@ self fail: 'Expected non-nil value']
   ]
 
   # ==========================================
@@ -102,22 +65,12 @@ TestCase subclass: Object
   method: assert: haystack contains: needle [
     (@ String contains: haystack substring: needle)
       ifTrue: [@ self _pass]
-      ifFalse: [@ self _fail: 'Expected string to contain substring']
-  ]
-
-  # Snake_case alias for positional args
-  method: assert_contains: haystack needle: needle [
-    @ self assert: haystack contains: needle
+      ifFalse: [@ self fail: 'Expected string to contain substring']
   ]
 
   method: assert: actual matches: pattern [
     (actual matches: pattern) ifTrue: [@ self _pass]
-                              ifFalse: [@ self _fail: 'Pattern match failed']
-  ]
-
-  # Snake_case alias for positional args
-  method: assert_matches: actual pattern: pattern [
-    @ self assert: actual matches: pattern
+                              ifFalse: [@ self fail: 'Pattern match failed']
   ]
 
   # ==========================================
@@ -126,32 +79,22 @@ TestCase subclass: Object
 
   method: assert: actual greaterThan: expected [
     (actual > expected) ifTrue: [@ self _pass]
-                        ifFalse: [@ self _fail: 'Expected greater than']
-  ]
-
-  # Snake_case alias - delegates to Smalltalk version
-  method: assert_greater_than: actual than: expected [
-    @ self assert: actual greaterThan: expected
+                        ifFalse: [@ self fail: 'Expected greater than']
   ]
 
   method: assert: actual lessThan: expected [
     (actual < expected) ifTrue: [@ self _pass]
-                        ifFalse: [@ self _fail: 'Expected less than']
-  ]
-
-  # Snake_case alias - delegates to Smalltalk version
-  method: assert_less_than: actual than: expected [
-    @ self assert: actual lessThan: expected
+                        ifFalse: [@ self fail: 'Expected less than']
   ]
 
   method: assert: actual greaterOrEqual: expected [
     (actual >= expected) ifTrue: [@ self _pass]
-                         ifFalse: [@ self _fail: 'Expected greater or equal']
+                         ifFalse: [@ self fail: 'Expected greater or equal']
   ]
 
   method: assert: actual lessOrEqual: expected [
     (actual <= expected) ifTrue: [@ self _pass]
-                         ifFalse: [@ self _fail: 'Expected less or equal']
+                         ifFalse: [@ self fail: 'Expected less or equal']
   ]
 
   # ==========================================
@@ -159,55 +102,31 @@ TestCase subclass: Object
   # ==========================================
 
   method: skip: reason [
-
-    pragma: stream
-    | test count |
-    test := @ self currentTest.
-    count := @ self skipped.
-    @ self skipped: (count + 1).
-    @ Console print: ('  SKIP: ' , test , ' - ' , reason).
-    ^ 77
+    ^ @ self recordSkip: 'SKIP' reason: reason
   ]
 
   method: skip [
-
-    pragma: stream
-    | test count |
-    test := @ self currentTest.
-    count := @ self skipped.
-    @ self skipped: (count + 1).
-    @ Console print: ('  SKIP: ' , test , ' - No reason given').
-    ^ 77
+    ^ @ self skip: 'No reason given'
   ]
 
   method: pending: description [
-
-    pragma: stream
-    | test count |
-    test := @ self currentTest.
-    count := @ self skipped.
-    @ self skipped: (count + 1).
-    @ Console print: ('  PENDING: ' , test , ' - ' , description).
-    ^ 77
+    ^ @ self recordSkip: 'PENDING' reason: description
   ]
 
   method: pending [
-
-    pragma: stream
-    | test count |
-    test := @ self currentTest.
-    count := @ self skipped.
-    @ self skipped: (count + 1).
-    @ Console print: ('  PENDING: ' , test , ' - Not yet implemented').
-    ^ 77
+    ^ @ self pending: 'Not yet implemented'
   ]
 
   method: fail: message [
-    @ self _fail: message
+    | count test |
+    count := @ self failed.
+    test := @ self currentTest.
+    @ self failed: (count + 1).
+    @ Console error: ('  FAIL: ' , test , ' - ' , message)
   ]
 
   method: fail [
-    @ self _fail: 'Explicit failure'
+    @ self fail: 'Explicit failure'
   ]
 
   # ==========================================
@@ -218,12 +137,15 @@ TestCase subclass: Object
     passed := passed + 1
   ]
 
-  method: _fail: message [
-    | count test |
-    count := @ self failed.
+  # Count the current test as skipped and report it under label
+  method: recordSkip: label reason: text [
+    pragma: stream
+    | test count |
     test := @ self currentTest.
-    @ self failed: (count + 1).
-    @ Console error: ('  FAIL: ' , test , ' - ' , message)
+    count := @ self skipped.
+    @ self skipped: (count + 1).
+    @ Console print: ('  ' , label , ': ' , test , ' - ' , text).
+    ^ 77
   ]
 
   # ==========================================

@@ -7,7 +7,7 @@ TestCounter subclass: TestCase
     c := @ Counter new.
     @ c increment.
     val := @ c getValue.
-    @ self assert_equals: val to: '1'
+    @ self assert: val equals: '1'
   ]
 
   method: testIncrementBy [
@@ -15,7 +15,7 @@ TestCounter subclass: TestCase
     c := @ Counter new.
     @ c incrementBy: 5.
     val := @ c getValue.
-    @ self assert_equals: val to: '5'
+    @ self assert: val equals: '5'
   ]
 
   method: testDecrement [
@@ -24,7 +24,7 @@ TestCounter subclass: TestCase
     @ c setValue: 10.
     @ c decrement.
     val := @ c getValue.
-    @ self assert_equals: val to: '9'
+    @ self assert: val equals: '9'
   ]
 
   method: testReset [
@@ -33,7 +33,7 @@ TestCounter subclass: TestCase
     @ c increment.
     @ c reset.
     val := @ c getValue.
-    @ self assert_equals: val to: '0'
+    @ self assert: val equals: '0'
   ]
 
   method: testStep [
@@ -42,5 +42,5 @@ TestCounter subclass: TestCase
     @ c setStep: 5.
     @ c increment.
     val := @ c getValue.
-    @ self assert_equals: val to: '5'
+    @ self assert: val equals: '5'
   ]

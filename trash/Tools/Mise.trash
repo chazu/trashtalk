@@ -49,10 +49,7 @@ Mise subclass: Tool
   classMethod: argvFor: subcommand inDirectory: directory [
     | argv |
     argv := @ self baseArgv.
-    directory notEmpty ifTrue: [
-      argv := argv arrayPush: '-C'.
-      argv := argv arrayPush: directory
-    ].
+    argv := @ self argv: argv option: '-C' value: directory.
     argv := @ self argv: argv appendEach: subcommand.
     ^ argv
   ]

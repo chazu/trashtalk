@@ -11,14 +11,8 @@ Inpage subclass: Tool
     | argv toolPath |
     toolPath := @ self path.
     argv := #(toolPath '--result-json') asJson.
-    annotationsPath notEmpty ifTrue: [
-      argv := argv arrayPush: '--annotations'.
-      argv := argv arrayPush: annotationsPath
-    ].
-    line notEmpty ifTrue: [
-      argv := argv arrayPush: '--line'.
-      argv := argv arrayPush: line
-    ].
+    argv := @ self argv: argv option: '--annotations' value: annotationsPath.
+    argv := @ self argv: argv option: '--line' value: line.
     argv := argv arrayPush: path.
 
     ^ @ self runArgvJson: argv
@@ -28,10 +22,7 @@ Inpage subclass: Tool
     | argv toolPath |
     toolPath := @ self path.
     argv := #(toolPath '--stdin' '--result-json') asJson.
-    title notEmpty ifTrue: [
-      argv := argv arrayPush: '--title'.
-      argv := argv arrayPush: title
-    ].
+    argv := @ self argv: argv option: '--title' value: title.
 
     ^ @ self runArgvJson: argv input: text
   ]

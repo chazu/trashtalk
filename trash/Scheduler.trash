@@ -13,17 +13,17 @@ Scheduler subclass: Object
   include: Debuggable
 
   # Register a periodic task with a handler block
-  rawClassMethod: every: cronExpr do: handler named: name [
-    local payload
-    payload=$(jq -n --arg h "$2" '{handler: $h, type: "block"}')
-    honker_schedule "$3" "$3" "$1" "$payload"
+  classMethod: every: cronExpr do: handler named: name [
+    | payload |
+    payload := #{handler: handler type: 'block'} asJson.
+    ^ @ Honker schedule: name task: name cron: cronExpr payload: payload
   ]
 
   # Register a periodic task with a bash callback function
-  rawClassMethod: every: cronExpr call: callbackFn named: name [
-    local payload
-    payload=$(jq -n --arg fn "$2" '{callback: $fn, type: "function"}')
-    honker_schedule "$3" "$3" "$1" "$payload"
+  classMethod: every: cronExpr call: callbackFn named: name [
+    | payload |
+    payload := #{callback: callbackFn type: 'function'} asJson.
+    ^ @ Honker schedule: name task: name cron: cronExpr payload: payload
   ]
 
   # Unregister a scheduled task
@@ -84,12 +84,11 @@ Scheduler subclass: Object
   ]
 
   # Check if the tick loop is running
-  rawClassMethod: isRunning [
-    if [[ -n "${_SCHEDULER_PID:-}" ]] && kill -0 "$_SCHEDULER_PID" 2>/dev/null; then
-      echo "true"
-    else
-      echo "false"
-    fi
+  classMethod: isRunning [
+    | pid |
+    pid := @ Env get: '_SCHEDULER_PID'.
+    pid isEmpty ifTrue: [^ 'false'].
+    ^ @ Tool isAlivePid: pid
   ]
 
   # Get seconds until the next scheduled task fires
@@ -98,20 +97,20 @@ Scheduler subclass: Object
   # Manually tick once (for testing)
   classPrimitive: tick calls: honker_scheduler_tick
 
-  rawClassMethod: help [
-    echo "=== Scheduler - Cron-Based Periodic Tasks ==="
-    echo ""
-    echo "Register tasks:"
-    echo "  @ Scheduler every: '*/5 * * * *' do: \$handler named: 'cleanup'"
-    echo "  @ Scheduler every: '0 * * * *' call: 'my_hourly_fn' named: 'hourly'"
-    echo ""
-    echo "Control:"
-    echo "  @ Scheduler start       # start tick loop"
-    echo "  @ Scheduler stop        # stop tick loop"
-    echo "  @ Scheduler isRunning"
-    echo ""
-    echo "Manage:"
-    echo "  @ Scheduler unschedule: 'cleanup'"
-    echo "  @ Scheduler soonest     # seconds until next task"
-    echo "  @ Scheduler tick        # manual tick (testing)"
+  classMethod: help [
+    ^ '''=== Scheduler - Cron-Based Periodic Tasks ===
+
+Register tasks:
+  @ Scheduler every: '*/5 * * * *' do: $handler named: 'cleanup'
+  @ Scheduler every: '0 * * * *' call: 'my_hourly_fn' named: 'hourly'
+
+Control:
+  @ Scheduler start       # start tick loop
+  @ Scheduler stop        # stop tick loop
+  @ Scheduler isRunning
+
+Manage:
+  @ Scheduler unschedule: 'cleanup'
+  @ Scheduler soonest     # seconds until next task
+  @ Scheduler tick        # manual tick (testing)'''
   ]

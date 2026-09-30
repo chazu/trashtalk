@@ -5,7 +5,7 @@ package: Assignment
 # Assignment operation owns the Store transaction around every read and save.
 Participation subclass: Object
   classMethod: select: session for: assignment [
-    | actor sender aData s allowed current same runs old oldState |
+    | actor sender aData s allowed current runs old oldState |
     @ Store requireTransaction.
     actor := @ Agent::Run actingContext.
     sender := @ assignment authorizeCoordinator: actor.
@@ -13,8 +13,7 @@ Participation subclass: Object
     aData := @ assignment asJson.
     s := @ self eligibleSession: session for: assignment.
     current := @ assignment currentSession.
-    same := @ String equals: current to: s.
-    (same = 'true') ifTrue: [^ assignment].
+    (current = s) ifTrue: [^ assignment].
     runs := @ Agent::Run activeFor: s except: ''.
     @ Require equal: runs to: '[]'.
     (current notEmpty) ifTrue: [
@@ -78,7 +77,7 @@ Participation subclass: Object
   ]
 
   classMethod: claimWithin: args [
-    | actor caller run d dData a aData r rData s sData i iData role roleData same value history participation runs questions previous oldData attempts updated gen |
+    | actor caller run d dData a aData r rData s sData i iData role roleData same presented expected value history participation runs questions previous oldData attempts updated gen |
     @ Store requireTransaction.
     actor := @ Agent::Run actingContext.
     caller := actor objectAt: 'run'.
@@ -96,24 +95,18 @@ Participation subclass: Object
     iData := @ i asJson.
     role := @ Store read: (sData objectAt: 'role') class: 'Agent::Role'.
     roleData := @ role asJson.
-    (caller isEmpty) ifTrue: [
-      same := @ String equals: (actor objectAt: 'human') to: (aData objectAt: 'owner')
-    ] ifFalse: [same := @ String equals: (actor objectAt: 'hash') to: (rData objectAt: 'capabilityTokenHash')].
-    (same = 'false') ifTrue: [^ 'false'].
-    same := @ String equals: (aData objectAt: 'state') to: 'open'.
-    (same = 'false') ifTrue: [^ 'false'].
-    same := @ String equals: (aData objectAt: 'delivery') to: d.
-    (same = 'false') ifTrue: [^ 'false'].
-    same := @ String equals: (aData objectAt: 'generation') to: (dData objectAt: 'generation').
-    (same = 'false') ifTrue: [^ 'false'].
-    same := @ String equals: (aData objectAt: 'currentSession') to: s.
-    (same = 'false') ifTrue: [^ 'false'].
-    same := @ String equals: (dData objectAt: 'session') to: s.
-    (same = 'false') ifTrue: [^ 'false'].
-    same := @ String equals: (aData objectAt: 'assignee') to: i.
-    (same = 'false') ifTrue: [^ 'false'].
-    same := @ String equals: (sData objectAt: 'lifecycleState') to: 'open'.
-    (same = 'false') ifTrue: [^ 'false'].
+    presented := actor objectAt: 'human'.
+    expected := aData objectAt: 'owner'.
+    (caller notEmpty) ifTrue: [presented := actor objectAt: 'hash'. expected := rData objectAt: 'capabilityTokenHash'].
+    (presented = expected) ifFalse: [^ 'false'].
+    ((aData objectAt: 'state') = 'open') ifFalse: [^ 'false'].
+    ((aData objectAt: 'delivery') = d) ifFalse: [^ 'false'].
+    expected := dData objectAt: 'generation'.
+    ((aData objectAt: 'generation') = expected) ifFalse: [^ 'false'].
+    ((aData objectAt: 'currentSession') = s) ifFalse: [^ 'false'].
+    ((dData objectAt: 'session') = s) ifFalse: [^ 'false'].
+    ((aData objectAt: 'assignee') = i) ifFalse: [^ 'false'].
+    ((sData objectAt: 'lifecycleState') = 'open') ifFalse: [^ 'false'].
     same := @ Require contains: (iData objectAt: 'enabled') in: '["true","1"]'.
     (same = 'false') ifTrue: [^ 'false'].
     same := @ Require contains: 'assignment.work' in: (roleData jsonAt: 'capabilities').
@@ -124,8 +117,8 @@ Participation subclass: Object
     (same = 'false') ifTrue: [^ 'false'].
     history := @ a history.
     participation := history arrayLast.
-    same := @ String equals: (sData objectAt: 'workspace') to: (participation objectAt: 'workspace').
-    (same = 'false') ifTrue: [^ 'false'].
+    expected := participation objectAt: 'workspace'.
+    ((sData objectAt: 'workspace') = expected) ifFalse: [^ 'false'].
     runs := @ Agent::Run activeFor: s except: run.
     (runs = '[]') ifFalse: [^ 'false'].
     value := @ d state.
@@ -154,8 +147,7 @@ Participation subclass: Object
       gen := @ a generation.
       updated := '[]'.
       history arrayEach: [:entry |
-        same := @ String equals: (entry objectAt: 'generation') to: gen.
-        (same = 'true') ifTrue: [updated := updated arrayPushJson: participation] ifFalse: [updated := updated arrayPushJson: entry]
+        ((entry objectAt: 'generation') = gen) ifTrue: [updated := updated arrayPushJson: participation] ifFalse: [updated := updated arrayPushJson: entry]
       ].
       @ a history: updated.
       @ a save

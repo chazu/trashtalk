@@ -56,10 +56,8 @@ Actor subclass: Object
   ]
 
   # Send a raw JSON payload (for custom message formats)
-  rawMethod: sendRaw: payload [
-    local queue
-    queue=$(_ivar queueName)
-    honker_enqueue "$queue" "$1"
+  method: sendRaw: payload [
+    ^ @ Honker enqueue: queueName payload: payload
   ]
 
   # Start the background message dispatcher
@@ -121,27 +119,20 @@ Actor subclass: Object
   ]
 
   # Check if the dispatcher is running
-  rawMethod: isRunning [
-    local pid
-    pid=$(_ivar dispatcherPid)
-    if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
-      echo "true"
-    else
-      echo "false"
-    fi
+  method: isRunning [
+    dispatcherPid isEmpty ifTrue: [^ 'false'].
+    ^ @ Tool isAlivePid: dispatcherPid
   ]
 
   # Get the current status
-  rawMethod: status [
-    local pid status
-    status=$(_ivar status)
-    pid=$(_ivar dispatcherPid)
-    if [[ "$status" == "running" && -n "$pid" ]] && ! kill -0 "$pid" 2>/dev/null; then
-      _ivar_set status "crashed"
-      echo "crashed"
-    else
-      echo "$status"
-    fi
+  method: status [
+    | alive |
+    (status = 'running') ifFalse: [^ status].
+    dispatcherPid isEmpty ifTrue: [^ status].
+    alive := @ Tool isAlivePid: dispatcherPid.
+    (alive = 'true') ifTrue: [^ status].
+    status := 'crashed'.
+    ^ status
   ]
 
   # Get the number of pending messages in the mailbox
@@ -151,38 +142,33 @@ Actor subclass: Object
     _db_sql "SELECT COUNT(*) FROM _honker_live WHERE queue = '$queue' AND state = 'pending';" 2>/dev/null || echo "0"
   ]
 
-  # Get the queue name
-  method: queueName [
-    ^ queueName
-  ]
-
   # Clean up: stop dispatcher and delete
   method: destroy [
     @ self stop.
     @ self delete
   ]
 
-  rawClassMethod: help [
-    echo "=== Actor - Mailbox Message Processing ==="
-    echo ""
-    echo "Create:"
-    echo "  actor=\$(@ Actor named: 'processor')"
-    echo ""
-    echo "Start dispatcher:"
-    echo "  @ \$actor start"
-    echo ""
-    echo "Send messages:"
-    echo "  @ \$actor send: 'processOrder'"
-    echo "  @ \$actor send: 'processOrder' with: '42'"
-    echo "  @ \$actor send: 'transfer' with: 'from' and: 'to'"
-    echo "  @ \$actor sendRaw: '{\"custom\":\"payload\"}'"
-    echo ""
-    echo "Monitor:"
-    echo "  @ \$actor isRunning"
-    echo "  @ \$actor status      # idle/running/stopped/crashed"
-    echo "  @ \$actor pendingCount"
-    echo ""
-    echo "Stop:"
-    echo "  @ \$actor stop"
-    echo "  @ \$actor destroy"
+  classMethod: help [
+    ^ '''=== Actor - Mailbox Message Processing ===
+
+Create:
+  actor=$(@ Actor named: 'processor')
+
+Start dispatcher:
+  @ $actor start
+
+Send messages:
+  @ $actor send: 'processOrder'
+  @ $actor send: 'processOrder' with: '42'
+  @ $actor send: 'transfer' with: 'from' and: 'to'
+  @ $actor sendRaw: '{"custom":"payload"}'
+
+Monitor:
+  @ $actor isRunning
+  @ $actor status      # idle/running/stopped/crashed
+  @ $actor pendingCount
+
+Stop:
+  @ $actor stop
+  @ $actor destroy'''
   ]

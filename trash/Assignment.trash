@@ -121,7 +121,7 @@ Assignment subclass: Object
   ]
 
   method: originWithin: message [
-    | actor sender m data sent generation requester session isSession exists s fields ids count |
+    | actor sender m data sent generation requester session fields ids count |
     actor := @ Agent::Run actingContext.
     sender := @ self authorize: actor operatorOnly: true.
     @ self requireOpen.
@@ -131,21 +131,11 @@ Assignment subclass: Object
     sent := @ m sentAt.
     (sent > 0) ifFalse: [^ @ Require reject: 'Origin must be a sent Message'].
     requester := @ m from.
-    session := ''.
-    isSession := @ String startsWith: requester prefix: 'session:'.
-    (isSession = 'true') ifTrue: [
-      s := @ String trimPrefix: 'session:' from: requester.
-      exists := @ Store exists: s.
-      (exists = 'true') ifTrue: [
-        data := @ Store getInstance: s.
-        exists := data objectAt: 'class'.
-        (exists = 'Agent::Session') ifTrue: [
-          session := s.
-          requester := data objectAt: 'identity'
-        ]
-      ]
-    ].
-    (session isEmpty) ifTrue: [
+    session := @ m originSession.
+    (session notEmpty) ifTrue: [
+      data := @ Store getInstance: session.
+      requester := data objectAt: 'identity'
+    ] ifFalse: [
       fields := #{inbox: requester} asJson.
       ids := @ Store idsOf: 'Agent::Identity' matching: fields.
       count := ids arrayLength.
@@ -251,7 +241,7 @@ Assignment subclass: Object
   ]
 
   classMethod: currentWithin: unused [
-    | actor run selected human ids fields candidates data a d dData state same sender count |
+    | actor run selected human ids fields candidates data a d dData state linked sender count |
     @ Store requireTransaction.
     actor := @ Agent::Run actingContext.
     run := actor objectAt: 'run'.
@@ -270,13 +260,10 @@ Assignment subclass: Object
         (a notEmpty) ifTrue: [
           a := @ Store read: a class: 'Assignment'.
           data := @ a asJson.
-          same := @ String equals: id to: (data objectAt: 'delivery').
+          linked := data objectAt: 'delivery'.
           state := data objectAt: 'state'.
-          (state = 'open') ifFalse: [same := 'false'].
-          (same = 'true') ifTrue: [
-            same := @ String equals: a to: selected.
-            (selected isEmpty) ifTrue: [same := 'true'].
-            (same = 'true') ifTrue: [candidates := candidates arrayPush: a]
+          ((linked = id) and: [state = 'open']) ifTrue: [
+            ((selected isEmpty) or: [a = selected]) ifTrue: [candidates := candidates arrayPush: a]
           ]
         ]
       ]

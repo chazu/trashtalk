@@ -7,14 +7,14 @@ TestTestCase subclass: TestCase
   # ==========================================
 
   method: testAssertEquals [
-    @ self assert_equals: 'hello' to: 'hello'.
-    @ self assert_equals: '42' to: '42'.
-    @ self assert_equals: '' to: ''
+    @ self assert: 'hello' equals: 'hello'.
+    @ self assert: '42' equals: '42'.
+    @ self assert: '' equals: ''
   ]
 
   method: testAssertNotEquals [
-    @ self assert_not_equals: 'hello' to: 'world'.
-    @ self assert_not_equals: '1' to: '2'
+    @ self assert: 'hello' notEquals: 'world'.
+    @ self assert: '1' notEquals: '2'
   ]
 
   # ==========================================
@@ -22,14 +22,14 @@ TestTestCase subclass: TestCase
   # ==========================================
 
   method: testAssertTrue [
-    @ self assert_true: 'true'.
-    @ self assert_true: '1'
+    @ self assertTrue: 'true'.
+    @ self assertTrue: '1'
   ]
 
   method: testAssertFalse [
-    @ self assert_false: 'false'.
-    @ self assert_false: '0'.
-    @ self assert_false: ''
+    @ self assertFalse: 'false'.
+    @ self assertFalse: '0'.
+    @ self assertFalse: ''
   ]
 
   # ==========================================
@@ -37,13 +37,13 @@ TestTestCase subclass: TestCase
   # ==========================================
 
   method: testAssertNil [
-    @ self assert_nil: ''.
-    @ self assert_nil: 'null'
+    @ self assertNil: ''.
+    @ self assertNil: 'null'
   ]
 
   method: testAssertNotNil [
-    @ self assert_not_nil: 'something'.
-    @ self assert_not_nil: '0'
+    @ self assertNotNil: 'something'.
+    @ self assertNotNil: '0'
   ]
 
   # ==========================================

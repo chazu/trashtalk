@@ -11,17 +11,10 @@ package: Agent
 #   @ $r retryLimit
 Role subclass: Object
   include: Persistable
+  include: Agent::LegacyId
   instanceVars: name:'' revision:'' capabilities:'[]' workspacePolicy:'[]' recipientPolicy:'[]'
                 approvalPolicy:'{}' runBudget:'{"turns":0,"usd":0,"retryLimit":2}'
                 messageBudget:'{"count":0,"usd":0}' supersedes:'' created:''
-
-  # Stable authority IDs survive the namespace migration and existing validators.
-  classMethod: new [
-    | id |
-    id := @ Runtime generateId: 'AgentRole'.
-    @ Runtime create: 'Agent::Role' id: id.
-    ^ id
-  ]
 
   rawClassMethod: named: n revision: r [
     local en er
