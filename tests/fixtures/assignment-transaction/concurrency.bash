@@ -90,12 +90,15 @@ unset -f _store_tx_before_commit
 unpublished "$g" 'new question'
 _db_sql "UPDATE agent_questions SET answer_id='answered' WHERE message_id='message_new_question';"
 
-_db_sql "INSERT INTO instances(id,data) VALUES('agentrun_becomes_active',json_object('class','Agent::Run','session','$session','state','succeeded'));"
+# The run that last held this delivery becoming active again is detected.
+_db_sql "INSERT INTO instances(id,data) VALUES('agentrun_becomes_active',json_object('class','Agent::Run','session','$session','state','succeeded'));
+  UPDATE instances SET data=json_set(data,'$.run','agentrun_becomes_active') WHERE id='$gdelivery';"
 _store_tx_before_commit() { @ Store patch: agentrun_becomes_active with: '{"state":"running"}' >/dev/null; }
-reject 'previously inactive run becoming active invalidates query' complete "$g" done
+reject 'holding run becoming active invalidates the read' complete "$g" done
 unset -f _store_tx_before_commit
-unpublished "$g" 'new query member'
+unpublished "$g" 'holding run reactivated'
 db_delete agentrun_becomes_active
+_db_sql "UPDATE instances SET data=json_set(data,'$.run','') WHERE id='$gdelivery';"
 
 # A deterministic result key/outbox key must never overwrite a competing writer,
 # even though those records were not part of the transaction's original reads.
@@ -157,7 +160,7 @@ for history_size in 100 1000 10000; do
         metrics=$(cat "$tmp/metrics.json")
         check 'only three relevant objects copied for human completion' 3 "$(jq -r .copied_records <<< "$metrics")"
         check 'three objects and one absent result key guarded' 4 "$(jq -r .record_guards <<< "$metrics")"
-        check 'both negative queries guarded' 2 "$(jq -r .query_guards <<< "$metrics")"
+        check 'the question query is the only negative guard' 1 "$(jq -r .query_guards <<< "$metrics")"
         check 'unrelated query results are not copied' 0 "$(jq -r .query_result_rows <<< "$metrics")"
         check 'completion writes exactly three objects' 3 "$(jq -r .written_records <<< "$metrics")"
         check 'completion publishes one outbox row' 1 "$(jq -r .outbox_rows <<< "$metrics")"
@@ -171,6 +174,6 @@ for history_size in 100 1000 10000; do
         query=$(printf '%s' "$query" | base64 -d)
         _db_sql "EXPLAIN QUERY PLAN $query" >> "$tmp/plans"
     done
-    check 'run query uses the session/state index' true "$(rg -q 'USING INDEX agent_runs_session_state' "$tmp/plans" && echo true || echo false)"
+    check 'completion runs no session-wide run query' false "$(rg -q 'agent_runs_session_state|Agent::Run' "$tmp/queries.json" && echo true || echo false)"
     check 'question query uses the Assignment index' true "$(rg -q 'USING INDEX agent_messages_assignment' "$tmp/plans" && echo true || echo false)"
 done

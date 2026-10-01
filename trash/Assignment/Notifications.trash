@@ -14,7 +14,6 @@ Notifications trait
     execution := data jsonAt: 'execution'.
     state := data objectAt: 'state'.
     activity := data objectAt: 'activity'.
-    (activity = 'needs review') ifTrue: [@ self notifyRecoveryWithin: data].
     run := execution objectAt: 'run'.
     detail := execution objectAt: 'error'.
     events := data jsonAt: 'events'.
@@ -58,39 +57,5 @@ Notifications trait
       @ message save.
       @ Store afterCommit: 'Agent::Queue' sending: 'announce:' with: message
     ].
-    ^ message
-  ]
-
-  # Deterministic message identity and outbox commit make restart/replay inert.
-  method: notifyRecoveryWithin: snapshot [
-    | execution delivery run runState session id exists detail body message limit count |
-    @ Store requireTransaction.
-    execution := snapshot jsonAt: 'execution'.
-    delivery := snapshot objectAt: 'delivery'.
-    run := execution objectAt: 'run'.
-    runState := execution objectAt: 'runState'.
-    (run notEmpty) ifTrue: [
-      exists := @ Require contains: runState in: '["starting","running","recovering"]'.
-      (exists = 'true') ifTrue: [^ '']
-    ].
-    session := snapshot objectAt: 'requesterSession'.
-    (session isEmpty) ifTrue: [^ ''].
-    id := 'message_' , delivery , '_recovery_' , run.
-    exists := @ Store exists: id.
-    (exists = 'true') ifTrue: [^ id].
-    detail := execution objectAt: 'error'.
-    (detail isEmpty) ifTrue: [detail := 'The previous turn ended without completing the Assignment. The stop cause, including budget exhaustion, is unconfirmed.'].
-    limit := @ self continuationLimit.
-    count := @ self continuationCount.
-    body := 'Assignment ' , self , ' needs recovery. Delivery: ' , delivery , '. Run: ' , run , ' (' , runState , ').
-' , detail , '
-Continuations used: ' , count , ' of ' , limit , '. Inspect this Assignment and existing workspace changes. If safe and within the allowance, use the current run launcher:
-<launcher> ' , self , ' continue: resume-recorded-work afterDelivery: ' , delivery , ' key: recover-' , delivery , '
-This returns a queued delivery, not proof of a running agent. Do not recreate the Assignment, change its original request, or promise work after a rejected command. If recovery is unsafe or the allowance is exhausted, report the exact blocker. Settle this notification after handling it.'.
-    message := @ Message forAssignment: self id: id to: ('session:' , session)
-      sender: 'worker' subject: 'Assignment needs recovery' body: body kind: 'note'.
-    @ message assignmentState: 'needs review'.
-    @ message generation: (snapshot objectAt: 'generation').
-    @ Agent::Queue publishOutcome: message.
     ^ message
   ]

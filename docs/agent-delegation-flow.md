@@ -28,9 +28,10 @@ key returns the same Assignment, including after completion. Reusing it with a
 different objective, criteria, workspace or explicit target is rejected. Choose
 a new key for genuinely new work.
 
-This slice permits one open child per requesting conversation and one open
-assignment per specialist session. The caller needs a live authenticated run
-with `message.send`, the specialist must have `assignment.work`, and both
+A coordinator may have several open children, and a busy specialist queues
+more work: the worker starts one run per session and claims at most one
+Assignment delivery per run. The caller needs a live authenticated run with
+`message.send`, the specialist must have `assignment.work`, and both
 identities must belong to the same human. Assignment workers cannot delegate
 recursively. Ambiguous batches of originating requests are rejected.
 
@@ -62,12 +63,13 @@ Completion records the outcome, settles the selected work delivery and publishes
 the result to the original requesting session in one Store transaction. The
 committed outcome also obliges the worker to update the human's status item.
 Generic `Agent::Run result:`, `settle:` and
-`askUser:` cannot bypass this Assignment protocol. A process exiting zero with
-unsettled work leaves the Assignment open and visible as needing review.
+`askUser:` cannot bypass this Assignment protocol. A turn that ends without
+`complete:` or `ask:` leaves the Assignment open; the worker resumes it in the
+same conversation up to `assignment.attempts` turns, then it needs review.
 
-The human can use the existing explicit recovery, continuation and cancellation
-operations. Cancellation is separate from stopping an execution; reconcile its
-effects before cancelling or selecting a replacement session.
+After review, the owner or the requesting coordinator uses `retry` or
+`cancel:`. Cancel always closes: it stops a run still working the Assignment
+and skips its delivery in any state. See [Assignment continuation](assignment-recovery.md).
 
 ## Human visibility and recovery
 

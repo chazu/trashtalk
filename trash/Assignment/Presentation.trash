@@ -2,13 +2,14 @@ package: Assignment
 
 # Read projections derive activity from persisted work, execution and questions.
 Presentation trait
+  # Read-only, so a conflict with live progress or heartbeats replays it.
   method: snapshot [
     @ Agent::Queue ensureSchema.
-    ^ @ Store transaction: self sending: 'snapshotWithin:' with: ''
+    ^ @ Store transaction: self sending: 'snapshotWithin:' with: '' replaying: true
   ]
 
   method: snapshotWithin: unused [
-    | a data questions session d sData dData run rData state error execution activity count limit |
+    | a data questions session d sData dData run rData state error execution activity attempts limit |
     @ Store requireTransaction.
     a := @ Store read: self class: 'Assignment'.
     data := @ a asJson.
@@ -16,6 +17,7 @@ Presentation trait
     session := data objectAt: 'currentSession'.
     d := data objectAt: 'delivery'.
     execution := '{}'.
+    attempts := 0.
     (session notEmpty) ifTrue: [
       sData := @ Store getInstance: session.
       dData := @ Store getInstance: d.
@@ -25,17 +27,17 @@ Presentation trait
         (run notEmpty) ifTrue: [rData := @ Store getInstance: run].
         error := dData objectAt: 'lastError'.
         (error isEmpty) ifTrue: [error := rData objectAt: 'error'].
-        execution := #{sessionState: (sData objectAt: 'lifecycleState') deliveryState: (dData objectAt: 'state') run: run runState: (rData objectAt: 'state') error: error} asJson
+        execution := #{sessionState: (sData objectAt: 'lifecycleState') deliveryState: (dData objectAt: 'state') run: run runState: (rData objectAt: 'state') error: error} asJson.
+        attempts := dData objectAt: 'attempts'
       ] ]
     ].
     activity := @ self activityFrom: data execution: execution questions: questions.
     data := data objectAt: 'questions' putJson: questions.
     data := data objectAt: 'execution' putJson: execution.
     data := data objectAt: 'activity' put: activity.
-    count := @ self continuationCount.
-    limit := @ self continuationLimit.
-    data := data objectAt: 'continuationsUsed' putJson: count.
-    data := data objectAt: 'continuationLimit' putJson: limit.
+    limit := @ Assignment attemptLimit.
+    data := data objectAt: 'attempts' putJson: attempts.
+    data := data objectAt: 'attemptLimit' putJson: limit.
     ^ data
   ]
 
@@ -78,7 +80,7 @@ Presentation trait
     text := 'Assignment: ' , (data objectAt: 'objective'). @ Console print: text.
     text := 'State: ' , (data objectAt: 'state') , ' (' , (data objectAt: 'activity') , ')'. @ Console print: text.
     text := 'Criteria: ' , (data objectAt: 'completionCriteria'). @ Console print: text.
-    text := 'Continuations: ' , (data objectAt: 'continuationsUsed') , ' of ' , (data objectAt: 'continuationLimit'). @ Console print: text.
+    text := 'Attempts: ' , (data objectAt: 'attempts') , ' of ' , (data objectAt: 'attemptLimit'). @ Console print: text.
     text := 'Requester: ' , (data objectAt: 'requester') , '  Origin: ' , (data objectAt: 'originMessage'). @ Console print: text.
     text := 'Assignee: ' , (data objectAt: 'assignee'). @ Console print: text.
     text := 'Workspace: ' , (data objectAt: 'workspace'). @ Console print: text.

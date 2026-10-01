@@ -2,15 +2,18 @@ package: Assignment
 
 # Fresh responsibility and run authorization, shared by Assignment operations.
 Authority trait
+  # The owner, or any current conversation of the requesting identity. Authority
+  # follows the coordinator identity, so a closed conversation strands nothing.
   method: authorizeCoordinator: actor [
-    | run session mode requester |
+    | run session mode identity requester |
     run := actor objectAt: 'run'.
     (run isEmpty) ifTrue: [^ @ self authorize: actor operatorOnly: true].
     mode := @ self dispatchMode.
     @ Require equal: mode to: 'automatic'.
     session := @ Agent::Delegation coordinatorWithin: actor.
-    requester := @ self requesterSession.
-    @ Require equal: session to: requester.
+    identity := @ session identity.
+    requester := @ self requester.
+    (identity = requester) ifFalse: [^ @ Require reject: 'Only the owner or the requesting coordinator may manage this Assignment'].
     ^ 'session:' , session
   ]
 

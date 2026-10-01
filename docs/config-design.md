@@ -113,6 +113,7 @@ so `at:` forks nothing: no jq and no sqlite. The file is re-read on each
 | `codex.model` | `TRASHTALK_CODEX_MODEL` | string | `gpt-5.6-terra` | Model for Codex sessions |
 | `maki.model` | `TRASHTALK_MAKI_MODEL` | string | `openai/gpt-5.6-terra` | Model for Maki sessions |
 | `agent.controlWait` | `TRASHTALK_CONTROL_WAIT` | integer | `30` | Seconds to wait for a harness control reply |
+| `assignment.attempts` | `TRASHTALK_ASSIGNMENT_ATTEMPTS` | integer | `4` | Turns an Assignment gets before it needs review |
 | `decision.target` | `TRASHTALK_DECISION_TARGET` | one of `jev clm-local clm-bc250 clm-prefer-bc250` | `jev` | Where typed decisions run |
 | `jev.model` | `TRASHTALK_JEV_MODEL` | string | `typesafe/jev-1.13` | OpenRouter model for Jev decisions (new) |
 | `clm.baseUrl` | `CLM_BASE_URL` | string | `http://127.0.0.1:8700` | Local CLM endpoint |

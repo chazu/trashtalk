@@ -24,6 +24,8 @@ _trash_config_declare maki.model TRASHTALK_MAKI_MODEL string openai/gpt-5.6-terr
     'Model for Maki sessions (an openai/ model)'
 _trash_config_declare agent.controlWait TRASHTALK_CONTROL_WAIT integer 30 \
     'Seconds a stop or terminate waits behind a running agent tick'
+_trash_config_declare assignment.attempts TRASHTALK_ASSIGNMENT_ATTEMPTS integer 4 \
+    'Turns an Assignment gets before it needs review; unfinished turns resume automatically'
 _trash_config_declare decision.target TRASHTALK_DECISION_TARGET 'enum:jev clm-local clm-bc250 clm-prefer-bc250' jev \
     'Where typed decisions run'
 _trash_config_declare jev.model TRASHTALK_JEV_MODEL string typesafe/jev-1.13 'OpenRouter model for Jev decisions'

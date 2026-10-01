@@ -5,7 +5,7 @@ package: Agent
 # specialist. Assignment workers cannot delegate recursively, even with that cap.
 Delegation subclass: Object
   classMethod: recoveryInstructions [
-    ^ 'For an existing unfinished Assignment, inspect its snapshot and use <launcher> <assignment> continue: <reason> afterDelivery: <current-delivery> key: <stable-continuation-key>. Creation retries must keep the original objective and criteria exactly. Continuation returns a queued delivery; verify activity before saying running. Recovery notifications are actionable: inspect evidence, continue safe unfinished work within the allowance, or report the exact blocker. Never reset budgets, create replacement Assignments to evade a limit, or promise background work after a rejected command. Only the human owner can raise the total continuation allowance.'
+    ^ 'Unfinished specialist turns resume automatically. Inspect an Assignment with <launcher> <assignment> show. When it needs review (attempts used up, stopped, or failed), inspect the evidence, then either <launcher> <assignment> retry or <launcher> <assignment> cancel: <reason>. Cancel also stops a run still working it. Creation retries must keep the original objective and criteria exactly; a different request needs a new key. Never create a replacement Assignment to get around the turn limit, and never promise background work after a rejected command.'
   ]
 
   classMethod: create: objective session: target criteria: criteria key: key [
@@ -52,7 +52,7 @@ Delegation subclass: Object
   ]
 
   classMethod: createWithin: args [
-    | actor requester run owner workspace objective criteria key target ids assignment count session identity role allowed active origin deliveries messages data now sessionArgs requesterIdentity caps |
+    | actor requester run owner workspace objective criteria key target ids assignment count session identity role allowed origin deliveries messages data now sessionArgs requesterIdentity caps |
     @ Store requireTransaction.
     actor := @ Agent::Run actingContext.
     requester := @ self coordinatorWithin: actor.
@@ -74,14 +74,12 @@ Delegation subclass: Object
       @ Require equal: count to: 1.
       assignment := @ Store read: (ids arrayFirst) class: 'Assignment'.
       data := @ assignment asJson.
-      ((data objectAt: 'objective') ~= objective) ifTrue: [^ @ Require reject: 'Delegation key already describes different objective; inspect the existing Assignment and use continue:afterDelivery:key: for unfinished work'].
-      ((data objectAt: 'completionCriteria') ~= criteria) ifTrue: [^ @ Require reject: 'Delegation key already describes different completionCriteria; inspect the existing Assignment and use continue:afterDelivery:key: for unfinished work'].
-      ((data objectAt: 'workspace') ~= workspace) ifTrue: [^ @ Require reject: 'Delegation key already describes different workspace; inspect the existing Assignment and use continue:afterDelivery:key: for unfinished work'].
-      ((data objectAt: 'delegationTarget') ~= target) ifTrue: [^ @ Require reject: 'Delegation key already describes different delegationTarget; inspect the existing Assignment and use continue:afterDelivery:key: for unfinished work'].
+      ((data objectAt: 'objective') ~= objective) ifTrue: [^ @ Require reject: 'Delegation key already describes different objective; inspect the existing Assignment or use a new key for a different request'].
+      ((data objectAt: 'completionCriteria') ~= criteria) ifTrue: [^ @ Require reject: 'Delegation key already describes different completionCriteria; inspect the existing Assignment or use a new key for a different request'].
+      ((data objectAt: 'workspace') ~= workspace) ifTrue: [^ @ Require reject: 'Delegation key already describes different workspace; inspect the existing Assignment or use a new key for a different request'].
+      ((data objectAt: 'delegationTarget') ~= target) ifTrue: [^ @ Require reject: 'Delegation key already describes different delegationTarget; inspect the existing Assignment or use a new key for a different request'].
       ^ assignment
     ].
-    active := @ Store idsOf: 'Assignment' matching: (#{requesterSession: requester state: 'open' dispatchMode: 'automatic'} asJson).
-    (active ~= '[]') ifTrue: [^ @ Require reject: 'An open Assignment already exists: ' , (active arrayFirst) , '. Inspect it and use continue:afterDelivery:key: to recover unfinished work'].
     session := target.
     (session isEmpty) ifTrue: [
       identity := @ Agent::Identity namedWithin: 'specialist'.
@@ -112,8 +110,7 @@ Delegation subclass: Object
     role := @ Store read: role class: 'Agent::Role'.
     caps := @ role capabilities.
     @ Require member: 'assignment.work' of: caps.
-    active := @ Store idsOf: 'Assignment' matching: (#{currentSession: session state: 'open'} asJson).
-    (active ~= '[]') ifTrue: [^ @ Require reject: 'Specialist session already has an open Assignment: ' , (active arrayFirst) , '. Inspect that Assignment before delegating more work'].
+    # A busy specialist queues more work; the worker runs one Assignment at a time.
     origin := ''.
     deliveries := @ Store idsOf: 'Agent::Delivery' matching: (#{run: run state: #('offered' 'blocked')} asJson).
     count := deliveries arrayLength.

@@ -281,10 +281,21 @@ must @ "$session" close >/dev/null
 third=$(must @ Agent::Session openFor: "$identity" archetype: "$arch" role: "$role" workspace: "$root" profile: shell)
 second="$third"
 reject 'uncertainty blocks replacement' @ "$uncertain" workIn: "$third"
-reject 'uncertainty blocks inferred completion' @ "$uncertain" complete: done
 must @ "$session" skip: "$ud" note: 'Reviewed effects; safe to continue manually.' >/dev/null
 must @ "$uncertain" workIn: "$third" >/dev/null
 check 'reviewed work can continue in another session' "$third" "$(field "$uncertain" .currentSession)"
+# The owner may also accept uncertain effects as the outcome after review.
+reviewed=$(must @ Assignment draft: 'Accept an interrupted effect' in: "$root")
+must @ "$reviewed" assignTo: "$identity" >/dev/null
+must @ "$reviewed" workIn: "$third" >/dev/null
+rd=$(field "$reviewed" .delivery)
+start_run "$third"
+check 'operator fixture claims reviewed work' true "$(@ Agent::Delivery claim: "$rd" run: "$run")"
+must @ "$rd" transitionTo: uncertain >/dev/null
+must @ "$run" finishWith: unsettled outcome: '{}' error: 'Needs review' >/dev/null
+must @ "$reviewed" complete: 'Effects inspected; they meet the criteria.' >/dev/null
+check 'owner completes uncertain work after review' completed "$(field "$reviewed" .state)"
+check 'owner completion settles the uncertain delivery' processed "$(field "$rd" .state)"
 
 # The final routing obligation is part of completion, including agent requesters.
 rr=$(must @ Assignment draft: 'Atomic requester notification' in: "$root")

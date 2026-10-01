@@ -35,7 +35,8 @@ Reporting trait
       d := @ Store read: (data objectAt: 'delivery') class: 'Agent::Delivery'.
       state := @ d state.
       allowed := @ Require contains: state in: '["pending","offered","blocked"]'.
-      (allowed = 'true') ifTrue: [@ d state: 'blocked'. @ d save].
+      # A question hands the turn to a person; the answer starts fresh turns.
+      (allowed = 'true') ifTrue: [@ d state: 'blocked'. @ d attempts: 0. @ d save].
       @ Agent::Queue publishManual: message.
       @ Agent::Queue linkQuestion: message session: session run: run delivery: d
     ].

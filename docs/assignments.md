@@ -111,9 +111,11 @@ an error; with multiple assignments, supply the handle explicitly or set
   token fails even in a human shell. Superseded runs cannot complete the work.
 - Repeating `complete:` with the same outcome is harmless. A different outcome
   after completion fails. Use another assignment for follow-up work.
-- `cancel:` records a cancellation reason and skips the selected delivery. It
-  is operator-only and requires live execution and uncertain effects to be
-  resolved first; it does not stop unrelated work.
+- `cancel:` records a cancellation reason and skips the selected delivery in
+  any state. The owner, or the requesting coordinator of delegated work, may
+  cancel. If a run is still working this Assignment, cancel stops it first; it
+  does not stop unrelated work. The owner may also `complete:` work whose
+  delivery is failed or uncertain after inspecting its effects.
 - Objective criteria, origin, and optional issue reference are configured before
   initial publication. Questions, evidence in progress entries, and the outcome
   remain on the assignment. No ticket status is mirrored or changed.

@@ -135,17 +135,24 @@ check 'conflicting writer keeps its progress' 'Concurrent evidence' "$(field "$c
 must complete "$c" done >/dev/null
 check 'explicit retry preserves progress and completion' 2 "$(field "$c" '.events | length')"
 
-# New rows invalidate negative queries: no previously read row needs to change.
-d=$(must new_work 'Reject a new active run')
+# Only the run holding this Assignment's delivery fences completion. A claim
+# that lands after staging changes the read delivery row and rejects commit.
+d=$(must new_work 'Reject a concurrent claim')
+dd=$(field "$d" .delivery)
+_db_sql "INSERT INTO instances(id,data) VALUES('agentrun_live',json_object('class','Agent::Run','session','$session','state','running'));"
 _store_tx_before_commit() {
-    _db_sql "INSERT INTO instances(id,data) VALUES('agentrun_phantom',json_object('class','Agent::Run','session','$session','state','running'));"
+    _db_sql "UPDATE instances SET data=json_set(data,'$.run','agentrun_live','$.state','blocked') WHERE id='$dd';"
 }
-reject 'new active run after staging rejects commit' complete "$d" done
+reject 'concurrent claim after staging rejects commit' complete "$d" done
 unset -f _store_tx_before_commit
-unpublished "$d" 'query conflict'
-check 'concurrent inserted run survives rejection' running "$(field agentrun_phantom .state)"
-reject 'fresh attempt sees active run and rejects in DSL' complete "$d" done
-db_delete agentrun_phantom
+check 'the rejection is a commit conflict' true "$(rg -q 'conflict' "$tmp/rejected.err" && echo true || echo false)"
+check 'claim conflict: Assignment open' open "$(field "$d" .state)"
+check 'claim conflict: no outcome Message' 0 "$(_db_sql "SELECT count(*) FROM instances WHERE id='message_${d}_outcome';")"
+check 'concurrent claim survives rejection' agentrun_live "$(field "$dd" .run)"
+reject 'fresh attempt sees the live run and rejects in DSL' complete "$d" done
+check 'rejection names the run to stop' true "$(rg -q 'Stop the Assignment run agentrun_live' "$tmp/rejected.err" "$tmp/rejected.out" && echo true || echo false)"
+# The live run releases this delivery; it no longer fences, though it stays active.
+_db_sql "UPDATE instances SET data=json_set(data,'$.run','','$.state','pending') WHERE id='$dd';"
 
 q=$(must @ "$d" ask: 'Which branch?')
 reject 'unanswered question blocks completion in DSL' complete "$d" done
@@ -156,6 +163,8 @@ unset -f _store_tx_before_commit
 check 'question remains unanswered after conflict' '' "$(@ "$q" answerId)"
 must @ "$q" reply: main >/dev/null
 must complete "$d" done >/dev/null
+check 'a live run not holding the delivery does not fence completion' completed "$(field "$d" .state)"
+db_delete agentrun_live
 
 # Both independent Bash processes must stage before either may commit.
 e=$(must new_work 'Race the same result')

@@ -7,124 +7,173 @@ root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 source "$root/lib/trash.bash"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-export SQLITE_JSON_DB="$tmp/state.db" TRASHTALK_USER=recovery-owner TRASHTALK_NO_AUTOTICK=1 TRASHTALK_GUSGUS_PROFILE=shell
-unset TRASHTALK_RUN_TOKEN TRASHTALK_ASSIGNMENT_ID
+export SQLITE_JSON_DB="$tmp/state.db" TRASHTALK_RUN_DIR="$tmp/runs"
+export TRASHTALK_USER=recovery-owner TRASHTALK_NO_AUTOTICK=1 TRASHTALK_GUSGUS_PROFILE=shell
+unset TRASHTALK_RUN_TOKEN TRASHTALK_ASSIGNMENT_ID TRASHTALK_ASSIGNMENT_ATTEMPTS
 db_init
 passed=0
 check() { if [[ "$2" == "$3" ]]; then echo "PASS: $1"; passed=$((passed+1)); else printf 'FAIL: %s expected=%s got=%s\n' "$1" "$2" "$3"; exit 1; fi; }
 must() { "$@" || { printf 'FAIL: command failed: %s\n' "$*" >&2; exit 1; }; }
 reject() { local name="$1"; shift; if "$@" >"$tmp/rejected" 2>&1; then echo "FAIL: accepted $name"; exit 1; else echo "PASS: $name"; passed=$((passed+1)); fi; }
 field() { db_get "$1" | jq -r "$2"; }
+settle() {
+    local i
+    for ((i=0;i<200;i++)); do
+        must @ Agent::Worker tickSession: "$1" >/dev/null
+        [[ -z "$(@ "$1" activeRun)" ]] && return 0
+        sleep .1
+    done
+    echo 'FAIL: session did not settle' >&2
+    exit 1
+}
+
+# The specialist fixture: silent ends the turn without completing, complete
+# finishes the Assignment, question asks and waits. Each prompt is kept.
+export RECOVERY_MODE=silent RECOVERY_PROMPTS="$tmp/prompts"
+mkdir -p "$RECOVERY_PROMPTS"
+cat > "$tmp/agent.bash" <<'SH'
+set -euo pipefail
+prompt="$RECOVERY_PROMPTS/${TRASHTALK_RUN_TOKEN%%:*}"
+cat > "$prompt"
+source "$TRASHTALK_DIR/lib/trash.bash"
+a=$(@ Trash currentAssignment)
+case "$RECOVERY_MODE" in
+    silent) exit 0 ;;
+    complete) @ "$a" complete: 'Finished after resuming' >/dev/null ;;
+    question) @ "$a" ask: 'Which variant?' >/dev/null ;;
+esac
+# Ordinary deliveries batched with the Assignment, such as an answer, are settled.
+for delivery in $(sed -n 's/^--- delivery //p' "$prompt"); do
+    [[ -n "$(@ "$delivery" assignment)" ]] || @ Agent::Run settle: "$delivery" >/dev/null
+done
+SH
+export TRASHTALK_SHELL_DRIVER="bash '$tmp/agent.bash'"
+prompt_of() { cat "$RECOVERY_PROMPTS/$1"; }
+
 coordinator=$(must @ Gusgus sessionFor: "$root")
 mapfile -t pair < <(@ Agent::Run startFor: "$coordinator" profile: shell)
 parent=${pair[0]}; token=${pair[1]}
 must @ "$parent" transitionTo: running >/dev/null
 export TRASHTALK_RUN_TOKEN="$token"
-a=$(must @ Agent::Run delegate: 'Recover bounded work' criteria: evidence key: bounded)
+a=$(must @ Agent::Run delegate: 'Long work' criteria: evidence key: long)
+unset TRASHTALK_RUN_TOKEN
 child=$(field "$a" .currentSession)
 d=$(field "$a" .delivery)
-# Exercise the actual domain claim/finish seam without spawning a model. The
-# worker subprocess journey is covered in test_agent_delegation.bash.
-stall() {
-    unset TRASHTALK_RUN_TOKEN
-    mapfile -t worker_pair < <(@ Agent::Run startFor: "$child" profile: shell)
-    worker=${worker_pair[0]}; worker_token=${worker_pair[1]}
-    must @ "$worker" transitionTo: running >/dev/null
-    check 'worker claims current generation' true "$(@ Agent::Delivery claim: "$d" run: "$worker")"
-    must @ "$d" transitionTo: uncertain >/dev/null
-    must @ "$worker" finishWith: unsettled outcome: '{"stop_reason":"unfinished"}' error: '' >/dev/null
-    export TRASHTALK_RUN_TOKEN="$token"
-}
-stall
-# Legacy objects missing the added allowance receive the documented default.
-_db_sql "UPDATE instances SET data=json_remove(data,'$.continuationAllowance') WHERE id='$a';"
-reject 'agent cannot raise its own allowance' @ "$a" allowContinuations: 5 reason: more
-export TRASHTALK_RUN_TOKEN=invalid
-reject 'invalid token cannot become operator authority' @ "$a" continue: again afterDelivery: "$d" key: invalid
-export TRASHTALK_RUN_TOKEN="$worker_token"
-reject 'expired worker cannot recover its assignment' @ "$a" continue: again afterDelivery: "$d" key: worker
-unset TRASHTALK_RUN_TOKEN
-export TRASHTALK_USER=other-owner
-reject 'foreign human cannot continue assignment' @ "$a" continue: again afterDelivery: "$d" key: foreign
+
+# Unfinished turns resume the same delivery automatically, up to the limit.
+settle "$child"
+check 'default limit is four turns' 4 "$(@ Assignment attemptLimit)"
+check 'every turn ran on the same delivery' 4 "$(field "$a" '.history[-1].runs | length')"
+check 'attempts are counted on the delivery' 4 "$(field "$d" .attempts)"
+check 'no new generation is published' 1 "$(field "$a" .generation)"
+check 'exhausted work becomes uncertain' uncertain "$(field "$d" .state)"
+check 'exhausted work needs review' 'needs review' "$(@ "$a" snapshot | jq -r .activity)"
+check 'status item alerts the owner' alert "$(field "$(field "$a" .statusMessage)" .kind)"
+check 'owner receives one stall alert' 1 "$(_db_sql "SELECT count(*) FROM instances WHERE class='Message' AND json_extract(data,'$.to')='recovery-owner' AND json_extract(data,'$.from')='worker';")"
+check 'coordinator receives no recovery notification' 0 "$(@ "$coordinator" pendingCount)"
+check 'show reports attempts' true "$(@ "$a" show | rg -q 'Attempts: 4 of 4' && echo true || echo false)"
+runs=$(field "$a" '.history[-1].runs[]')
+first=$(head -1 <<<"$runs"); second=$(sed -n 2p <<<"$runs")
+check 'first turn is not told it resumed' false "$(prompt_of "$first" | rg -q 'This is turn' && echo true || echo false)"
+check 'later turns are told to inspect earlier work' true "$(prompt_of "$second" | rg -q 'This is turn 2' && echo true || echo false)"
+check 'prompt names the turn limit and ask: as the way to stop' true "$(prompt_of "$first" | rg -q 'at most 4 turns' && echo true || echo false)"
+check 'no continuation protocol is taught' false "$(prompt_of "$first" | rg -q 'afterDelivery' && echo true || echo false)"
+
+# retry is the one recovery verb; it is guarded by authority, live runs and questions.
+export TRASHTALK_USER=foreign-owner
+reject 'foreign human cannot retry' @ "$a" retry
 export TRASHTALK_USER=recovery-owner
-reject 'human cannot bypass allowance through session requeue' @ "$child" requeue: "$d"
-export TRASHTALK_RUN_TOKEN="$token"
-# A resident run in recovering must fence continuation even if delivery is uncertain.
-_db_sql "UPDATE instances SET data=json_set(data,'$.state','recovering') WHERE id='$worker';"
-reject 'recovering resident run prevents overlap' @ "$a" continue: again afterDelivery: "$d" key: active
-_db_sql "UPDATE instances SET data=json_set(data,'$.state','unsettled') WHERE id='$worker';"
-role=$(field "$child" .role)
-@ Store patch: "$role" with: '{"capabilities":[]}' >/dev/null
-reject 'revoked specialist role blocks continuation' @ "$a" continue: again afterDelivery: "$d" key: revoked
-@ Store patch: "$role" with: '{"capabilities":["inbox.read","message.send","question.ask","assignment.work"]}' >/dev/null
-# Publication failure must roll back supersession, count, generation and receipt.
-_db_sql "CREATE TRIGGER reject_recovery BEFORE INSERT ON agent_outbox WHEN NEW.message_id='message_${a}_work_2' BEGIN SELECT RAISE(ABORT,'fixture recovery rollback'); END;"
-reject 'outbox failure rolls back entire continuation' @ "$a" continue: again afterDelivery: "$d" key: first
-check 'rollback reached the injected publication failure' true "$(rg -q 'fixture recovery rollback' "$tmp/rejected" && echo true || echo false)"
-check 'rollback retains uncertain delivery' uncertain "$(field "$d" .state)"
-check 'rollback retains generation' 1 "$(field "$a" .generation)"
-check 'rollback consumes no allowance' 0 "$(@ "$a" continuationCount)"
-_db_sql 'DROP TRIGGER reject_recovery;'
-# Two processes stage the same receipt before either commits. Store replay may
-# acknowledge the winner, but must never publish a second attempt.
-_store_tx_before_commit() {
-    touch "$tmp/ready-$BASHPID"
-    local i
-    for ((i=0;i<2000;i++)); do [[ ! -f "$tmp/release" ]] || return 0; sleep .01; done
-    return 1
-}
-(@ "$a" continue: again afterDelivery: "$d" key: first >"$tmp/one" 2>"$tmp/one.err") & p1=$!
-(@ "$a" continue: again afterDelivery: "$d" key: first >"$tmp/two" 2>"$tmp/two.err") & p2=$!
-for ((i=0;i<2000;i++)); do ready=("$tmp"/ready-*); ((${#ready[@]} == 2)) && break; sleep .01; done
-touch "$tmp/release"
-must wait "$p1"; must wait "$p2"
-unset -f _store_tx_before_commit
-check 'both continuations staged before committing' 2 "${#ready[@]}"
-next=$(cat "$tmp/one")
-check 'concurrent duplicate returns the same delivery' "$next" "$(cat "$tmp/two")"
-check 'concurrent duplicate consumes one continuation' 1 "$(@ "$a" continuationCount)"
-check 'one generation published' 2 "$(field "$a" .generation)"
-reject 'same key cannot hide a changed reason' @ "$a" continue: changed afterDelivery: "$d" key: first
-reject 'different key cannot recover stale delivery' @ "$a" continue: again afterDelivery: "$d" key: stale
-check 'old attempt stays recorded' 1 "$(field "$d" .attempts)"
-d=$next
-stall
-d=$(must @ "$a" continue: again afterDelivery: "$d" key: second)
-stall
-d=$(must @ "$a" continue: again afterDelivery: "$d" key: third)
-stall
-reject 'fourth continuation hits the total allowance' @ "$a" continue: again afterDelivery: "$d" key: fourth
-check 'exhaustion retains current delivery' uncertain "$(field "$d" .state)"
-check 'count is not reset across generations' 3 "$(@ "$a" continuationCount)"
+other=$(must @ Agent::Identity named: other-coordinator)
+@ "$other" owner: recovery-owner
+@ "$other" save
+other_session=$(must @ Agent::Session openFor: "$other" archetype: "$(@ "$coordinator" archetype)" role: "$(@ "$coordinator" role)" workspace: "$root" profile: shell)
+mapfile -t other_pair < <(@ Agent::Run startFor: "$other_session" profile: shell)
+must @ "${other_pair[0]}" transitionTo: running >/dev/null
+export TRASHTALK_RUN_TOKEN="${other_pair[1]}"
+reject 'another coordinator identity cannot retry' @ "$a" retry
 unset TRASHTALK_RUN_TOKEN
-reject 'allowance must be numeric' @ "$a" allowContinuations: garbage reason: more
-reject 'allowance cannot be lowered' @ "$a" allowContinuations: 2 reason: more
-must @ "$a" allowContinuations: 4 reason: 'Approve one additional continuation' >/dev/null
-export TRASHTALK_RUN_TOKEN="$token"
-next=$(must @ "$a" continue: again afterDelivery: "$d" key: fourth)
-check 'owner grant permits exactly the additional continuation' 4 "$(@ "$a" continuationCount)"
-check 'fresh context selected without deleting conversation history' true "$(field "$next" .freshConversation)"
-# A new active run appearing after staging must invalidate the negative query.
-d=$next
-stall
+last=$(field "$d" .run)
+_db_sql "UPDATE instances SET data=json_set(data,'$.state','recovering') WHERE id='$last';"
+reject 'a live run fences retry' @ "$a" retry
+check 'live run is the stated reason' true "$(rg -q 'Stop the Assignment run' "$tmp/rejected" && echo true || echo false)"
+_db_sql "UPDATE instances SET data=json_set(data,'$.state','unsettled') WHERE id='$last';"
+q=$(must @ "$a" ask: 'Is the remaining work still wanted?')
+reject 'an unanswered question fences retry' @ "$a" retry
+check 'question is the stated reason' true "$(rg -q 'Answer the Assignment question' "$tmp/rejected" && echo true || echo false)"
+must @ "$q" reply: 'Yes' >/dev/null
+reject 'session requeue cannot bypass the Assignment' @ "$child" requeue: "$d"
+check 'owner retry requeues the same delivery' "$d" "$(@ "$a" retry)"
+check 'retry restores a fresh set of turns' 0 "$(field "$d" .attempts)"
+check 'retry is journaled' retried "$(field "$a" '.events[-1].kind')"
+reject 'pending work cannot be retried twice' @ "$a" retry
+export RECOVERY_MODE=complete
+settle "$child"
+check 'retried work completes' completed "$(field "$a" .state)"
+check 'completion settles the same delivery' processed "$(field "$d" .state)"
+check 'the answer rode along with its Assignment' 0 "$(@ "$child" stalledCount)"
+
+# A requesting coordinator may retry too, and a question stops automatic turns.
+export TRASHTALK_ASSIGNMENT_ATTEMPTS=1 RECOVERY_MODE=silent TRASHTALK_RUN_TOKEN="$token"
+b=$(must @ Agent::Run delegate: 'Short budget' criteria: evidence key: short)
 unset TRASHTALK_RUN_TOKEN
-must @ "$a" allowContinuations: 5 reason: 'Test concurrent run fence' >/dev/null
-export TRASHTALK_RUN_TOKEN="$token"
-_store_tx_before_commit() {
-    _db_sql "INSERT INTO instances(id,data) VALUES('agentrun_race',json_object('class','Agent::Run','session','$child','state','running'));"
-}
-reject 'concurrent run start fences staged continuation' @ "$a" continue: again afterDelivery: "$d" key: race
-unset -f _store_tx_before_commit
-check 'race consumes no continuation' 4 "$(@ "$a" continuationCount)"
-check 'race leaves current attempt intact' uncertain "$(field "$d" .state)"
-db_delete agentrun_race
-# Unanswered questions cannot be bypassed through continuation.
+settle "$child"
+bd=$(field "$b" .delivery)
+check 'configured limit stops after one turn' 1 "$(field "$bd" .attempts)"
+check 'short budget needs review' uncertain "$(field "$bd" .state)"
+export RECOVERY_MODE=question TRASHTALK_ASSIGNMENT_ATTEMPTS=3 TRASHTALK_RUN_TOKEN="$token"
+check 'coordinator retry requeues its delegated work' "$bd" "$(@ "$b" retry)"
 unset TRASHTALK_RUN_TOKEN
-q=$(must @ "$a" ask: 'Which remaining implementation?')
-export TRASHTALK_RUN_TOKEN="$token"
-reject 'unanswered question prevents continuation' @ "$a" continue: again afterDelivery: "$d" key: question
+settle "$child"
+check 'a question blocks instead of resuming' blocked "$(field "$bd" .state)"
+check 'the question ends automatic turns and resets the count' 0 "$(field "$bd" .attempts)"
+check 'blocked work is waiting on the question' 'waiting on question' "$(@ "$b" snapshot | jq -r .activity)"
+# The answer is consumed with its Assignment and restarts the turn count.
+export RECOVERY_MODE=silent
+bq=$(@ "$b" snapshot | jq -r '.questions[-1].message')
+must @ "$bq" reply: 'The small variant' >/dev/null
+settle "$child"
+check 'answered work gets a fresh set of turns' 5 "$(field "$b" '.history[-1].runs | length')"
+check 'answered work needs review after those turns' uncertain "$(field "$bd" .state)"
+answer=$(@ "$bq" answerId)
+answer_delivery=$(_db_sql "SELECT d.id FROM instances d, json_each(json_extract(d.data,'$.messageIds')) j WHERE d.class='Agent::Delivery' AND j.value='$answer';")
+check 'the answer delivery settles with its Assignment' processed "$(field "$answer_delivery" .state)"
+check 'the answer does not stall the session' 0 "$(@ "$child" stalledOrdinaryCount)"
+check 'the failure reason survives in the resume note' true "$(field "$bd" .lastError | rg -q 'Turn' && echo true || echo false)"
+
+# A stalled Assignment does not hold back other work in the same session.
+export TRASHTALK_ASSIGNMENT_ATTEMPTS=1 RECOVERY_MODE=silent TRASHTALK_RUN_TOKEN="$token"
+c=$(must @ Agent::Run delegate: 'Stalls' criteria: evidence key: stalls)
 unset TRASHTALK_RUN_TOKEN
-must @ "$q" reply: 'The original criteria' >/dev/null
+must @ "$b" cancel: 'Superseded' >/dev/null
+settle "$child"
+check 'stalled Assignment needs review' uncertain "$(field "$(field "$c" .delivery)" .state)"
+export RECOVERY_MODE=complete TRASHTALK_RUN_TOKEN="$token"
+e=$(must @ Agent::Run delegate: 'Queued behind a stall' criteria: evidence key: behind)
+unset TRASHTALK_RUN_TOKEN
+settle "$child"
+check 'queued work runs past a stalled Assignment' completed "$(field "$e" .state)"
+
+# An explicit stop is a human decision: no automatic resume.
+export TRASHTALK_ASSIGNMENT_ATTEMPTS=4 TRASHTALK_RUN_TOKEN="$token"
+f=$(must @ Agent::Run delegate: 'Stopped by hand' criteria: evidence key: stopped)
+unset TRASHTALK_RUN_TOKEN
+fd=$(field "$f" .delivery)
+mapfile -t wpair < <(@ Agent::Run startFor: "$child" profile: shell)
+must @ "${wpair[0]}" transitionTo: running >/dev/null
+check 'fixture claims the stopped work' true "$(@ Agent::Delivery claim: "$fd" run: "${wpair[0]}")"
+check 'stop interrupts the run' interrupted "$(@ "${wpair[0]}" stop)"
+check 'stop pauses the specialist session' paused "$(field "$child" .lifecycleState)"
+settle "$child"
+check 'stopped work is not resumed automatically' uncertain "$(field "$fd" .state)"
+check 'stopped work keeps one attempt' 1 "$(field "$fd" .attempts)"
+check 'retry after a stop requeues the work' "$fd" "$(@ "$f" retry)"
+check 'retry reopens the session the stop paused' open "$(field "$child" .lifecycleState)"
+must @ "$f" cancel: 'Done with this fixture' >/dev/null
+must @ "$child" pause >/dev/null
+reject 'retry refuses a session a person paused' @ "$c" retry
+check 'the refusal says how to proceed' true "$(rg -q 'resume it, or cancel' "$tmp/rejected" && echo true || echo false)"
+must @ "$child" resume >/dev/null
+
 # Ordinary requeue still works for the owner and retains its attempt counter.
 ordinary=$(must @ Agent::Delivery new)
 @ "$ordinary" session: "$child"
@@ -136,19 +185,4 @@ reject 'foreign owner cannot requeue ordinary delivery' @ "$child" requeue: "$or
 export TRASHTALK_USER=recovery-owner
 check 'owner can requeue ordinary delivery' pending "$(@ "$child" requeue: "$ordinary")"
 check 'ordinary retry preserves attempts' 7 "$(field "$ordinary" .attempts)"
-# A different live coordinator of the same owner has no authority over this work.
-other=$(must @ Agent::Identity named: other-coordinator)
-@ "$other" owner: recovery-owner
-@ "$other" save
-other_session=$(must @ Agent::Session openFor: "$other" archetype: "$(@ "$coordinator" archetype)" role: "$(@ "$coordinator" role)" workspace: "$root" profile: shell)
-mapfile -t other_pair < <(@ Agent::Run startFor: "$other_session" profile: shell)
-must @ "${other_pair[0]}" transitionTo: running >/dev/null
-export TRASHTALK_RUN_TOKEN="${other_pair[1]}"
-reject 'foreign live coordinator cannot continue assignment' @ "$a" continue: again afterDelivery: "$d" key: foreign-coordinator
-unset TRASHTALK_RUN_TOKEN
-# Coordinator authority also requires current membership, not just an old token.
-export TRASHTALK_RUN_TOKEN="$token"
-must @ "$coordinator" pause >/dev/null
-reject 'paused coordinator cannot recover old assignments' @ "$a" continue: again afterDelivery: "$d" key: closed
-unset TRASHTALK_RUN_TOKEN
 echo "=== $passed assignment recovery checks passed ==="

@@ -188,6 +188,16 @@ Queue subclass: Object
        WHERE m.class='Message' AND json_extract(m.data,'\$.assignment')='$(_db_escape "$1")' ORDER BY q.message_id)"
   ]
 
+  # The Assignment whose questions every message of this delivery answers, or
+  # empty. Such a delivery carries an answer, not independent work.
+  rawClassMethod: answeredAssignmentFor: delivery [
+    @ Agent::Queue ensureSchema || return 1
+    _db_sql "SELECT CASE WHEN count(*)>0 AND count(a)=count(*) AND count(DISTINCT a)=1 THEN max(a) ELSE '' END FROM (
+      SELECT (SELECT json_extract(q.data,'$.assignment') FROM agent_questions aq JOIN instances q ON q.id=aq.message_id
+        WHERE aq.answer_id=j.value AND coalesce(json_extract(q.data,'$.assignment'),'')!='') AS a
+      FROM instances d, json_each(coalesce(json_extract(d.data,'$.messageIds'),'[]')) j WHERE d.id='$(_db_escape "$1")');"
+  ]
+
   classMethod: unansweredForAssignment: assignment [
     | questions unanswered answer |
     questions := @ self questionsForAssignment: assignment.

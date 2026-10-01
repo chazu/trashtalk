@@ -409,8 +409,8 @@ Session subclass: Object
     ^ self , ' ' , handle , ' ' , lifecycleState , ' ws=' , workspace , ' pending=' , count , ' run=' , run
   ]
 
-  # Ordinary delivery retries are owner-only. Assignment recovery preserves
-  # attempt history and allowance through its own continuation transaction.
+  # Ordinary delivery retries are owner-only. Assignment work is retried
+  # through the Assignment, which journals the decision.
   method: requeue: deliveryId [
     @ Agent::Queue ensureSchema.
     ^ @ Store transaction: self sending: 'requeueWithin:' with: deliveryId replaying: true
@@ -431,7 +431,7 @@ Session subclass: Object
     value := @ d session.
     @ Require equal: value to: session.
     value := @ d assignment.
-    (value notEmpty) ifTrue: [^ @ Require reject: 'Use Assignment continue:afterDelivery:key: to preserve recovery history and allowance'].
+    (value notEmpty) ifTrue: [^ @ Require reject: 'Use the Assignment retry to requeue its work'].
     state := @ d state.
     @ Require member: state of: '["failed","uncertain"]'.
     runs := @ Agent::Run activeFor: session except: ''.
@@ -472,6 +472,13 @@ Session subclass: Object
 
   method: stalledCount [
     ^ @ self deliveryCountIn: '["failed","uncertain"]'
+  ]
+
+  # Stalled deliveries outside any Assignment; these hold back dispatch.
+  rawMethod: stalledOrdinaryCount [
+    local sid
+    sid=$(_db_escape "$_RECEIVER")
+    _db_sql "SELECT count(*) FROM instances WHERE class='Agent::Delivery' AND json_extract(data,'$.session')='$sid' AND json_extract(data,'$.state') IN ('failed','uncertain') AND coalesce(json_extract(data,'$.assignment'),'')='';"
   ]
 
   # Single and batch snapshots share one indexed SQL projection. The requested

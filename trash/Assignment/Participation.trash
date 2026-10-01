@@ -14,8 +14,7 @@ Participation subclass: Object
     s := @ self eligibleSession: session for: assignment.
     current := @ assignment currentSession.
     (current = s) ifTrue: [^ assignment].
-    runs := @ Agent::Run activeFor: s except: ''.
-    @ Require equal: runs to: '[]'.
+    # The target may be busy: work is queued and the worker starts one run at a time.
     (current notEmpty) ifTrue: [
       runs := @ Agent::Run activeFor: current except: ''.
       @ Require equal: runs to: '[]'.

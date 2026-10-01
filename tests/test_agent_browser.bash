@@ -118,8 +118,8 @@ printf '%s\n' "terminate:$other" terminate '' > "$PICKS"
 @ Agent::Session browse >/dev/null
 contains 'termination failure is shown' 'fixture harness has not stopped' "$(cat "$PAGES")"
 
-# The same confirmed browser action uses Assignment continuation, not the
-# ordinary delivery requeue escape hatch. Worker ticking remains a spy.
+# The same confirmed browser action uses Assignment retry, not the ordinary
+# delivery requeue escape hatch. Worker ticking remains a spy.
 identity=$(@ Agent::Identity named: browser-specialist)
 @ "$identity" owner: browser-owner
 @ "$identity" save
@@ -138,10 +138,9 @@ mapfile -t pair < <(@ Agent::Run startFor: "$specialist" profile: shell)
 @ "${pair[0]}" finishWith: unsettled outcome: '{}' error: '' >/dev/null
 printf '%s\n' "$old" retry > "$PICKS"
 @ Agent::Browser retryFor: "$specialist" in: "$tmp" >/dev/null
-next=$(@ "$a" delivery)
-check 'browser recovery publishes a pending attempt' pending "$(@ "$next" state)"
-check 'browser recovery supersedes original delivery' skipped "$(@ "$old" state)"
-check 'browser recovery consumes the continuation allowance' 1 "$(@ "$a" continuationCount)"
-check 'browser recovery retains the old attempt count' 1 "$(@ "$old" attempts)"
-contains 'assignment inspection shows remaining allowance' 'Continuations: 1 of 3' "$(@ "$a" show)"
+check 'browser recovery retries the same delivery' "$old" "$(@ "$a" delivery)"
+check 'browser recovery requeues it' pending "$(@ "$old" state)"
+check 'browser recovery grants fresh turns' 0 "$(@ "$old" attempts)"
+check 'browser recovery is journaled' retried "$(@ "$a" events | jq -r '.[-1].kind')"
+contains 'assignment inspection shows attempts' 'Attempts: 0 of 4' "$(@ "$a" show)"
 echo "=== $passed browser checks passed ==="

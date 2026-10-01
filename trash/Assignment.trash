@@ -8,13 +8,12 @@ Assignment subclass: Object
   include: Assignment::Presentation
   include: Assignment::Reporting
   include: Assignment::Notifications
-  include: Assignment::Recovery
   instanceVars: objective:'' completionCriteria:'' requester:'' requesterSession:''
                 owner:'' originMessage:'' workspace:'' assignee:'' state:'open'
                 currentSession:'' generation:0 delivery:'' history:'[]' events:'[]'
                 externalIssue:'' result:'' resultMessage:'' cancellationNote:''
                 created:'' completedAt:'' dispatchMode:'manual'
-                requestKey:'' originRun:'' delegationTarget:'' statusMessage:'' continuationAllowance:3
+                requestKey:'' originRun:'' delegationTarget:'' statusMessage:''
 
   method: transitionRules [ ^ '["open:completed","open:cancelled"]' ]
 
@@ -164,19 +163,77 @@ Assignment subclass: Object
     ^ @ Store transaction: self sending: 'finishWithin:' with: args replaying: true
   ]
 
+  # Cancel always closes: it first stops the run working this Assignment,
+  # then skips the current delivery in whatever state it is.
   method: cancel: reason [
-    | args |
+    | args again |
+    (reason isEmpty) ifTrue: [^ @ Require reject: 'cancel: requires a reason'].
     @ Agent::Queue ensureSchema.
+    # The worker may resume the work in a new run between lookup and stop;
+    # look again once before giving up.
+    again := 'false'.
+    (@ self stopActiveRun) ifFailed: [:e | again := 'true'].
+    (again = 'true') ifTrue: [(@ self stopActiveRun) ifFailed: [:e | @ e signal] ].
     args := #{outcome: reason cancel: 'true'} asJson.
-    ^ @ Store transaction: self sending: 'finishWithin:' with: args replaying: true
+    (@ Store transaction: self sending: 'finishWithin:' with: args replaying: true) ifFailed: [:e | @ e signal].
+    @ self reopenAfterStop.
+    ^ self
+  ]
+
+  # Stop the run working this Assignment, if any, after checking authority.
+  method: stopActiveRun [
+    | run |
+    run := (@ Store transaction: self sending: 'activeRunWithin:' with: '') ifFailed: [:e | @ e signal].
+    (run isEmpty) ifTrue: [^ 'none'].
+    (@ run stop) ifFailed: [:e | @ e signal].
+    ^ 'stopped'
+  ]
+
+  # Stopping a run pauses its session. Reopen it once nothing runs there, so
+  # queued work behind a stopped Assignment continues.
+  method: reopenAfterStop [
+    | d run session state active |
+    d := @ self delivery.
+    (d isEmpty) ifTrue: [^ ''].
+    run := @ d run.
+    (run isEmpty) ifTrue: [^ ''].
+    state := @ run stopRequested.
+    (state = 'true') ifFalse: [^ ''].
+    session := @ run session.
+    state := @ session lifecycleState.
+    (state = 'paused') ifFalse: [^ ''].
+    active := @ session activeRun.
+    (active isEmpty) ifTrue: [@ session resume].
+    ^ ''
+  ]
+
+  # The live run holding this Assignment's current delivery, after checking
+  # cancel authority so an unauthorized caller never stops anything.
+  method: activeRunWithin: unused [
+    | actor d run state active |
+    @ Store requireTransaction.
+    actor := @ Agent::Run actingContext.
+    @ self authorizeCoordinator: actor.
+    state := @ self state.
+    (state = 'open') ifFalse: [^ ''].
+    d := @ self delivery.
+    (d isEmpty) ifTrue: [^ ''].
+    d := @ Store read: d class: 'Agent::Delivery'.
+    run := @ d run.
+    (run isEmpty) ifTrue: [^ ''].
+    run := @ Store read: run class: 'Agent::Run'.
+    state := @ run state.
+    active := @ Require contains: state in: '["starting","running","recovering"]'.
+    (active = 'true') ifTrue: [^ run].
+    ^ ''
   ]
 
   method: finishWithin: args [
-    | actor sender run cancel outcome target state previous session runs data d dState questions message now event assignee unassigned |
+    | actor sender run cancel outcome target state previous session data d dState questions message now event assignee unassigned held active |
     actor := @ Agent::Run actingContext.
     cancel := args objectAt: 'cancel'.
     @ Require member: cancel of: '["true","false"]'.
-    sender := @ self authorize: actor operatorOnly: cancel.
+    (cancel = 'true') ifTrue: [sender := @ self authorizeCoordinator: actor] ifFalse: [sender := @ self authorize: actor operatorOnly: 'false'].
     outcome := args objectAt: 'outcome'.
     @ Require text: outcome.
     target := 'completed'.
@@ -201,12 +258,17 @@ Assignment subclass: Object
       @ Require equal: d to: ''
     ] ifFalse: [
       run := actor objectAt: 'run'.
-      runs := @ Agent::Run activeFor: session except: run.
-      @ Require equal: runs to: '[]'.
+      # Only the run working this Assignment fences it; other queued work in
+      # the same session does not. Any delivery state may be closed.
       (d notEmpty) ifTrue: [
         d := @ Store read: d class: 'Agent::Delivery'.
-        dState := @ d state.
-        @ Require member: dState of: '["pending","blocked","offered","processed","skipped"]'
+        held := @ d run.
+        (held notEmpty) ifTrue: [(held ~= run) ifTrue: [
+          held := @ Store read: held class: 'Agent::Run'.
+          state := @ held state.
+          active := @ Require contains: state in: '["starting","running","recovering"]'.
+          (active = 'true') ifTrue: [^ @ Require reject: 'Stop the Assignment run ' , held , ' before finishing it']
+        ] ]
       ].
       (cancel = 'false') ifTrue: [
       @ Require text: assignee.
@@ -233,6 +295,60 @@ Assignment subclass: Object
     @ self save.
     @ Agent::Queue publishOutcome: message.
     ^ self
+  ]
+
+  # Turns an Assignment gets before it needs review (assignment.attempts).
+  classMethod: attemptLimit [
+    | value |
+    value := @ Config at: 'assignment.attempts' ifFailed: [^ 4].
+    (value matches: '^[1-9][0-9]{0,2}$') ifTrue: [^ value].
+    ^ 4
+  ]
+
+  # The one recovery verb: requeue failed or uncertain work for a fresh set of
+  # attempts. The owner or the requesting coordinator decides after review.
+  method: retry [
+    @ Agent::Queue ensureSchema.
+    # Authorize first; a stop of this Assignment's run left its session paused.
+    (@ Store transaction: self sending: 'activeRunWithin:' with: '') ifFailed: [:e | @ e signal].
+    @ self reopenAfterStop.
+    ^ @ Store transaction: self sending: 'retryWithin:' with: ''
+  ]
+
+  method: retryWithin: unused [
+    | actor sender d state run active questions now event |
+    @ Store requireTransaction.
+    actor := @ Agent::Run actingContext.
+    sender := @ self authorizeCoordinator: actor.
+    @ self requireOpen.
+    d := @ self currentSession.
+    d := @ Store read: d class: 'Agent::Session'.
+    state := @ d lifecycleState.
+    (state = 'open') ifFalse: [^ @ Require reject: 'Session ' , d , ' is ' , state , '; resume it, or cancel: this Assignment'].
+    @ Assignment::Participation eligibleSession: d for: self.
+    d := @ self delivery.
+    d := @ Store read: d class: 'Agent::Delivery'.
+    state := @ d state.
+    active := @ Require contains: state in: '["failed","uncertain"]'.
+    (active = 'true') ifFalse: [^ @ Require reject: 'Only failed or uncertain Assignment work can be retried; it is ' , state].
+    run := @ d run.
+    (run notEmpty) ifTrue: [
+      run := @ Store read: run class: 'Agent::Run'.
+      state := @ run state.
+      active := @ Require contains: state in: '["starting","running","recovering"]'.
+      (active = 'true') ifTrue: [^ @ Require reject: 'Stop the Assignment run ' , run , ' before retrying']
+    ].
+    questions := @ Agent::Queue unansweredForAssignment: self.
+    (questions ~= '[]') ifTrue: [^ @ Require reject: 'Answer the Assignment question before retrying'].
+    @ d state: 'pending'.
+    @ d attempts: 0.
+    @ d lastError: ''.
+    @ d save.
+    now := @ Time nowISO.
+    event := #{kind: 'retried' body: 'Retried after review' actor: sender run: (actor objectAt: 'run') at: now} asJson.
+    @ self appendEvent: event.
+    @ self save.
+    ^ d
   ]
 
   classMethod: current [

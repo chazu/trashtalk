@@ -50,6 +50,8 @@ bd=$(field "$b" .delivery)
 work "$specialist" "$bd"
 coordinate "$next"
 export TRASHTALK_RUN_TOKEN=$token
+reject 'cancel requires a reason' @ "$b" cancel: ''
+check 'a rejected cancel stops nothing' running "$(field "$worker" .state)"
 must @ "$b" cancel: 'Withdrawn by coordinator' >/dev/null
 unset TRASHTALK_RUN_TOKEN
 check 'coordinator cancels its delegated work' cancelled "$(field "$b" .state)"

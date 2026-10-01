@@ -129,15 +129,24 @@ Worker subclass: Object
 
   # Cooperative API authority. A local user may stop a run; an agent must have
   # agent.stop and share the target's owner. Recheck inside the worker lock.
+  # A coordinator without agent.stop may still stop the run working an open
+  # Assignment its identity requested; cancel: relies on this.
   rawClassMethod: authorizeStop: run [
-    local actor session role caps
+    local actor session role caps identity delegated
     [[ $(db_get "$1" | jq -r '.class // empty') == Agent::Run ]] || return 1
     if [[ -n "${TRASHTALK_RUN_TOKEN:-}" ]]; then
       actor=$(@ Agent::Run current) || return 1
       session=$(@ "$actor" session)
       role=$(@ "$session" role)
       caps=$(@ "$role" capabilities)
-      jq -e 'if type=="string" then fromjson else . end | index("agent.stop") != null' <<<"$caps" >/dev/null || {
+      identity=$(_db_escape "$(@ "$session" identity)")
+      delegated=0
+      [[ -z "$identity" ]] || delegated=$(_db_sql "SELECT count(*) FROM instances d JOIN instances a ON a.id=json_extract(d.data,'$.assignment')
+        WHERE d.class='Agent::Delivery' AND json_extract(d.data,'$.run')='$(_db_escape "$1")' AND a.class='Assignment'
+        AND json_extract(a.data,'$.state')='open' AND json_extract(a.data,'$.delivery')=d.id
+        AND json_extract(a.data,'$.dispatchMode')='automatic'
+        AND json_extract(a.data,'$.requester')='$identity';") || return 1
+      [[ "$delegated" != 0 ]] || jq -e 'if type=="string" then fromjson else . end | index("agent.stop") != null' <<<"$caps" >/dev/null || {
         _throw 'RunError' 'Role does not allow agent.stop'; return 1;
       }
       [[ "$(@ Agent::Run ownerInboxFor: "$actor")" == "$(@ Agent::Run ownerInboxFor: "$1")" ]] || {
@@ -303,7 +312,7 @@ Worker subclass: Object
 
   # Prints the run's resulting state: running (still alive) or a terminal state.
   classMethod: reconcileRun: runId [
-    | session profile driver outcome final owner deliveries hasOffered hasBlocked resident reason detail |
+    | session profile driver outcome final owner deliveries hasOffered hasBlocked resumed continued resident reason detail |
     ((@ runId stopRequested) = 'true') ifTrue: [
       final := (@ self finishStop: runId) ifFailed: [:error | @ error signal].
       (final = 'interrupted') ifTrue: [^ 'interrupted'].
@@ -352,25 +361,29 @@ Worker subclass: Object
     ].
     hasOffered := 'false'.
     hasBlocked := 'false'.
+    resumed := 'false'.
     deliveries := @ Agent::Delivery offeredFor: runId.
     deliveries linesDo: [:delivery |
       (@ delivery reload) ifFailed: [:error | @ error signal].
       (@ delivery state) caseOf: {
         'offered' -> [
-          (@ delivery transitionTo: 'uncertain') ifFailed: [:error | @ error signal].
-          hasOffered := 'true'
+          continued := (@ self recoverOffered: delivery error: '') ifFailed: [:error | @ error signal].
+          (continued = 'resumed') ifTrue: [resumed := 'true'].
+          (continued = 'uncertain') ifTrue: [hasOffered := 'true']
         ].
         'blocked' -> [hasBlocked := 'true']
       } otherwise: []
     ].
-    (hasOffered = 'true') ifTrue: [
+    ((hasOffered = 'true') or: [resumed = 'true']) ifTrue: [
       final := 'unsettled'.
       reason := outcome jsonAt: 'stop_reason' ifAbsent: 'null'.
       (reason = 'null') or: [reason = 'false'] ifTrue: [outcome := outcome objectAt: 'stop_reason' put: 'unfinished'].
       detail := outcome jsonAt: 'stop_detail' ifAbsent: 'null'.
       (detail = 'null') or: [detail = 'false'] ifTrue: [outcome := outcome objectAt: 'stop_detail' put: 'Provider turn ended without completing the Assignment or settling its delivery; budget exhaustion is not confirmed'].
-      owner := @ session ownerInbox.
-      (@ Inbox alert: ('Run ' , runId , ' in session ' , session , ' exited without settling every delivery; they are marked uncertain. Inspect the recorded effects. For Assignment deliveries use Assignment continue:afterDelivery:key:; for ordinary deliveries use session requeue or skip.') to: owner from: 'worker') ifFailed: [:error | @ error signal]
+      (hasOffered = 'true') ifTrue: [
+        owner := @ session ownerInbox.
+        (@ Inbox alert: ('Run ' , runId , ' in session ' , session , ' exited without settling every delivery; they are marked uncertain. Inspect the recorded effects. For an Assignment use its retry or cancel:; for ordinary deliveries use session requeue or skip.') to: owner from: 'worker') ifFailed: [:error | @ error signal]
+      ]
     ] ifFalse: [
       (hasBlocked = 'true') ifTrue: [final := 'waiting_for_user'] ifFalse: [final := 'succeeded']
     ].
@@ -378,10 +391,47 @@ Worker subclass: Object
     ^ final
   ]
 
+  # Settle a delivery a finished run still holds, without inferring success.
+  # An answer to an Assignment question was consumed with that Assignment;
+  # unfinished Assignment work resumes; anything else needs review.
+  # Answers settled, resumed or uncertain.
+  classMethod: recoverOffered: delivery error: err [
+    | answered continued |
+    answered := (@ Agent::Queue answeredAssignmentFor: delivery) ifFailed: [:error | @ error signal].
+    (answered notEmpty) ifTrue: [
+      (@ delivery transitionTo: 'processed' with: (#{note: 'Answer delivered with its Assignment'} asJson)) ifFailed: [:error | @ error signal].
+      ^ 'settled'
+    ].
+    continued := (@ self continueAssignment: delivery error: err) ifFailed: [:error | @ error signal].
+    (continued = 'true') ifTrue: [^ 'resumed'].
+    (@ delivery transitionTo: 'uncertain') ifFailed: [:error | @ error signal].
+    ^ 'uncertain'
+  ]
+
+  # An unfinished turn is routine for long Assignment work: put its delivery
+  # back to pending so the next tick resumes the same conversation. Answers
+  # 'false' once the attempts are used up.
+  classMethod: continueAssignment: delivery error: err [
+    | assignment state current attempts limit note |
+    assignment := @ delivery assignment.
+    (assignment isEmpty) ifTrue: [^ 'false'].
+    state := @ assignment state.
+    (state = 'open') ifFalse: [^ 'false'].
+    current := @ assignment delivery.
+    (current = delivery) ifFalse: [^ 'false'].
+    attempts := @ delivery attempts.
+    limit := @ Assignment attemptLimit.
+    (attempts < limit) ifFalse: [^ 'false'].
+    note := 'Turn ' , attempts , ' of ' , limit , ' ended without complete:; resuming automatically'.
+    (err notEmpty) ifTrue: [note := note , ' after: ' , err].
+    (@ delivery transitionTo: 'pending' with: (#{lastError: note} asJson)) ifFailed: [:error | @ error signal].
+    ^ 'true'
+  ]
+
   # Only a failure before launch is safe to retry automatically. Once launched,
   # even a silent process may have produced effects; offered work becomes uncertain.
   classMethod: failRun: runId error: err [
-    | session role limit oldstate deliveries owner attempts driver outcome profile |
+    | session role limit oldstate deliveries owner attempts driver outcome profile continued advice assignment |
     session := @ runId session.
     role := @ session role.
     limit := @ role retryLimit.
@@ -393,9 +443,11 @@ Worker subclass: Object
       ((@ delivery state) = 'offered') ifTrue: [
         (@ Store patch: delivery with: (#{lastError: err} asJson)) ifFailed: [:error | @ error signal].
         (oldstate ~= 'starting') ifTrue: [
-          (@ delivery transitionTo: 'uncertain') ifFailed: [:error | @ error signal].
-          owner := @ session ownerInbox.
-          (@ Inbox alert: ('Delivery ' , delivery , ' needs review after run ' , runId , ': ' , err , '. Inspect its logs before retrying.') to: owner from: 'worker') ifFailed: [:error | @ error signal]
+          continued := (@ self recoverOffered: delivery error: err) ifFailed: [:error | @ error signal].
+          (continued = 'uncertain') ifTrue: [
+            owner := @ session ownerInbox.
+            (@ Inbox alert: ('Delivery ' , delivery , ' needs review after run ' , runId , ': ' , err , '. Inspect its logs before retrying.') to: owner from: 'worker') ifFailed: [:error | @ error signal]
+          ]
         ] ifFalse: [
           (@ delivery transitionTo: 'failed') ifFailed: [:error | @ error signal].
           attempts := @ delivery attempts.
@@ -403,7 +455,10 @@ Worker subclass: Object
             (@ delivery transitionTo: 'pending') ifFailed: [:error | @ error signal]
           ] ifFalse: [
             owner := @ session ownerInbox.
-            (@ Inbox alert: ('Delivery ' , delivery , ' in session ' , session , ' stalled after ' , attempts , ' attempts: ' , err , '. Skip it with: @ ' , session , ' skip: ' , delivery , ' note: reason') to: owner from: 'worker') ifFailed: [:error | @ error signal]
+            advice := 'Skip it with: @ ' , session , ' skip: ' , delivery , ' note: reason'.
+            assignment := @ delivery assignment.
+            (assignment notEmpty) ifTrue: [advice := 'Review it, then @ ' , assignment , ' retry or cancel: reason'].
+            (@ Inbox alert: ('Delivery ' , delivery , ' in session ' , session , ' stalled after ' , attempts , ' attempts: ' , err , '. ' , advice) to: owner from: 'worker') ifFailed: [:error | @ error signal]
           ]
         ]
       ]
@@ -421,11 +476,15 @@ Worker subclass: Object
 
   # Claim one compatible workspace batch into a new run. Prints the run id,
   # or nothing when no authorized batch could be admitted.
+  # At most one Assignment delivery per run keeps the run's Assignment
+  # unambiguous; ordinary deliveries such as question replies batch with it.
+  # Stalled Assignment work is reviewed through its Assignment and does not
+  # hold back the queue; stalled ordinary deliveries still do.
   rawClassMethod: dispatchOwnedSession: sessionId [
-    local session="$1" state pending profile driver run token d claimed="" run_dir prompt_file ref pid rc workspace
+    local session="$1" state pending profile driver run token d held="" claimed="" run_dir prompt_file ref pid rc workspace
     state=$(@ "$session" lifecycleState)
     [[ "$state" == open ]] || return 0
-    [[ "$(@ "$session" stalledCount)" == 0 ]] || return 0
+    [[ "$(@ "$session" stalledOrdinaryCount)" == 0 ]] || return 0
     pending=$(@ "$session" pendingDeliveries)
     [[ -n "$pending" ]] || return 0
     read -r d <<< "$pending"
@@ -441,10 +500,12 @@ Worker subclass: Object
       return 1
     fi
     for d in $pending; do
+      [[ -z "$held" || -z "$(@ "$d" assignment)" ]] || continue
       [[ "$(@ "$d" executionWorkspace)" == "$workspace" ]] || continue
       @ Agent::WorkContext prepareDelivery: "$d" >/dev/null || continue
       if [[ "$(@ Agent::Delivery claim: "$d" run: "$run")" == true ]]; then
         claimed="$claimed $d"
+        [[ -z "$(@ "$d" assignment)" ]] || held="$d"
       fi
     done
     claimed="${claimed# }"
@@ -496,7 +557,7 @@ Worker subclass: Object
       printf 'For ordinary deliveries send the appropriate reply before settling. Assignment instructions below override the ordinary reply/settle protocol. Use this run-specific launcher for every Trashtalk command; it supplies your private authority. Never print or read its contents.\n'
       printf 'Entrust background work durably with: %s Agent::Run delegate: %s criteria: %s key: %s\n' "$ts" "'objective'" "'completion criteria and evidence'" "'stable-key-for-this-request'"
       @ Agent::Delegation recoveryInstructions
-      printf 'Reuse the key when retrying the same request. One open child assignment per conversation; no recursive delegation. The returned Assignment is queued; report it as started only after its activity is running. Inspect with <launcher> <assignment> show.\n'
+      printf 'Reuse the key when retrying the same request. No recursive delegation. The returned Assignment is queued; report it as started only after its activity is running. Inspect with <launcher> <assignment> show.\n'
       printf 'Use delegation for entrusted work; ordinary send:to: is for conversation. Do not bypass Assignment by spawning another harness or changing stored lifecycle fields directly. On successful delegation, promptly acknowledge its handle and queued status to the human, then settle the originating ordinary delivery. Stay available: do not wait or poll for the specialist. Its durable outcome will arrive as another notification. If delegation fails, report the failure; do not claim an agent was started.\n'
       printf 'With agent.stop authority, stop an exact run with: %s Agent::Run stop: %s\n' "$ts" "'<runId>'"
       printf 'If the human speaks directly through the conversation view during this run, answer that input directly in the conversation. It creates no new inbox delivery; existing deliveries still need their scoped replies and settlement.\n'
@@ -513,16 +574,15 @@ Worker subclass: Object
           printf 'Ask and wait: %s %q ask: %s\n' "$ts" "$assignment" "'blocking question'"
           printf 'Complete this work: %s %q complete: %s\n' "$ts" "$assignment" "'outcome, evidence, tests and remaining risks'"
           printf 'Do not use Agent::Run result or settle for assignment work. complete: publishes the result and settles this exact delivery atomically. Never infer completion from process exit.\n'
-          printf 'After ask: succeeds, end this turn and wait for an answer notification; do not poll or complete unanswered work. Record meaningful evidence with progress:. If unable to finish, record the blocker and remaining work and leave the Assignment open; never report success without meeting its completion criteria.\n'
+          printf 'After ask: succeeds, end this turn and wait for an answer notification; do not poll or complete unanswered work. Record meaningful evidence with progress:. Work until the completion criteria are met. A turn that ends without complete: or ask: is resumed automatically, at most %s turns in total. If you are blocked, record the blocker with progress: and ask: the question that would unblock you. Never report success without meeting the completion criteria.\n' "$(@ Assignment attemptLimit)"
+          if [[ "$(@ "$d" attempts)" -gt 1 ]]; then
+            printf 'This is turn %s. The previous turn ended without complete:. Inspect the recorded progress and existing workspace changes, then continue from there.\n' "$(@ "$d" attempts)"
+          fi
         fi
         for m in $(@ "$d" messageIdList); do
           kind=$(@ "$m" kind)
           if [[ -z "$assignment" && -n "$(@ "$m" assignment)" && ( "$kind" == result || "$kind" == note ) ]]; then
-            if [[ "$(@ "$m" assignmentState)" == 'needs review' ]]; then
-              printf 'Assignment recovery notification: inspect current state, use continue:afterDelivery:key: if still applicable, and settle this notification. A stale notification must not start another attempt.\n'
-            else
-              printf 'Assignment outcome notification: the durable outcome is already in the human inbox. Read it, report the result, evidence and limitations in this conversation, then settle this notification delivery. Do not reply to the specialist or create another inbox result. Completion does not imply human acceptance, merge, deployment or closing an external issue.\n'
-            fi
+            printf 'Assignment outcome notification: the durable outcome is already in the human inbox. Read it, report the result, evidence and limitations in this conversation, then settle this notification delivery. Do not reply to the specialist or create another inbox result. Completion does not imply human acceptance, merge, deployment or closing an external issue.\n'
           fi
           inbox=$(@ Inbox named: "$(@ "$m" to)")
           printf 'Message: %s\nRead: %s %q show: %q\n' "$m" "$ts" "$inbox" "$m"

@@ -24,8 +24,24 @@
   creates or reuses the conversation, retains failed drafts, and never falls
   back to inbox delivery.
 
+### Changed
+
+- Assignment execution is simpler (`docs/assignment-simplification.md`):
+  - The worker resumes an unfinished specialist turn in the same conversation,
+    up to `assignment.attempts` turns (default 4). After that the Assignment
+    needs review.
+  - `retry` and `cancel:` are the only recovery verbs. The owner and the
+    requesting coordinator identity can use both.
+  - `cancel:` always closes. It stops the run working the Assignment, accepts
+    any delivery state, and sends the outcome to the owner when the requesting
+    conversation is closed.
+  - A busy specialist queues more delegated work, and a stalled Assignment no
+    longer holds back its session.
+
 ### Removed
 
+- Assignment `continue:afterDelivery:key:`, `allowContinuations:reason:`, the
+  continuation allowance, and coordinator recovery notifications. Use `retry`.
 - Remove the GitHub build-event importer and macOS polling service from Trashtalk.
 
 ### Fixed
