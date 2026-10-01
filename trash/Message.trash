@@ -251,7 +251,7 @@ Message subclass: Object
   ]
 
   classMethod: outcomeForAssignment: assignment body: body sender: sender cancelled: cancelled [
-    | id recipient origin objective title kind requester mode |
+    | id recipient origin objective title kind requester mode life |
     id := 'message_' , assignment , '_outcome'.
     recipient := @ assignment owner.
     origin := @ assignment originMessage.
@@ -262,7 +262,13 @@ Message subclass: Object
     ].
     requester := @ assignment requesterSession.
     mode := @ assignment dispatchMode.
-    (mode = 'automatic') ifTrue: [(requester notEmpty) ifTrue: [recipient := 'session:' , requester] ].
+    # A closed requesting conversation cannot receive messages. The outcome then
+    # goes to the owner so finishing never depends on that conversation.
+    (mode = 'automatic') ifTrue: [(requester notEmpty) ifTrue: [
+      life := @ Store read: requester class: 'Agent::Session'.
+      life := @ life lifecycleState.
+      ((life = 'open') or: [life = 'paused']) ifTrue: [recipient := 'session:' , requester] ifFalse: [recipient := @ assignment owner]
+    ] ].
     objective := @ assignment objective.
     title := 'Assignment completed: ' , objective.
     kind := 'result'.
