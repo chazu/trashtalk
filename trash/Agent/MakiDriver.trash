@@ -13,7 +13,7 @@ MakiDriver subclass: Agent::Driver
     ^ '["-u","CODEX_API_KEY","-u","OPENAI_API_KEY","-u","OPENROUTER_API_KEY"]'
   ]
 
-  classMethod: model [ ^ @ Env get: 'TRASHTALK_MAKI_MODEL' default: 'openai/gpt-5.6-terra' ]
+  classMethod: model [ ^ @ Config at: 'maki.model' ]
 
   classMethod: argvFor: executable workspace: workspace config: config model: model ref: ref [
     | argv |
@@ -44,7 +44,7 @@ MakiDriver subclass: Agent::Driver
     local ref="$1" prompt="$2" run="$3" token="$4" executable session workspace directory model auth argv config file
     executable=$(@ Maki path)
     [[ -n "$executable" ]] || { @ "$_RECEIVER" reject: 'Maki is missing; run @ Trash doctor'; return 1; }
-    model=$(@ "$_RECEIVER" model)
+    model=$(@ "$_RECEIVER" model) || return 1
     [[ "${model%%/*}" == openai ]] || { @ "$_RECEIVER" reject: 'Agent::MakiDriver currently requires an openai/ model with OAuth'; return 1; }
     session=$(@ "$run" session)
     workspace=$(@ "$run" executionWorkspace)

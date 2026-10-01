@@ -31,7 +31,7 @@ JcodeDriver subclass: Agent::Driver
     printf '%s' "$1" | bash "${TRASHTALK_DIR:-$HOME/.trashtalk}/lib/jcode-input.bash" send "$(@ Agent::Driver runDirFor: "$2")"
   ]
 
-  classMethod: model [ ^ @ Env get: 'TRASHTALK_JCODE_MODEL' default: 'gpt-5.6-terra' ]
+  classMethod: model [ ^ @ Config at: 'jcode.model' ]
 
   # Filesystem/CLI boundary. Private homes exclude ambient Jcode config and
   # share only OAuth files (symlinks preserve credential refresh). Runtime paths
@@ -71,7 +71,7 @@ JcodeDriver subclass: Agent::Driver
     [[ -d "$runtime" && -O "$runtime" && ! -L "$runtime" ]] || {
       echo 'Jcode private runtime directory is missing or has changed ownership' >&2; return 1;
     }
-    model=$(@ Agent::JcodeDriver model)
+    model=$(@ Agent::JcodeDriver model) || return 1
     jq -cn --arg executable "$executable" --arg home "$home" --arg runtime "$runtime" \
       --arg workspace "$workspace" --arg model "$model" --arg ref "$ref" --arg bash "$bash_path" \
       '{executable:$executable,home:$home,runtime:$runtime,workspace:$workspace,model:$model,ref:$ref,bash:$bash}' > "$directory/jcode.json"

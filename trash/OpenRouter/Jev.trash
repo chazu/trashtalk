@@ -2,10 +2,10 @@
 package: OpenRouter
 
 Jev subclass: Object
-  classMethod: model [ ^ 'typesafe/jev-1.13' ]
+  classMethod: model [ ^ @ Config at: 'jev.model' ]
 
   classMethod: decide: state questions: questions [
     | model |
-    model := @ self model.
+    model := @ self model ifFailed: [:e | @ e signal].
     ^ @ Decision::Request decide: state questions: questions model: model endpoint: 'https://openrouter.ai/api/alpha/decisions' credential: 'OPENROUTER_API_KEY' required: 'true'
   ]

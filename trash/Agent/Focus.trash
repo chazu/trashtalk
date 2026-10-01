@@ -21,7 +21,7 @@ Focus subclass: Object
     workspace := @ Agent::Session workspaceFor: workspace.
     session := @ Gusgus currentFor: workspace.
     (session notEmpty) ifTrue: [^ @ self open: session].
-    profile := @ Gusgus profile.
+    profile := @ Gusgus profile ifFailed: [:e | @ e signal].
     context := #{session: '' window: 400 mode: 'gusgus-start'
       workspace: workspace profile: profile} asJson.
     ^ @ self openContext: context

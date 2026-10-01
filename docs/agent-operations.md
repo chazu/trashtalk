@@ -105,7 +105,8 @@ Jcode is the default for newly opened Gusgus sessions. Install it from
 ```
 
 Existing sessions keep their backend. Jcode defaults to `gpt-5.6-terra` at medium
-effort; `TRASHTALK_JCODE_MODEL` selects another model. Each session uses its own
+effort; the `jcode.model` setting (`@ Config at: 'jcode.model' put: ...` or
+`TRASHTALK_JCODE_MODEL`) selects another model. Each session uses its own
 Jcode home and daemon socket, with existing OAuth credential files linked into
 that home. The driver requires `api-bridge --stdio` and Harness API v1.
 
@@ -139,7 +140,7 @@ adapter, not that daemon. See the
 ### Maki installation and login
 
 ```bash
-export TRASHTALK_GUSGUS_PROFILE=maki     # optional backend for new sessions
+@ Config at: 'gusgus.profile' put: 'maki'   # optional backend for new sessions
 @ Trash doctor                         # installs Maki if missing; checks its executable
 @ Maki version
 @ Maki loginToProvider: 'openai'         # interactive Maki provider login
@@ -155,7 +156,8 @@ Installation failures make doctor fail; doctor never starts a provider login.
 terminal and returns Maki's exit status.
 
 The `maki` profile selects `Agent::MakiDriver`, using `openai/gpt-5.6-terra` at medium effort
-with OpenAI OAuth. `TRASHTALK_MAKI_MODEL` selects another `openai/` model.
+with OpenAI OAuth. The `maki.model` setting (or `TRASHTALK_MAKI_MODEL`) selects
+another `openai/` model.
 The driver strips API-key overrides and checks OAuth before each launch.
 Stock Maki handles execution and conversation resume; Trashtalk owns delivery,
 questions, settlement, and termination.
@@ -167,7 +169,8 @@ global custom plugins/MCP configuration are excluded. Project `.maki/init.lua`,
 diagnostic. Custom commands and Maki's native Task/Memory tools are disabled.
 See [Maki session driver](maki-session-driver.md) for protocol details.
 
-`TRASHTALK_GUSGUS_PROFILE` changes the profile for newly opened sessions.
+The `gusgus.profile` setting (or `TRASHTALK_GUSGUS_PROFILE`) changes the profile
+for newly opened sessions; see [configuration](config-design.md).
 `codex` and the legacy `assistant-low-power` profile still select Codex.
 Existing sessions retain their recorded profile. `@ Gusgus fresh: "$PWD"`
 closes an idle session and opens one with the current default. Harnesses have

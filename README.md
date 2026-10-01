@@ -73,6 +73,34 @@ logic. Keep `rawMethod:` and primitives at Bash, filesystem, process, and
 serialization boundaries. A method's stdout is its value; use `pragma: stream`
 when several statements intentionally print output.
 
+## Configure
+
+Settings such as Gusgus's harness and each harness's model live in
+`~/.config/trashtalk/config` (or `$XDG_CONFIG_HOME/trashtalk/config`), a flat
+TOML file you can keep in a dotfiles repository:
+
+```toml
+gusgus.profile = "jcode"
+jcode.model = "gpt-5.6-terra"
+agent.controlWait = 30
+```
+
+```bash
+@ Config list                    # every setting, its value, and its source
+mkdir -p ~/.config/trashtalk     # start a commented file listing every default
+@ Config template > ~/.config/trashtalk/config
+@ Config at: 'jcode.model' put: 'gpt-5.6-terra'   # edit the file from the REPL
+@ Config reset: 'jcode.model'    # remove the line so the default applies
+```
+
+Each setting's environment variable, such as `TRASHTALK_JCODE_MODEL`, overrides
+the file, which overrides the default. `@ Config template` names every variable.
+`at:put:` keeps the file's comments and order and writes through a symlink.
+Settings are read when a harness starts, so restart a session to apply a change.
+`@ Trash doctor` reports unknown keys, invalid values, and overriding variables.
+Keep API keys in the environment, not in this file. See the
+[configuration design](docs/config-design.md) for the format.
+
 ## Work on the code
 
 ```bash

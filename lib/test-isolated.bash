@@ -67,7 +67,7 @@ rm -f "$work/repo/trash/.compiled/.protocol-manifest.json"
 export TRASHTALK_TEST_ISOLATED=1 TRASHTALK_SKIP_USER_CONFIG=1 LC_ALL=C
 export TRASHTALK_DIR="$work/repo" TRASHDIR="$work/repo/trash"
 export SQLITE_JSON_DB="$work/instances.db" TMPDIR="$work/tmp"
-unset TRASH_SESSION_ID TRASH_PROFILE TRASH_PROFILE_FILE
+unset TRASH_SESSION_ID TRASH_PROFILE TRASH_PROFILE_FILE TRASHTALK_CONFIG
 cd "$work/repo"
 test_bash_args=()
 [[ "${TRASH_TEST_TRACE:-0}" != 1 ]] || test_bash_args+=(-x)

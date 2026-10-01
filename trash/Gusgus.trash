@@ -4,7 +4,7 @@ Gusgus subclass: Object
   include: Agent::Stable
 
   classMethod: owner [ ^ @ Agent::Focus localUser ]
-  classMethod: profile [ ^ @ Env get: 'TRASHTALK_GUSGUS_PROFILE' default: 'jcode' ]
+  classMethod: profile [ ^ @ Config at: 'gusgus.profile' ]
   classMethod: agentHandle [ ^ 'gusgus' ]
   classMethod: agentDisplayName [ ^ 'Gusgus' ]
   classMethod: sessionScope [ ^ 'identity' ]
@@ -16,7 +16,7 @@ Gusgus subclass: Object
   classMethod: archetype [
     | text profile |
     text := @ self instructions.
-    profile := @ self profile.
+    profile := @ self profile ifFailed: [:e | @ e signal].
     ^ @ Agent::Archetype define: 'assistant' revision: 2 instructions: text profile: profile
   ]
 

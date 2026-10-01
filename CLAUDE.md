@@ -184,6 +184,10 @@ Use `jsonTextAt:` for decoded text, and `jsonAt:ifAbsent:` for an encoded defaul
 only when absent. Legacy `String jsonPath:from:` remains available. See
 `docs/json-values.md` for paths, bulk binding, and one-pass collection traversal.
 
+**User settings**: read with `@ Config at: 'jcode.model'`, not
+`@ Env get: 'X' default: 'Y'`. Declare new keys (env override, type, default,
+description) in `lib/config.bash`; see `docs/config-design.md`.
+
 **Handler/closure pattern** (for callbacks):
 ```smalltalk
 # Store handler in ivar, implement valueWith: to receive callbacks

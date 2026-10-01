@@ -113,6 +113,7 @@ source "$SCRIPT_DIR/store-transaction.bash" || return 1
 source "$SCRIPT_DIR/agent-active-sessions.bash" || return 1
 source "$SCRIPT_DIR/decision-http.bash" || return 1
 source "$SCRIPT_DIR/process-artifacts.bash" || return 1
+source "$SCRIPT_DIR/config.bash" || return 1
 
 # ============================================
 # Profiling Support

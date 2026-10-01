@@ -4,7 +4,7 @@ package: Decision
 Target subclass: Object
   classMethod: selected [
     | name |
-    name := @ Env get: 'TRASHTALK_DECISION_TARGET' default: 'jev'.
+    name := @ Config at: 'decision.target' ifFailed: [:e | @ e signal].
     ^ @ self named: name
   ]
 
@@ -12,11 +12,11 @@ Target subclass: Object
     | url model credential target |
     name caseOf: {
       'jev' -> [
-        model := @ OpenRouter::Jev model.
+        model := @ OpenRouter::Jev model ifFailed: [:e | @ e signal].
         ^ #{name: name provider: 'jev' model: model} asJson
       ].
-      'clm-local' -> [url := @ Env get: 'CLM_BASE_URL' default: 'http://127.0.0.1:8700'. credential := 'CLM_API_KEY'].
-      'clm-bc250' -> [url := @ Env get: 'CLM_BC250_URL'. credential := 'CLM_BC250_API_KEY'].
+      'clm-local' -> [url := @ Config at: 'clm.baseUrl' ifFailed: [:e | @ e signal]. credential := 'CLM_API_KEY'].
+      'clm-bc250' -> [url := @ Config at: 'clm.bc250Url' ifFailed: [:e | @ e signal]. credential := 'CLM_BC250_API_KEY'].
       'clm-prefer-bc250' -> [
         target := @ self named: 'clm-bc250'.
         ((@ CLM::Client ready: target) = 'true') ifTrue: [^ target].
@@ -26,7 +26,7 @@ Target subclass: Object
       ]
     } otherwise: [@ DecisionError signal: 'Unknown decision target'].
     url := url withoutSuffix: '/'.
-    model := @ Env get: 'CLM_MODEL' default: 'clm-latest'.
+    model := @ Config at: 'clm.model' ifFailed: [:e | @ e signal].
     ^ #{name: name provider: 'clm' url: url model: model credential: credential} asJson
   ]
 

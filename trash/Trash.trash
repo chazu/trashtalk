@@ -66,6 +66,18 @@ Trash subclass: Object
       fi
     done
 
+    # User config: file syntax, unknown keys, invalid values, env overrides.
+    local config_report config_level config_message tab
+    config_report=$(@ Config check)
+    printf -v tab '\t'
+    while IFS="$tab" read -r config_level config_message; do
+      case "$config_level" in
+        ok) _d_ok "$config_message" ;;
+        warn) _d_warn "$config_message" ;;
+        bad) _d_bad "$config_message" ;;
+      esac
+    done <<< "$config_report"
+
     # Innards is optional; edit/page/browse each retain a terminal fallback.
     if command -v inmacs >/dev/null 2>&1 && command -v inpage >/dev/null 2>&1; then
       _d_ok "Innards found (inmacs and inpage)"

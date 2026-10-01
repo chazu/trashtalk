@@ -4,6 +4,14 @@
 
 ### Added
 
+- `Config` reads declared settings from the environment, then
+  `~/.config/trashtalk/config` (a flat TOML file), then defaults. `list`,
+  `template`, `at:put:`, and `reset:` manage the file in place; `Trash doctor`
+  reports unknown keys and invalid values. Harness models, Gusgus's profile,
+  control wait, decision target, CLM endpoints, and the Jev model (previously
+  hardcoded) are settings. Existing environment variables still override. See
+  `docs/config-design.md`.
+
 - Retained Innards toolkit through `inui` and `UI::*`: native controls, virtual
   lists/tables, plots, forms, a navigable inspection stack, and a reproducible
   live event inspector. Versioned batches, bounded asynchronous transport,

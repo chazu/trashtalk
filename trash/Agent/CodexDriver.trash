@@ -20,7 +20,7 @@ CodexDriver subclass: Agent::Driver
     ^ '["-u","CODEX_API_KEY","-u","OPENAI_API_KEY"]'
   ]
 
-  classMethod: model [ ^ @ Env get: 'TRASHTALK_CODEX_MODEL' default: 'gpt-5.6-terra' ]
+  classMethod: model [ ^ @ Config at: 'codex.model' ]
 
   classMethod: codexPath [
     | path |
@@ -36,7 +36,7 @@ CodexDriver subclass: Agent::Driver
     local run_id="$1" run_dir model tdir
     run_dir=$(@ "$_RECEIVER" runDirFor: "$run_id")
     mkdir -p "$run_dir"
-    model=$(@ "$_RECEIVER" model)
+    model=$(@ "$_RECEIVER" model) || return 1
     tdir="${TRASHTALK_DIR:-$HOME/.trashtalk}"
     jq -cn --arg model "$model" --arg tdir "$tdir" --arg out "$run_dir/last.txt" '
       ["--json", "--skip-git-repo-check",

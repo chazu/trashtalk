@@ -1,0 +1,31 @@
+# Config - declared user settings. A value comes from its environment variable,
+# then the user config file, then its declared default. Keys and the file
+# reader live in lib/config.bash; see docs/config-design.md.
+#
+# Usage:
+#   model := @ Config at: 'jcode.model'
+#   @ Config at: 'jcode.model' put: 'gpt-5.6-terra'
+#   @ Config list
+Config subclass: Object
+
+  # Effective value of a declared key; fails with ConfigurationError for an
+  # unknown key, a config file syntax error, or an invalid value.
+  classPrimitive: at: key calls: trash_config_at
+
+  # Write the value into the user config file, keeping its comments and order.
+  classPrimitive: at: key put: value calls: trash_config_put
+
+  # Remove the key from the user config file so its default applies.
+  classPrimitive: reset: key calls: trash_config_reset
+
+  # Every key with its effective value and source (env, file, default).
+  classPrimitive: list calls: trash_config_list
+
+  # A commented config file listing every key at its default.
+  classPrimitive: template calls: trash_config_template
+
+  # The user config file's path, whether or not it exists.
+  classPrimitive: path calls: trash_config_path
+
+  # Doctor findings, one "ok|warn|bad<TAB>message" line each.
+  classPrimitive: check calls: trash_config_check

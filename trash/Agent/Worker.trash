@@ -150,7 +150,7 @@ Worker subclass: Object
   # Whole seconds a user control operation queues behind a running tick.
   classMethod: controlWait [
     | seconds |
-    seconds := @ Env get: 'TRASHTALK_CONTROL_WAIT' default: '30'.
+    seconds := @ Config at: 'agent.controlWait' ifFailed: [^ 30].
     (seconds matches: '^[0-9]{1,4}$') ifTrue: [^ seconds].
     ^ 30
   ]
