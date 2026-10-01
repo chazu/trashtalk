@@ -113,7 +113,7 @@ Delegation subclass: Object
     caps := @ role capabilities.
     @ Require member: 'assignment.work' of: caps.
     active := @ Store idsOf: 'Assignment' matching: (#{currentSession: session state: 'open'} asJson).
-    @ Require equal: active to: '[]'.
+    (active ~= '[]') ifTrue: [^ @ Require reject: 'Specialist session already has an open Assignment: ' , (active arrayFirst) , '. Inspect that Assignment before delegating more work'].
     origin := ''.
     deliveries := @ Store idsOf: 'Agent::Delivery' matching: (#{run: run state: #('offered' 'blocked')} asJson).
     count := deliveries arrayLength.
