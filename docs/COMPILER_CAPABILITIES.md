@@ -13,18 +13,19 @@ in `trash/.compiled/`; edit source and rebuild with `make bash`.
 | --- | --- |
 | Classes, inheritance, inherited fields, class variables, accessors | `test_codegen`, `test_inherited_ivars`, `test_class_instance_vars` |
 | Unary/keyword messages, distinct unary and keyword selectors, negative arguments | `test_known_issues`, `test_expr_codegen` |
-| Locals, assignment, arithmetic precedence, return, string concatenation | `test_expr_parser`, `test_expr_runtime`, `test_string_concat` |
-| Conditions, predicates, loops, boolean operators, exceptions | `test_control_flow`, `test_predicates`, `test_boolean_ops`, `test_exceptions` |
+| Locals, assignment, arithmetic precedence, return, string concatenation, triple-quoted text | `test_expr_parser`, `test_expr_runtime`, `test_string_concat`, `test_method_semantics`, `test_triplestrings` |
+| Conditions, predicates, loops, boolean operators, exceptions, nil checks, string comparison | `test_control_flow`, `test_predicates`, `test_boolean_ops`, `test_exceptions`, `test_negation`, `test_nil_handling`, `test_string_compare`, `test_standalone_predicates`, `test_expression_behavior`, `test_to_do` |
 | Blocks, captures, block parameters, supported inline early returns | `test_blocks`, `test_block_params`, `test_block_early_return` |
-| Arrays, dictionaries, typed JSON construction, reads and traversal | `test_arrays`, `test_dicts`, `test_json_values`, `test_json_reads` |
+| Arrays, dictionaries, typed JSON construction, reads and traversal | `test_arrays`, `test_dicts`, `test_json_values`, `test_json_reads`, `test_json_primitives`, `test_json_primitives_runtime` |
 | Packages, qualified sends (including raw methods), `super` | `test_namespaces`, `test_known_issues`, `test_super` |
-| Cascades, aliases, protocols, advice, method categories | `test_cascades`, `test_aliases`, `test_protocols`, `test_advice`, `test_method_categories` |
+| Cascades, aliases, protocols, advice, method categories | `test_cascades`, `test_aliases`, `test_protocols`, `test_protocol_dispatch`, `test_protocol_fortification`, `test_advice`, `test_method_categories` |
 | Raw Bash boundaries and sequence ranges, `pragma: direct`, `pragma: primitive` | `test_rawmethod_assignments`, `test_raw_ranges`, `test_pragmas` |
 | String intrinsics on implicit receivers, unknown-message diagnostics | `test_string_intrinsics` |
 | `signal:`, `self error:`, `ifFailed:`, re-raise, error recovery from captured sends | `test_failure_forms` |
 | Statement value discipline, `pragma: stream`, `linesDo:`, `caseOf:`, literal `Env get:` | `test_statement_values` |
 | Declared primitives (`primitive:` / `classPrimitive:` ... `calls:`) | `test_primitives` |
-| Build receipts, dependency planning, symbol cache, pruning of unowned artifacts | `test_build_cache`, `test_symbol_cache`, `test_build_moves` |
+| Build receipts, dependency planning, symbol cache, pruning of unowned artifacts and old cache generations, `TRASHTALK_VALUE_SEND` | `test_build_cache`, `test_symbol_cache`, `test_build_moves`, `test_cache_prune`, `test_value_send` |
+| Tokenizer (including locale and multibyte input), parser, compile-and-run journeys | `test_tokenizer`, `test_tokenizer_locale`, `test_parser`, `test_integration` |
 | Comparisons as values, keyword-argument boundaries, literal triple-quoted text, qualified error signals, rejection of code outside methods | `test_value_forms` |
 
 Each test name above has a `.bash` suffix. Runtime tests additionally cover
