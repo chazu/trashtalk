@@ -100,8 +100,10 @@ def generated_runtime(repo):
     trace = '\n  [[ -z "${EXP_TRACE:-}" ]] || printf "%s %s %s %s\\n" "$BASHPID" "$BASH_SUBSHELL" "$1" "$2" >> "$EXP_RESULTS/depth"'
     instrumented = dispatch.replace("function send {", "function send {" + trace, 1)
     bsend = instrumented.replace("function send {", "function _exp_send {", 1)
-    for variable in ("class_method_func", "namespaced_func"):
-        bsend = bsend.replace(f'"${variable}" "$@"', f'_exp_invoke "${variable}" "$@"')
+    # send invokes every compiled-class target (class, instance, trait,
+    # accessor) through one call site.
+    bsend = bsend.replace('"$target_func" "$@"', '_exp_invoke "$target_func" "$@"', 1)
+    assert "_exp_invoke" in bsend, "send no longer has a target_func call site"
     return instrumented + "\n" + a + b + prepared + tail + bsend + "\n"
 
 
