@@ -1617,13 +1617,74 @@ export -f _ivar_set_ref
 # ============================================
 # Class instance variables are shared across all instances of a class.
 # They are stored in SQLite via kv_set/kv_get with keys like ClassName__cvar__varname
+# (the qualified name, e.g. MyApp::Counter__cvar__count). Each class has its own
+# values; until one is assigned, a read returns the nearest declared default.
 
 # Get class instance variable value
 # Usage: _cvar <var_name>
 # Returns the value of the class instance variable for $_CLASS
 function _cvar {
   local var="$1"
-  kv_get "${_CLASS}__cvar__${var}"
+  kv_get "${_CLASS}__cvar__${var}" || _cvar_default "$_CLASS" "$var"
+}
+
+# Print the declared default of a class instance variable, searching the class
+# and then its superclasses. Fails when no class in the chain declares it.
+# Usage: _cvar_default <class_name> <var_name>
+function _cvar_default {
+  local current="$1" var="$2" defaults_var super_var
+  local -A visited=()
+  while [[ -n "$current" && "$current" != nil && -z "${visited[$current]:-}" ]]; do
+    visited[$current]=1
+    _ensure_class_sourced "$current" || return 1
+    defaults_var="__${current//::/__}__classVarDefaults"
+    if declare -p "$defaults_var" >/dev/null 2>&1; then
+      local -n _cvar_defaults="$defaults_var"
+      if [[ -n "${_cvar_defaults[$var]+x}" ]]; then
+        printf '%s\n' "${_cvar_defaults[$var]}"
+        return 0
+      fi
+      unset -n _cvar_defaults
+    fi
+    super_var="__${current//::/__}__superclass"
+    current="${!super_var:-}"
+  done
+  return 1
+}
+
+# Print a class's declared class instance variables and their current values
+# as one JSON object, superclass declarations first. A collection, or a scalar
+# whose JSON spelling is exact (7, true, not 007), is decoded; text stays text.
+# Fails when the name is not a compiled class.
+# Usage: _cvar_state <class_name>
+function _cvar_state {
+  local class_name="$1" current="$1" names_var super_var name value
+  [[ $class_name =~ ^[A-Za-z_][A-Za-z0-9_]*(::[A-Za-z_][A-Za-z0-9_]*)*$ ]] || return 1
+  _ensure_class_sourced "$class_name" || return 1
+  local -a chain=() names=() args=()
+  local -A visited=() seen=()
+  while [[ -n "$current" && "$current" != nil && -z "${visited[$current]:-}" ]]; do
+    visited[$current]=1
+    _ensure_class_sourced "$current" || break
+    chain=("$current" "${chain[@]}")
+    super_var="__${current//::/__}__superclass"
+    current="${!super_var:-}"
+  done
+  for current in "${chain[@]}"; do
+    names_var="__${current//::/__}__classVarNames"
+    for name in ${!names_var:-}; do
+      [[ -z "${seen[$name]:-}" ]] || continue
+      seen[$name]=1
+      names+=("$name")
+    done
+  done
+  for name in "${names[@]}"; do
+    value=$(_CLASS="$class_name" _cvar "$name")
+    args+=(--arg "$name" "$value")
+  done
+  jq -cn '$ARGS.named | map_values(. as $text | (try fromjson catch null) as $value |
+    if ($value | type) == "object" or ($value | type) == "array" then $value
+    elif $value != null and ($value | tojson) == $text then $value else $text end)' "${args[@]}"
 }
 
 # Set class instance variable value
@@ -1636,6 +1697,8 @@ function _cvar_set {
 
 export -f _cvar
 export -f _cvar_set
+export -f _cvar_default
+export -f _cvar_state
 
 # ============================================
 # Protocol Helpers
@@ -1924,12 +1987,6 @@ function send {
         msg_debug "Generated accessors for compiled class $class_name: ${!vars_var}"
       fi
 
-      # Initialize class instance variables if present (only once)
-      local init_func="${func_prefix}__initClassVars"
-      if declare -F "$init_func" >/dev/null 2>&1; then
-        "$init_func"
-        msg_debug "Initialized class vars for $class_name"
-      fi
     fi
 
     # Choose the target in priority order, then invoke it and clean up once.

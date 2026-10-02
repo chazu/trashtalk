@@ -8,24 +8,34 @@ Inspector subclass: Object
     ^ @ self open: record title: title editable: false
   ]
 
-  # The single entry point for inspecting an object. Without a human at the
-  # terminal, or without inui, the object describes itself as text instead.
+  # The single entry point for inspecting an object or a class. Without a
+  # human at the terminal, or without inui, it describes itself as text.
+  # Class state is shown read-only; only object ivars stage edits.
   classMethod: openObject: objectId [
     | record available |
     record := @ self recordFor: objectId.
     record isEmpty ifTrue: [@ StateError signal: 'Object does not exist: ' , objectId].
     available := @ UI::Surface isAvailable.
     (available ~= 'true') ifTrue: [^ @ objectId describe].
+    (record jsonHas: 'object_id') ifFalse: [^ @ self openRecord: record title: 'Class inspector'].
     ^ @ self open: record title: 'Object inspector' editable: true
   ]
 
+  # A live object's record, or a class's record when objectId names a class.
   classMethod: recordFor: objectId [
     | className rawData data |
     className := @ Runtime classFor: objectId.
-    className isEmpty ifTrue: [^ ''].
+    className isEmpty ifTrue: [^ @ self classRecordFor: objectId].
     rawData := @ Runtime dataFor: objectId.
     data := @ String jsonInstanceView: rawData.
     ^ #{schema_version: 1 object_id: objectId class_name: className data: (data jsonValue)} asJson
+  ]
+
+  classMethod: classRecordFor: className [
+    | state superclass |
+    state := (@ Runtime classStateFor: className) ifFailed: [^ ''].
+    superclass := @ Runtime superclassOf: className.
+    ^ #{schema_version: 1 class_name: className superclass: superclass data: (state jsonValue)} asJson
   ]
 
   classMethod: open: record title: title editable: editable [

@@ -24,6 +24,13 @@
   creates or reuses the conversation, retains failed drafts, and never falls
   back to inbox delivery.
 
+- Classes can be inspected. `@ Registry inspect` and `@ Trash inspectObject:
+  Registry` show the superclass and class instance variables (own and
+  inherited, with current values) read-only in `UI::Inspector`, or as text
+  without a terminal. `@ Registry describe` prints the same, a class's
+  `printString` is its name, and `Runtime classStateFor:` returns the state as
+  JSON.
+
 ### Changed
 
 - Object inspection has one entry point. `@ obj inspect`, `@ Trash
@@ -54,6 +61,13 @@
 - Remove the GitHub build-event importer and macOS polling service from Trashtalk.
 
 ### Fixed
+
+- Class instance variable defaults were never applied (a class could load
+  without running its initializer), and namespaced classes initialized the
+  unqualified key. A read now falls back to the nearest declared default, so
+  defaults apply to namespaced classes and subclasses, and loading a class
+  writes nothing. Each subclass keeps its own values, and its methods can now
+  name inherited class instance variables (they compiled to literal text).
 
 - Raw method bodies are reproduced from token positions instead of being
   respaced and regex-repaired. Hyphenated words (`--connect-timeout` had become

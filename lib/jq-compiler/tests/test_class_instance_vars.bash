@@ -67,14 +67,16 @@ else
   fail "Codegen generates metadata" "contains counter:0" "not found"
 fi
 
-# Test 5: Codegen generates initClassVars function
-echo "=== Test 5: Codegen generates initClassVars function ==="
-result=$(echo 'TestClass subclass: Object
-  classInstanceVars: counter:0' | "$COMPILER_DIR/tokenizer.bash" 2>/dev/null | jq -f "$COMPILER_DIR/parser.jq" 2>/dev/null | jq -f "$COMPILER_DIR/codegen.jq" 2>/dev/null | grep -c '__TestClass__initClassVars')
-if [[ "$result" -ge "1" ]]; then
-  pass "Codegen generates initClassVars function"
+# Test 5: Codegen declares names and defaults; reads fall back to defaults,
+# so nothing is written when a class loads.
+echo "=== Test 5: Codegen generates class var defaults ==="
+result=$(printf '%s\n' 'TestClass subclass: Object' "  classInstanceVars: counter:0 label:'a b' note" | "$COMPILER_DIR/tokenizer.bash" 2>/dev/null | jq -f "$COMPILER_DIR/parser.jq" 2>/dev/null | jq -r -f "$COMPILER_DIR/codegen.jq" 2>/dev/null | grep -E '__TestClass__classVar(Names|Defaults)')
+expected="__TestClass__classVarNames='counter label note'
+declare -gA __TestClass__classVarDefaults=([counter]='0' [label]='a b' [note]='')"
+if [[ "$result" == "$expected" ]]; then
+  pass "Codegen generates class var names and defaults"
 else
-  fail "Codegen generates initClassVars" "function definition" "not found"
+  fail "Codegen generates class var defaults" "$expected" "$result"
 fi
 
 # Test 6: Cvar inference in expression parser

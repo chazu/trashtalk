@@ -2357,25 +2357,17 @@ def generateMetadata:
     ""
   end;
 
-# Generate class instance variable initializer function
-def generateClassVarsInit:
+# Declared class instance variables, in order, and their defaults. Values are
+# stored per class; _cvar falls back to the nearest declared default, so a
+# class reads its default until it assigns, and subclasses inherit defaults.
+def generateClassVarDefaults:
   funcPrefix as $prefix |
-  .name as $className |
   if (.classInstanceVars | length) > 0 then
-    "\($prefix)__initClassVars() {",
-    (.classInstanceVars[] |
-      .name as $varName |
-      (if .default then
-        if .default.type == "number" then .default.value
-        elif .default.type == "string" then .default.value
-        elif .default.type == "triplestring" then .default.value
-        else ""
-        end
-      else "" end) as $default |
-      "  [[ -z \"$(kv_get '\($className)__cvar__\($varName)')\" ]] && kv_set '\($className)__cvar__\($varName)' '\($default)'"
-    ),
-    "}",
-    ""
+    "\($prefix)__classVarNames=\([.classInstanceVars[].name] | join(" ") | @sh)",
+    "declare -gA \($prefix)__classVarDefaults=(\([.classInstanceVars[] |
+      (if .default and (.default.type == "number" or .default.type == "string" or .default.type == "triplestring")
+       then .default.value else "" end) as $default |
+      "[\(.name)]=\($default | @sh)"] | join(" ")))"
   else
     empty
   end;
@@ -2701,13 +2693,13 @@ def generate:
   qualifiedName as $qname |
   # Extract instance variable names for expression parser (own + inherited)
   (([.instanceVars[]? | .name] // []) + (.inheritedInstanceVars // [])) as $ivars |
-  # Extract class instance variable names for expression parser
-  ([.classInstanceVars[]? | .name] // []) as $cvars |
+  # Extract class instance variable names for expression parser (own + inherited)
+  (([.classInstanceVars[]? | .name] // []) + (.inheritedClassInstanceVars // [])) as $cvars |
   (
     generateHeader,
     generateMetadata,
     "declare -gA \($funcPrefix)__valueMethods=()",
-    generateClassVarsInit,
+    generateClassVarDefaults,
     generateAccessors,
     generateRequires,
     (.methods[] | generateMethod($funcPrefix; $ivars; $cvars)),
@@ -2723,8 +2715,9 @@ def generate:
 if .class != null then
   # When using CompilationUnit, merge top-level metadata into the class before generating
   (.inheritedInstanceVars // []) as $inherited |
+  (.inheritedClassInstanceVars // []) as $inheritedClassVars |
   (.sourceHash // "") as $hash |
-  .class + {inheritedInstanceVars: $inherited, sourceHash: $hash} | generate
+  .class + {inheritedInstanceVars: $inherited, inheritedClassInstanceVars: $inheritedClassVars, sourceHash: $hash} | generate
 else
   generate
 end

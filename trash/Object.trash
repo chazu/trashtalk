@@ -12,8 +12,9 @@ Object subclass: nil
 
   # Return a canonical string representation of this object
   # Format: <ClassName instanceId>
+  # A class prints as its name.
   rawMethod: printString [
-    echo "<${_CLASS} ${_INSTANCE}>"
+    if [[ -z "$_INSTANCE" ]]; then echo "$_CLASS"; else echo "<${_CLASS} ${_INSTANCE}>"; fi
   ]
 
   # Return the class name of this object
@@ -45,22 +46,29 @@ Object subclass: nil
     @ Runtime delete: "$_INSTANCE"
   ]
 
-  # Inspect this object. A human at a terminal gets the UI inspector, which
-  # can also stage validated ivar edits; other callers get describe's text.
+  # Inspect this object or class. A human at a terminal gets the UI inspector,
+  # which can also stage validated ivar edits on an object; other callers get
+  # describe's text.
   method: inspect [
     ^ @ UI::Inspector openObject: self
   ]
 
   # Class name, instance ID, and every instance variable, one per line. Like
-  # the UI inspector, it shows declared state without runtime metadata.
+  # the UI inspector, it shows declared state without runtime metadata. A
+  # class shows its superclass and class instance variables instead.
   rawMethod: describe [
     local data class instance
     class="$_CLASS"
     instance="$_INSTANCE"
-    data=$(@ String jsonInstanceView: "$(@ Runtime dataFor: "$_RECEIVER")")
-
-    echo "a $class"
-    echo "  id: $instance"
+    if [[ -z "$instance" ]]; then
+      data=$(@ Runtime classStateFor: "$class") || return
+      echo "class $class"
+      echo "  superclass: $(@ Runtime superclassOf: "$class")"
+    else
+      data=$(@ String jsonInstanceView: "$(@ Runtime dataFor: "$_RECEIVER")")
+      echo "a $class"
+      echo "  id: $instance"
+    fi
 
     if [[ -n "$data" && "$data" != "{}" ]]; then
       echo "$data" | jq -r 'to_entries | .[] | "  \(.key): \(.value)"'

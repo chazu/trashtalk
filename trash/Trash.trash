@@ -535,6 +535,7 @@ Trash subclass: Object
     printf "$row" '@ <Class> count' 'Count instances of class'
     printf "$row" '@ Store listClasses' 'List classes with instances'
     printf "$row" '@ <instance> inspect' 'Open the object inspector (text without a terminal)'
+    printf "$row" '@ <Class> inspect' 'Inspect class instance variables, read-only'
     printf "$row" '@ <instance> describe' 'Print class, id and instance variables'
     echo ""
     echo "=== Source Introspection ==="

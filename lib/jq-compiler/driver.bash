@@ -247,11 +247,20 @@ extract_parent_from_compiled() {
     echo "$parent_line" | sed 's/.*__superclass="\([^"]*\)".*/\1/'
 }
 
+# Class instance variable names declared by a compiled class
+# Args: $1=compiled_file_path
+# Returns: space-separated list of names
+extract_cvars_from_compiled() {
+    [[ -f "$1" ]] || return 0
+    sed -n "s/^__.*__classVarNames='\(.*\)'$/\1/p" "$1" | head -1
+}
+
 # Recursively collect all inherited ivars from parent chain
 # Args: $1=parent_class_name (qualified, e.g., "Yutani::Widget")
+#       $2=extractor (default extract_ivars_from_compiled)
 # Returns: JSON array of ivar names
 collect_inherited_ivars() {
-    local class_name="$1"
+    local class_name="$1" extract="${2:-extract_ivars_from_compiled}"
     local all_ivars=()
 
     # Walk up the inheritance chain
@@ -266,7 +275,7 @@ collect_inherited_ivars() {
 
         # Get this class's ivars
         local ivars
-        ivars=$(extract_ivars_from_compiled "$compiled_path")
+        ivars=$("$extract" "$compiled_path")
 
         if [[ -n "$ivars" ]]; then
             for ivar in $ivars; do
@@ -617,19 +626,23 @@ cmd_compile() {
     local source_hash
     source_hash=$(shasum -a 256 "$source_file" 2>/dev/null | cut -d' ' -f1)
 
-    # Collect inherited instance variables from parent classes
-    local inherited_ivars
+    # Collect inherited instance and class instance variables from parent classes
+    local inherited_ivars inherited_cvars
     parent_class=$(echo "$ast" | jq -c '.class' | _resolved_parent)
     if [[ -n "$parent_class" ]]; then
         inherited_ivars=$(collect_inherited_ivars "$parent_class")
+        inherited_cvars=$(collect_inherited_ivars "$parent_class" extract_cvars_from_compiled)
     else
         inherited_ivars="[]"
+        inherited_cvars="[]"
     fi
 
-    # Add source metadata and inherited ivars to AST
+    # Add source metadata and inherited variables to AST
     local ast_with_source
-    ast_with_source=$(echo "$ast" | jq --arg hash "$source_hash" --slurpfile inherited <(printf '%s' "$inherited_ivars") \
-        'del(.warnings) | . + {sourceHash: $hash, inheritedInstanceVars: $inherited[0]}')
+    ast_with_source=$(echo "$ast" | jq --arg hash "$source_hash" --argjson inherited "$inherited_ivars" \
+        --argjson inheritedClassVars "$inherited_cvars" \
+        'del(.warnings) | . + {sourceHash: $hash, inheritedInstanceVars: $inherited,
+          inheritedClassInstanceVars: $inheritedClassVars}')
 
     # Generate code
     local output _codegen_err

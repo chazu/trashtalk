@@ -80,6 +80,17 @@ selected value have not changed since they were shown, then applies the typed
 value through `Runtime`; a stale or invalid edit is refused in the status line.
 Runtime metadata is not offered as editable state.
 
+Classes are inspected the same way. A class record shows the superclass and
+every class instance variable (inherited declarations first) with its current
+value; it is read-only.
+
+```bash
+@ Registry inspect                     # Class inspector, or describe's text
+@ Trash inspectObject: Registry        # the same entry point by class name
+@ Registry describe                    # class Registry / superclass / state
+@ Runtime classStateFor: Registry      # {"count":2,"label":"main hall"}
+```
+
 ## Readline shortcuts
 
 Bind optional applets from an interactive Bash startup file after sourcing

@@ -100,6 +100,11 @@ Runtime subclass: Object
   classPrimitive: superclassOf: className calls: _trash_superclass_of
   classPrimitive: classExists: className calls: _trash_class_exists
 
+  # Declared class instance variables (own and inherited) with current values
+  # as one JSON object. Fails when className is not a compiled class.
+  # Usage: state := @ Runtime classStateFor: 'Registry'
+  classPrimitive: classStateFor: className calls: _cvar_state
+
   # Sorted compiled selector names, including direct traits and methods declared by ancestors.
   # Class methods have the class__ prefix; keyword selectors end in underscore.
   classPrimitive: methodsFor: className calls: _trash_methods_json

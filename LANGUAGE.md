@@ -433,7 +433,11 @@ fi
 
 ### Class Instance Variables
 
-Shared across all instances of a class:
+Shared across all instances of a class, and persisted in the store. A class
+reads its declared default until it assigns a value. Each subclass inherits
+the declarations and defaults but keeps its own values, as in Smalltalk, so a
+subclass can serve as a singleton with its own state. `@ Counter inspect`
+shows the current values.
 
 ```smalltalk
 Counter subclass: Object
