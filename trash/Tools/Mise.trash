@@ -30,13 +30,12 @@ Mise subclass: Tool
 
   # mise prints "<version> <platform> (<hash> <date>)"; keep the version token.
   classMethod: version [
-    | available argv result stdout line |
+    | available argv stdout line |
     available := @ self isInstalled.
     (available ~= 'true') ifTrue: [^ 'not installed'].
     argv := @ self baseArgv.
     argv := argv arrayPush: '--version'.
-    result := @ self resultForArgv: argv command: 'version' failureOutcome: 'process_error'.
-    stdout := @ self stdoutOf: result.
+    stdout := @ self stdoutForArgv: argv command: 'version'.
     line := stdout firstLine.
     ^ line upTo: ' '
   ]
@@ -64,9 +63,7 @@ Mise subclass: Tool
 
   # `mise ls --json`: installed tools, optionally filtered to one tool.
   classMethod: listResult: tool inDirectory: directory [
-    | available argv |
-    available := @ self isInstalled.
-    (available ~= 'true') ifTrue: [^ @ self missingToolResult: 'ls'].
+    | argv |
     argv := @ self argvFor: 'ls' inDirectory: directory.
     argv := argv arrayPush: '--json'.
     tool notEmpty ifTrue: [argv := argv arrayPush: tool].
@@ -93,13 +90,12 @@ Mise subclass: Tool
 
   # Trimmed stdout of `mise <subcommand> <target>` ('' when mise is missing).
   classMethod: trimmedOutputOf: subcommand for: target inDirectory: directory [
-    | available argv result stdout |
+    | available argv stdout |
     available := @ self isInstalled.
     (available ~= 'true') ifTrue: [^ ''].
     argv := @ self argvFor: subcommand inDirectory: directory.
     argv := argv arrayPush: target.
-    result := @ self resultForArgv: argv command: subcommand failureOutcome: 'process_error'.
-    stdout := @ self stdoutOf: result.
+    stdout := @ self stdoutForArgv: argv command: subcommand.
     ^ stdout trimmed
   ]
 
@@ -132,9 +128,7 @@ Mise subclass: Tool
   ]
 
   classMethod: install: toolSpecs inDirectory: directory [
-    | available argv |
-    available := @ self isInstalled.
-    (available ~= 'true') ifTrue: [^ @ self missingToolResult: 'install'].
+    | argv |
     argv := @ self argvFor: 'install' inDirectory: directory.
     argv := argv arrayPush: '--yes'.
     argv := @ self argv: argv appendEach: toolSpecs.
@@ -165,9 +159,7 @@ Mise subclass: Tool
   ]
 
   classMethod: use: toolSpecs global: global inDirectory: directory [
-    | available argv |
-    available := @ self isInstalled.
-    (available ~= 'true') ifTrue: [^ @ self missingToolResult: 'use'].
+    | argv |
     argv := @ self argvFor: 'use' inDirectory: directory.
     argv := argv arrayPush: '--yes'.
     (global = 'true') ifTrue: [argv := argv arrayPush: '--global'].
@@ -176,9 +168,7 @@ Mise subclass: Tool
   ]
 
   classMethod: uninstall: toolSpecs [
-    | available argv |
-    available := @ self isInstalled.
-    (available ~= 'true') ifTrue: [^ @ self missingToolResult: 'uninstall'].
+    | argv |
     argv := @ self argvFor: 'uninstall'.
     argv := @ self argv: argv appendEach: toolSpecs.
     ^ @ self resultForArgv: argv command: 'uninstall' failureOutcome: 'process_error'
@@ -196,9 +186,7 @@ Mise subclass: Tool
   ]
 
   classMethod: exec: toolSpecs argv: argvJson inDirectory: directory [
-    | available argv |
-    available := @ self isInstalled.
-    (available ~= 'true') ifTrue: [^ @ self missingToolResult: 'exec'].
+    | argv |
     argv := @ self argvFor: 'exec' inDirectory: directory.
     argv := @ self argv: argv appendEach: toolSpecs.
     argv := argv arrayPush: '--'.
@@ -227,9 +215,7 @@ Mise subclass: Tool
   # ---------------------------------------------------------------------------
 
   classMethod: tasksResult: directory [
-    | available argv |
-    available := @ self isInstalled.
-    (available ~= 'true') ifTrue: [^ @ self missingToolResult: 'tasks'].
+    | argv |
     argv := @ self argvFor: '["tasks","ls"]' inDirectory: directory.
     argv := argv arrayPush: '--json'.
     ^ @ self resultForArgv: argv command: 'tasks' failureOutcome: 'process_error'
@@ -263,9 +249,7 @@ Mise subclass: Tool
   ]
 
   classMethod: runTask: task args: args inDirectory: directory [
-    | available argv |
-    available := @ self isInstalled.
-    (available ~= 'true') ifTrue: [^ @ self missingToolResult: 'run'].
+    | argv |
     argv := @ self argvFor: 'run' inDirectory: directory.
     argv := argv arrayPush: task.
     argv := @ self argv: argv appendEach: args.
@@ -277,9 +261,7 @@ Mise subclass: Tool
   # ---------------------------------------------------------------------------
 
   classMethod: envResult: directory [
-    | available argv |
-    available := @ self isInstalled.
-    (available ~= 'true') ifTrue: [^ @ self missingToolResult: 'env'].
+    | argv |
     argv := @ self argvFor: 'env' inDirectory: directory.
     argv := argv arrayPush: '--json'.
     ^ @ self resultForArgv: argv command: 'env' failureOutcome: 'process_error'
@@ -314,14 +296,13 @@ Mise subclass: Tool
 
   # Shell-specific activation script, e.g. envFor: 'bash' -> export lines.
   classMethod: envFor: shell [
-    | available argv result |
+    | available argv |
     available := @ self isInstalled.
     (available ~= 'true') ifTrue: [^ ''].
     argv := @ self argvFor: 'env'.
     argv := argv arrayPush: '--shell'.
     argv := argv arrayPush: shell.
-    result := @ self resultForArgv: argv command: 'env' failureOutcome: 'process_error'.
-    ^ @ self stdoutOf: result
+    ^ @ self stdoutForArgv: argv command: 'env'
   ]
 
   # ---------------------------------------------------------------------------
@@ -334,40 +315,34 @@ Mise subclass: Tool
   ]
 
   classMethod: configInDirectory: directory [
-    | available argv result |
+    | available argv |
     available := @ self isInstalled.
     (available ~= 'true') ifTrue: [^ ''].
     argv := @ self argvFor: '["config","ls"]' inDirectory: directory.
     argv := argv arrayPush: '--json'.
-    result := @ self resultForArgv: argv command: 'config' failureOutcome: 'process_error'.
-    ^ @ self stdoutOf: result
+    ^ @ self stdoutForArgv: argv command: 'config'
   ]
 
   # Effective mise settings as JSON.
   classMethod: settings [
-    | available argv result |
+    | available argv |
     available := @ self isInstalled.
     (available ~= 'true') ifTrue: [^ ''].
     argv := @ self argvFor: 'settings'.
     argv := argv arrayPush: '--json'.
-    result := @ self resultForArgv: argv command: 'settings' failureOutcome: 'process_error'.
-    ^ @ self stdoutOf: result
+    ^ @ self stdoutForArgv: argv command: 'settings'
   ]
 
   # Mark a config file as trusted so its [env] and tasks are honored.
   classMethod: trust: path [
-    | available argv |
-    available := @ self isInstalled.
-    (available ~= 'true') ifTrue: [^ @ self missingToolResult: 'trust'].
+    | argv |
     argv := @ self argvFor: 'trust'.
     argv := argv arrayPush: path.
     ^ @ self resultForArgv: argv command: 'trust' failureOutcome: 'process_error'
   ]
 
   classMethod: doctor [
-    | available argv |
-    available := @ self isInstalled.
-    (available ~= 'true') ifTrue: [^ @ self missingToolResult: 'doctor'].
+    | argv |
     argv := @ self argvFor: 'doctor'.
     ^ @ self resultForArgv: argv command: 'doctor' failureOutcome: 'process_error'
   ]

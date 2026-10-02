@@ -31,13 +31,12 @@ Cue subclass: Tool
 
   # cue reports its version through a subcommand; the first line is the summary.
   classMethod: version [
-    | available argv result stdout |
+    | available argv stdout |
     available := @ self isInstalled.
     (available ~= 'true') ifTrue: [^ 'not installed'].
     argv := @ self baseArgv.
     argv := argv arrayPush: 'version'.
-    result := @ self resultForArgv: argv command: 'version' failureOutcome: 'process_error'.
-    stdout := @ self stdoutOf: result.
+    stdout := @ self stdoutForArgv: argv command: 'version'.
     ^ stdout firstLine
   ]
 
@@ -75,9 +74,7 @@ Cue subclass: Tool
 
   # concrete = 'true' adds -c: every value must be fully specified.
   classMethod: vet: files concrete: concrete [
-    | available argv |
-    available := @ self isInstalled.
-    (available ~= 'true') ifTrue: [^ @ self missingToolResult: 'vet'].
+    | argv |
     argv := @ self argvFor: 'vet' files: files.
     (concrete = 'true') ifTrue: [argv := argv arrayPush: '-c'].
     ^ @ self resultForArgv: argv command: 'vet' failureOutcome: 'validation_error'
@@ -94,9 +91,7 @@ Cue subclass: Tool
   ]
 
   classMethod: vet: files data: data format: format [
-    | available argv |
-    available := @ self isInstalled.
-    (available ~= 'true') ifTrue: [^ @ self missingToolResult: 'vet'].
+    | argv |
     argv := @ self argvFor: 'vet' files: files stdinFormat: format.
     ^ @ self resultForArgv: argv input: data command: 'vet' failureOutcome: 'validation_error'
   ]
@@ -126,9 +121,7 @@ Cue subclass: Tool
   # format: json | yaml | text | cue ('' keeps cue's default, JSON)
   # expression: a CUE path to export instead of the whole document ('' for all)
   classMethod: exportResult: files as: format expression: expression [
-    | available argv |
-    available := @ self isInstalled.
-    (available ~= 'true') ifTrue: [^ @ self missingToolResult: 'export'].
+    | argv |
     argv := @ self argvFor: 'export' files: files.
     argv := @ self argv: argv option: '--out' value: format.
     argv := @ self argv: argv option: '-e' value: expression.
@@ -160,9 +153,7 @@ Cue subclass: Tool
   # Unify schema files with a JSON document and export the concrete result.
   # This is how CUE fills defaults and rejects invalid input in one step.
   classMethod: unifyResult: files json: json [
-    | available argv |
-    available := @ self isInstalled.
-    (available ~= 'true') ifTrue: [^ @ self missingToolResult: 'export'].
+    | argv |
     argv := @ self argvFor: 'export' files: files stdinFormat: 'json'.
     argv := argv arrayPush: '--out'.
     argv := argv arrayPush: 'json'.
@@ -177,9 +168,7 @@ Cue subclass: Tool
 
   # Convert a document between data formats (json, yaml, cue, text).
   classMethod: convertResult: data from: format to: outFormat [
-    | available argv |
-    available := @ self isInstalled.
-    (available ~= 'true') ifTrue: [^ @ self missingToolResult: 'export'].
+    | argv |
     argv := @ self argvFor: 'export' files: '' stdinFormat: format.
     argv := argv arrayPush: '--out'.
     argv := argv arrayPush: outFormat.
@@ -197,9 +186,7 @@ Cue subclass: Tool
   # ---------------------------------------------------------------------------
 
   classMethod: evalResult: files expression: expression [
-    | available argv |
-    available := @ self isInstalled.
-    (available ~= 'true') ifTrue: [^ @ self missingToolResult: 'eval'].
+    | argv |
     argv := @ self argvFor: 'eval' files: files.
     argv := @ self argv: argv option: '-e' value: expression.
     ^ @ self resultForArgv: argv command: 'eval' failureOutcome: 'evaluation_error'
@@ -219,9 +206,7 @@ Cue subclass: Tool
 
   # cue def: the schema/definition view of files.
   classMethod: defResult: files [
-    | available argv |
-    available := @ self isInstalled.
-    (available ~= 'true') ifTrue: [^ @ self missingToolResult: 'def'].
+    | argv |
     argv := @ self argvFor: 'def' files: files.
     ^ @ self resultForArgv: argv command: 'def' failureOutcome: 'evaluation_error'
   ]
@@ -237,9 +222,7 @@ Cue subclass: Tool
   # ---------------------------------------------------------------------------
 
   classMethod: fmt: files [
-    | available argv |
-    available := @ self isInstalled.
-    (available ~= 'true') ifTrue: [^ @ self missingToolResult: 'fmt'].
+    | argv |
     argv := @ self argvFor: 'fmt' files: files.
     ^ @ self resultForArgv: argv command: 'fmt' failureOutcome: 'process_error'
   ]

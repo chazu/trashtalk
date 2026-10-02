@@ -473,17 +473,31 @@ Tool subclass: Object
     ]
   ]
 
-  # Run exact argv and return a normalized tool result.
+  # Run exact argv and return a normalized tool result. A tool that is not on
+  # PATH answers missingToolResult: without running anything.
   classMethod: resultForArgv: argv command: command failureOutcome: failureOutcome [
-    | capture |
+    | available capture |
+    available := @ self isInstalled.
+    (available ~= 'true') ifTrue: [^ @ self missingToolResult: command].
     capture := @ self captureArgvJson: argv.
     ^ @ self resultFrom: capture command: command failureOutcome: failureOutcome
   ]
 
   classMethod: resultForArgv: argv input: input command: command failureOutcome: failureOutcome [
-    | capture |
+    | available capture |
+    available := @ self isInstalled.
+    (available ~= 'true') ifTrue: [^ @ self missingToolResult: command].
     capture := @ self captureArgvJson: argv input: input.
     ^ @ self resultFrom: capture command: command failureOutcome: failureOutcome
+  ]
+
+  # stdout of exact argv for callers that already checked isInstalled and
+  # answer their own value for a missing tool. Failures follow stdoutOf:.
+  classMethod: stdoutForArgv: argv command: command [
+    | capture result |
+    capture := @ self captureArgvJson: argv.
+    result := @ self resultFrom: capture command: command failureOutcome: 'process_error'.
+    ^ @ self stdoutOf: result
   ]
 
   # Convenience projection: stdout of a successful result. On failure the
