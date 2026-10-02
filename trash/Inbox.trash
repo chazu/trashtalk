@@ -68,11 +68,9 @@ Inbox subclass: Object
 
   # Names of every known inbox
   classMethod: names [
-    | ids names n |
+    | ids n |
     ids := @ Inbox findAll.
-    names := @ String splitToArray: ids on: '
-'.
-    names arrayEach: [:id |
+    ids linesDo: [:id |
       n := @ id name.
       @ Console print: n
     ]
@@ -157,24 +155,27 @@ Inbox subclass: Object
     ^ where
   ]
 
-  method: unread [
+  # Messages in this inbox matching an extra predicate, oldest first.
+  method: oldestWhere: extra [
     | where |
-    where := @ self scope: " AND json_extract(data, '$.status') = 'unread'".
+    where := @ self scope: extra.
     ^ @ Store findByClass: 'Message' where: where orderBy: "json_extract(data, '$.sentAt') ASC, rowid ASC" limit: 1000
+  ]
+
+  method: unread [
+    ^ @ self oldestWhere: " AND json_extract(data, '$.status') = 'unread'"
   ]
 
   method: unreadCount [
-    | ids arr |
+    | ids count |
     ids := @ self unread.
-    arr := @ String splitToArray: ids on: '
-'.
-    ^ arr arrayLength
+    count := 0.
+    ids linesDo: [:id | count := count + 1].
+    ^ count
   ]
 
   method: questions [
-    | where |
-    where := @ self scope: " AND json_extract(data, '$.status') = 'unread' AND json_extract(data, '$.kind') = 'question'".
-    ^ @ Store findByClass: 'Message' where: where orderBy: "json_extract(data, '$.sentAt') ASC, rowid ASC" limit: 1000
+    ^ @ self oldestWhere: " AND json_extract(data, '$.status') = 'unread' AND json_extract(data, '$.kind') = 'question'"
   ]
 
   # Recent non-archived messages, newest first
@@ -190,11 +191,11 @@ Inbox subclass: Object
 
   # All visible messages, including read messages, without a page limit.
   method: count [
-    | ids arr |
+    | ids count |
     ids := @ self messages: -1.
-    arr := @ String splitToArray: ids on: '
-'.
-    ^ arr arrayLength
+    count := 0.
+    ids linesDo: [:id | count := count + 1].
+    ^ count
   ]
 
   # Every message in a thread, across inboxes, oldest first
@@ -209,11 +210,10 @@ Inbox subclass: Object
   # Print unread messages, one line each
   method: list [
     pragma: stream
-    | ids arr count header line |
+    | ids count header line |
     ids := @ self unread.
-    arr := @ String splitToArray: ids on: '
-'.
-    count := arr arrayLength.
+    count := 0.
+    ids linesDo: [:id | count := count + 1].
     (count = 0) ifTrue: [
       header := 'Inbox ' , name , ': no unread messages'.
       @ Console print: header.
@@ -221,7 +221,7 @@ Inbox subclass: Object
     ].
     header := 'Inbox ' , name , ' (' , count , ' unread):'.
     @ Console print: header.
-    arr arrayEach: [:id |
+    ids linesDo: [:id |
       line := @ id summary.
       @ Console print: line
     ]
@@ -234,11 +234,9 @@ Inbox subclass: Object
   ]
 
   method: readAll [
-    | ids arr |
+    | ids |
     ids := @ self unread.
-    arr := @ String splitToArray: ids on: '
-'.
-    arr arrayEach: [:id | @ id markRead]
+    ids linesDo: [:id | @ id markRead]
   ]
 
   # ------------------------------------------------------------------
