@@ -6,7 +6,7 @@
 #
 # Usage:
 #   make          - Compile all classes to bash
-#   make test     - Run all tests
+#   make test     - Run the runtime tests (make verify runs compiler tests too)
 #   make clean    - Remove all build artifacts
 
 # Use the same Bash as driver scripts; put Bash 4.4+ first on PATH.
@@ -115,7 +115,13 @@ test-serial: bash
 test-compiler: bash
 	@bash $(LIB_DIR)/run-tests.sh $(LIB_DIR)/jq-compiler/tests
 
-verify: test test-compiler
+# Run both suites even when the first fails; fail if either did.
+verify: bash
+	@echo ""
+	@status=0; \
+	bash $(LIB_DIR)/run-tests.sh $(TESTS_DIR) || status=1; \
+	bash $(LIB_DIR)/run-tests.sh $(LIB_DIR)/jq-compiler/tests || status=1; \
+	exit $$status
 
 test-verbose: bash
 	@TRASH_TEST_TRACE=1 bash $(LIB_DIR)/run-tests.sh $(TESTS_DIR) --serial

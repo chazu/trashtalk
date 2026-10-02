@@ -44,7 +44,7 @@ run_test() {
         echo -e "    Expected: $expected"
         echo -e "    Got:      $actual"
         ((TESTS_FAILED++)) || true
-        FAILED_TESTS+=("${CURRENT_SECTION}: ${name}")
+        FAILED_TESTS+=("${CURRENT_SECTION:+$CURRENT_SECTION: }${name}")
         return 1
     fi
 }
@@ -55,6 +55,7 @@ print_test_summary() {
     echo "================================"
     echo "Results: $TESTS_PASSED passed, $TESTS_FAILED failed"
     if [[ $TESTS_FAILED -gt 0 ]]; then
+        printf '  failed: %s\n' "${FAILED_TESTS[@]}"
         exit 1
     fi
 }

@@ -86,7 +86,13 @@ run_one_test() {
     else
         echo "FAIL" > "$result_file"
         echo "=== $test_name === FAIL"
-        # Show output for failed tests
+        # Tests that count failures keep running, so the failing assertion can
+        # scroll out of the tail; show lines that look like failures first.
+        local failures
+        failures=$(grep -E 'FAIL|✗|^Error' <<<"$output" | head -10) || true
+        if [[ -n "$failures" ]]; then
+            printf -- '--- failure lines ---\n%s\n--- last 20 lines ---\n' "$failures"
+        fi
         echo "$output" | tail -20
     fi
 }

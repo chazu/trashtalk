@@ -167,8 +167,10 @@ Direct `bash tests/test_foo.bash` invocations use the same isolation. User
 
 Use `TRASH_TEST_JOBS=4` to bound parallelism, `TRASH_TEST_TIMEOUT=180` to change
 the per-file timeout, `TRASH_TEST_KEEP=1` to retain disposable checkouts for
-debugging, and `TRASH_TEST_TRACE=1` for Bash traces. The runner's result summary
-and exit status include failures and timeouts from either suite.
+debugging, and `TRASH_TEST_TRACE=1` for Bash traces. `make verify` runs the
+compiler suite even when the runtime suite fails, prints each suite's summary,
+and fails if either suite had a failure or timeout. A failing file's report
+lists lines that look like failures before its last 20 lines of output.
 
 The [JSON read/traversal primitives](json-values.md) make extraction and iteration
 process counts explicit. Diagnostic conversion uses one decoder and one

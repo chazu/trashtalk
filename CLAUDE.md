@@ -50,7 +50,7 @@ The jq-compiler is a three-stage pipeline:
 make              # Build changed classes; validate and reuse unchanged output
 make bash         # Same as above
 make single CLASS=Counter  # Compile single class
-make verify       # Build and run both isolated suites in parallel
+make verify       # Build, then run both isolated suites (both always run)
 make test         # Run isolated runtime tests in parallel
 make test-compiler # Run isolated compiler tests in parallel
 make test-serial  # Run tests sequentially
