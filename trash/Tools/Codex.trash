@@ -12,20 +12,18 @@ Codex subclass: Tool
     ^ 'Codex CLI is not installed. Install it from the official OpenAI Codex documentation, then run: codex login'
   ]
 
+  # Login state from stdout, or from stderr when stdout is empty.
   classMethod: authStatus [
-    | available path argv capture stdout stderr |
-    available := @ self isInstalled.
-    (available ~= 'true') ifTrue: [^ 'not installed'].
+    | path argv capture status |
     path := @ self path.
+    path isEmpty ifTrue: [^ 'not installed'].
     argv := #(path 'login' 'status') asJson.
-
     capture := @ self captureArgvJson: argv.
-    stdout := @ String jsonPath: 'stdout' from: capture.
-    stdout isEmpty ifTrue: [
-      stderr := @ String jsonPath: 'stderr' from: capture.
-      ^ stderr trimmed
-    ].
-    ^ stdout trimmed
+    capture jsonUnpack: #('stdout' 'stderr') into: [:stdout :stderr |
+      status := stdout trimmed.
+      status isEmpty ifTrue: [^ stderr trimmed].
+      ^ status
+    ]
   ]
 
   classMethod: argvForWorkingDirectory: workingDirectory [

@@ -55,12 +55,11 @@ Git subclass: Tool
   ]
 
   classMethod: inspect: arguments inDirectory: directory [
-    | available tool argv |
+    | available argv |
     directory isEmpty ifTrue: [^ @ Require reject: 'A checkout directory is required'].
     available := @ self isInstalled.
     (available ~= 'true') ifTrue: [^ @ self missingToolResult: 'inspect'].
-    tool := @ self path.
-    argv := #(tool) asJson.
+    argv := @ self baseArgv.
     argv := @ self argv: argv appendEach: arguments.
     ^ @ self captureArgvJson: argv inDirectory: directory
   ]
