@@ -1743,12 +1743,7 @@ def expr_gen($locals; $ivars; $cvars):
     # Handle nil checks separately (they use .subject not .condition)
     elif .kind == "if_nil" then
       (.subject | expr_gen($locals; $ivars; $cvars)) as $subj |
-      (if .block.tokens != null then
-        ({ tokens: .block.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
-        body_code($parsed.body // []; $locals)
-      elif .block.body != null then
-        body_code(.block.body // []; $locals)
-      else "" end) as $block_code |
+      block_body(.block; $locals) as $block_code |
       "if [[ -z \"\($subj)\" ]]; then \($block_code); fi"
     elif .kind == "if_not_nil" then
       (.subject | expr_gen($locals; $ivars; $cvars)) as $subj |
@@ -1757,48 +1752,23 @@ def expr_gen($locals; $ivars; $cvars):
       (if .block.type == "block_literal" then .block.params else [] end) as $params |
       (if ($params | length) > 0 then
         ($params + $locals) as $block_locals |
-        (if .block.tokens != null then
-          ({ tokens: .block.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
-          body_code($parsed.body // []; $block_locals)
-        elif .block.body != null then
-          body_code(.block.body // []; $block_locals)
-        else "" end) as $block_code |
+        block_body(.block; $block_locals) as $block_code |
         "if [[ -n \"\($subj)\" ]]; then local \($params[0])=\"\($subj)\"; \($block_code); fi"
       else
-        (if .block.tokens != null then
-          ({ tokens: .block.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
-          body_code($parsed.body // []; $locals)
-        elif .block.body != null then
-          body_code(.block.body // []; $locals)
-        else "" end) as $block_code |
+        block_body(.block; $locals) as $block_code |
         "if [[ -n \"\($subj)\" ]]; then \($block_code); fi"
       end)
     elif .kind == "nil_else" then
       (.subject | expr_gen($locals; $ivars; $cvars)) as $subj |
-      (if .nil_block.tokens != null then
-        ({ tokens: .nil_block.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
-        body_code($parsed.body // []; $locals)
-      elif .nil_block.body != null then
-        body_code(.nil_block.body // []; $locals)
-      else "" end) as $nil_code |
+      block_body(.nil_block; $locals) as $nil_code |
       # Check if notnil block has parameters (for binding)
       (if .notnil_block.type == "block_literal" then .notnil_block.params else [] end) as $params |
       (if ($params | length) > 0 then
         ($params + $locals) as $block_locals |
-        (if .notnil_block.tokens != null then
-          ({ tokens: .notnil_block.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
-          body_code($parsed.body // []; $block_locals)
-        elif .notnil_block.body != null then
-          body_code(.notnil_block.body // []; $block_locals)
-        else "" end) as $notnil_code |
+        block_body(.notnil_block; $block_locals) as $notnil_code |
         "if [[ -z \"\($subj)\" ]]; then \($nil_code); else local \($params[0])=\"\($subj)\"; \($notnil_code); fi"
       else
-        (if .notnil_block.tokens != null then
-          ({ tokens: .notnil_block.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
-          body_code($parsed.body // []; $locals)
-        elif .notnil_block.body != null then
-          body_code(.notnil_block.body // []; $locals)
-        else "" end) as $notnil_code |
+        block_body(.notnil_block; $locals) as $notnil_code |
         "if [[ -z \"\($subj)\" ]]; then \($nil_code); else \($notnil_code); fi"
       end)
     else
@@ -1806,26 +1776,15 @@ def expr_gen($locals; $ivars; $cvars):
     (gen_cond_part(.condition)) as $cond_info |
     $cond_info.code as $cond |
     $cond_info.needs_wrapper as $needs_wrapper |
-    # Generate block body inline (can't use nested def due to jq scoping)
     if .kind == "if_true" then
-      (if .block.tokens != null then
-        ({ tokens: .block.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
-        body_code($parsed.body // []; $locals)
-      elif .block.body != null then
-        body_code(.block.body // []; $locals)
-      else "" end) as $block_code |
+      block_body(.block; $locals) as $block_code |
       if $needs_wrapper then
         "if (( \($cond) )); then \($block_code); fi"
       else
         "if \($cond); then \($block_code); fi"
       end
     elif .kind == "if_false" then
-      (if .block.tokens != null then
-        ({ tokens: .block.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
-        body_code($parsed.body // []; $locals)
-      elif .block.body != null then
-        body_code(.block.body // []; $locals)
-      else "" end) as $block_code |
+      block_body(.block; $locals) as $block_code |
       if $needs_wrapper then
         "if (( !(\($cond)) )); then \($block_code); fi"
       else
@@ -1833,30 +1792,15 @@ def expr_gen($locals; $ivars; $cvars):
         else "if ! \($cond); then \($block_code); fi" end
       end
     elif .kind == "if_else" then
-      (if .true_block.tokens != null then
-        ({ tokens: .true_block.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
-        body_code($parsed.body // []; $locals)
-      elif .true_block.body != null then
-        body_code(.true_block.body // []; $locals)
-      else "" end) as $true_code |
-      (if .false_block.tokens != null then
-        ({ tokens: .false_block.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
-        body_code($parsed.body // []; $locals)
-      elif .false_block.body != null then
-        body_code(.false_block.body // []; $locals)
-      else "" end) as $false_code |
+      block_body(.true_block; $locals) as $true_code |
+      block_body(.false_block; $locals) as $false_code |
       if $needs_wrapper then
         "if (( \($cond) )); then \($true_code); else \($false_code); fi"
       else
         "if \($cond); then \($true_code); else \($false_code); fi"
       end
     elif .kind == "times_repeat" then
-      (if .block.tokens != null then
-        ({ tokens: .block.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
-        body_code($parsed.body // []; $locals)
-      elif .block.body != null then
-        body_code(.block.body // []; $locals)
-      else "" end) as $block_code |
+      block_body(.block; $locals) as $block_code |
       "for ((_i=0; _i<\(.count | arith_code); _i++)); do \($block_code); done"
     elif .kind == "range_do" then
       # Range iteration: start to: end do: [:i | body]
@@ -1866,22 +1810,12 @@ def expr_gen($locals; $ivars; $cvars):
       else "_i" end) as $loop_var |
       # Add loop var to locals for block code generation
       ([$loop_var] + $locals) as $block_locals |
-      (if .block.tokens != null then
-        ({ tokens: .block.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
-        body_code($parsed.body // []; $block_locals)
-      elif .block.body != null then
-        body_code(.block.body // []; $block_locals)
-      else "" end) as $block_code |
+      block_body(.block; $block_locals) as $block_code |
       (.start | arith_code) as $start_code |
       (.end | arith_code) as $end_code |
       "for ((\($loop_var)=\($start_code); \($loop_var)<\($end_code); \($loop_var)++)); do \($block_code); done"
     elif .kind == "while_true" then
-      (if .block.tokens != null then
-        ({ tokens: .block.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
-        body_code($parsed.body // []; $locals)
-      elif .block.body != null then
-        body_code(.block.body // []; $locals)
-      else "" end) as $block_code |
+      block_body(.block; $locals) as $block_code |
       if .condition.type == "block" then
         # Parse condition block and use gen_cond_part for proper string/arithmetic handling
         (if .condition.tokens != null then
@@ -1902,12 +1836,7 @@ def expr_gen($locals; $ivars; $cvars):
         "while (( \($cond) )); do \($block_code); done"
       end
     elif .kind == "while_false" then
-      (if .block.tokens != null then
-        ({ tokens: .block.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
-        body_code($parsed.body // []; $locals)
-      elif .block.body != null then
-        body_code(.block.body // []; $locals)
-      else "" end) as $block_code |
+      block_body(.block; $locals) as $block_code |
       if .condition.type == "block" then
         # Parse condition block and use gen_cond_part for proper string/arithmetic handling
         (if .condition.tokens != null then
@@ -1929,23 +1858,11 @@ def expr_gen($locals; $ivars; $cvars):
       end
     elif .kind == "try_catch" then
       # Generate try/catch using bash error handling
-      (if .try_block.tokens != null then
-        ({ tokens: .try_block.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
-        body_code($parsed.body // []; $locals)
-      elif .try_block.body != null then
-        body_code(.try_block.body // []; $locals)
-      else "" end) as $try_code |
+      block_body(.try_block; $locals) as $try_code |
       # Get error parameter name (default to "error")
       (.error_param // "error") as $error_var |
       # Generate catch block with error param as local
-      (if .catch_block.tokens != null then
-        ({ tokens: .catch_block.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
-        ([$error_var] + $locals) as $catch_locals |
-        body_code($parsed.body // []; $catch_locals)
-      elif .catch_block.body != null then
-        ([$error_var] + $locals) as $catch_locals |
-        body_code(.catch_block.body // []; $catch_locals)
-      else "" end) as $catch_code |
+      block_body(.catch_block; [$error_var] + $locals) as $catch_code |
       # Generate: if ! try_code; then error_var="..."; catch_code; _clear_error; fi
       "if ! { \($try_code); }; then local \($error_var); _trash_last_error \($error_var); _clear_error; \($catch_code); fi"
     else
