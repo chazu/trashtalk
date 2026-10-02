@@ -227,6 +227,27 @@ Later, if needed:
   pick a harness without the user's consent.
 - **Table headers** (`[jcode]`) in the reader.
 
+## Environment-only switches
+
+These are read directly by Bash and are not `Config` keys.
+
+| Variable | Effect |
+| --- | --- |
+| `TRASHTALK_DIR`, `TRASHDIR`, `SQLITE_JSON_DB` | Checkout, class directory (`$TRASHTALK_DIR/trash`), and object database. Each defaults to `~/.trashtalk` independently; set all three for another checkout. |
+| `TRASH_SESSION_ID` | Shares the session object cache (`/tmp/trashtalk_<id>`) across shells. Defaults to the creating shell's PID. |
+| `TRASH_KEEP_ENV=1` | Keeps that cache when the creating shell exits. |
+| `TRASH_SKIP_DEPCHECK=1` | Skips the `jq`/`sqlite3`/`uuidgen`/`jo` check when the runtime is sourced. |
+| `TRASHTALK_LOG_LEVEL`, `TRASHTALK_QUIET` | Diagnostic level; see [performance](performance.md#diagnostics-and-progress). `TRASHTALK_QUIET` means `error` when no level is set. |
+| `TRASHTALK_STRICT=1` | Compiler: parse warnings, and missing or unparseable traits, fail the compile instead of emitting a partial class. |
+| `TRASHTALK_LENIENT=1` | Compiler: ships output containing `# ERROR:` codegen markers with a warning instead of failing. |
+| `TRASHTALK_VALUE_SEND=1` | Opt-in capture optimization; see [result passing](result-passing-design.md). |
+| `TRASHTALK_HISTORY_FILE` | REPL history (default `~/.trash_history`). |
+| `TRASHTALK_WORKER_LOG` | Worker stderr log (default `run/worker/stderr.log`). |
+| `TRASHTALK_JCODE_COMPACT_TIMEOUT` | Seconds to wait for Jcode compaction (default 300). |
+
+Test-runner switches (`TRASH_TEST_JOBS`, `TRASH_TEST_TIMEOUT`, `TRASH_TEST_KEEP`,
+`TRASH_TEST_TRACE`) are described in [performance](performance.md).
+
 ## Alternatives considered
 
 - **Settings stored in SQLite, set with `at:put:`.** This fits the image idea
