@@ -64,16 +64,13 @@ CodexDriver subclass: Agent::Driver
     @ "$_RECEIVER" launchArgv: "$argv" promptFile: "$prompt_file" run: "$run_id" token: "$token" ref: "$ref"
   ]
 
-  # thread.started carries the thread id on the first output line; fall back to
-  # the reference recorded at resume time.
-  rawClassMethod: conversationRefFor: runId [
-    local log ref=""
+  # thread.started carries the thread id on the first output line; without it
+  # conversationRefFor: falls back to the reference recorded at resume time.
+  rawClassMethod: harnessConversationRefFor: runId [
+    local log
     log=$(@ "$1" outputLog)
-    if [[ -n "$log" && -f "$log" ]]; then
-      ref=$(jq -r 'select(.type == "thread.started") | .thread_id // empty' "$log" 2>/dev/null | head -n 1)
-    fi
-    if [[ -z "$ref" ]]; then ref=$(@ "$1" externalConversationRef); fi
-    printf '%s\n' "$ref"
+    [[ -n "$log" && -f "$log" ]] || return 0
+    jq -r 'select(.type == "thread.started") | .thread_id // empty' "$log" 2>/dev/null | head -n 1
   ]
 
   rawClassMethod: resultSeenFor: runId [
@@ -87,11 +84,9 @@ CodexDriver subclass: Agent::Driver
   ]
 
   # Codex can report provider failures in JSONL on stdout, not just stderr.
-  rawClassMethod: errorFor: runId [
-    local log error
+  rawClassMethod: harnessErrorFor: runId [
+    local log
     log=$(@ "$1" outputLog)
-    if [[ -n "$log" && -f "$log" ]]; then
-      error=$(jq -r 'select(.type == "error" or .type == "turn.failed") | .message // .error.message // empty' "$log" 2>/dev/null | tail -c 4096)
-    fi
-    if [[ -n "$error" ]]; then printf '%s\n' "$error"; else @ Agent::Driver errorFor: "$1"; fi
+    [[ -n "$log" && -f "$log" ]] || return 0
+    jq -r 'select(.type == "error" or .type == "turn.failed") | .message // .error.message // empty' "$log" 2>/dev/null | tail -c 4096
   ]

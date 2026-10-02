@@ -88,21 +88,18 @@ JcodeDriver subclass: Agent::Driver
     @ Agent::JcodeDriver launchArgv: "$argv" promptFile: "$directory/prompt.txt" run: "$3" token: "$4" ref: "$1"
   ]
 
-  rawClassMethod: conversationRefFor: run [
+  rawClassMethod: harnessConversationRefFor: run [
     local directory ref session pattern='^[A-Za-z0-9_-]+$'
     directory=$(@ Agent::Driver runDirFor: "$1")
-    if [[ -s "$directory/conversation" ]]; then
-      ref=$(cat "$directory/conversation")
-      session=$(@ "$1" session)
-      # Creation alone may be memory-only. A pre-send configuration failure
-      # must not strand the session on a reference with no resumable history.
-      # Send intent still retains the exact reference for ambiguous-run stop.
-      if [[ "$ref" =~ $pattern ]] && { [[ -e "$directory/send-intent" ]] || [[ -s "${directory%/*}/hosts/$session/jcode/sessions/$ref.json" ]]; }; then
-        printf '%s\n' "$ref"
-        return
-      fi
+    [[ -s "$directory/conversation" ]] || return 0
+    ref=$(cat "$directory/conversation")
+    session=$(@ "$1" session)
+    # Creation alone may be memory-only. A pre-send configuration failure
+    # must not strand the session on a reference with no resumable history.
+    # Send intent still retains the exact reference for ambiguous-run stop.
+    if [[ "$ref" =~ $pattern ]] && { [[ -e "$directory/send-intent" ]] || [[ -s "${directory%/*}/hosts/$session/jcode/sessions/$ref.json" ]]; }; then
+      printf '%s\n' "$ref"
     fi
-    @ Agent::Driver conversationRefFor: "$1"
   ]
 
   rawClassMethod: resultSeenFor: run [
