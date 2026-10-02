@@ -242,13 +242,16 @@ Latest failure: ' #{_at: 'error'})} asJson
     ^ @ self record: id label: label detail: detail path: 'session.txt'
   ]
 
-  rawClassMethod: messagesFor: session [
-    local id
-    for id in $(@ "$1" messageIds); do
-      @ "$id" reload >/dev/null || return 1
-      @ "$id" readText
-      printf '\n----------------------------------------\n'
-    done
+  classMethod: messagesFor: session [
+    pragma: stream
+    | ids ignored |
+    ids := @ session messageIds.
+    ids linesDo: [:id |
+      ignored := @ id reload ifFailed: [:e | @ e signal].
+      @ id readText.
+      @ Console print: '
+----------------------------------------'
+    ]
   ]
 
   rawClassMethod: runDetails: run [
