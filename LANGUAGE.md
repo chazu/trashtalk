@@ -240,6 +240,9 @@ alias: size for: count
 alias: length for: count
 ```
 
+Both names must be unary, and the target must be defined in the same class;
+an alias to an inherited method compiles to a function that does not exist.
+
 ### Protocol Requirements
 
 Protocols are optional, build-validated promises about public instance selectors:
@@ -302,6 +305,9 @@ Counter subclass: Object
   include: Debuggable
   include: Persistable
 ```
+
+Dispatch consults only the receiver class's own `include:` lines: a subclass
+does not inherit its superclass's traits, so repeat the `include:`.
 
 Built-in traits:
 - `Debuggable` - inspection and debugging methods
@@ -1047,6 +1053,18 @@ task=$(@ Task titled "Write docs")
 - **Code outside a method** (a statement after the class body) is a compile
   error; it would never run. Put setup in a class method.
 - **`caseOf:` keys** are literals only; **`linesDo:`** skips empty lines.
+- **A parenthesized send as a keyword argument** is spliced in unevaluated,
+  without an error: `@ x put: (@ self key) value: v` sends the inner words as
+  arguments. Bind the inner send to a local first. Parenthesized intrinsics such
+  as `(s upTo: ':')` are fine.
+- **Keyword selectors beginning with `_`** (`@ self _load: x from: y`)
+  miscompile at the send site. Name keyword helpers without a leading underscore.
+- **`@ Console print: ''`** prints nothing, not an empty line.
+- **Raw bodies are rebuilt from tokens**, so a few Bash spellings change. Quote
+  hyphenated bare words (`send-keys` becomes `send -keys`) and bare assignment
+  values (`local a=b` becomes `a= b`). `--` is glued to a following quoted word
+  (`-- "$x"` becomes `--"$x"`). ANSI-C quoting (`$'\t'`) and bracket globs with
+  `!` (`*[!0-9]*`) break; use `printf -v tab '\t'` and a `[[ =~ ]]` test.
 - **Arithmetic:** Bash arithmetic operates on integers; JSON numbers do not add
   floating point arithmetic to DSL expressions.
 
