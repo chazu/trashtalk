@@ -91,4 +91,16 @@ TRASHTALK_WORKER_LOG_MAX_BYTES=4096 TRASHTALK_WORKER_INTERVAL=0.1 \
 sleep 1
 stop_worker
 check 'a log that is not our stderr is left alone' 20000 "$(wc -c < "$log" | tr -d ' ')"
+# Without a writable directory there is no backup, so nothing may be dropped
+# and the log must not claim that previous contents were kept.
+rm -f "$log.1"
+chmod 555 "$root/run/worker"
+TRASHTALK_WORKER_LOG_MAX_BYTES=4096 TRASHTALK_WORKER_INTERVAL=0.1 \
+    "$root/bin/trash-worker" 2>>"$log" & worker=$!
+sleep 1
+stop_worker
+chmod 755 "$root/run/worker"
+check 'unbacked log keeps its contents' 20000 "$(head -c 20000 "$log" | tr -d -c x | wc -c | tr -d ' ')"
+check 'unbacked log claims no backup' 0 "$(grep -c 'previous contents in' "$log")"
+check 'skipped rotation is announced' 1 "$(grep -c 'could not keep the previous worker log' "$log")"
 echo "=== $passed worker service checks passed ==="

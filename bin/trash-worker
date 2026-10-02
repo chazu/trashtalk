@@ -62,8 +62,13 @@ bound_log() {
   # Keep the previous contents once as stderr.log.1, then rewrite the live file
   # in place: the supervisor opened it for appending, so later lines follow the
   # retained tail rather than the old end offset.
-  cp -f "$log" "$log.1" 2>/dev/null || true
-  tail -c "$keep" "$log" > "$log.tmp" && cat "$log.tmp" > "$log"
+  # Without that copy, truncating would drop the only record of earlier runs.
+  if ! { cp -f "$log" "$log.1" && tail -c "$keep" "$log" > "$log.tmp"; } 2>/dev/null; then
+    rm -f "$log.tmp" 2>/dev/null
+    printf 'Trashtalk worker log exceeded %s bytes, but could not keep the previous worker log as %s; left it untruncated\n' "$max" "$log.1" >&2
+    return 0
+  fi
+  cat "$log.tmp" > "$log"
   rm -f "$log.tmp"
   printf 'Trashtalk worker log exceeded %s bytes; retained the last %s bytes (previous contents in %s)\n' "$max" "$keep" "$log.1" >&2
 }
