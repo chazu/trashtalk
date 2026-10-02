@@ -75,9 +75,9 @@ point-in-time capture of some external state." It is more specific than `Persist
 ### Schema initialization and virtual columns
 
 The trait provides a `initializeSchema` class method that subclasses can override to
-declare which JSON paths should be materialized as indexed virtual columns. This
-leverages `db_ensure_virtual_column` and `db_create_index` from sqlite-json.bash, both
-of which are already available.
+declare which JSON paths should be materialized as indexed virtual columns. Each
+column goes through `@ Store ensureIndex:path:`, which wraps
+`db_ensure_virtual_column` and `db_create_index` from sqlite-json.bash.
 
 At class load time (via a `rawClassMethod: _onLoad` hook, to be added to the runtime),
 `initializeSchema` is called once. If the columns already exist, the `ALTER TABLE`
@@ -86,22 +86,17 @@ is a no-op (SQLite returns an error that the trait suppresses).
 ```smalltalk
 Snapshotable trait
 
-  rawClassMethod: initializeSchema [
-    pragma: direct
-    local cols col name path
-    cols=$(@ "$_RECEIVER" indexedColumns)
-    while IFS= read -r col; do
-      [[ -z "$col" ]] && continue
-      name=$(echo "$col" | jq -r '.name')
-      path=$(echo "$col" | jq -r '.path')
-      db_ensure_virtual_column "$name" "$path" 2>/dev/null || true
-      db_create_index "$name" 2>/dev/null || true
-    done < <(echo "$cols" | jq -c '.[]')
+  classMethod: initializeSchema [
+    | cols |
+    cols := @ self indexedColumns.
+    cols jsonRows: #('name' 'path') into: [:name :path |
+      @ Store ensureIndex: name path: path
+    ]
   ]
 
   # Override in subclasses to declare columns to index
-  rawClassMethod: indexedColumns [
-    echo '[]'
+  classMethod: indexedColumns [
+    ^ '[]'
   ]
 
   method: save [
