@@ -2233,7 +2233,8 @@ _send_cleanup() {
 export -f _send_cleanup
 
 # Last result variable - stores output of most recent @ command
-# Access via $__ in REPL context (double underscore, since $_ is bash special)
+# Access via $__ in a shell that sourced this file (double underscore, since
+# $_ is bash special). bin/trash-repl uses send, which does not set it.
 declare __=""
 
 # Result-capture optimization is private to compiled value contexts. Public @
@@ -2300,7 +2301,7 @@ _trash_value_eligible() {
 }
 
 # Invoke trash - Send a message
-# Captures output in $__ for REPL chaining: @ Counter new -> @ $__ increment
+# Captures output in $__ for interactive chaining: @ Counter new -> @ $__ increment
 function _trash_dispatch {
   local ___want_value=${_trash_value_context:-0} _trash_value_context=0
   if [ $# == 1 ]; then

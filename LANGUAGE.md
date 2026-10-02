@@ -966,12 +966,21 @@ result := $(@ self getValue)
 
 ## REPL Features
 
-In the REPL, the `$__` variable stores the result of the last `@` command:
+In an interactive Bash shell that has sourced `lib/trash.bash`, the `$__`
+variable stores the result of the last `@` command. A send inside `$(...)` runs
+in a subshell, so it does not update `$__`.
 
 ```bash
 @ Counter new
 @ $__ increment    # Uses result of previous command
 @ $__ getValue
+```
+
+The `bin/trash` REPL does not set `$__`; bind results to a variable instead:
+
+```bash
+c=$(Counter new)
+$c increment
 ```
 
 ## Complete Example
@@ -1033,7 +1042,7 @@ task=$(@ Task titled "Write docs")
 - End statements with `.` when followed by another statement
 - Use `^` to return values from methods
 - `@ self` refers to the current receiver
-- The `$__` variable holds the result of the last `@` command (REPL only)
+- The `$__` variable holds the result of the last `@` command in a shell that sourced the runtime
 - Instance variables are automatically inferred in regular methods
 
 ## Limitations and regression coverage
