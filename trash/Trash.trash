@@ -1074,35 +1074,34 @@ EOF
     ^ @ self editSource: sourceFile class: className line: line
   ]
 
-  method: browse [
-    | records result |
-    records := @ self symbolRecords.
-    result := @ self pickRecords: records query: '' title: 'Trashtalk symbols'.
+  method: browseRecords: records title: title [
+    | result |
+    result := @ self pickRecords: records query: '' title: title.
     ^ @ self openBrowserResult: result
+  ]
+
+  method: browse [
+    | records |
+    records := @ self symbolRecords.
+    ^ @ self browseRecords: records title: 'Trashtalk symbols'
   ]
 
   method: browseClass: className [
-    | records title result |
+    | records |
     records := @ self symbolRecordsForClass: className.
-    title := 'Browse: ' , className.
-    result := @ self pickRecords: records query: '' title: title.
-    ^ @ self openBrowserResult: result
+    ^ @ self browseRecords: records title: 'Browse: ' , className
   ]
 
   method: browseImplementorsOf: selector [
-    | records title result |
+    | records |
     records := @ self implementorsOf: selector.
-    title := 'Implementors: ' , selector.
-    result := @ self pickRecords: records query: '' title: title.
-    ^ @ self openBrowserResult: result
+    ^ @ self browseRecords: records title: 'Implementors: ' , selector
   ]
 
   method: browseSendersOf: selector [
-    | records title result |
+    | records |
     records := @ self sendersOf: selector.
-    title := 'Senders: ' , selector.
-    result := @ self pickRecords: records query: '' title: title.
-    ^ @ self openBrowserResult: result
+    ^ @ self browseRecords: records title: 'Senders: ' , selector
   ]
 
   # DSL-first edit/compile/check/reload/test workflow. Diagnostics are passed as
