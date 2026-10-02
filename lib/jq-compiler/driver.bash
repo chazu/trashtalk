@@ -528,20 +528,18 @@ cmd_symbols_many() {
         fi
     done
     paths=$(printf '%s\0' "$@" | jq -Rsc 'split("\u0000")[:-1]')
-    local render='if length == ($paths | length) and all(.[];
-      type == "array" and length > 0 and all(.[];
+    # One cache file's content: a non-empty array of current-schema records.
+    local valid_records='def valid_records: type == "array" and length > 0 and all(.[];
         .schema_version == 1 and (.id | type == "string") and
         (.class_name | type == "string") and (.kind | type == "string") and
-        (.line | type == "number") and (.column | type == "number")))
+        (.line | type == "number") and (.column | type == "number"));'
+    local render="$valid_records"' if length == ($paths | length) and all(.[]; valid_records)
       then to_entries[] as $file | $file.value[] | .path = $paths[$file.key]
       else error("Invalid symbol cache") end'
     if ! output=$(jq -cs --argjson paths "$paths" "$render" "${cache_files[@]}" 2>/dev/null); then
         # Only a damaged cache takes the per-file validation path.
         for ((i=0; i<${#cache_files[@]}; i++)); do
-            if ! jq -es 'length == 1 and (.[0] | type == "array" and length > 0 and
-                all(.[]; .schema_version == 1 and (.id | type == "string") and
-                    (.class_name | type == "string") and (.kind | type == "string") and
-                    (.line | type == "number") and (.column | type == "number")))' \
+            if ! jq -es "$valid_records"' length == 1 and (.[0] | valid_records)' \
                 "${cache_files[i]}" >/dev/null 2>&1; then
                 _write_symbol_cache "${source_files[i]}" "${cache_files[i]}" || return
             fi
@@ -595,7 +593,7 @@ cmd_compile() {
 
     # Standalone codegen must never silently accept a nominal promise. Workers
     # carry an explicit graph-validated request; other callers use compile-cached.
-    local protocol_meta
+    local protocol_meta parent_class
     protocol_meta=$(jq -c -L "$SCRIPT_DIR" 'include "protocols"; (.class // .) | protocol_metadata | protocol_semantics' <<<"$ast") || return
     if [[ -z "${BUILD_VALIDATED_REQUEST:-}" ]] && jq -e '.implementedProtocols|length>0' <<<"$protocol_meta" >/dev/null; then
         error "Unresolved protocol dependencies: use compile-cached or compile-many for graph validation"
@@ -620,7 +618,7 @@ cmd_compile() {
     source_hash=$(shasum -a 256 "$source_file" 2>/dev/null | cut -d' ' -f1)
 
     # Collect inherited instance variables from parent classes
-    local parent_class inherited_ivars
+    local inherited_ivars
     parent_class=$(echo "$ast" | jq -c '.class' | _resolved_parent)
     if [[ -n "$parent_class" ]]; then
         inherited_ivars=$(collect_inherited_ivars "$parent_class")
