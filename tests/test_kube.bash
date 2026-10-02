@@ -110,3 +110,14 @@ snap3=$(@ Kube::Snapshot take: daily of: pods onCluster: fixture-ctx)
 snapdiff=$(@ Kube::Diff compare: "$snap" with: "$snap3")
 check 'Snapshot diff reports the changed pod' 'Pod/web/api status.phase' "$(@ "$snapdiff" getChanged | jq -r '.[] | .identity + " " + .changes[0].path')"
 check 'Snapshot diff report' true "$(@ "$snapdiff" report | grep -q 'status.phase: Running' && echo true || echo false)"
+
+# latest:onCluster: and history:onCluster: read saved snapshots by label and
+# cluster, newest first; the arguments are data, never SQL.
+@ "$snap" setTakenAt: 2020-01-01T00:00:01Z; @ "$snap" save
+@ "$snap3" setTakenAt: 2020-01-01T00:00:03Z; @ "$snap3" save
+@ "$snap2" setTakenAt: 2020-01-01T00:00:02Z; @ "$snap2" setCluster: other-ctx; @ "$snap2" save
+check 'Snapshot latest:onCluster:' "$snap3" "$(@ Kube::Snapshot latest: daily onCluster: fixture-ctx)"
+check 'Snapshot latest:onCluster: filters by cluster' "$snap2" "$(@ Kube::Snapshot latest: daily onCluster: other-ctx)"
+check 'Snapshot history:onCluster: newest first' "$snap3 $snap" "$(@ Kube::Snapshot history: daily onCluster: fixture-ctx | tr '\n' ' ' | sed 's/ $//')"
+check 'Snapshot history:onCluster: unknown label' '' "$(@ Kube::Snapshot history: weekly onCluster: fixture-ctx)"
+check 'Snapshot latest:onCluster: quotes its arguments' '' "$(@ Kube::Snapshot latest: "x' OR '1'='1" onCluster: fixture-ctx)"
