@@ -39,12 +39,12 @@ String subclass: Object
   # String Manipulation
   # ========================================
 
-  # Remove prefix pattern from string (replaces ${str##pattern})
+  # Remove a literal prefix, if present (`${str#"$prefix"}`; not a glob)
   classMethod: trimPrefix: pattern from: str [
     ^ str withoutPrefix: pattern
   ]
 
-  # Remove suffix pattern from string (replaces ${str%%pattern})
+  # Remove a literal suffix, if present (`${str%"$suffix"}`; not a glob)
   classMethod: trimSuffix: pattern from: str [
     ^ str withoutSuffix: pattern
   ]
@@ -195,7 +195,7 @@ String subclass: Object
   # Whitespace Handling
   # ========================================
 
-  # Trim leading and trailing whitespace (using extglob)
+  # Trim leading and trailing whitespace
   classMethod: trim: str [
     ^ str trimmed
   ]

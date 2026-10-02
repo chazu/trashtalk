@@ -10,7 +10,8 @@ package: Kube
 #   @ $resource get: '.status.phase'   # jsonPath into rawJson
 #   @ $resource save           # persist snapshot to SQLite
 #   @ Kube::Resource history   # all snapshots ordered by capturedAt
-#   @ Kube::Pod latestFor: 'Pod/default/api'   # newest snapshot of one resource
+#   @ Kube::Resource latestFor: 'Pod/default/api'   # newest snapshot of one resource
+#   (subclasses such as Pod do not inherit Snapshotable; ask Resource)
 Resource subclass: Object
   include: Persistable
   include: Snapshotable
