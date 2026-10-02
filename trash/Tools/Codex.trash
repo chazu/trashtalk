@@ -50,13 +50,12 @@ Codex subclass: Tool
   ]
 
   classMethod: dryRun: input workingDirectory: workingDirectory [
-    | available argv detail dryResult result |
+    | available argv detail result |
     available := @ self isInstalled.
     (available ~= 'true') ifTrue: [^ @ self missingToolResult].
     argv := @ self argvForWorkingDirectory: workingDirectory.
     detail := #{argv: (argv jsonValue) stdin: input dry_run: true} asJson.
-    dryResult := detail.
-    result := #{schema_version: 1 backend: 'codex' outcome: 'success' exit_code: 0 stdout: '' stderr: '' result: (dryResult jsonValue)} asJson.
+    result := #{schema_version: 1 backend: 'codex' outcome: 'success' exit_code: 0 stdout: '' stderr: '' result: (detail jsonValue)} asJson.
     ^ result
   ]
 

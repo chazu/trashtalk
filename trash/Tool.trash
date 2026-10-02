@@ -127,34 +127,30 @@ Tool subclass: Object
   # Execute an exact argv vector represented as JSON. The DSL builds the typed
   # request; the raw primitive below owns only JSON decoding, stdin, and exec.
   classMethod: runArgvJson: argvJson [
-    | request requestJson |
+    | request |
     request := #{argv: (argvJson jsonValue)} asJson.
-    requestJson := request.
-    ^ @ self runProcessRequestJson: requestJson
+    ^ @ self runProcessRequestJson: request
   ]
 
   classMethod: runArgvJson: argvJson input: input [
-    | request requestJson |
+    | request |
     request := #{argv: (argvJson jsonValue) stdin: input} asJson.
-    requestJson := request.
-    ^ @ self runProcessRequestJson: requestJson
+    ^ @ self runProcessRequestJson: request
   ]
 
   # Execute exact argv while returning stdout, stderr, and the original child
   # status in a versioned JSON envelope. Capturing is a reusable process
   # concern; tool-specific exit interpretation remains in each wrapper's DSL.
   classMethod: captureArgvJson: argvJson [
-    | request requestJson |
+    | request |
     request := #{argv: (argvJson jsonValue) capture: true} asJson.
-    requestJson := request.
-    ^ @ self runProcessRequestJson: requestJson
+    ^ @ self runProcessRequestJson: request
   ]
 
   classMethod: captureArgvJson: argvJson input: input [
-    | request requestJson |
+    | request |
     request := #{argv: (argvJson jsonValue) stdin: input capture: true} asJson.
-    requestJson := request.
-    ^ @ self runProcessRequestJson: requestJson
+    ^ @ self runProcessRequestJson: request
   ]
 
   classMethod: captureArgvJson: argvJson input: input progress: label [
