@@ -340,13 +340,11 @@ Trash subclass: Object
 
   # Helper for showing hierarchy (uses compiled metadata)
   rawMethod: _showHierarchy: class_name depth: depth [
-    local indent="" i superclass super_var
+    local indent superclass super_var
     local compiled_name="${class_name//::/__}"
     local compiled_file="$TRASHDIR/.compiled/$compiled_name"
 
-    for ((i=0; i<depth; i++)); do
-      indent="  $indent"
-    done
+    printf -v indent '%*s' "$((depth * 2))" ''
     echo "$indent$class_name"
 
     # Source class to get metadata
@@ -501,38 +499,46 @@ Trash subclass: Object
     echo "Memory usage: $(du -sh "$TRASHDIR" | cut -f1)"
   ]
 
-  # Show help
+  # Show help. Rows are padded by printf: raw bodies collapse runs of spaces
+  # inside string literals.
   rawMethod: help [
+    local row='%-36s- %s\n'
     echo "=== Trash System Commands ==="
-    echo "@ Trash info                        - Show system information"
-    echo "@ Trash doctor                      - Diagnose environment/setup issues"
-    echo "@ Trash userInbox                   - Return your Inbox instance"
-    echo "@ Trash listObjects                 - List all objects"
-    echo "@ Trash listTraits                  - List all traits"
-    echo "@ Trash methodsFor: <class>         - Show methods for class"
-    echo "@ Trash hierarchyFor: <class>       - Show inheritance hierarchy"
-    echo "@ Trash new: <class>                - Create class skeleton and edit"
-    echo "@ Trash edit: <class>               - Edit class and recompile on save"
-    echo "@ Trash reload                      - Reload all object stubs"
-    echo "@ Trash reloadClass: <class>        - Hot reload a single class"
-    echo "@ Trash compileAndReload: <class>   - Compile and reload from .trash"
-    echo "@ Trash stats                       - Show system statistics"
-    echo "@ Trash version                     - Show version information"
-    echo "@ Trash repl                        - Launch interactive REPL"
+    printf "$row" '@ Trash info' 'Show system information'
+    printf "$row" '@ Trash doctor' 'Diagnose environment/setup issues'
+    printf "$row" '@ Trash userInbox' 'Return your Inbox instance'
+    printf "$row" '@ Trash listObjects' 'List all objects'
+    printf "$row" '@ Trash listTraits' 'List all traits'
+    printf "$row" '@ Trash methodsFor: <class>' 'Show methods for class'
+    printf "$row" '@ Trash hierarchyFor: <class>' 'Show inheritance hierarchy'
+    printf "$row" '@ Trash new: <class>' 'Create class skeleton and edit'
+    printf "$row" '@ Trash edit: <class>' 'Edit class and recompile on save'
+    printf "$row" '@ Trash reload' 'Reload all object stubs'
+    printf "$row" '@ Trash reloadClass: <class>' 'Hot reload a single class'
+    printf "$row" '@ Trash compileAndReload: <class>' 'Compile and reload from .trash'
+    printf "$row" '@ Trash stats' 'Show system statistics'
+    printf "$row" '@ Trash version' 'Show version information'
+    printf "$row" '@ Trash repl' 'Launch interactive REPL'
+    printf "$row" "@ Trash eval: '<code>'" 'Evaluate Trashtalk code'
+    printf "$row" '@ Trash evalFile: <path>' 'Evaluate Trashtalk code from a file'
     echo ""
     echo "=== Instance Queries (use class methods) ==="
-    echo "@ <Class> findAll                   - Find all instances of class"
-    echo "@ <Class> find: '<predicate>'       - Find with predicate"
-    echo "@ <Class> count                     - Count instances of class"
-    echo "@ Store listClasses                 - List classes with instances"
+    printf "$row" '@ <Class> findAll' 'Find all instances of class'
+    printf "$row" "@ <Class> find: '<predicate>'" 'Find with predicate'
+    printf "$row" '@ <Class> count' 'Count instances of class'
+    printf "$row" '@ Store listClasses' 'List classes with instances'
     echo ""
     echo "=== Source Introspection ==="
-    echo "@ Trash sourceFor: <class>          - Get source code from .trash file"
-    echo "@ Trash hashFor: <class>            - Get source hash (SHA-256)"
+    printf "$row" '@ Trash sourceFor: <class>' 'Get source code from .trash file'
+    printf "$row" '@ Trash hashFor: <class>' 'Get source hash (SHA-256)'
+    printf "$row" '@ Trash categoriesFor: <class>' 'List method categories'
+    printf "$row" '@ Trash browse' 'Browse sources in inbrowser'
+    printf "$row" '@ Trash browseClass: <class>' 'Pick a class symbol and edit it'
+    printf "$row" '@ Trash browseInstancesOf: <class>' 'Pick a persisted instance and inspect it'
     echo ""
     echo "=== Testing ==="
-    echo "@ Trash runTestsFor: <class>        - Run testMethod: tests for class"
-    echo "@ Trash hasTestsFor: <class>        - Check if class has tests"
+    printf "$row" '@ Trash runTestsFor: <class>' 'Run testMethod: tests for class'
+    printf "$row" '@ Trash hasTestsFor: <class>' 'Check if class has tests'
   ]
 
   # Show version information
