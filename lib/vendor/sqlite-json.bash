@@ -13,10 +13,19 @@
 #    db_get <id>                   # retrieve document
 #    db_delete <id>                # delete document
 #    db_find_by_class <class>      # find all instances of class
-#    db_query <where_clause>       # general query
+#    db_query <where_clause>       # general query (ids)
+#    db_query_data <where_clause>  # general query (JSON array of documents)
 #    db_ensure_virtual_column <name> <json_path>
 #    db_create_index <column>
 #    db_list_indices
+#    db_list_columns
+#    db_count_by_class <class>
+#    db_list_classes
+#    db_clear                      # delete all documents, keep schema
+#    db_drop                       # remove the database file
+#    kv_set <key> <value>          # string key-value store
+#    kv_get <key>
+#    kv_del <key>
 
 ########################
 # CONSTANTS
@@ -131,6 +140,13 @@ _db_validate_id() {
     [[ "$1" =~ ^[0-9a-zA-Z._:-]+$ ]]
 }
 
+# Report a missing or malformed id on behalf of the named function
+# Usage: _db_check_id <id> <function_name>
+_db_check_id() {
+    [[ -n "$1" ]] || { _db_echo_err_box 'missing param "id"' "$2"; return 1; }
+    _db_validate_id "$1" || { _db_echo_err_box 'invalid id format' "$2"; return 1; }
+}
+
 # Validate column/index names (alphanumeric and underscores only)
 # Usage: _db_validate_name <name>
 _db_validate_name() {
@@ -144,14 +160,17 @@ _db_escape() {
     echo "${str//\'/\'\'}"
 }
 
-# Run SQL command (with busy timeout for concurrent access)
-# Loads honker extension when available
+# Run sqlite3 with a busy timeout for concurrent access, loading the honker
+# extension when available. Remaining arguments follow the options.
+_db_sqlite3() {
+    local -a opts=(-cmd ".timeout 5000")
+    [[ -z "$_HONKER_LOAD_CMD" ]] || opts+=(-cmd "$_HONKER_LOAD_CMD")
+    "$_SQLITE3" "${opts[@]}" "$@"
+}
+
+# Run SQL command
 _db_sql_direct() {
-    if [[ -n "$_HONKER_LOAD_CMD" ]]; then
-        "$_SQLITE3" -cmd ".timeout 5000" -cmd "$_HONKER_LOAD_CMD" "$SQLITE_JSON_DB" "$@"
-    else
-        "$_SQLITE3" -cmd ".timeout 5000" "$SQLITE_JSON_DB" "$@"
-    fi
+    _db_sqlite3 "$SQLITE_JSON_DB" "$@"
 }
 
 # Raw SQL has no read-set contract and is unsupported during staging.
@@ -160,15 +179,10 @@ _db_sql() {
     _db_sql_direct "$@"
 }
 
-# Run SQL and return JSON results (with busy timeout)
-# Loads honker extension when available
+# Run SQL and return JSON results
 _db_sql_json() {
     [[ -z ${_STORE_TX:-} ]] || { _store_tx_fail "Untracked JSON query"; return 1; }
-    if [[ -n "$_HONKER_LOAD_CMD" ]]; then
-        "$_SQLITE3" -cmd ".timeout 5000" -cmd "$_HONKER_LOAD_CMD" -json "$SQLITE_JSON_DB" "$@"
-    else
-        "$_SQLITE3" -cmd ".timeout 5000" -json "$SQLITE_JSON_DB" "$@"
-    fi
+    _db_sqlite3 -json "$SQLITE_JSON_DB" "$@"
 }
 
 ########################
@@ -222,15 +236,7 @@ db_put() {
     local id="$1"
     local data="$2"
 
-    [[ -n "$id" ]] || {
-        _db_echo_err_box 'missing param "id"' 'db_put()'
-        return 1
-    }
-
-    _db_validate_id "$id" || {
-        _db_echo_err_box 'invalid id format' 'db_put()'
-        return 1
-    }
+    _db_check_id "$id" 'db_put()' || return 1
 
     [[ -n "$data" ]] || {
         _db_echo_err_box 'missing param "data"' 'db_put()'
@@ -258,15 +264,7 @@ db_put() {
 db_get() {
     local id="$1"
 
-    [[ -n "$id" ]] || {
-        _db_echo_err_box 'missing param "id"' 'db_get()'
-        return 1
-    }
-
-    _db_validate_id "$id" || {
-        _db_echo_err_box 'invalid id format' 'db_get()'
-        return 1
-    }
+    _db_check_id "$id" 'db_get()' || return 1
 
     if [[ -n ${_STORE_TX:-} ]]; then _store_tx_get "$id"; return; fi
 
@@ -291,15 +289,7 @@ db_delete() {
     [[ -z ${_STORE_TX:-} ]] || { _store_tx_fail "Deletion is unsupported in transactions"; return 1; }
     local id="$1"
 
-    [[ -n "$id" ]] || {
-        _db_echo_err_box 'missing param "id"' 'db_delete()'
-        return 1
-    }
-
-    _db_validate_id "$id" || {
-        _db_echo_err_box 'invalid id format' 'db_delete()'
-        return 1
-    }
+    _db_check_id "$id" 'db_delete()' || return 1
 
     _db_sql "DELETE FROM instances WHERE id = '$id';"
 }

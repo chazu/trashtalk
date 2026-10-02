@@ -30,7 +30,7 @@ source "$SCRIPT_DIR/vendor/honker.bash" || { echo "Error: cannot load honker.bas
 export -f db_init db_put db_get db_delete db_find_by_class db_query db_query_data 2>/dev/null
 export -f db_ensure_virtual_column db_create_index db_list_indices db_list_columns 2>/dev/null
 export -f db_count_by_class db_list_classes db_clear db_drop 2>/dev/null
-export -f _db_validate_id _db_validate_name _db_escape _db_sql 2>/dev/null
+export -f _db_validate_id _db_check_id _db_validate_name _db_escape _db_sql 2>/dev/null
 export -f kv_set kv_get kv_del 2>/dev/null
 export SQLITE_JSON_DB
 export _HONKER_AVAILABLE _HONKER_LOAD_CMD 2>/dev/null
