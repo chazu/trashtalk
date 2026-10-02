@@ -1606,11 +1606,32 @@ function _ivar_set_ref {
   _ivar_set "$var" "$ref"
 }
 
+# Resolve the object references among the strings of a JSON value. Every
+# string shaped like an instance id is looked up in one Store query. Prints
+# {"<id>": "<class>"} for each object that exists, and {"<id>": null} for an
+# id carrying a UUID or long hash that does not, so ordinary snake_case text
+# is never reported as a dangling reference.
+# Usage: refs=$(_trash_object_refs "$json")
+function _trash_object_refs {
+  local candidates ids found
+  candidates=$(jq -c '[.. | strings | select(length <= 200 and test("^[a-z][a-z0-9]*_[A-Za-z0-9_-]{8,}$"))] | unique' <<< "$1") || return
+  if [[ "$candidates" == "[]" ]]; then echo '{}'; return 0; fi
+  # The shape admits no quotes, so the candidates are safe SQL literals.
+  ids=$(jq -r 'map("'\''" + . + "'\''") | join(",")' <<< "$candidates")
+  found=$(_db_sql_json "SELECT id, class FROM instances WHERE id IN ($ids);") || return
+  jq -cn --argjson candidates "$candidates" --argjson found "${found:-[]}" '
+    ($found | map({key: .id, value: .class}) | from_entries) as $classes |
+    [$candidates[] | select($classes[.] != null or
+       test("[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}|[0-9a-f]{32}"))
+     | {key: ., value: $classes[.]}] | from_entries'
+}
+
 export -f _ivar_ref
 export -f _ivar_ref_valid
 export -f _ivar_ref_class
 export -f _ivar_send
 export -f _ivar_set_ref
+export -f _trash_object_refs
 
 # ============================================
 # Class Instance Variable Helpers

@@ -80,6 +80,15 @@ selected value have not changed since they were shown, then applies the typed
 value through `Runtime`; a stale or invalid edit is refused in the status line.
 Runtime metadata is not offered as editable state.
 
+A value naming another object (`role: → Agent::Role agentrole_C2E9…`) is a
+link. When a record is built, every string in its state shaped like an
+instance id is resolved with one Store query; Enter on a link loads that
+object only then and pushes it onto the stack, so cycles and large graphs cost
+nothing until followed. Its scalars can be edited like the root object's. An
+id-shaped value carrying a UUID or hash with no object behind it is marked
+`(missing object)` and stays editable text. `@ Runtime referencesIn: json`
+returns the same `{id: class}` map.
+
 Classes are inspected the same way. A class record shows the superclass and
 every class instance variable (inherited declarations first) with its current
 value; it is read-only.

@@ -173,7 +173,7 @@ assert_eq "a namespaced class describes itself" "class ClassInspection::Thing|  
 
 record=$(@ UI::Inspector recordFor: TestRegistry)
 assert_true "the class record carries name, superclass, and state" jq -e \
-    '. == {schema_version:1,class_name:"TestRegistry",superclass:"Object",data:{count:2,label:"main hall",note:""}}' <<< "$record"
+    '. == {schema_version:1,class_name:"TestRegistry",superclass:"Object",data:{count:2,label:"main hall",note:""},refs:{}}' <<< "$record"
 assert_fails "an unknown name is still an error" @ UI::Inspector openObject: NoSuchClass
 
 # With a terminal, inspect opens the inspector read-only: Enter on a class

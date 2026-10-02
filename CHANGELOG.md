@@ -24,6 +24,11 @@
   creates or reuses the conversation, retains failed drafts, and never falls
   back to inbox delivery.
 
+- The inspector shows object references as links. Ids in an object's state
+  are resolved when it is shown (one Store query); Enter loads the referenced
+  object onto the inspection stack, where it can be edited too. Dangling ids
+  are marked `(missing object)`. `Runtime referencesIn:` exposes the lookup.
+
 - Classes can be inspected. `@ Registry inspect` and `@ Trash inspectObject:
   Registry` show the superclass and class instance variables (own and
   inherited, with current values) read-only in `UI::Inspector`, or as text

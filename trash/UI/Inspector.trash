@@ -22,20 +22,26 @@ Inspector subclass: Object
   ]
 
   # A live object's record, or a class's record when objectId names a class.
+  # Both carry the object references found in their state, so the projection
+  # can show each as a link without reflecting while it paints.
   classMethod: recordFor: objectId [
-    | className rawData data |
+    | className rawData data refs |
     className := @ Runtime classFor: objectId.
     className isEmpty ifTrue: [^ @ self classRecordFor: objectId].
     rawData := @ Runtime dataFor: objectId.
     data := @ String jsonInstanceView: rawData.
-    ^ #{schema_version: 1 object_id: objectId class_name: className data: (data jsonValue)} asJson
+    refs := @ Runtime referencesIn: data.
+    ^ #{schema_version: 1 object_id: objectId class_name: className data: (data jsonValue)
+        refs: (refs jsonValue)} asJson
   ]
 
   classMethod: classRecordFor: className [
-    | state superclass |
+    | state superclass refs |
     state := (@ Runtime classStateFor: className) ifFailed: [^ ''].
     superclass := @ Runtime superclassOf: className.
-    ^ #{schema_version: 1 class_name: className superclass: superclass data: (state jsonValue)} asJson
+    refs := @ Runtime referencesIn: state.
+    ^ #{schema_version: 1 class_name: className superclass: superclass data: (state jsonValue)
+        refs: (refs jsonValue)} asJson
   ]
 
   classMethod: open: record title: title editable: editable [
@@ -49,25 +55,33 @@ Inspector subclass: Object
     ^ @ self project: 'init' context: context frame: 'null' extra: 'null'
   ]
 
+  # Drilling into a reference not yet loaded asks for its record; the frame is
+  # then projected again with that record, which may no longer exist.
   classMethod: handleFrame: frame context: context [
-    | action |
+    | action result objectId record extra |
     action := frame jsonAt: 'action' ifAbsent: 'null'.
     (action = '"apply"') ifTrue: [^ @ self applyEdit: frame context: context].
-    ^ @ self project: 'handle' context: context frame: frame extra: 'null'
+    result := (@ self project: 'handle' context: context frame: frame extra: 'null') ifFailed: [:error | @ error signal].
+    (result jsonHas: 'load') ifFalse: [^ result].
+    objectId := result jsonTextAt: 'load'.
+    record := @ self recordFor: objectId.
+    record isEmpty ifTrue: [record := 'null'].
+    extra := #{object_id: objectId record: (record jsonValue)} asJson.
+    ^ @ self project: 'handle' context: context frame: frame extra: extra
   ]
 
   # The projection stages the draft; ObjectEditProposal owns the stale check
   # and the mutation. The pane then shows the record as now stored.
   classMethod: applyEdit: frame context: context [
     | staged proposal objectId result record extra |
-    staged := @ self project: 'propose' context: context frame: frame extra: 'null'.
+    staged := (@ self project: 'propose' context: context frame: frame extra: 'null') ifFailed: [:error | @ error signal].
     (staged jsonHas: 'proposal') ifFalse: [^ staged].
     proposal := staged jsonAt: 'proposal'.
     objectId := proposal jsonTextAt: 'object_id'.
     result := @ ObjectEditProposal apply: proposal to: objectId.
     record := @ self recordFor: objectId.
     record isEmpty ifTrue: [record := 'null'].
-    extra := #{result: (result jsonValue) record: (record jsonValue)} asJson.
+    extra := #{result: (result jsonValue) object_id: objectId record: (record jsonValue)} asJson.
     ^ @ self project: 'settle' context: context frame: frame extra: extra
   ]
 

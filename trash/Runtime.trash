@@ -105,6 +105,11 @@ Runtime subclass: Object
   # Usage: state := @ Runtime classStateFor: 'Registry'
   classPrimitive: classStateFor: className calls: _cvar_state
 
+  # Object references among the strings of a JSON value, resolved in one Store
+  # query: {"<id>": "<class>"}, or null for an id-shaped string with no object.
+  # Usage: refs := @ Runtime referencesIn: json
+  classPrimitive: referencesIn: json calls: _trash_object_refs
+
   # Sorted compiled selector names, including direct traits and methods declared by ancestors.
   # Class methods have the class__ prefix; keyword selectors end in underscore.
   classPrimitive: methodsFor: className calls: _trash_methods_json
