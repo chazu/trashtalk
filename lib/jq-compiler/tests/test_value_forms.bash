@@ -5,7 +5,8 @@ if [[ "${TRASHTALK_TEST_ISOLATED:-}" != 1 ]]; then
 fi
 # Value forms that once compiled silently wrong: comparisons used as values,
 # keyword arguments followed by an intrinsic-named keyword, triple-quoted text
-# outside a local assignment, qualified error classes, and code after a class.
+# outside a local assignment, qualified error classes, code after a class, and
+# nested blocks closed with an adjacent `]]`.
 set -eo pipefail
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPILER_DIR="$(dirname "$TEST_DIR")"
@@ -42,6 +43,9 @@ ValueForms subclass: Object
   method: literalConcat: y [ ^ '''$(echo INJECTED)''' , y ]
   method: literalIvar [ text := '''$HOME "q"'''. ^ text ]
   method: literalInBlock: y [ (y notEmpty) ifTrue: [ ^ '''$(echo INJECTED)''' ]. ^ 'no' ]
+  method: nestedClose: a [ | r | r := 'no'. (a notEmpty) ifTrue: [(a notEmpty) ifTrue: [r := 'yes']]. ^ r ]
+  method: afterNested [ ^ 'reached' ]
+  rawMethod: rawTest: a [ [[ "$a" == x ]] && echo hit || echo miss ]
   method: qualifiedFailure [
     (@ self fails) ifFailed: [:e | ^ e ].
     ^ 'not reached'
@@ -89,6 +93,13 @@ check '$(echo INJECTED)~x' @ "$id" literalArg
 check '$(echo INJECTED)!' @ "$id" literalConcat: '!'
 check '$HOME "q"' @ "$id" literalIvar
 check '$(echo INJECTED)' @ "$id" literalInBlock: y
+
+# `]]` closing two blocks is two closes, not a Bash test; the next method survives.
+check yes @ "$id" nestedClose: q
+check no @ "$id" nestedClose: ''
+check reached @ "$id" afterNested
+check hit @ "$id" rawTest: x
+check miss @ "$id" rawTest: y
 
 # A qualified error class raises like an unqualified one.
 check 'Forms::FormError: nope' @ "$id" qualifiedFailure

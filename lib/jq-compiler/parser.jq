@@ -571,10 +571,25 @@ def extractPragmas:
 def collectMethodBody:
   if current.type == "LBRACKET" then
     advance |
-    # Collect tokens tracking bracket depth
-    {depth: 1, tokens: [], state: .} |
+    # Collect tokens tracking bracket depth. The tokenizer reads `]]` as a
+    # Bash test close; with no open `[[` it can only be two block closes
+    # (`ifTrue: [ ... [ ... ]]`), so split it in place before counting.
+    {depth: 1, tests: 0, tokens: [], state: .} |
     until(.depth == 0 or (.state | atEnd);
-      if (.state | current.type) == "LBRACKET" then
+      if (.state | current.type) == "DLBRACKET" then
+        .tests += 1 |
+        .tokens += [.state | current] |
+        .state |= advance
+      elif (.state | current.type) == "DRBRACKET" and .tests > 0 then
+        .tests -= 1 |
+        .tokens += [.state | current] |
+        .state |= advance
+      elif (.state | current.type) == "DRBRACKET" then
+        (.state | current) as $t |
+        .state |= (.pos as $p | .tokens |= .[:$p]
+          + [$t + {type: "RBRACKET", value: "]"}, $t + {type: "RBRACKET", value: "]", col: ($t.col + 1)}]
+          + .[$p + 1:])
+      elif (.state | current.type) == "LBRACKET" then
         .depth += 1 |
         .tokens += [.state | current] |
         .state |= advance
