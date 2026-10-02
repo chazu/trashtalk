@@ -56,7 +56,7 @@ Session subclass: Object
   # Lifecycle and identity selection change together. Reopen guards the empty
   # current-session query, so it cannot race ensure/fresh into a second session.
   classMethod: transitionWithin: args [
-    | session identity from to pair allowed scope current runs data patch present workspace vars |
+    | session from to pair data patch present vars |
     @ Store requireTransaction.
     session := @ Store read: (args objectAt: 'session') class: 'Agent::Session'.
     data := @ Store getInstance: session.
@@ -66,32 +66,7 @@ Session subclass: Object
     to := args objectAt: 'state'.
     pair := from , ':' , to.
     @ Require member: pair of: '[":terminated","open:paused","paused:open","open:closed","paused:closed","closed:open","open:terminated","paused:terminated","closed:terminated"]'.
-    identity := @ session identity.
-    (identity notEmpty) ifTrue: [
-      identity := @ Store read: identity class: 'Agent::Identity'.
-      scope := @ identity sessionScope.
-      (scope = 'identity') ifTrue: [
-        (to = 'open') ifTrue: [
-          workspace := @ session workspace.
-          current := @ self currentWithinFor: identity workspace: workspace.
-          (current notEmpty) ifTrue: [@ Require equal: current to: session].
-          @ identity currentSession: session.
-          @ identity save
-        ].
-        (to = 'closed') ifTrue: [
-          runs := @ Agent::Run activeFor: session except: ''.
-          @ Require equal: runs to: '[]'
-        ].
-        allowed := @ Require contains: to in: '["closed","terminated"]'.
-        (allowed = 'true') ifTrue: [
-          current := @ identity currentSession.
-          (current = session) ifTrue: [
-            @ identity currentSession: ''.
-            @ identity save
-          ]
-        ]
-      ]
-    ].
+    @ self selectionWithin: session transitioningTo: to.
     patch := args jsonAt: 'patch'.
     @ Store patch: session with: patch.
     vars := data jsonAt: '_vars' ifAbsent: '[]'.
@@ -103,6 +78,38 @@ Session subclass: Object
     @ session lifecycleState: to.
     @ session save.
     ^ to
+  ]
+
+  # An identity-scoped session is its identity's current selection while open:
+  # opening selects it, closing requires no active runs, and closing or
+  # terminating clears the selection. Workspace-scoped sessions are unaffected.
+  classMethod: selectionWithin: session transitioningTo: to [
+    | identity scope workspace current runs allowed |
+    identity := @ session identity.
+    (identity isEmpty) ifTrue: [^ ''].
+    identity := @ Store read: identity class: 'Agent::Identity'.
+    scope := @ identity sessionScope.
+    (scope ~= 'identity') ifTrue: [^ ''].
+    (to = 'open') ifTrue: [
+      workspace := @ session workspace.
+      current := @ self currentWithinFor: identity workspace: workspace.
+      (current notEmpty) ifTrue: [@ Require equal: current to: session].
+      @ identity currentSession: session.
+      @ identity save
+    ].
+    (to = 'closed') ifTrue: [
+      runs := @ Agent::Run activeFor: session except: ''.
+      @ Require equal: runs to: '[]'
+    ].
+    allowed := @ Require contains: to in: '["closed","terminated"]'.
+    (allowed = 'true') ifTrue: [
+      current := @ identity currentSession.
+      (current = session) ifTrue: [
+        @ identity currentSession: ''.
+        @ identity save
+      ]
+    ].
+    ^ ''
   ]
 
   # All public creation paths use the same guarded transaction.
