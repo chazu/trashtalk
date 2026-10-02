@@ -28,7 +28,7 @@ Trash subclass: Object
   # Get system information
   rawMethod: info [
     echo "=== Trash System Information ==="
-    echo "Version: 0.1.0"
+    echo "Version: $TRASH_VERSION"
     echo "Directory: $TRASHDIR"
     echo "Objects: $(@ "$_RECEIVER" listObjects | wc -l)"
     echo "Traits: $(@ "$_RECEIVER" listTraits | wc -l)"
@@ -268,10 +268,11 @@ Trash subclass: Object
   # Space-separated "method:category" metadata from a class's compiled file.
   # Fails, printing nothing, when the class has no compiled file.
   rawMethod: methodCategoriesOf: class_name [
-    local compiled_file="$TRASHDIR/.compiled/$class_name"
+    local compiled_name="${class_name//::/__}"
+    local compiled_file="$TRASHDIR/.compiled/$compiled_name"
     [[ -f "$compiled_file" ]] || return 1
     source "$compiled_file"
-    local cats_var="__${class_name}__methodCategories"
+    local cats_var="__${compiled_name}__methodCategories"
     echo "${!cats_var:-}"
   ]
 
@@ -326,7 +327,7 @@ Trash subclass: Object
 
   # Show inheritance hierarchy for a class
   rawMethod: hierarchyFor: class_name [
-    local compiled_file="$TRASHDIR/.compiled/$class_name"
+    local compiled_file="$TRASHDIR/.compiled/${class_name//::/__}"
 
     if [[ -f "$compiled_file" ]]; then
       echo "Inheritance hierarchy for $class_name:"
@@ -339,12 +340,11 @@ Trash subclass: Object
 
   # Helper for showing hierarchy (uses compiled metadata)
   rawMethod: _showHierarchy: class_name depth: depth [
-    local indent="" i superclass super_var
-    local compiled_file="$TRASHDIR/.compiled/$class_name"
+    local indent superclass super_var
+    local compiled_name="${class_name//::/__}"
+    local compiled_file="$TRASHDIR/.compiled/$compiled_name"
 
-    for ((i=0; i<depth; i++)); do
-      indent="  $indent"
-    done
+    printf -v indent '%*s' "$((depth * 2))" ''
     echo "$indent$class_name"
 
     # Source class to get metadata
@@ -355,7 +355,7 @@ Trash subclass: Object
     fi
 
     # Get superclass from metadata
-    super_var="__${class_name}__superclass"
+    super_var="__${compiled_name}__superclass"
     superclass="${!super_var:-}"
     if [[ -n "$superclass" && "$superclass" != "nil" ]]; then
       @ "$_RECEIVER" _showHierarchy: "$superclass" depth: $((depth + 1))
@@ -389,30 +389,26 @@ Trash subclass: Object
     # Clear the sourcing cache so the class will be re-sourced
     _clear_class_cache "$class_name"
 
-    # Check if it's a trait
-    if [[ -f "$compiled_trait" ]] && grep -q "^${trait_marker}=\"1\"$" "$compiled_trait"; then
-      echo "Reloading trait $class_name..."
-      # Unset old trait functions
+    # Unset the old functions, then source the compiled artifact.
+    _reload_compiled() {
+      local func
       while IFS= read -r func; do
         unset -f "$func" 2>/dev/null
       done < <(_compiled_methods_for "$class_name")
-      # Source the compiled trait
-      source "$compiled_trait"
+      source "$1"
       _mark_class_sourced "$class_name"
+    }
+
+    if [[ -f "$compiled_trait" ]] && grep -q "^${trait_marker}=\"1\"$" "$compiled_trait"; then
+      echo "Reloading trait $class_name..."
+      _reload_compiled "$compiled_trait"
       echo "✓ Trait $class_name reloaded"
       return 0
     fi
 
-    # Check for compiled class
     if [[ -f "$compiled_file" ]]; then
       echo "Reloading class $class_name..."
-      # Unset old class functions
-      while IFS= read -r func; do
-        unset -f "$func" 2>/dev/null
-      done < <(_compiled_methods_for "$class_name")
-      # Source the compiled class
-      source "$compiled_file"
-      _mark_class_sourced "$class_name"
+      _reload_compiled "$compiled_file"
       echo "✓ Class $class_name reloaded"
       return 0
     fi
@@ -499,38 +495,46 @@ Trash subclass: Object
     echo "Memory usage: $(du -sh "$TRASHDIR" | cut -f1)"
   ]
 
-  # Show help
+  # Show help. Rows are padded by printf: raw bodies collapse runs of spaces
+  # inside string literals.
   rawMethod: help [
+    local row='%-36s- %s\n'
     echo "=== Trash System Commands ==="
-    echo "@ Trash info                        - Show system information"
-    echo "@ Trash doctor                      - Diagnose environment/setup issues"
-    echo "@ Trash userInbox                   - Return your Inbox instance"
-    echo "@ Trash listObjects                 - List all objects"
-    echo "@ Trash listTraits                  - List all traits"
-    echo "@ Trash methodsFor: <class>         - Show methods for class"
-    echo "@ Trash hierarchyFor: <class>       - Show inheritance hierarchy"
-    echo "@ Trash new: <class>                - Create class skeleton and edit"
-    echo "@ Trash edit: <class>               - Edit class and recompile on save"
-    echo "@ Trash reload                      - Reload all object stubs"
-    echo "@ Trash reloadClass: <class>        - Hot reload a single class"
-    echo "@ Trash compileAndReload: <class>   - Compile and reload from .trash"
-    echo "@ Trash stats                       - Show system statistics"
-    echo "@ Trash version                     - Show version information"
-    echo "@ Trash repl                        - Launch interactive REPL"
+    printf "$row" '@ Trash info' 'Show system information'
+    printf "$row" '@ Trash doctor' 'Diagnose environment/setup issues'
+    printf "$row" '@ Trash userInbox' 'Return your Inbox instance'
+    printf "$row" '@ Trash listObjects' 'List all objects'
+    printf "$row" '@ Trash listTraits' 'List all traits'
+    printf "$row" '@ Trash methodsFor: <class>' 'Show methods for class'
+    printf "$row" '@ Trash hierarchyFor: <class>' 'Show inheritance hierarchy'
+    printf "$row" '@ Trash new: <class>' 'Create class skeleton and edit'
+    printf "$row" '@ Trash edit: <class>' 'Edit class and recompile on save'
+    printf "$row" '@ Trash reload' 'Reload all object stubs'
+    printf "$row" '@ Trash reloadClass: <class>' 'Hot reload a single class'
+    printf "$row" '@ Trash compileAndReload: <class>' 'Compile and reload from .trash'
+    printf "$row" '@ Trash stats' 'Show system statistics'
+    printf "$row" '@ Trash version' 'Show version information'
+    printf "$row" '@ Trash repl' 'Launch interactive REPL'
+    printf "$row" "@ Trash eval: '<code>'" 'Evaluate Trashtalk code'
+    printf "$row" '@ Trash evalFile: <path>' 'Evaluate Trashtalk code from a file'
     echo ""
     echo "=== Instance Queries (use class methods) ==="
-    echo "@ <Class> findAll                   - Find all instances of class"
-    echo "@ <Class> find: '<predicate>'       - Find with predicate"
-    echo "@ <Class> count                     - Count instances of class"
-    echo "@ Store listClasses                 - List classes with instances"
+    printf "$row" '@ <Class> findAll' 'Find all instances of class'
+    printf "$row" "@ <Class> find: '<predicate>'" 'Find with predicate'
+    printf "$row" '@ <Class> count' 'Count instances of class'
+    printf "$row" '@ Store listClasses' 'List classes with instances'
     echo ""
     echo "=== Source Introspection ==="
-    echo "@ Trash sourceFor: <class>          - Get source code from .trash file"
-    echo "@ Trash hashFor: <class>            - Get source hash (SHA-256)"
+    printf "$row" '@ Trash sourceFor: <class>' 'Get source code from .trash file'
+    printf "$row" '@ Trash hashFor: <class>' 'Get source hash (SHA-256)'
+    printf "$row" '@ Trash categoriesFor: <class>' 'List method categories'
+    printf "$row" '@ Trash browse' 'Browse sources in inbrowser'
+    printf "$row" '@ Trash browseClass: <class>' 'Pick a class symbol and edit it'
+    printf "$row" '@ Trash browseInstancesOf: <class>' 'Pick a persisted instance and inspect it'
     echo ""
     echo "=== Testing ==="
-    echo "@ Trash runTestsFor: <class>        - Run testMethod: tests for class"
-    echo "@ Trash hasTestsFor: <class>        - Check if class has tests"
+    printf "$row" '@ Trash runTestsFor: <class>' 'Run testMethod: tests for class'
+    printf "$row" '@ Trash hasTestsFor: <class>' 'Check if class has tests'
   ]
 
   # Show version information
@@ -583,8 +587,9 @@ Trash subclass: Object
   # Get the source hash for a class
   # Usage: @ Trash hashFor: Counter
   rawMethod: hashFor: class_name [
-    local hash_var="__${class_name}__sourceHash"
-    local compiled_file="$TRASHDIR/.compiled/$class_name"
+    local compiled_name="${class_name//::/__}"
+    local hash_var="__${compiled_name}__sourceHash"
+    local compiled_file="$TRASHDIR/.compiled/$compiled_name"
 
     # Try to get from already-loaded class
     if [[ -n "${!hash_var:-}" ]]; then
@@ -622,7 +627,6 @@ Trash subclass: Object
   # Run a class's declared tests from an explicit compiled artifact. Proposal
   # gates use this before installation; normal tests delegate here as well.
   rawMethod: runTestsFromArtifact: artifact class: class_name [
-    local artifact="$1" class_name="$2"
     local compiled_name="${class_name//::/__}"
     local tests_var="__${compiled_name}__tests"
     local tests
@@ -689,14 +693,9 @@ Trash subclass: Object
   ]
 
   rawMethod: testCompiledCandidate: artifact class: class_name [
-    local output status
-    output=$(@ "$_RECEIVER" runTestsFromArtifact: "$artifact" class: "$class_name" 2>&1)
-    status=$?
-    if [[ $status -eq 0 ]]; then
-      jq -cn --arg message "$output" '{ok:true,phase:"test",line:1,message:$message}'
-    else
-      jq -cn --arg message "$output" '{ok:false,phase:"test",line:1,message:$message}'
-    fi
+    local output ok=true
+    output=$(@ "$_RECEIVER" runTestsFromArtifact: "$artifact" class: "$class_name" 2>&1) || ok=false
+    jq -cn --argjson ok "$ok" --arg message "$output" '{ok:$ok,phase:"test",line:1,message:$message}'
   ]
 
   # Check if a class has tests defined
@@ -799,13 +798,13 @@ EOF
   # Present diagnostics without modifying source. Innards consumes the
   # temporary annotation document; an external editor remains a safe fallback.
   method: editFile: sourceFile diagnostics: diagnostics line: line [
-    | available annotationFile annotationPath result file before after outcome builder unused |
+    | available annotationFile annotationPath result file before after outcome |
     available := @ Tools::Inmacs isInstalled.
     (available = 'true') ifTrue: [
       annotationPath := ''.
       diagnostics notEmpty ifTrue: [
         annotationFile := @ File tempWithPrefix: 'trash-edit-annotations-'.
-        unused := @ annotationFile write: diagnostics.
+        @ annotationFile write: diagnostics.
         annotationPath := @ annotationFile path
       ].
       result := @ Tools::Inmacs editFile: sourceFile annotations: annotationPath line: line.
@@ -815,12 +814,11 @@ EOF
 
     file := @ File at: sourceFile.
     before := @ file read.
-    unused := @ Tools::Inmacs fallbackEditFile: sourceFile line: line.
+    @ Tools::Inmacs fallbackEditFile: sourceFile line: line.
     after := @ file read.
     outcome := 'unchanged'.
     (before ~= after) ifTrue: [outcome := 'saved'].
-    builder := #{schema_version: 1 outcome: outcome path: sourceFile} asJson.
-    ^ builder
+    ^ #{schema_version: 1 outcome: outcome path: sourceFile} asJson
   ]
 
   # Compile to a candidate artifact. This raw method is an OS/compiler boundary;
@@ -853,8 +851,8 @@ EOF
     jq -cn --arg message "$message" '{ok:false,phase:"bash",artifact:"",line:1,message:$message}'
   ]
 
-  rawMethod: validateCompiledIdentity: artifact class: className [
-    local artifact="$1" class_name="$2" compiled_name marker message
+  rawMethod: validateCompiledIdentity: artifact class: class_name [
+    local compiled_name marker message
     compiled_name="${class_name//::/__}"
     marker="__${compiled_name}__superclass="
     if awk -v marker="$marker" 'index($0, marker) == 1 { found=1 } END { exit !found }' "$artifact"; then
@@ -868,7 +866,7 @@ EOF
 
   rawMethod: installCompiledCandidate: artifact for: className source: sourceFile [
     pragma: direct
-    local compiled_name target output status
+    local compiled_name target output
     compiled_name="${className//::/__}"
     if [[ "$sourceFile" == *"/traits/"* ]]; then
       target="$TRASHDIR/.compiled/traits/$compiled_name"
@@ -882,9 +880,7 @@ EOF
       return 0
     fi
     rm -f "$artifact"
-    output=$(@ "$_RECEIVER" reloadClass: "$className" 2>&1)
-    status=$?
-    if [[ $status -eq 0 ]]; then
+    if output=$(@ "$_RECEIVER" reloadClass: "$className" 2>&1); then
       jq -cn '{ok:true,phase:"install",line:1,message:""}'
     else
       jq -cn --arg message "$output" '{ok:false,phase:"install",line:1,message:$message}'
@@ -1080,12 +1076,6 @@ EOF
     ^ @ self openBrowserResult: result
   ]
 
-  method: browse [
-    | records |
-    records := @ self symbolRecords.
-    ^ @ self browseRecords: records title: 'Trashtalk symbols'
-  ]
-
   method: browseClass: className [
     | records |
     records := @ self symbolRecordsForClass: className.
@@ -1118,69 +1108,60 @@ EOF
     ^ @ self editSource: sourceFile class: className line: '1'
   ]
 
+  # Run saved source through the compile, Bash, install, and test gates.
+  # Answers the first failing gate's result, or the test gate's result.
+  method: installEditedSource: sourceFile class: className [
+    | result ok artifact |
+    result := @ self compileClass: className source: sourceFile.
+    ok := result jsonTextAt: 'ok'.
+    (ok ~= 'true') ifTrue: [^ result].
+    artifact := result jsonTextAt: 'artifact'.
+    result := @ self validateCompiledCandidate: artifact.
+    ok := result jsonTextAt: 'ok'.
+    (ok ~= 'true') ifTrue: [^ result].
+    result := @ self installCompiledCandidate: artifact for: className source: sourceFile.
+    ok := result jsonTextAt: 'ok'.
+    (ok ~= 'true') ifTrue: [^ result].
+    ^ @ self testClassForEdit: className
+  ]
+
   method: editSource: sourceFile class: className line: initialLine [
 
     pragma: stream
     pragma: direct
-    | diagnostics line editorResult outcome compileResult ok artifact validationResult installResult testResult message |
+    | diagnostics line editorResult outcome result message |
 
     diagnostics := ''.
     line := initialLine.
     [1 = 1] whileTrue: [
       editorResult := @ self editFile: sourceFile diagnostics: diagnostics line: line.
       outcome := @ String jsonPath: 'outcome' from: editorResult.
-      outcome isEmpty ifTrue: [
-        @ Console error: 'Editor failed without a structured result'.
-        ^ ''
-      ].
-      (outcome = 'unchanged') ifTrue: [^ 'unchanged'].
-      (outcome = 'cancelled') ifTrue: [^ 'cancelled'].
-      (outcome = 'discarded') ifTrue: [^ 'discarded'].
-      (outcome ~= 'saved') ifTrue: [
+      outcome caseOf: {
+        '' -> [
+          @ Console error: 'Editor failed without a structured result'.
+          ^ ''
+        ].
+        #('unchanged' 'cancelled' 'discarded') -> [^ outcome].
+        'saved' -> [
+          message := 'Compiling ' , className , '...'.
+          @ Console print: message
+        ]
+      } otherwise: [
         message := 'Editor failed: ' , outcome.
         @ Console error: message.
         ^ ''
       ].
 
-      message := 'Compiling ' , className , '...'.
-      @ Console print: message.
-      compileResult := @ self compileClass: className source: sourceFile.
-      ok := @ String jsonPath: 'ok' from: compileResult.
-      (ok ~= 'true') ifTrue: [
-        diagnostics := @ self diagnosticsFromCompileResult: compileResult.
-        line := @ String jsonPath: 'line' from: compileResult.
-        message := @ String jsonPath: 'message' from: compileResult.
-        @ Console error: message
-      ] ifFalse: [
-        artifact := @ String jsonPath: 'artifact' from: compileResult.
-        validationResult := @ self validateCompiledCandidate: artifact.
-        ok := @ String jsonPath: 'ok' from: validationResult.
-        (ok ~= 'true') ifTrue: [
-          diagnostics := @ self diagnosticsFromCompileResult: validationResult.
-          line := '1'.
-          message := @ String jsonPath: 'message' from: validationResult.
-          @ Console error: message
-        ] ifFalse: [
-          installResult := @ self installCompiledCandidate: artifact for: className source: sourceFile.
-          ok := @ String jsonPath: 'ok' from: installResult.
-          (ok ~= 'true') ifTrue: [
-            diagnostics := @ self diagnosticsFromCompileResult: installResult.
-            line := '1'
-          ] ifFalse: [
-            testResult := @ self testClassForEdit: className.
-            ok := @ String jsonPath: 'ok' from: testResult.
-            (ok = 'true') ifTrue: [
-              message := 'Compiled and tested ' , className.
-              @ Console print: message.
-              ^ 'saved'
-            ] ifFalse: [
-              diagnostics := @ self diagnosticsFromCompileResult: testResult.
-              line := '1'.
-              message := @ String jsonPath: 'message' from: testResult.
-              @ Console error: message
-            ]
-          ]
-        ]
+      result := @ self installEditedSource: sourceFile class: className.
+      result jsonUnpack: #('ok' 'line' 'message') into: [:ok :failedLine :failure |
+        (ok = 'true') ifTrue: [
+          message := 'Compiled and tested ' , className.
+          @ Console print: message.
+          ^ 'saved'
+        ].
+        diagnostics := @ self diagnosticsFromCompileResult: result.
+        line := failedLine.
+        @ Console error: failure
       ]
     ]
   ]
