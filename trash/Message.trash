@@ -155,46 +155,34 @@ Message subclass: Object
   # Full rendering
   method: show [
     pragma: stream
-    | line |
-    line := 'Id:      ' , self.
-    @ Console print: line.
-    line := 'From:    ' , from.
-    @ Console print: line.
-    line := 'To:      ' , to.
-    @ Console print: line.
-    line := 'Subject: ' , subject.
-    @ Console print: line.
-    line := 'Kind: ' , kind , '  Status: ' , status , '  Sent: ' , created.
-    @ Console print: line.
-    (thread notEmpty) ifTrue: [
-      line := 'Thread:  ' , thread.
-      @ Console print: line
-    ].
-    (replyTo notEmpty) ifTrue: [
-      line := 'ReplyTo: ' , replyTo.
-      @ Console print: line
-    ].
+    @ Console print: 'Id:      ' , self.
+    @ Console print: 'From:    ' , from.
+    @ Console print: 'To:      ' , to.
+    @ Console print: 'Subject: ' , subject.
+    @ Console print: 'Kind: ' , kind , '  Status: ' , status , '  Sent: ' , created.
+    (thread notEmpty) ifTrue: [@ Console print: 'Thread:  ' , thread].
+    (replyTo notEmpty) ifTrue: [@ Console print: 'ReplyTo: ' , replyTo].
     @ Console print: ''.
     @ Console print: body
   ]
 
-  rawClassMethod: help [
-    echo "=== Message - Durable message addressed to an Inbox ==="
-    echo ""
-    echo "Build (undelivered):"
-    echo "  msg=\$(@ Message to: 'chazu' from: 'maki' subject: 'done' body: 'tests pass' kind: 'result')"
-    echo ""
-    echo "Inspect:"
-    echo "  @ \$msg summary        # one line"
-    echo "  @ \$msg show           # full"
-    echo "  @ \$msg isUnread"
-    echo ""
-    echo "Act:"
-    echo "  @ \$msg markRead"
-    echo "  @ \$msg archive"
-    echo "  @ \$msg reply: 'thanks'   # to sender, same thread"
-    echo ""
-    echo "Kinds (conventional): note | question | alert | result"
+  classMethod: help [
+    ^ '''=== Message - Durable message addressed to an Inbox ===
+
+Build (undelivered):
+  msg=$(@ Message to: 'chazu' from: 'maki' subject: 'done' body: 'tests pass' kind: 'result')
+
+Inspect:
+  @ $msg summary        # one line
+  @ $msg show           # full
+  @ $msg isUnread
+
+Act:
+  @ $msg markRead
+  @ $msg archive
+  @ $msg reply: 'thanks'   # to sender, same thread
+
+Kinds (conventional): note | question | alert | result'''
   ]
 
   # Assignment factories use Message defaults and the normal serializer.
