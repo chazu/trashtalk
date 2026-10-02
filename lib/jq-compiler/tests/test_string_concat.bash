@@ -95,6 +95,20 @@ else
   fail "Three-part with variables and space" 'result="${a} ${b}"' "$result"
 fi
 
+echo "Test: self followed by literal text"
+source='TestConcat subclass: Object
+  method: test [
+    | id |
+    id := "message_" , self , "_status".
+    ^ id
+  ]'
+result=$(compile_method "$source" "test")
+if [[ "$result" == *'id="message_${_RECEIVER}_status"'* ]]; then
+  pass "self keeps its name when literal text follows"
+else
+  fail "self keeps its name when literal text follows" 'id="message_${_RECEIVER}_status"' "$result"
+fi
+
 # Public runtime coverage: test_expression_behavior.bash.
 
 print_results

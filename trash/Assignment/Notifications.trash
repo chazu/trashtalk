@@ -35,10 +35,7 @@ Notifications trait
     (state = 'completed') ifTrue: [kind := 'result'].
     (activity = 'needs review') ifTrue: [kind := 'alert'].
     (message isEmpty) ifTrue: [
-      # Bind self first: `'message_' , self , '_status'` compiles to
-      # $_RECEIVER_status, an unrelated variable.
-      id := self.
-      id := 'message_' , id , '_status'.
+      id := 'message_' , self , '_status'.
       owner := @ self owner.
       sender := 'session:' , (data objectAt: 'requesterSession').
       message := @ Message forAssignment: self id: id to: owner sender: sender subject: title body: body kind: kind.

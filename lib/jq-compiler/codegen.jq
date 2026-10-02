@@ -1432,6 +1432,9 @@ def expr_gen($locals; $ivars; $cvars):
           elif expr_is_cvar(.name; $cvars) then "$(_cvar \(.name))"
           else "${\(.name)}"
           end
+        elif .type == "self" then
+          # Braced, so following literal text cannot extend the name
+          "${_RECEIVER}"
         elif .type == "binary" and .op == "," then
           # Nested concat - recurse
           (.left | concat_part) + (.right | concat_part)
