@@ -214,7 +214,7 @@ Run subclass: Object
   # Reply in-thread to every delivery this run holds; prints the message ids.
   # Without a held delivery the result goes to the identity owner's inbox.
   rawClassMethod: result: body [
-    local body="$1" run sid sender deliveries d first to subj thread msg inbox owner
+    local body="$1" run sid sender deliveries d first thread owner
     run=$(@ Agent::Run current) || {
       _throw "RunTokenError" "Agent::Run result: requires a valid TRASHTALK_RUN_TOKEN"
       return 1
@@ -234,27 +234,33 @@ Run subclass: Object
     for d in $deliveries; do
       first=$(@ "$d" messageIdList | head -n 1)
       [[ -n "$first" ]] || continue
-      to=$(@ "$first" from)
-      subj=$(@ "$first" subject)
       thread=$(@ "$first" thread)
       # One reply per conversation thread, not one per delivery.
       case "$seen_threads" in
         *" $thread "*) continue ;;
       esac
       seen_threads="$seen_threads$thread "
-      msg=$(@ Message to: "$to" from: "$sender" subject: "$subj" body: "$body" kind: result)
-      @ "$msg" executionWorkspace: "$(@ "$first" executionWorkspace)"
-      @ "$msg" thread: "$thread"
-      @ "$msg" replyTo: "$first"
-      inbox=$(@ Inbox named: "$to")
-      @ "$inbox" deliver: "$msg"
+      @ Agent::Run reply: "$body" to: "$first" from: "$sender" thread: "$thread"
     done
+  ]
+
+  # Deliver a result reply to a received message's sender, in its thread and
+  # execution workspace. Returns the delivered message id.
+  rawClassMethod: reply: body to: first from: sender thread: thread [
+    local to msg inbox
+    to=$(@ "$2" from)
+    msg=$(@ Message to: "$to" from: "$3" subject: "$(@ "$2" subject)" body: "$1" kind: result)
+    @ "$msg" executionWorkspace: "$(@ "$2" executionWorkspace)"
+    @ "$msg" thread: "$4"
+    @ "$msg" replyTo: "$2"
+    inbox=$(@ Inbox named: "$to")
+    @ "$inbox" deliver: "$msg"
   ]
 
   # Reply to one held delivery, retaining its thread and authenticated sender.
   # Raw boundary: reject foreign receipts before resolving their message data.
   rawClassMethod: result: body forDelivery: delivery [
-    local run sid first msg inbox
+    local run sid first
     run=$(@ Agent::Run current) || return 1
     [[ "$(@ "$2" run)" == "$run" ]] || { _throw 'RunError' 'Delivery is not held by this run'; return 1; }
     [[ -z "$(@ "$2" assignment)" ]] || { _throw 'RunError' 'Use Assignment complete: for entrusted work'; return 1; }
@@ -262,12 +268,7 @@ Run subclass: Object
     first=$(@ "$2" messageIdList | head -n 1)
     [[ -n "$first" ]] || return 1
     sid=$(@ "$run" session)
-    msg=$(@ Message to: "$(@ "$first" from)" from: "session:$sid" subject: "$(@ "$first" subject)" body: "$1" kind: result)
-    @ "$msg" executionWorkspace: "$(@ "$first" executionWorkspace)"
-    @ "$msg" thread: "$(@ "$first" thread)"
-    @ "$msg" replyTo: "$first"
-    inbox=$(@ Inbox named: "$(@ "$first" from)")
-    @ "$inbox" deliver: "$msg"
+    @ Agent::Run reply: "$1" to: "$first" from: "session:$sid" thread: "$(@ "$first" thread)"
   ]
 
   # Local user control targets this immutable run id, never a replacement run.
