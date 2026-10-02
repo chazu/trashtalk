@@ -58,8 +58,7 @@ _build_inventory() {
 }
 
 _build_plan() {
-    jq -L "$SCRIPT_DIR" --arg mode "$1" --arg compiler "$_COMPILER_VERSION" \
-        --arg value_send "${TRASHTALK_VALUE_SEND:-0}" --arg strict "${TRASHTALK_STRICT:-}" --arg lenient "${TRASHTALK_LENIENT:-}" \
+    jq -L "$SCRIPT_DIR" --arg mode "$1" --arg compiler "$_COMPILER_VERSION" "${build_mode_args[@]}" \
         -f "$SCRIPT_DIR/build-plan.jq" "$build_work/inventory.json"
 }
 
@@ -189,6 +188,23 @@ _build_prune_orphans() {
     done
 }
 
+# Fail when two planned nodes share the value at a dotted path, e.g. `output`.
+# Args: $1=path, $2=error message
+_build_collisions() {
+    local collisions
+    collisions=$(jq -r --arg path "$1" '($path | split(".")) as $p | group_by(getpath($p)) | map(select(length > 1) |
+      "\(.[0] | getpath($p)) (\(map(.source) | sort | join(", ")))") | join("; ")' "$build_work/plan.json") ||
+        error "$2"
+    [[ -z "$collisions" ]] || error "$2: $collisions"
+}
+
+# Publish the manifest, then remove orphaned artifacts and stale cache entries.
+_build_finish() {
+    _build_publish_manifest || return
+    _build_prune_orphans
+    _build_prune_caches
+}
+
 # Run the coordinator in a subshell so temporary files/traps and planner state
 # cannot escape into callers. compile-cached uses the same engine for one root.
 cmd_compile_many() (
@@ -201,6 +217,9 @@ cmd_compile_many() (
     export TRASHTALK_DIR
     local build_work source output i idx level max_level receipt body tmp initial_compiler
     local -a build_sources=() build_outputs=() pending=() requested=()
+    # Codegen modes recorded in receipts; a change makes every artifact dirty.
+    local -a build_mode_args=(--arg value_send "${TRASHTALK_VALUE_SEND:-0}"
+        --arg strict "${TRASHTALK_STRICT:-}" --arg lenient "${TRASHTALK_LENIENT:-}")
     local -A build_requested=() known=()
     build_work=$(mktemp -d "${TMPDIR:-/tmp}/trash-build.XXXXXX")
     trap 'rm -rf "$build_work"' EXIT
@@ -219,11 +238,11 @@ cmd_compile_many() (
             requested+=("$source")
         done < <(jq -r --slurpfile live "$build_work/previous-manifest.json" --args '
           .entries as $entries |
+          # Add every entry that depends on a source already in the set.
+          def add_dependents: . as $roots | reduce $entries[] as $e ($roots;
+            if any($e.receipt_data.dependencies|keys[]; . as $dep | $roots|index($dep)) then .+[$e.source] else . end) | unique;
           ($ARGS.positional + [$entries | to_entries[] | select($live[0].entries[.key] == null) | .value.source]) | unique |
-          until(. == ( . as $roots | reduce $entries[] as $e ($roots;
-            if any($e.receipt_data.dependencies|keys[]; . as $dep | $roots|index($dep)) then .+[$e.source] else . end) | unique);
-            . as $roots | reduce $entries[] as $e ($roots;
-            if any($e.receipt_data.dependencies|keys[]; . as $dep | $roots|index($dep)) then .+[$e.source] else . end) | unique) | .[]
+          until(. == add_dependents; add_dependents) | .[]
           ' "${requested[@]}" < "$TRASHTALK_COMPILED_DIR/.protocol-manifest.json")
     fi
     for source in "${requested[@]}" "$TRASHTALK_DIR/trash/"*.trash "$TRASHTALK_DIR/trash/"*/*.trash; do
@@ -253,11 +272,7 @@ cmd_compile_many() (
             if $e != null and $e.source != $n.source then error("Protocol manifest identity shadowed: " + $n.metadata.identity) else true end)
           ' "$build_work/plan.json" >/dev/null || return
     fi
-    local collisions
-    collisions=$(jq -r 'group_by(.metadata.identity) | map(select(length > 1) |
-      "\(.[0].metadata.identity) (\(map(.source) | sort | join(", ")))") | join("; ")' "$build_work/plan.json") ||
-        error 'Ambiguous declared identity'
-    [[ -z "$collisions" ]] || error "Ambiguous declared identity: $collisions"
+    _build_collisions metadata.identity 'Ambiguous declared identity'
     mkdir -p "$build_work/api"
     while IFS= read -r -d '' idx && IFS= read -r -d '' body; do
         printf '%s' "$body" > "$build_work/api/$idx"
@@ -269,17 +284,12 @@ cmd_compile_many() (
         "$build_work/plan.json" > "$build_work/hashed-plan.json"
     mv "$build_work/hashed-plan.json" "$build_work/plan.json"
     # Two selected sources must not silently overwrite the same artifact.
-    collisions=$(jq -r 'group_by(.output) | map(select(length > 1) |
-      "\(.[0].output) (\(map(.source) | sort | join(", ")))") | join("; ")' "$build_work/plan.json") ||
-        error 'Duplicate build output'
-    [[ -z "$collisions" ]] || error "Duplicate build output: $collisions"
+    _build_collisions output 'Duplicate build output'
     max_level=$(jq '[.[]|select(.dirty)|.level] | max // -1' "$build_work/plan.json")
     if [[ "$max_level" == -1 ]]; then
         printf '  = %s artifacts unchanged\n' "$(jq length "$build_work/plan.json")"
-        _build_publish_manifest || return
-        _build_prune_orphans
-        _build_prune_caches
-        return 0
+        _build_finish
+        return
     fi
     # Each level contains independent classes; a dependent starts only after
     # every worker in the previous level succeeded.
@@ -302,7 +312,7 @@ cmd_compile_many() (
     jq -e --slurpfile hashes "$build_work/hashes.json" 'all(.[]; .hash==$hashes[0][.source])' \
         "$build_work/plan.json" >/dev/null || error 'Source changed during build; retry'
     jq -rj --slurpfile hashes "$build_work/hashes.json" --arg compiler "$_COMPILER_VERSION" \
-        --slurpfile plan "$build_work/plan.json" --arg value_send "${TRASHTALK_VALUE_SEND:-0}" --arg strict "${TRASHTALK_STRICT:-}" --arg lenient "${TRASHTALK_LENIENT:-}" '
+        --slurpfile plan "$build_work/plan.json" "${build_mode_args[@]}" '
       .[]|select(.dirty)|. as $node|.receipt,"\u0000",
       ({version:2,source:.source,source_hash:.hash,output_hash:$hashes[0][.output],
         compiler:$compiler,strict:$strict,lenient:$lenient,value_send:$value_send,metadata:.metadata,
@@ -317,9 +327,7 @@ cmd_compile_many() (
         printf '%s\n' "$body" > "$tmp"
         mv -f "$tmp" "$receipt"
     done < "$build_work/receipts.nul"
-    _build_publish_manifest || return
-    _build_prune_orphans
-    _build_prune_caches
+    _build_finish
 )
 
 cmd_compile_cached() {
