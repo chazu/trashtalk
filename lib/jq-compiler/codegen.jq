@@ -79,23 +79,9 @@ def expr_skip_term:
   end;
 
 # Escape a string for bash $'...' ANSI-C quoting
-# Escapes: backslash -> \\, single-quote -> \'
+# Escapes: backslash -> \\, single-quote -> \', newline -> \n
 def ansi_c_escape:
   gsub("\\\\"; "\\\\") | gsub("'"; "\\'") | gsub("\n"; "\\n");
-
-# Check if current token is an infix operator
-def expr_is_operator:
-  expr_peek as $tok |
-  $tok != null and (
-    $tok.type == "PLUS" or $tok.type == "MINUS" or
-    $tok.type == "STAR" or $tok.type == "PERCENT" or
-    $tok.type == "SLASH" or $tok.type == "ASSIGN" or
-    $tok.type == "GT" or $tok.type == "LT" or
-    $tok.type == "GE" or $tok.type == "LE" or
-    $tok.type == "EQ" or $tok.type == "NE" or
-    $tok.type == "EQUALS" or $tok.type == "STR_NE" or $tok.type == "MATCH" or
-    $tok.type == "COMMA"
-  );
 
 def expr_op_value:
   expr_peek as $tok |
@@ -118,6 +104,10 @@ def expr_op_value:
   elif $tok.type == "COMMA" then ","
   else null
   end;
+
+# Check if current token is an infix operator
+def expr_is_operator:
+  expr_op_value != null;
 
 # Check if current token is a control flow keyword
 def expr_is_control_flow:
@@ -1116,17 +1106,14 @@ def expr_parse_stmts:
 # Expression Code Generator
 # ==============================================================================
 
-# Check if identifier is a local variable
-def expr_is_local($name; $locals):
-  ($locals // []) | any(. == $name);
+# Check if identifier is in a scope's name list
+def expr_in_scope($name; $names):
+  ($names // []) | any(. == $name);
 
-# Check if identifier is an instance variable
-def expr_is_ivar($name; $ivars):
-  ($ivars // []) | any(. == $name);
-
-# Check if identifier is a class instance variable
-def expr_is_cvar($name; $cvars):
-  ($cvars // []) | any(. == $name);
+# Local variable, instance variable, class instance variable
+def expr_is_local($name; $locals): expr_in_scope($name; $locals);
+def expr_is_ivar($name; $ivars): expr_in_scope($name; $ivars);
+def expr_is_cvar($name; $cvars): expr_in_scope($name; $cvars);
 
 # ------------------------------------------------------------------------------
 # Statement value discipline
@@ -1155,7 +1142,6 @@ def expr_mark_stmts($tail; $stream):
     elif .type == "control_flow" then
       .tail = $is_tail | .stream = $stream |
       if .kind == "if_failed" then
-        (if .subject.type == "assignment" then .subject.value else .subject end) as $send |
         (($stream | not) and ($is_tail | not)) as $discard |
         if .subject.type == "assignment" then . else .subject.discard = $discard end
       else . end
@@ -1251,9 +1237,7 @@ def expr_gen($locals; $ivars; $cvars):
     elif .type == "dstring" then .value | dstring_transform_ivars($ivars)
     elif .type == "triplestring" then "$'\(.value | ansi_c_escape)'"
     elif .type == "message_send" or .type == "cascade" then "\"$(\(expr_gen($locals; $ivars; $cvars)))\""
-    else
-      expr_gen($locals; $ivars; $cvars) as $code |
-      if ($code | test("^\\$")) then "\"\($code)\"" else "\"\($code)\"" end
+    else "\"\(expr_gen($locals; $ivars; $cvars))\""
     end;
   # Arithmetic context: no $(( )) wrapper. Message results and string lengths
   # are valid operands.
@@ -2684,10 +2668,7 @@ def generateMethod($funcPrefix; $ivars; $cvars):
   # Use `declare -g`: compiled classes are sourced from inside _ensure_class_sourced,
   # so a bare `declare` would make these markers function-local and the dispatcher
   # would never see them (breaking pragma: direct et al).
-  ((.pragmas // []) | map(
-    if . == "direct" then "declare -g \($funcName)__direct=1"
-    else null end
-  ) | map(select(. != null))) as $pragmaMarkers |
+  [(.pragmas // [])[] | select(. == "direct") | "declare -g \($funcName)__direct=1"] as $pragmaMarkers |
 
   # Generate argument bindings for keyword methods
   (if (.args | length) > 0 then
@@ -2722,7 +2703,7 @@ def generateMethod($funcPrefix; $ivars; $cvars):
   (valueSendCapability($ivars)) as $valueCapability |
 
   # Emit pragma markers if present (may be multiple)
-  (if ($pragmaMarkers | length) > 0 then $pragmaMarkers[] else empty end),
+  $pragmaMarkers[],
   # Combine into function
   "\($funcName)() {",
   (if $argBindings != "" then $argBindings else empty end),
