@@ -172,6 +172,12 @@ result=$(@ counter_1234ABCD-0000-0000-0000-000000000000 foo 2>&1) || true
 [[ "$result" == *"Instance 'counter_1234ABCD-0000-0000-0000-000000000000' not found"* && "$result" != *"invalid variable name"* ]] \
     && pass "Missing instance reports error" || fail "Missing instance did not report a clear error: $result"
 
+echo "  Testing stored instance of a class with no compiled artifact..."
+db_put "ghost_1234abcd-0000-0000-0000-000000000000" '{"class":"Ghost"}'
+result=$(@ ghost_1234abcd-0000-0000-0000-000000000000 foo 2>&1) || true
+[[ "$result" == *"class 'Ghost'"* && "$result" != *"not found"* ]] \
+    && pass "Orphaned instance names its missing class" || fail "Orphaned instance error did not name its class: $result"
+
 echo ""
 
 # ==========================================

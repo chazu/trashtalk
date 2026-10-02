@@ -2153,7 +2153,10 @@ function send {
   # No compiled class. Give a message keyed to what the receiver looks like
   # rather than leaking an internal compiled-file path. Instance ids are
   # "<lowercase>_<uuid>"; anything else sent as a receiver is a class name.
-  if [[ "$_RECEIVER" == *_*-*-*-*-* || "$_RECEIVER" =~ ^[a-z][a-z0-9_]*_[0-9a-f] ]]; then
+  # A resolved instance exists; only its class artifact is missing.
+  if [[ -n "$_INSTANCE" ]]; then
+    echo "Error: Instance '$_RECEIVER' has class '$class_name', which has no compiled class. Was the class renamed or removed, or is 'make' needed?" >&2
+  elif [[ "$_RECEIVER" == *_*-*-*-*-* || "$_RECEIVER" =~ ^[a-z][a-z0-9_]*_[0-9a-f] ]]; then
     echo "Error: Instance '$_RECEIVER' not found (not in memory or the Store). It may have been deleted, or never created." >&2
   else
     echo "Error: Unknown class '$_RECEIVER' (no compiled class found). Did you misspell it, or forget to run 'make'?" >&2
