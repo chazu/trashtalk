@@ -13,9 +13,12 @@ Service subclass: Resource
 
   # Ports as a JSON array of {port, targetPort, protocol} objects.
   rawMethod: ports [
-    local raw
-    raw=$(_ivar rawJson)
-    echo "$raw" | jq -c '[.spec.ports[]? | {port: .port, targetPort: .targetPort, protocol: .protocol}]'
+    _ivar rawJson | jq -c '[.spec.ports[]? | {port: .port, targetPort: .targetPort, protocol: .protocol}]'
+  ]
+
+  # Ports as a comma-separated port/protocol list.
+  rawMethod: portList [
+    _ivar rawJson | jq -r '[.spec.ports[]? | "\(.port)/\(.protocol)"] | join(",")'
   ]
 
   # Selector labels as a JSON object.
@@ -24,11 +27,8 @@ Service subclass: Resource
   ]
 
   # One-line summary: type, clusterIP, port list.
-  # printf keeps the space before '[', which "$cip [" would lose in a raw body.
-  rawMethod: summary [
-    local t cip ports
-    t=$(_ivar serviceType)
-    cip=$(_ivar clusterIP)
-    ports=$(@ "$_RECEIVER" ports | jq -r '[.[] | "\(.port)/\(.protocol)"] | join(",")')
-    printf "%s %s [%s]\n" "$t" "$cip" "$ports"
+  method: summary [
+    | ports |
+    ports := @ self portList.
+    ^ serviceType , ' ' , clusterIP , ' [' , ports , ']'
   ]

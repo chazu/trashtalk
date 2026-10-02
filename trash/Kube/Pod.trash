@@ -20,9 +20,7 @@ Pod subclass: Resource
 
   # Container names as a JSON array.
   rawMethod: containers [
-    local raw
-    raw=$(_ivar rawJson)
-    echo "$raw" | jq -c '[.spec.containers[].name]'
+    _ivar rawJson | jq -c '[.spec.containers[].name]'
   ]
 
   # One-line status summary: phase, ready/total, restart count.

@@ -13,22 +13,17 @@ Deployment subclass: Resource
 
   # available / progressing / degraded based on .status.conditions.
   rawMethod: rolloutStatus [
-    local raw
-    raw=$(_ivar rawJson)
-    local available progressing
-    available=$(echo  "$raw" | jq -r '.status.conditions[]? | select(.type == "Available")  | .status')
-    progressing=$(echo "$raw" | jq -r '.status.conditions[]? | select(.type == "Progressing") | .status')
-    if   [[ "$available"  == "True"  ]]; then echo "available"
-    elif [[ "$progressing" == "True" ]]; then echo "progressing"
-    else echo "degraded"
-    fi
+    _ivar rawJson | jq -r '[.status.conditions[]? | select(.status == "True") | .type] |
+      if any(.[]; . == "Available") then "available"
+      elif any(.[]; . == "Progressing") then "progressing"
+      else "degraded" end'
   ]
 
   # Image of the first container.
-  rawMethod: image [
-    local raw
-    raw=$(_ivar rawJson)
-    echo "$raw" | jq -r '.spec.template.spec.containers[0].image // ""'
+  method: image [
+    | image |
+    image := rawJson jsonAt: '["spec","template","spec","containers",0,"image"]' ifAbsent: '""'.
+    ^ image jsonTextAt: ''
   ]
 
   # One-line status: ready/desired replicas and rollout status.
