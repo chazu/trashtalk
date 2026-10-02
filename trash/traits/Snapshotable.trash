@@ -44,14 +44,12 @@ Snapshotable trait
   # All persisted instances of this class, ordered by capturedAt ascending.
   # Queries read capturedAt from the JSON so they do not depend on
   # initializeSchema having created the captured_at virtual column.
-  rawClassMethod: history [
-    @ Store findByClass: "$_RECEIVER" orderBy: "json_extract(data, '$.capturedAt') ASC"
+  classMethod: history [
+    ^ @ Store findByClass: self orderBy: "json_extract(data, '$.capturedAt') ASC"
   ]
 
   # Most recent persisted instance whose identity field matches the given string.
   # Identity is expected to be a stored field like "Pod/default/api-server".
-  rawClassMethod: latestFor: identity [
-    local esc
-    esc=$(_db_escape "$1")
-    @ Store findByClass: "$_RECEIVER" where: "json_extract(data, '$.identity') = '$esc'" orderBy: "json_extract(data, '$.capturedAt') DESC" limit: 1
+  classMethod: latestFor: identity [
+    ^ @ Store findByClass: self matching: (#{identity: identity} asJson) orderBy: "json_extract(data, '$.capturedAt') DESC" limit: 1
   ]
