@@ -2521,8 +2521,6 @@ def generateMetadata:
     ""
   end;
 
-# Source embed removed - no longer needed
-
 # Generate class instance variable initializer function
 def generateClassVarsInit:
   funcPrefix as $prefix |
