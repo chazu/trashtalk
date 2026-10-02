@@ -12,50 +12,74 @@ Kubectl subclass: Tool
     ^ "brew install kubectl"
   ]
 
-  # Fetch a single resource as compact JSON. Returns empty on failure.
-  rawClassMethod: get: kind name: name namespace: ns context: ctx [
-    local -a args=("get" "$kind" "$name" "-o" "json")
-    [[ -n "$ctx" ]] && args=("--context" "$ctx" "${args[@]}")
-    [[ -n "$ns" ]]  && args=("-n" "$ns" "${args[@]}")
-    kubectl "${args[@]}" 2>/dev/null
+  # Fetch a single resource as JSON. Returns empty on failure.
+  classMethod: get: kind name: name namespace: ns context: ctx [
+    | argv |
+    argv := #('get' kind name '-o' 'json') asJson.
+    ^ @ self run: argv namespace: ns context: ctx
   ]
 
   # List all resources of a kind, one compact JSON object per line.
-  rawClassMethod: list: kind namespace: ns context: ctx [
-    local -a args=("get" "$kind" "-o" "json")
-    [[ -n "$ctx" ]] && args=("--context" "$ctx" "${args[@]}")
-    [[ -n "$ns" ]]  && args=("-n" "$ns" "${args[@]}")
-    kubectl "${args[@]}" 2>/dev/null | jq -c '.items[]'
+  classMethod: list: kind namespace: ns context: ctx [
+    | argv listing |
+    argv := #('get' kind '-o' 'json') asJson.
+    listing := @ self run: argv namespace: ns context: ctx.
+    ^ @ self itemsOf: listing
   ]
 
   # List all resources across all namespaces.
-  rawClassMethod: listAll: kind context: ctx [
-    local -a args=("get" "$kind" "-A" "-o" "json")
-    [[ -n "$ctx" ]] && args=("--context" "$ctx" "${args[@]}")
-    kubectl "${args[@]}" 2>/dev/null | jq -c '.items[]'
+  classMethod: listAll: kind context: ctx [
+    | argv listing |
+    argv := #('get' kind '-A' '-o' 'json') asJson.
+    listing := @ self run: argv namespace: '' context: ctx.
+    ^ @ self itemsOf: listing
   ]
 
   # Return the current kubectl context name.
-  rawClassMethod: currentContext [
-    kubectl config 'current-context' 2>/dev/null
+  classMethod: currentContext [
+    | argv |
+    argv := #('config' 'current-context') asJson.
+    ^ @ self run: argv namespace: '' context: ''
   ]
 
   # Return all available context names, one per line.
-  rawClassMethod: listContexts [
-    kubectl config 'get-contexts' -o name 2>/dev/null
+  classMethod: listContexts [
+    | argv |
+    argv := #('config' 'get-contexts' '-o' 'name') asJson.
+    ^ @ self run: argv namespace: '' context: ''
   ]
 
   # Return all namespace names in a cluster, one per line.
-  rawClassMethod: listNamespaces: ctx [
-    local -a args=("get" "namespaces" "-o" "json")
-    [[ -n "$ctx" ]] && args=("--context" "$ctx" "${args[@]}")
-    kubectl "${args[@]}" 2>/dev/null | jq -r '.items[].metadata.name'
+  classMethod: listNamespaces: ctx [
+    | argv listing |
+    argv := #('get' 'namespaces' '-o' 'json') asJson.
+    listing := @ self run: argv namespace: '' context: ctx.
+    ^ @ self namesOf: listing
   ]
 
   # Fetch raw pod logs.
-  rawClassMethod: logs: podName namespace: ns context: ctx [
-    local -a args=("logs" "$podName")
-    [[ -n "$ctx" ]] && args=("--context" "$ctx" "${args[@]}")
-    [[ -n "$ns" ]]  && args=("-n" "$ns" "${args[@]}")
+  classMethod: logs: podName namespace: ns context: ctx [
+    | argv |
+    argv := #('logs' podName) asJson.
+    ^ @ self run: argv namespace: ns context: ctx
+  ]
+
+  # Process boundary for every query: kubectl with an exact argv (a JSON array),
+  # scoped by namespace and context when given. stderr is discarded.
+  rawClassMethod: run: argv namespace: ns context: ctx [
+    local -a args
+    mapfile -t args < <(printf '%s' "$1" | jq -r '.[]')
+    [[ -n "$3" ]] && args=("--context" "$3" "${args[@]}")
+    [[ -n "$2" ]] && args=("-n" "$2" "${args[@]}")
     kubectl "${args[@]}" 2>/dev/null
+  ]
+
+  # Items of a kubectl list, one compact JSON object per line.
+  rawClassMethod: itemsOf: listing [
+    printf '%s' "$1" | jq -c '.items[]'
+  ]
+
+  # Item names of a kubectl list, one per line.
+  rawClassMethod: namesOf: listing [
+    printf '%s' "$1" | jq -r '.items[].metadata.name'
   ]
