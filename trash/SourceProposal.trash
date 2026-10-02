@@ -66,23 +66,29 @@ SourceProposal subclass: Object
   # and apply the single-file patch to a private copy only.
   rawClassMethod: stage: validated source: source_file review: review_result [
     local validated_json="$1" source_file="$2" review_result="$3"
-    local root relative expected_hash diff current_hash candidate diff_file output
+    local root relative expected_hash diff current_hash candidate="" diff_file="" output
     local old_header new_header old_count new_count hunk_count accepted selected_diff
+    # Fail with a phase and message, removing whichever staging files exist.
+    _stage_fail() {
+      local file
+      for file in "$candidate" "$diff_file"; do [[ -z "$file" ]] || rm -f "$file"; done
+      jq -cn --arg phase "$1" --arg message "$2" '{ok:false,phase:$phase,message:$message}'
+    }
     root=$(dirname "$TRASHDIR")
     relative=$(printf '%s' "$validated_json" | jq -r '.path')
     expected_hash=$(printf '%s' "$validated_json" | jq -r '.base_sha256')
     diff=$(printf '%s' "$validated_json" | jq -r '.diff')
 
     if [[ "$relative" == /* || "$relative" == "." || "$relative" == ".." ]]; then
-      jq -cn '{ok:false,phase:"path",message:"Proposal path must be a normalized repository-relative path"}'
+      _stage_fail path "Proposal path must be a normalized repository-relative path"
       return 0
     fi
     if [[ "/$relative/" == *"/../"* || "/$relative/" == *"/./"* ]]; then
-      jq -cn '{ok:false,phase:"path",message:"Proposal path must not contain dot path components"}'
+      _stage_fail path "Proposal path must not contain dot path components"
       return 0
     fi
     if [[ "$source_file" != "$root/$relative" || ! -f "$source_file" || -L "$source_file" ]]; then
-      jq -cn '{ok:false,phase:"path",message:"Proposal path does not identify the resolved regular source file"}'
+      _stage_fail path "Proposal path does not identify the resolved regular source file"
       return 0
     fi
     old_count=$(printf '%s\n' "$diff" | grep -c '^--- ')
@@ -91,11 +97,11 @@ SourceProposal subclass: Object
     new_header=$(printf '%s\n' "$diff" | sed -n 's/^+++ //p')
     if [[ "$old_count" != 1 || "$new_count" != 1 || \
           "$old_header" != "a/$relative" || "$new_header" != "b/$relative" ]]; then
-      jq -cn '{ok:false,phase:"diff",message:"Proposal must contain one ordinary unified diff for its declared path"}'
+      _stage_fail diff "Proposal must contain one ordinary unified diff for its declared path"
       return 0
     fi
     if printf '%s\n' "$diff" | grep -q '^diff --git '; then
-      jq -cn '{ok:false,phase:"diff",message:"Proposal must not contain a multi-file git patch"}'
+      _stage_fail diff "Proposal must not contain a multi-file git patch"
       return 0
     fi
     hunk_count=$(printf '%s\n' "$diff" | grep -c '^@@ ')
@@ -106,33 +112,30 @@ SourceProposal subclass: Object
       (all(.accepted_hunks[], .rejected_hunks[]; type == "number" and floor == . and . >= 0 and . < $count)) and
       (([.accepted_hunks[], .rejected_hunks[]] | sort) == [range(0; $count)])
     ' >/dev/null 2>&1; then
-      jq -cn '{ok:false,phase:"review",message:"indiff returned an invalid or incomplete hunk decision"}'
+      _stage_fail review "indiff returned an invalid or incomplete hunk decision"
       return 0
     fi
 
     current_hash=$(@ "$_RECEIVER" sha256Of: "$source_file")
     if [[ "$current_hash" != "$expected_hash" ]]; then
-      jq -cn --arg expected "$expected_hash" --arg actual "$current_hash" \
-        '{ok:false,phase:"stale",message:("Source hash changed; expected " + $expected + ", found " + $actual)}'
+      _stage_fail stale "Source hash changed; expected $expected_hash, found $current_hash"
       return 0
     fi
 
     if ! command -v patch >/dev/null 2>&1; then
-      jq -cn '{ok:false,phase:"patch",message:"patch is required to stage a source proposal"}'
+      _stage_fail patch "patch is required to stage a source proposal"
       return 0
     fi
     if ! candidate=$(mktemp "${TMPDIR:-/tmp}/trash-proposal-source.XXXXXX"); then
-      jq -cn '{ok:false,phase:"stage",message:"Could not create source candidate"}'
+      _stage_fail stage "Could not create source candidate"
       return 0
     fi
     if ! diff_file=$(mktemp "${TMPDIR:-/tmp}/trash-proposal-diff.XXXXXX"); then
-      rm -f "$candidate"
-      jq -cn '{ok:false,phase:"stage",message:"Could not create proposal diff file"}'
+      _stage_fail stage "Could not create proposal diff file"
       return 0
     fi
     if ! cp -p "$source_file" "$candidate"; then
-      rm -f "$candidate" "$diff_file"
-      jq -cn '{ok:false,phase:"stage",message:"Could not copy source into staging"}'
+      _stage_fail stage "Could not copy source into staging"
       return 0
     fi
     accepted=$(printf '%s' "$review_result" | jq -r '[.accepted_hunks[] | tostring] | "," + join(",") + ","')
@@ -143,14 +146,12 @@ SourceProposal subclass: Object
     ')
     printf '%s\n' "$selected_diff" > "$diff_file"
     if ! output=$(patch --batch --forward --silent "$candidate" < "$diff_file" 2>&1); then
-      rm -f "$candidate" "$diff_file"
-      jq -cn --arg message "$output" '{ok:false,phase:"patch",message:$message}'
+      _stage_fail patch "$output"
       return 0
     fi
     rm -f "$diff_file"
     if cmp -s "$source_file" "$candidate"; then
-      rm -f "$candidate"
-      jq -cn '{ok:false,phase:"patch",message:"Proposal produced no source change"}'
+      _stage_fail patch "Proposal produced no source change"
       return 0
     fi
     jq -cn --arg candidate "$candidate" --arg base_sha256 "$expected_hash" \
@@ -162,79 +163,76 @@ SourceProposal subclass: Object
   # source and compiled artifact before returning.
   rawClassMethod: commit: candidate artifact: artifact source: source_file class: class_name expectedHash: expected_hash [
     local candidate="$1" artifact="$2" source_file="$3" class_name="$4" expected_hash="$5"
-    local current_hash compiled_name target source_backup target_backup source_next output
+    local current_hash target source_backup="" target_backup="" source_next="" output
+    # Fail with a phase and message, discarding the inputs and whichever
+    # backup/commit files exist. Restore first when the source was replaced.
+    _commit_fail() {
+      local file
+      for file in "$candidate" "$artifact" "$source_next" "$source_backup" "$target_backup" \
+                  "${target_backup:+$target_backup.absent}"; do
+        [[ -z "$file" ]] || rm -f "$file"
+      done
+      jq -cn --arg phase "$1" --arg message "$2" '{ok:false,phase:$phase,message:$message}'
+    }
+    _commit_restore() {
+      mv "$source_backup" "$source_file" 2>/dev/null || true
+      if [[ -f "$target_backup.absent" ]]; then rm -f "$target"; else mv "$target_backup" "$target" 2>/dev/null || true; fi
+    }
     if [[ ! -f "$candidate" || -L "$candidate" || ! -f "$artifact" || -L "$artifact" || \
           ! -f "$source_file" || -L "$source_file" ]]; then
-      rm -f "$candidate" "$artifact"
-      jq -cn '{ok:false,phase:"commit",message:"Proposal commit inputs must be regular files"}'
+      _commit_fail commit "Proposal commit inputs must be regular files"
       return 0
     fi
-    compiled_name="${class_name//::/__}"
-    if [[ "$source_file" == *"/traits/"* ]]; then
-      target="$TRASHDIR/.compiled/traits/$compiled_name"
-    else
-      target="$TRASHDIR/.compiled/$compiled_name"
-    fi
+    target=$(@ Trash compiledTargetFor: "$class_name" source: "$source_file")
     current_hash=$(@ "$_RECEIVER" sha256Of: "$source_file")
     if [[ "$current_hash" != "$expected_hash" ]]; then
-      rm -f "$candidate" "$artifact"
-      jq -cn '{ok:false,phase:"stale",message:"Source changed after review; proposal was not committed"}'
+      _commit_fail stale "Source changed after review; proposal was not committed"
       return 0
     fi
 
     mkdir -p "$(dirname "$target")"
     if ! source_backup=$(mktemp "$(dirname "$source_file")/.trash-proposal-source-backup.XXXXXX"); then
-      rm -f "$candidate" "$artifact"
-      jq -cn '{ok:false,phase:"commit",message:"Could not create source backup"}'
+      _commit_fail commit "Could not create source backup"
       return 0
     fi
     if ! target_backup=$(mktemp "$(dirname "$target")/.trash-proposal-artifact-backup.XXXXXX"); then
-      rm -f "$candidate" "$artifact" "$source_backup"
-      jq -cn '{ok:false,phase:"commit",message:"Could not create artifact backup"}'
+      _commit_fail commit "Could not create artifact backup"
       return 0
     fi
     if ! source_next=$(mktemp "$(dirname "$source_file")/.trash-proposal-source-next.XXXXXX"); then
-      rm -f "$candidate" "$artifact" "$source_backup" "$target_backup"
-      jq -cn '{ok:false,phase:"commit",message:"Could not create source commit file"}'
+      _commit_fail commit "Could not create source commit file"
       return 0
     fi
     if ! cp -p "$source_file" "$source_backup"; then
-      rm -f "$candidate" "$artifact" "$source_backup" "$target_backup" "$source_next"
-      jq -cn '{ok:false,phase:"commit",message:"Could not back up source"}'
+      _commit_fail commit "Could not back up source"
       return 0
     fi
     if [[ -f "$target" ]]; then
       if ! cp -p "$target" "$target_backup"; then
-        rm -f "$candidate" "$artifact" "$source_backup" "$target_backup" "$source_next"
-        jq -cn '{ok:false,phase:"commit",message:"Could not back up compiled artifact"}'
+        _commit_fail commit "Could not back up compiled artifact"
         return 0
       fi
     else
       : > "$target_backup.absent"
     fi
     if ! cp -p "$candidate" "$source_next"; then
-      rm -f "$candidate" "$artifact" "$source_backup" "$target_backup" "$source_next" "$target_backup.absent"
-      jq -cn '{ok:false,phase:"commit",message:"Could not prepare same-directory commit files"}'
+      _commit_fail commit "Could not prepare same-directory commit files"
       return 0
     fi
 
     # Installing reviewed source still uses the graph coordinator: validate
     # promises and registered dependents, then publish the ordinary receipts.
     if ! mv "$source_next" "$source_file" || ! "$SCRIPT_DIR/jq-compiler/driver.bash" 'compile-cached' "$source_file" "$target" >/dev/null; then
-      mv "$source_backup" "$source_file" 2>/dev/null || true
-      if [[ -f "$target_backup.absent" ]]; then rm -f "$target"; else mv "$target_backup" "$target" 2>/dev/null || true; fi
-      rm -f "$candidate" "$artifact" "$source_next" "$source_backup" "$target_backup" "$target_backup.absent"
-      jq -cn '{ok:false,phase:"commit",message:"Could not install proposal; source and artifact were restored"}'
+      _commit_restore
+      _commit_fail commit "Could not install proposal; source and artifact were restored"
       return 0
     fi
 
     if ! output=$(@ Trash reloadClass: "$class_name" 2>&1); then
-      mv "$source_backup" "$source_file" 2>/dev/null || true
-      if [[ -f "$target_backup.absent" ]]; then rm -f "$target"; else mv "$target_backup" "$target" 2>/dev/null || true; fi
+      _commit_restore
       "$SCRIPT_DIR/jq-compiler/driver.bash" 'compile-cached' "$source_file" "$target" >/dev/null 2>&1 || true
       @ Trash reloadClass: "$class_name" >/dev/null 2>&1 || true
-      rm -f "$candidate" "$artifact" "$source_next" "$source_backup" "$target_backup" "$target_backup.absent"
-      jq -cn --arg message "$output" '{ok:false,phase:"reload",message:$message}'
+      _commit_fail reload "$output"
       return 0
     fi
 
