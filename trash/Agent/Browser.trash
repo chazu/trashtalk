@@ -70,7 +70,6 @@ Browser subclass: Object
   ]
 
   classMethod: terminationRecordsAt: path [
-
     pragma: stream
     @ self record: 'cancel' label: 'Cancel' detail: 'Keep the session as it is' path: path.
     @ self record: 'terminate' label: 'Terminate session and stop active work' detail: 'Revoke run access; retain messages and logs' path: path
@@ -90,25 +89,26 @@ Browser subclass: Object
       @ File write: details to: path.
       records := @ self actionRecordsFor: session.
       action := @ self pick: records root: dir title: 'Session actions'.
-      action isEmpty ifTrue: [^ 'dismissed'].
-      (action = 'back') ifTrue: [^ 'dismissed'].
-      (action = 'details') ifTrue: [ignored := @ self page: details title: 'Session details'].
-      (action = 'attach') ifTrue: [ignored := @ session focus].
-      (action = 'messages') ifTrue: [
-        text := @ self messagesFor: session.
-        ignored := @ self page: text title: 'Session messages'
-      ].
-      (action = 'runs') ifTrue: [ignored := @ self runsFor: session in: dir].
-      (action = 'retry') ifTrue: [ignored := @ self retryFor: session in: dir].
-      (action = 'compact') ifTrue: [
-        text := @ self compactResultFor: session.
-        ignored := @ self page: text title: 'Context compaction'
-      ].
-      (action = 'pause') ifTrue: [ignored := @ session pause].
-      (action = 'resume') ifTrue: [
-        ignored := @ session resume.
-        ignored := @ Agent::Worker tickSession: session
-      ]
+      action caseOf: {
+        #('' 'back') -> [ ^ 'dismissed' ].
+        'details' -> [ ignored := @ self page: details title: 'Session details' ].
+        'attach' -> [ ignored := @ session focus ].
+        'messages' -> [
+          text := @ self messagesFor: session.
+          ignored := @ self page: text title: 'Session messages'
+        ].
+        'runs' -> [ ignored := @ self runsFor: session in: dir ].
+        'retry' -> [ ignored := @ self retryFor: session in: dir ].
+        'compact' -> [
+          text := @ self compactResultFor: session.
+          ignored := @ self page: text title: 'Context compaction'
+        ].
+        'pause' -> [ ignored := @ session pause ].
+        'resume' -> [
+          ignored := @ session resume.
+          ignored := @ Agent::Worker tickSession: session
+        ]
+      }
     ]
   ]
 
@@ -152,11 +152,9 @@ Browser subclass: Object
     ^ @ self sessionRecordsFor: sessions in: dir
   ]
 
-  classMethod: sessionRecordsFor: sessions in: dir [
-    | snapshots template documents |
-    snapshots := @ Agent::Session snapshotsFor: sessions.
-    template := #{path: #{_concat: #(#{_at: 'id'} '.txt')}
-      text: #{_concat: #('Session: ' #{_at: 'id'} '
+  # Text projection of a session snapshot, shared by preview files and details.
+  classMethod: sessionTextTemplate [
+    ^ #{_concat: #('Session: ' #{_at: 'id'} '
 Identity: ' #{_at: 'identity'} '
 Workspace: ' #{_at: 'workspace'} '
 Lifecycle: ' #{_at: 'lifecycle'} '
@@ -165,7 +163,14 @@ Queued: ' #{_at: 'pending'} '
 Blocked deliveries / questions: ' #{_at: 'questions'} '
 Needs review: ' #{_at: 'stalled'} '
 Latest run: ' #{_at: 'run'} '
-Latest failure: ' #{_at: 'error'})}
+Latest failure: ' #{_at: 'error'})} asJson
+  ]
+
+  classMethod: sessionRecordsFor: sessions in: dir [
+    | snapshots text template documents |
+    snapshots := @ Agent::Session snapshotsFor: sessions.
+    text := @ self sessionTextTemplate.
+    template := #{path: #{_concat: #(#{_at: 'id'} '.txt')} text: (text jsonValue)
       record: #{schema_version: 1 id: #{_at: 'id'} kind: 'agent' line: 1 column: 1
         path: #{_concat: #(#{_at: 'id'} '.txt')} detail: #{_at: 'id'}
         label: #{_concat: #(#{_at: 'workspace'} ' [' #{_at: 'lifecycle'} '/'
@@ -194,8 +199,12 @@ Latest failure: ' #{_at: 'error'})}
   ]
 
   # Text formatting is a projection of the snapshot, not a state mutation.
-  rawClassMethod: describeSession: data [
-    printf '%s' "$1" | jq -r '"Session: \(.id)\nIdentity: \(.identity)\nWorkspace: \(.workspace)\nLifecycle: \(.lifecycle)\nLatest run state: \(.activity)\nQueued: \(.pending)\nBlocked deliveries / questions: \(.questions)\nNeeds review: \(.stalled)\nLatest run: \(.run)\nLatest failure: \(.error)"'
+  classMethod: describeSession: data [
+    | template text |
+    template := @ self sessionTextTemplate.
+    text := @ Json projectEach: data with: template.
+    (text isEmpty) ifTrue: [^ ''].
+    ^ text jsonTextAt: ''
   ]
 
   rawClassMethod: compactResultFor: session [
@@ -208,24 +217,29 @@ Latest failure: ' #{_at: 'error'})}
     state := @ session lifecycleState.
     live := @ Require contains: state in: '["open","paused"]'.
     (live = 'true') ifTrue: [
-      @ self record: 'attach' label: 'Attach to conversation' detail: 'Live transcript, messages, and run controls' path: 'session.txt'
+      @ self actionRecord: 'attach' label: 'Attach to conversation' detail: 'Live transcript, messages, and run controls'
     ].
-    @ self record: 'details' label: 'Session details' detail: 'Refresh snapshot' path: 'session.txt'.
-    @ self record: 'messages' label: 'Messages and questions' detail: 'Read conversation' path: 'session.txt'.
-    @ self record: 'runs' label: 'Runs and logs' detail: 'Inspect failures and output' path: 'session.txt'.
+    @ self actionRecord: 'details' label: 'Session details' detail: 'Refresh snapshot'.
+    @ self actionRecord: 'messages' label: 'Messages and questions' detail: 'Read conversation'.
+    @ self actionRecord: 'runs' label: 'Runs and logs' detail: 'Inspect failures and output'.
     (live = 'true') ifTrue: [
-      @ self record: 'retry' label: 'Retry a stalled delivery' detail: 'Choose a delivery, inspect, then confirm' path: 'session.txt'
+      @ self actionRecord: 'retry' label: 'Retry a stalled delivery' detail: 'Choose a delivery, inspect, then confirm'
     ].
-    (state = 'open') ifTrue: [@ self record: 'pause' label: 'Pause new work' detail: 'Active work continues' path: 'session.txt'].
-    profile := @ session backendProfile.
     (state = 'open') ifTrue: [
+      @ self actionRecord: 'pause' label: 'Pause new work' detail: 'Active work continues'.
       run := @ session activeRun.
-      (run isEmpty) ifTrue: [
-        (profile = 'jcode') ifTrue: [@ self record: 'compact' label: 'Compact context' detail: 'Summarize provider context; keep the same conversation and history' path: 'session.txt']
+      profile := @ session backendProfile.
+      ((run isEmpty) and: [profile = 'jcode']) ifTrue: [
+        @ self actionRecord: 'compact' label: 'Compact context' detail: 'Summarize provider context; keep the same conversation and history'
       ]
     ].
-    (state = 'paused') ifTrue: [@ self record: 'resume' label: 'Resume queued work' detail: 'Allow dispatch' path: 'session.txt'].
-    @ self record: 'back' label: 'Back' detail: 'Dismiss without stopping work' path: 'session.txt'
+    (state = 'paused') ifTrue: [@ self actionRecord: 'resume' label: 'Resume queued work' detail: 'Allow dispatch'].
+    @ self actionRecord: 'back' label: 'Back' detail: 'Dismiss without stopping work'
+  ]
+
+  # Session action records all preview the refreshed session.txt snapshot.
+  classMethod: actionRecord: id label: label detail: detail [
+    ^ @ self record: id label: label detail: detail path: 'session.txt'
   ]
 
   rawClassMethod: messagesFor: session [
