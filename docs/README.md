@@ -11,7 +11,7 @@ implemented contracts from designs and historical evidence.
 | Topic | Reference |
 | --- | --- |
 | Compiler, supported syntax, and tests | [Capabilities](COMPILER_CAPABILITIES.md), [compiler internals](../lib/jq-compiler/README.md) |
-| Editing, browsing, and object inspection | [Development tools](development-tools.md) |
+| Editing, browsing, and object inspection | [Development tools](development-tools.md), [browser property columns](browser-property-columns.md) |
 | DSL recipes and design idioms | [Patterns](trashtalk-patterns.md), [The Way](the-way-of-trashtalk.md) |
 | Cache, Store, save/reload, and transactions | [Persistence](persistence.md), [Assignment refactor](assignment-persistence-implementation.md) |
 | State transition validation and persistence boundaries | [StateMachine trait](state-machines.md) |
@@ -22,9 +22,9 @@ implemented contracts from designs and historical evidence.
 | User settings: file, env overrides, `Config` | [Configuration](config-design.md) |
 | Harness contracts | [Jcode](jcode-session-driver.md), [Maki](maki-session-driver.md) |
 | Tracking failing commands, attention alerts, and delegating them to agents | [Workstation guide](workstation-guide.md) (user guide), [Workstation operations](workstation-operations.md) (operator detail) |
-| Durable work and specialist dispatch | [Agent delegation](agent-delegation-flow.md), [Manual assignments](assignments.md), [Continuation and recovery](assignment-recovery.md), [Simplification design](assignment-simplification.md) |
+| Durable work and specialist dispatch | [Agent delegation](agent-delegation-flow.md), [Manual assignments](assignments.md), [Coding assignment contract](agent-coding-assignment-contract.md), [Continuation and recovery](assignment-recovery.md), [Simplification design](assignment-simplification.md) |
 | Code and session search / CLI harness adapters | [Tool adapters](code-and-session-tools.md) |
-| Runtime/build behavior and dated measurements | [Performance](performance.md), [opt-in result passing](result-passing-design.md), [first performance tranche, 2026-09-15](performance-first-tranche-trashtalk-2026-09-15.md) |
+| Runtime/build behavior and dated measurements | [Performance](performance.md), [opt-in result passing](result-passing-design.md), [first performance tranche, 2026-09-15](performance-first-tranche-trashtalk-2026-09-15.md), [agent audit, 2026-09-14](agent-performance-audit-2026-09-14.md), [browser/conversation, 2026-09-12](performance-2026-09-12.md), [September implementation](performance-implementation.md) |
 | Packages and qualified names | [Namespace implementation/design](namespaces-design.md) |
 | Removed APIs and cleanup evidence | [September cleanup](cleanup-2026-09.md), [29 September checklist](cleanup-2026-09-29.md) |
 
@@ -42,6 +42,8 @@ implemented contracts from designs and historical evidence.
 - [Agent workspace operations and policy](agent-workspace-operations-policy.md): proposed
   separation of Git/Worktrunk operations, machine/project policy, durable recovery,
   and agent orchestration.
+- [Persistent identities and session scopes](persistent-identities-and-session-scopes.md):
+  membership, selection, and per-delivery workspaces implemented; migration extensions are design work.
 - [Headless sessions](headless-agent-sessions-design.md): partial implementation;
   consult current agent guides for available behavior.
 - [Code intelligence and memory research](code-intelligence-and-memory-research.md):
