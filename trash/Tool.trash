@@ -486,6 +486,12 @@ Tool subclass: Object
     ^ @ self resultFrom: capture command: command failureOutcome: failureOutcome
   ]
 
+  classMethod: resultForArgv: argv inDirectory: directory command: command failureOutcome: failureOutcome [
+    | capture |
+    capture := @ self captureArgvJson: argv inDirectory: directory.
+    ^ @ self resultFrom: capture command: command failureOutcome: failureOutcome
+  ]
+
   # Convenience projection: stdout of a successful result. On failure the
   # diagnostic goes to Console error and the projection is empty.
   classMethod: stdoutOf: result [

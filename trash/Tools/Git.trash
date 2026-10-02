@@ -62,5 +62,5 @@ Git subclass: Tool
     tool := @ self path.
     argv := #(tool) asJson.
     argv := @ self argv: argv appendEach: arguments.
-    ^ @ self captureArgvJson: argv inDirectory: directory
+    ^ @ self resultForArgv: argv inDirectory: directory command: 'inspect' failureOutcome: 'process_error'
   ]
