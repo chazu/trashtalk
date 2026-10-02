@@ -389,30 +389,26 @@ Trash subclass: Object
     # Clear the sourcing cache so the class will be re-sourced
     _clear_class_cache "$class_name"
 
-    # Check if it's a trait
-    if [[ -f "$compiled_trait" ]] && grep -q "^${trait_marker}=\"1\"$" "$compiled_trait"; then
-      echo "Reloading trait $class_name..."
-      # Unset old trait functions
+    # Unset the old functions, then source the compiled artifact.
+    _reload_compiled() {
+      local func
       while IFS= read -r func; do
         unset -f "$func" 2>/dev/null
       done < <(_compiled_methods_for "$class_name")
-      # Source the compiled trait
-      source "$compiled_trait"
+      source "$1"
       _mark_class_sourced "$class_name"
+    }
+
+    if [[ -f "$compiled_trait" ]] && grep -q "^${trait_marker}=\"1\"$" "$compiled_trait"; then
+      echo "Reloading trait $class_name..."
+      _reload_compiled "$compiled_trait"
       echo "✓ Trait $class_name reloaded"
       return 0
     fi
 
-    # Check for compiled class
     if [[ -f "$compiled_file" ]]; then
       echo "Reloading class $class_name..."
-      # Unset old class functions
-      while IFS= read -r func; do
-        unset -f "$func" 2>/dev/null
-      done < <(_compiled_methods_for "$class_name")
-      # Source the compiled class
-      source "$compiled_file"
-      _mark_class_sourced "$class_name"
+      _reload_compiled "$compiled_file"
       echo "✓ Class $class_name reloaded"
       return 0
     fi
@@ -631,7 +627,6 @@ Trash subclass: Object
   # Run a class's declared tests from an explicit compiled artifact. Proposal
   # gates use this before installation; normal tests delegate here as well.
   rawMethod: runTestsFromArtifact: artifact class: class_name [
-    local artifact="$1" class_name="$2"
     local compiled_name="${class_name//::/__}"
     local tests_var="__${compiled_name}__tests"
     local tests
@@ -698,14 +693,9 @@ Trash subclass: Object
   ]
 
   rawMethod: testCompiledCandidate: artifact class: class_name [
-    local output status
-    output=$(@ "$_RECEIVER" runTestsFromArtifact: "$artifact" class: "$class_name" 2>&1)
-    status=$?
-    if [[ $status -eq 0 ]]; then
-      jq -cn --arg message "$output" '{ok:true,phase:"test",line:1,message:$message}'
-    else
-      jq -cn --arg message "$output" '{ok:false,phase:"test",line:1,message:$message}'
-    fi
+    local output ok=true
+    output=$(@ "$_RECEIVER" runTestsFromArtifact: "$artifact" class: "$class_name" 2>&1) || ok=false
+    jq -cn --argjson ok "$ok" --arg message "$output" '{ok:$ok,phase:"test",line:1,message:$message}'
   ]
 
   # Check if a class has tests defined
@@ -862,8 +852,8 @@ EOF
     jq -cn --arg message "$message" '{ok:false,phase:"bash",artifact:"",line:1,message:$message}'
   ]
 
-  rawMethod: validateCompiledIdentity: artifact class: className [
-    local artifact="$1" class_name="$2" compiled_name marker message
+  rawMethod: validateCompiledIdentity: artifact class: class_name [
+    local compiled_name marker message
     compiled_name="${class_name//::/__}"
     marker="__${compiled_name}__superclass="
     if awk -v marker="$marker" 'index($0, marker) == 1 { found=1 } END { exit !found }' "$artifact"; then
@@ -877,7 +867,7 @@ EOF
 
   rawMethod: installCompiledCandidate: artifact for: className source: sourceFile [
     pragma: direct
-    local compiled_name target output status
+    local compiled_name target output
     compiled_name="${className//::/__}"
     if [[ "$sourceFile" == *"/traits/"* ]]; then
       target="$TRASHDIR/.compiled/traits/$compiled_name"
@@ -891,9 +881,7 @@ EOF
       return 0
     fi
     rm -f "$artifact"
-    output=$(@ "$_RECEIVER" reloadClass: "$className" 2>&1)
-    status=$?
-    if [[ $status -eq 0 ]]; then
+    if output=$(@ "$_RECEIVER" reloadClass: "$className" 2>&1); then
       jq -cn '{ok:true,phase:"install",line:1,message:""}'
     else
       jq -cn --arg message "$output" '{ok:false,phase:"install",line:1,message:$message}'
