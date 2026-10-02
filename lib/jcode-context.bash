@@ -13,5 +13,3 @@ _jcode_context_value() {
          if ($meta.updated_at // "") >= .updated_at then $meta else . end) |
       .[$field] // null' "$snapshot"
 }
-
-_jcode_compaction_state() { _jcode_context_value "$@"; }
