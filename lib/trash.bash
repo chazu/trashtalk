@@ -783,8 +783,8 @@ _trash_class_exists() {
     if _ensure_class_sourced "$1"; then echo true; else echo false; fi
 }
 _trash_superclass_of() {
-    [[ $(_trash_class_exists "$1") == true ]] || return 1
-    _ensure_class_sourced "$1" || return
+    # _trash_class_exists without its capture: a valid name that loads.
+    [[ $1 =~ ^[A-Za-z_][A-Za-z0-9_]*(::[A-Za-z_][A-Za-z0-9_]*)*$ ]] && _ensure_class_sourced "$1" || return 1
     local marker="__${1//::/__}__superclass"
     printf '%s\n' "${!marker:-}"
 }
@@ -1408,7 +1408,7 @@ function _migrate_instance_schema {
     new_vars+=("$var_name")
 
     # Check if this var exists in the instance
-    if ! echo " $current_vars " | grep -q " $var_name "; then
+    if [[ " $current_vars " != *" $var_name "* ]]; then
       needs_update=true
       # Add the missing field with default value
       if [[ -z "$default_value" ]]; then
@@ -1421,13 +1421,17 @@ function _migrate_instance_schema {
     fi
   done
 
-  # Check if _vars needs updating (added or removed fields)
-  local current_vars_sorted=$(echo "$current_vars" | tr ' ' '\n' | sort | tr '\n' ' ')
-  local new_vars_sorted=$(printf '%s\n' "${new_vars[@]}" | sort | tr '\n' ' ')
-
-  if [[ "$current_vars_sorted" != "$new_vars_sorted" ]]; then
-    needs_update=true
-  fi
+  # Check if _vars needs updating (added or removed fields): compare the two
+  # lists as multisets, keys prefixed so an empty name is still a valid key.
+  local -a current_list=()
+  local -A var_count=()
+  local v
+  IFS=' ' read -ra current_list <<< "$current_vars"
+  for v in "${current_list[@]}"; do var_count["k$v"]=$(( ${var_count["k$v"]:-0} + 1 )); done
+  for v in "${new_vars[@]}"; do var_count["k$v"]=$(( ${var_count["k$v"]:-0} - 1 )); done
+  for v in "${var_count[@]}"; do
+    [[ "$v" == 0 ]] || needs_update=true
+  done
 
   # Update _vars array to match current class definition
   if [[ "$needs_update" == "true" ]]; then
