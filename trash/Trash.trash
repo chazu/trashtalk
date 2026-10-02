@@ -28,7 +28,7 @@ Trash subclass: Object
   # Get system information
   rawMethod: info [
     echo "=== Trash System Information ==="
-    echo "Version: 0.1.0"
+    echo "Version: $TRASH_VERSION"
     echo "Directory: $TRASHDIR"
     echo "Objects: $(@ "$_RECEIVER" listObjects | wc -l)"
     echo "Traits: $(@ "$_RECEIVER" listTraits | wc -l)"
@@ -1074,12 +1074,6 @@ EOF
     | result |
     result := @ self pickRecords: records query: '' title: title.
     ^ @ self openBrowserResult: result
-  ]
-
-  method: browse [
-    | records |
-    records := @ self symbolRecords.
-    ^ @ self browseRecords: records title: 'Trashtalk symbols'
   ]
 
   method: browseClass: className [
