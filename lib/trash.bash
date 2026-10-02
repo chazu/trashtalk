@@ -909,9 +909,12 @@ function _ensure_class_sourced {
     return 0
   fi
 
-  # Check if already sourced by looking for superclass metadata
+  # Check if already sourced by looking for superclass metadata. An unresolved
+  # instance id (hyphenated UUID) is not a valid variable name; skip the
+  # lookup so the caller can report the missing instance.
   local func_prefix="__${class_name//::/__}"
   local super_var="${func_prefix}__superclass"
+  [[ "$super_var" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || return 1
   if [[ -n "${!super_var+x}" ]]; then
     _SOURCED_COMPILED_CLASSES["$class_name"]=1
     return 0
@@ -2385,7 +2388,9 @@ function _trash_dispatch {
 
   # Check for pragma: direct marker on the method
   # Marker format: __ClassName__[class__]selector__direct=1
-  if [[ -n "$___class" ]]; then
+  # An unresolved instance id (hyphenated UUID) cannot name a marker; let send
+  # report it as missing.
+  if [[ -n "$___class" && "$___class" != *[!A-Za-z0-9_:]* ]]; then
     local ___func_prefix="__${___class//::/__}"
     # Reconstruct full selector from all keyword arguments (ending with :)
     # e.g., "Env" "set:" "x" "to:" "y" -> "set:to:"

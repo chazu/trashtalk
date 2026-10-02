@@ -167,6 +167,11 @@ echo "  Testing non-existent class error..."
 result=$(@ NonExistentClass foo 2>&1) || true
 [[ "$result" == *"Unknown class"* ]] && pass "Non-existent class reports error" || fail "Non-existent class did not report error: $result"
 
+echo "  Testing missing instance error..."
+result=$(@ counter_1234ABCD-0000-0000-0000-000000000000 foo 2>&1) || true
+[[ "$result" == *"Instance 'counter_1234ABCD-0000-0000-0000-000000000000' not found"* && "$result" != *"invalid variable name"* ]] \
+    && pass "Missing instance reports error" || fail "Missing instance did not report a clear error: $result"
+
 echo ""
 
 # ==========================================
