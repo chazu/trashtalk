@@ -9,7 +9,7 @@ WorkContext subclass: Object
   ]
 
   classMethod: prepareWithin: delivery [
-    | session role workspace original state allowed revision policy |
+    | session role workspace original state allowed |
     @ Store requireTransaction.
     delivery := @ Store read: delivery class: 'Agent::Delivery'.
     state := @ delivery state.
@@ -26,11 +26,7 @@ WorkContext subclass: Object
     role := @ Store read: role class: 'Agent::Role'.
     allowed := @ role allowsWorkspace: workspace.
     @ Require equal: allowed to: 'true'.
-    revision := @ role revision.
-    policy := @ role workspacePolicy.
-    @ delivery authorizationRole: role.
-    @ delivery authorizationRevision: revision.
-    @ delivery authorizationWorkspacePolicy: policy.
+    @ delivery authorizeFor: role.
     @ delivery save.
     ^ workspace
   ]
