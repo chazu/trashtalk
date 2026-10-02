@@ -38,7 +38,7 @@ cleanup() {
 trap cleanup EXIT
 db_init
 passed=0
-check() { [[ "$2" == "$3" ]] || { echo "FAIL: $1 expected=$2 got=$3"; exit 1; }; echo "PASS: $1"; passed=$((passed+1)); }
+source tests/helpers/check.bash
 field() { db_get "$1" | jq -r --arg f "$2" '.[$f] // empty'; }
 await_file() { for i in {1..100}; do [[ ! -s "$1" ]] || return; sleep .1; done; echo "FAIL: missing $1"; exit 1; }
 settle() {

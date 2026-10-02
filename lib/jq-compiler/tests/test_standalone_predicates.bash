@@ -184,9 +184,3 @@ run_test "ifTrue still uses if [[ -e ]] syntax" "true" \
 
 run_test "ifTrue output is valid bash" "0" \
     "$(echo "$compiled" | bash -n 2>&1; echo $?)"
-
-# ==============================================================================
-# Summary
-# ==============================================================================
-
-print_test_summary

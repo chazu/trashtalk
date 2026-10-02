@@ -21,8 +21,7 @@ cleanup() {
 trap cleanup EXIT
 db_init
 passed=0
-check() { if [[ "$2" == "$3" ]]; then echo "PASS: $1"; passed=$((passed+1)); else echo "FAIL: $1 expected=$2 got=$3"; exit 1; fi; }
-contains() { [[ "$3" == *"$2"* ]] || { echo "FAIL: $1 missing $2"; exit 1; }; echo "PASS: $1"; passed=$((passed+1)); }
+source tests/helpers/check.bash
 field() { db_get "$1" | jq -r --arg field "$2" '.[$field] // empty'; }
 export TRASHTALK_SHELL_DRIVER='cat >/dev/null; trap "exit 0" TERM; printf "%s" "$TRASHTALK_RUN_TOKEN" > "$TOKEN_FILE"; echo started > "$STARTED"; while :; do sleep 0.1; done'
 session=$(@ Gusgus sessionFor: "$root")

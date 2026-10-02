@@ -11,7 +11,7 @@ root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 source "$root/lib/trash.bash"
 export TRASHTALK_PROGRESS=0
 passed=0
-check() { if [[ "$2" == "$3" ]]; then echo "PASS: $1"; passed=$((passed+1)); else echo "FAIL: $1 expected=$2 got=$3"; exit 1; fi; }
+source tests/helpers/check.bash
 calls="$TMPDIR/jq.calls"
 jq() { printf 'jq\n' >> "$calls"; command jq "$@"; }
 jq_count() { wc -l < "$calls" | tr -d ' '; }

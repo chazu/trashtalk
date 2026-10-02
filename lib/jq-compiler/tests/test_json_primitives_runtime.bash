@@ -15,20 +15,8 @@ cd "$COMPILER_DIR"
 # Load the trash runtime
 source "$TRASHTALK_HOME/lib/trash.bash"
 
-PASS=0
-FAIL=0
-
-pass() {
-  echo "  PASS: $1"
-  ((PASS++))
-}
-
-fail() {
-  echo "  FAIL: $1"
-  echo "    Expected: $2"
-  echo "    Got:      $3"
-  ((FAIL++))
-}
+# trash.bash reassigns SCRIPT_DIR to lib/
+source "$COMPILER_DIR/tests/compile_helpers.bash"
 
 # Helper to compile and source a test class
 setup_class() {
@@ -198,16 +186,8 @@ else
   fail "arrayIsEmpty" "true and false" "$isEmpty and $isFull"
 fi
 
-echo ""
-
 # ==========================================
 # Summary
 # ==========================================
 
-echo "=== Summary ==="
-echo "Passed: $PASS"
-echo "Failed: $FAIL"
-
-if ((FAIL > 0)); then
-  exit 1
-fi
+print_results Summary

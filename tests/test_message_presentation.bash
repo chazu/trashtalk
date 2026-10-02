@@ -10,7 +10,7 @@ trap 'rm -rf "$tmp"' EXIT
 export SQLITE_JSON_DB="$tmp/state.db" TRASHTALK_USER=reader TRASHTALK_NO_AUTOTICK=1 TZ=America/New_York
 db_init
 passed=0
-check() { if [[ "$2" == "$3" ]]; then echo "PASS: $1"; passed=$((passed+1)); else printf 'FAIL: %s expected=%s got=%s\n' "$1" "$2" "$3"; exit 1; fi; }
+source tests/helpers/check.bash
 contains() { [[ "$3" == *"$2"* ]] || { printf 'FAIL: %s missing %s in %s\n' "$1" "$2" "$3"; exit 1; }; passed=$((passed+1)); }
 identity=$(@ Agent::Identity named: gusgus)
 @ "$identity" displayName: Gusgus

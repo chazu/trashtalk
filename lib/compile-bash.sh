@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Helper script for parallel bash compilation
-# Called by Makefile with: compile-bash.sh <source.trash> <compiled_dir> <jq_compiler> <trash_dir>
+# Compile one class to its output path; `make single CLASS=...` calls it with:
+#   compile-bash.sh <source.trash> <compiled_dir> <jq_compiler> <trash_dir>
 
 src="$1"
 COMPILED_DIR="$2"

@@ -15,8 +15,8 @@ command -v cue >/dev/null || { echo 'SKIP: CUE not installed'; exit 0; }
 honker_available || { echo 'SKIP: Honker not installed'; exit 0; }
 honker_bootstrap
 passed=0
+source tests/helpers/check.bash
 check() { if [[ "$2" == "$3" ]]; then passed=$((passed+1)); else printf 'FAIL: %s expected=%s got=%s\n' "$1" "$2" "$3"; exit 1; fi; }
-must() { "$@" || { printf 'FAIL: command failed: %s\n' "$*" >&2; exit 1; }; }
 reject() { local name="$1"; shift; if "$@" >"$TMPDIR/rejected" 2>&1; then echo "FAIL: accepted $name"; exit 1; else passed=$((passed+1)); fi; }
 count() { @ Store countByClass: "$1"; }
 data() { @ Store getInstance: "$1"; }

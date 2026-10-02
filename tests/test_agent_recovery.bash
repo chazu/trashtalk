@@ -25,7 +25,7 @@ cleanup() {
 trap cleanup EXIT
 db_init
 passed=0
-check() { if [[ "$2" == "$3" ]]; then echo "PASS: $1"; passed=$((passed+1)); else echo "FAIL: $1 expected=$2 got=$3"; exit 1; fi; }
+source tests/helpers/check.bash
 field() { db_get "$1" | jq -r --arg field "$2" '.[$field] // empty'; }
 wait_for() { local i; for i in {1..150}; do if "$@"; then return 0; fi; sleep 0.1; done; echo "FAIL: timed out: $*"; cat "$tmp/worker.log"; exit 1; }
 started() { [[ -s "$STARTS" ]]; }

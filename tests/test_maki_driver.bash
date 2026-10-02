@@ -52,8 +52,7 @@ chmod +x "$tmp/bin/maki"
 export PATH="$tmp/bin:$PATH" OPENAI_API_KEY=fixture CODEX_API_KEY=fixture OPENROUTER_API_KEY=fixture
 db_init
 passed=0
-check() { if [[ "$2" == "$3" ]]; then echo "PASS: $1"; passed=$((passed+1)); else echo "FAIL: $1 expected=$2 got=$3"; exit 1; fi; }
-contains() { [[ "$3" == *"$2"* ]] || { echo "FAIL: $1 missing $2"; exit 1; }; echo "PASS: $1"; passed=$((passed+1)); }
+source tests/helpers/check.bash
 field() { db_get "$1" | jq -r --arg f "$2" '.[$f] // empty'; }
 settle() {
     local i

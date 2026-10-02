@@ -6,8 +6,7 @@ set -uo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 source "$root/lib/trash.bash"
 passed=0
-check() { if [[ "$2" == "$3" ]]; then echo "PASS: $1"; passed=$((passed+1)); else printf 'FAIL: %s expected=%s got=%s\n' "$1" "$2" "$3"; exit 1; fi; }
-must() { "$@" || { printf 'FAIL: command failed: %s\n' "$*" >&2; exit 1; }; }
+source tests/helpers/check.bash
 
 # Exercise actual package sources through compilation, public sends and reload.
 # These files and all created instances live in the test's isolated checkout.

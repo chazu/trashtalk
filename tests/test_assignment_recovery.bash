@@ -12,8 +12,7 @@ export TRASHTALK_USER=recovery-owner TRASHTALK_NO_AUTOTICK=1 TRASHTALK_GUSGUS_PR
 unset TRASHTALK_RUN_TOKEN TRASHTALK_ASSIGNMENT_ID TRASHTALK_ASSIGNMENT_ATTEMPTS
 db_init
 passed=0
-check() { if [[ "$2" == "$3" ]]; then echo "PASS: $1"; passed=$((passed+1)); else printf 'FAIL: %s expected=%s got=%s\n' "$1" "$2" "$3"; exit 1; fi; }
-must() { "$@" || { printf 'FAIL: command failed: %s\n' "$*" >&2; exit 1; }; }
+source tests/helpers/check.bash
 reject() { local name="$1"; shift; if "$@" >"$tmp/rejected" 2>&1; then echo "FAIL: accepted $name"; exit 1; else echo "PASS: $name"; passed=$((passed+1)); fi; }
 field() { db_get "$1" | jq -r "$2"; }
 settle() {

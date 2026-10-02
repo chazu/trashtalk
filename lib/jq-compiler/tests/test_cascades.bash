@@ -10,33 +10,7 @@ COMPILER_DIR="$(dirname "$SCRIPT_DIR")"
 
 cd "$COMPILER_DIR"
 
-PASS=0
-FAIL=0
-
-pass() {
-  echo "  PASS: $1"
-  ((PASS++))
-}
-
-fail() {
-  echo "  FAIL: $1"
-  echo "    Expected: $2"
-  echo "    Got:      $3"
-  ((FAIL++))
-}
-
-# Helper to compile and extract method body
-compile_method() {
-  local source="$1"
-  local method="$2"
-  local tmpfile
-  tmpfile=$(mktemp)
-  echo "$source" > "$tmpfile"
-  local output
-  output=$(timeout 30 ./driver.bash compile "$tmpfile" 2>/dev/null)
-  rm -f "$tmpfile"
-  echo "$output" | awk "/^__.*__${method}\(\)/,/^\}/" | tail -n +2 | sed '$d' | sed 's/^  //'
-}
+source "$SCRIPT_DIR/compile_helpers.bash"
 
 echo "=== Cascade Tests ==="
 echo ""
@@ -158,11 +132,4 @@ else
   fail "Single message without cascade" 'Single @ call, no semicolons' "$result"
 fi
 
-echo ""
-echo "=== Results ==="
-echo "Passed: $PASS"
-echo "Failed: $FAIL"
-
-if [[ $FAIL -gt 0 ]]; then
-  exit 1
-fi
+print_results

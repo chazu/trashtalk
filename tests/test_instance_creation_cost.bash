@@ -9,7 +9,7 @@ set -uo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 source "$root/lib/trash.bash"
 passed=0
-check() { if [[ "$2" == "$3" ]]; then echo "PASS: $1"; passed=$((passed+1)); else echo "FAIL: $1 expected=$2 got=$3"; exit 1; fi; }
+source tests/helpers/check.bash
 
 mkdir -p "$TMPDIR/bin"
 cat > "$TMPDIR/bin/tr" <<'TR'

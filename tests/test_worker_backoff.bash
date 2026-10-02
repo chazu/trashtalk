@@ -17,7 +17,7 @@ cleanup() {
 }
 trap cleanup EXIT
 passed=0
-check() { if [[ "$2" == "$3" ]]; then echo "PASS: $1"; passed=$((passed+1)); else echo "FAIL: $1 expected=$2 got=$3"; exit 1; fi; }
+source tests/helpers/check.bash
 stop_worker() { kill "$worker" 2>/dev/null; wait "$worker" 2>/dev/null; worker=''; }
 
 mkdir -p "$tmp/bin"
