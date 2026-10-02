@@ -14,13 +14,11 @@ EventBus subclass: Object
   instanceVars: name:'' listenerPids:''
 
   # Create a named event bus
-  rawClassMethod: named: busName [
-    local id
-    id=$(_generate_instance_id EventBus)
-    _create_instance EventBus "$id"
-    @ "$id" name: "$busName"
-    @ "$id" listenerPids: ""
-    echo "$id"
+  classMethod: named: busName [
+    | id |
+    id := (@ self new) ifFailed: [:error | @ error signal].
+    (@ id name: busName) ifFailed: [:error | @ error signal].
+    ^ id
   ]
 
   # Default global bus (convenience)
@@ -50,9 +48,7 @@ EventBus subclass: Object
 
   # Emit an event with no payload
   method: emit: eventName [
-    | topic |
-    topic := name , '.' , eventName.
-    ^ @ Honker notify: topic payload: ''
+    ^ @ self emit: eventName payload: ''
   ]
 
   # Get the number of active listeners

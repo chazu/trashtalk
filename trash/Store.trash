@@ -22,9 +22,9 @@ Store subclass: Object
   # Create a new instance
   # Usage: @ Store createInstance: className id: instanceId data: json
   rawClassMethod: createInstance: class_name id: instance_id data: initial_data [
-    local created_at full_data
-    created_at=$(date +%s)
-    full_data=$(echo "$initial_data" | jq -c ". + {class: \"$class_name\", created_at: \"$created_at\"}")
+    local full_data
+    full_data=$(jq -c --arg class "$class_name" --arg created_at "$(date +%s)" \
+      '. + {class: $class, created_at: $created_at}' <<< "$initial_data") || return 1
     db_put "$instance_id" "$full_data"
   ]
 

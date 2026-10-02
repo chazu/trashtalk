@@ -163,7 +163,7 @@ TestCase subclass: Object
   # Run all test methods in the class
   classMethod: runAll [
     pragma: stream
-    | instance passed failed skipped total class methods i len method |
+    | instance passed failed skipped class methods |
     class := self.  # In a classMethod, self is the class
     instance := @ self new.
 
@@ -172,19 +172,14 @@ TestCase subclass: Object
 
     # Find and run all test methods using Runtime introspection
     methods := @ Runtime methodsFor: class matching: 'test*'.
-    len := methods arrayLength.
-    i := 0.
-    [i < len] whileTrue: [
-      method := methods arrayAt: i.
+    methods arrayEach: [:method |
       @ Console print: ('  Running: ' , method).
-      @ instance runTest: method.
-      i := i + 1
+      @ instance runTest: method
     ].
 
     passed := @ instance passed.
     failed := @ instance failed.
     skipped := @ instance skipped.
-    total := passed + failed.
 
     @ Console newline.
     @ Console hr.

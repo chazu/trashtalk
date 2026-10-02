@@ -28,9 +28,7 @@ Object subclass: nil
 
   # Check if this object is an instance of a given class
   rawMethod: isKindOf: className [
-    local current="$1"
-    local my_class="$_CLASS"
-    current="$my_class"
+    local current="$_CLASS"
     while [[ -n "$current" ]]; do
       if [[ "$current" == "$1" ]]; then
         echo "true"

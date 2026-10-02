@@ -33,8 +33,6 @@ Block subclass: Object
   ]
 
   # Return number of parameters
-  rawMethod: numArgs [
-    local p
-    p=$(@ "$_RECEIVER" params)
-    echo "$p" | jq 'length'
+  method: numArgs [
+    ^ params arrayLength
   ]

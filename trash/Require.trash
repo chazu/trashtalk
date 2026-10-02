@@ -12,12 +12,10 @@ Require subclass: Object
   ]
 
   classMethod: contains: value in: values [
-    | found |
-    found := 'false'.
     values arrayEach: [:entry |
-      (entry = value) ifTrue: [found := 'true']
+      (entry = value) ifTrue: [^ 'true']
     ].
-    ^ found
+    ^ 'false'
   ]
 
   classMethod: member: value of: values [

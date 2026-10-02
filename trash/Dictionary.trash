@@ -61,12 +61,12 @@ Dictionary subclass: Object
   # Create dictionary from pairs
   # Usage: @ dict withPairs: 'name:Alice age:30'
   method: withPairs: pairs [
-    | pairsArray key value unused |
+    | pairsArray key value |
     pairsArray := @ String splitToArray: pairs on: ' '.
     pairsArray arrayEach: [:pair |
       key := pair upTo: ':'.
       value := pair after: ':'.
-      unused := @ self at: key put: value
+      @ self at: key put: value
     ].
     ^ self
   ]
@@ -87,19 +87,15 @@ Dictionary subclass: Object
   ]
 
   method: collect: aBlock [
-    | newItems newDict |
+    | newItems |
     newItems := items objectCollect: aBlock.
-    newDict := @ Dictionary new.
-    @ newDict setItems: newItems.
-    ^ newDict
+    ^ @ Dictionary fromJson: newItems
   ]
 
   method: select: aBlock [
-    | newItems newDict |
+    | newItems |
     newItems := items objectSelect: aBlock.
-    newDict := @ Dictionary new.
-    @ newDict setItems: newItems.
-    ^ newDict
+    ^ @ Dictionary fromJson: newItems
   ]
 
   # Merge another dictionary into this one (modifies self)
