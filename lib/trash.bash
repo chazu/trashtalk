@@ -247,15 +247,7 @@ function _to_compiled_name {
   echo "${name//::/__}"
 }
 
-# Get the path to a compiled class file (bash)
-# Usage: _compiled_path "MyApp::Counter" -> "$TRASHDIR/.compiled/MyApp__Counter"
-function _compiled_path {
-  local class_name="$1"
-  local compiled_name=$(_to_compiled_name "$class_name")
-  echo "$TRASHDIR/.compiled/$compiled_name"
-}
-
-export -f _is_qualified _get_package _get_class_name _to_func_prefix _to_instance_prefix _to_compiled_name _compiled_path
+export -f _is_qualified _get_package _get_class_name _to_func_prefix _to_instance_prefix _to_compiled_name
 
 # ============================================
 # Environment Abstraction
@@ -316,27 +308,6 @@ function _env_delete {
   rm -f "$_ENV_DIR/$instance_id" 2>/dev/null
 }
 
-# List all instances in memory (optionally filtered by class)
-# Usage: _env_list [class_name]
-function _env_list {
-  local class_filter="$1"
-  local file data class
-
-  [[ ! -d "$_ENV_DIR" ]] && return
-
-  for file in "$_ENV_DIR"/*; do
-    [[ -f "$file" ]] || continue
-    local id=$(basename "$file")
-    if [[ -n "$class_filter" ]]; then
-      data=$(cat "$file")
-      class=$(echo "$data" | jq -r '.class // empty')
-      [[ "$class" == "$class_filter" ]] && echo "$id"
-    else
-      echo "$id"
-    fi
-  done
-}
-
 # Drop cached copies whose ids start with any given prefix. Durable records are
 # untouched; the next read loads current data (Agent::Queue refresh uses this
 # between worker ticks). Cheap when nothing matches: one directory glob.
@@ -391,39 +362,13 @@ function _env_persist {
   fi
 }
 
-# Load an instance from the Store into memory
-# Usage: _env_load <instance_id>
-# Returns: 0 on success, 1 if not found in Store
-function _env_load {
-  local instance_id="$1"
-  local data
-  data=$(db_get "$instance_id" 2>/dev/null)
-
-  if [[ -z "$data" ]]; then
-    echo "Error: Instance $instance_id not found in Store" >&2
-    return 1
-  fi
-
-  _env_init
-  echo "$data" > "$_ENV_DIR/$instance_id"
-}
-
-# Check if instance is persisted in the Store
-# Usage: _env_is_persisted <instance_id>
-function _env_is_persisted {
-  local instance_id="$1"
-  local data
-  data=$(db_get "$instance_id" 2>/dev/null)
-  [[ -n "$data" ]]
-}
-
 # Clean up the environment directory
 # Usage: _env_cleanup
 function _env_cleanup {
   if [[ -d "$_ENV_DIR" ]]; then rm -rf "$_ENV_DIR"; fi
 }
 
-export -f _env_init _env_get _env_set _env_exists _env_delete _env_list _env_evict_prefix _env_ids_prefix _env_persist _env_load _env_is_persisted _env_cleanup
+export -f _env_init _env_get _env_set _env_exists _env_delete _env_evict_prefix _env_ids_prefix _env_persist _env_cleanup
 
 # Wipe the ephemeral env dir when the owning shell exits, so /tmp/trashtalk_*
 # dirs don't accumulate across sessions. Three guards keep this from deleting a
@@ -952,13 +897,6 @@ function _clear_all_class_caches {
   _SOURCED_COMPILED_CLASSES=()
 }
 export -f _clear_all_class_caches
-
-# Get count of cached classes (for diagnostics)
-# Usage: count=$(_class_cache_count)
-function _class_cache_count {
-  echo "${#_SOURCED_COMPILED_CLASSES[@]}"
-}
-export -f _class_cache_count
 
 # Mark a class as sourced in the cache
 # Usage: _mark_class_sourced ClassName
@@ -1597,44 +1535,6 @@ function _ivar_set {
   _env_set "$_RECEIVER" "$updated"
 }
 
-# Get instance variable as bash indexed array (for collection ivars stored as JSON)
-# Usage: _ivar_array <var_name>
-# Example: local -a arr; arr=($(_ivar_array items))
-#          for item in "${arr[@]}"; do echo "$item"; done
-function _ivar_array {
-  local var="$1"
-  local data json_arr
-  data=$(_env_get "$_RECEIVER")
-  if [[ -n "$data" ]]; then
-    json_arr=$(echo "$data" | jq -r ".$var // empty")
-    if [[ -n "$json_arr" && "$json_arr" != "null" ]]; then
-      # Convert JSON array to space-separated quoted values for bash array assignment
-      echo "$json_arr" | jq -r '.[] | @sh'
-    fi
-  fi
-}
-
-# Get instance variable as bash associative array declaration (for dict ivars stored as JSON)
-# Usage: eval "$(_ivar_dict config)"
-#        echo "${config[name]}"
-# Returns: declare -A statements that can be eval'd
-function _ivar_dict {
-  local var="$1"
-  local data json_obj
-  data=$(_env_get "$_RECEIVER")
-  if [[ -n "$data" ]]; then
-    json_obj=$(echo "$data" | jq -r ".$var // empty")
-    if [[ -n "$json_obj" && "$json_obj" != "null" ]]; then
-      # Generate bash associative array assignment
-      # Output: declare -A var; var=([key1]="val1" [key2]="val2")
-      echo "declare -A $var"
-      echo -n "$var=("
-      echo "$json_obj" | jq -r 'to_entries | .[] | "[\(.key)]=\"\(.value)\""' | tr '\n' ' '
-      echo ")"
-    fi
-  fi
-}
-
 # Get a single element from an array ivar by index
 # Usage: _ivar_array_at <var_name> <index>
 function _ivar_array_at {
@@ -1673,8 +1573,6 @@ export -f _generate_accessor
 export -f _ensure_loaded
 export -f _ivar
 export -f _ivar_set
-export -f _ivar_array
-export -f _ivar_dict
 export -f _ivar_array_at
 export -f _ivar_dict_at
 
