@@ -6,6 +6,6 @@ Inbrowser subclass: Tool
 
   classMethod: browseIndex: index [
     | argv |
-    argv := #((@ self path)) asJson.
+    argv := @ self baseArgv.
     ^ @ self runArgvJson: argv input: index
   ]

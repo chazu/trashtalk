@@ -3,13 +3,14 @@
 # Shared raw process primitives own argv decoding, capture, and child execution.
 #
 # Tool subclasses are singletons - use class methods directly:
-#   @ JqTool ensure
-#   @ JqTool run: '.foo'
+#   @ Tools::Jq ensure
+#   @ Tools::Jq runAsync: "-cn '{answer:42}'"
 #
-# Subclass example:
-#   JqTool subclass: Tool
-#     classMethod: name [ ^ "jq" ]
-#     classMethod: installCommand [ ^ "brew install jq" ]
+# Subclass example (see trash/Tools/):
+#   package: Tools
+#   Jq subclass: Tool
+#     classMethod: name [ ^ 'jq' ]
+#     classMethod: installCommand [ ^ 'brew install jq' ]
 #
 Tool subclass: Object
 
@@ -50,18 +51,17 @@ Tool subclass: Object
     | toolPath result |
     toolPath := @ self path.
     (toolPath isEmpty) ifTrue: [ ^ 'not installed' ].
-    result := @ self firstLineWithFlag: '--version'.
+    result := @ self firstLineOf: toolPath withFlag: '--version'.
     (result notEmpty) ifTrue: [ ^ result ].
-    result := @ self firstLineWithFlag: '-version'.
+    result := @ self firstLineOf: toolPath withFlag: '-version'.
     (result notEmpty) ifTrue: [ ^ result ].
-    result := @ self firstLineWithFlag: '-V'.
+    result := @ self firstLineOf: toolPath withFlag: '-V'.
     (result notEmpty) ifTrue: [ ^ result ].
     ^ 'unknown'
   ]
 
-  classMethod: firstLineWithFlag: flag [
-    | toolPath argv capture stdout |
-    toolPath := @ self path.
+  classMethod: firstLineOf: toolPath withFlag: flag [
+    | argv capture stdout |
     argv := #(toolPath flag) asJson.
     capture := @ self captureArgvJson: argv.
     stdout := capture jsonTextAt: 'stdout'.
