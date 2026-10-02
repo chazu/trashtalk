@@ -798,13 +798,13 @@ EOF
   # Present diagnostics without modifying source. Innards consumes the
   # temporary annotation document; an external editor remains a safe fallback.
   method: editFile: sourceFile diagnostics: diagnostics line: line [
-    | available annotationFile annotationPath result file before after outcome builder unused |
+    | available annotationFile annotationPath result file before after outcome |
     available := @ Tools::Inmacs isInstalled.
     (available = 'true') ifTrue: [
       annotationPath := ''.
       diagnostics notEmpty ifTrue: [
         annotationFile := @ File tempWithPrefix: 'trash-edit-annotations-'.
-        unused := @ annotationFile write: diagnostics.
+        @ annotationFile write: diagnostics.
         annotationPath := @ annotationFile path
       ].
       result := @ Tools::Inmacs editFile: sourceFile annotations: annotationPath line: line.
@@ -814,12 +814,11 @@ EOF
 
     file := @ File at: sourceFile.
     before := @ file read.
-    unused := @ Tools::Inmacs fallbackEditFile: sourceFile line: line.
+    @ Tools::Inmacs fallbackEditFile: sourceFile line: line.
     after := @ file read.
     outcome := 'unchanged'.
     (before ~= after) ifTrue: [outcome := 'saved'].
-    builder := #{schema_version: 1 outcome: outcome path: sourceFile} asJson.
-    ^ builder
+    ^ #{schema_version: 1 outcome: outcome path: sourceFile} asJson
   ]
 
   # Compile to a candidate artifact. This raw method is an OS/compiler boundary;
@@ -1115,69 +1114,60 @@ EOF
     ^ @ self editSource: sourceFile class: className line: '1'
   ]
 
+  # Run saved source through the compile, Bash, install, and test gates.
+  # Answers the first failing gate's result, or the test gate's result.
+  method: installEditedSource: sourceFile class: className [
+    | result ok artifact |
+    result := @ self compileClass: className source: sourceFile.
+    ok := result jsonTextAt: 'ok'.
+    (ok ~= 'true') ifTrue: [^ result].
+    artifact := result jsonTextAt: 'artifact'.
+    result := @ self validateCompiledCandidate: artifact.
+    ok := result jsonTextAt: 'ok'.
+    (ok ~= 'true') ifTrue: [^ result].
+    result := @ self installCompiledCandidate: artifact for: className source: sourceFile.
+    ok := result jsonTextAt: 'ok'.
+    (ok ~= 'true') ifTrue: [^ result].
+    ^ @ self testClassForEdit: className
+  ]
+
   method: editSource: sourceFile class: className line: initialLine [
 
     pragma: stream
     pragma: direct
-    | diagnostics line editorResult outcome compileResult ok artifact validationResult installResult testResult message |
+    | diagnostics line editorResult outcome result message |
 
     diagnostics := ''.
     line := initialLine.
     [1 = 1] whileTrue: [
       editorResult := @ self editFile: sourceFile diagnostics: diagnostics line: line.
       outcome := @ String jsonPath: 'outcome' from: editorResult.
-      outcome isEmpty ifTrue: [
-        @ Console error: 'Editor failed without a structured result'.
-        ^ ''
-      ].
-      (outcome = 'unchanged') ifTrue: [^ 'unchanged'].
-      (outcome = 'cancelled') ifTrue: [^ 'cancelled'].
-      (outcome = 'discarded') ifTrue: [^ 'discarded'].
-      (outcome ~= 'saved') ifTrue: [
+      outcome caseOf: {
+        '' -> [
+          @ Console error: 'Editor failed without a structured result'.
+          ^ ''
+        ].
+        #('unchanged' 'cancelled' 'discarded') -> [^ outcome].
+        'saved' -> [
+          message := 'Compiling ' , className , '...'.
+          @ Console print: message
+        ]
+      } otherwise: [
         message := 'Editor failed: ' , outcome.
         @ Console error: message.
         ^ ''
       ].
 
-      message := 'Compiling ' , className , '...'.
-      @ Console print: message.
-      compileResult := @ self compileClass: className source: sourceFile.
-      ok := @ String jsonPath: 'ok' from: compileResult.
-      (ok ~= 'true') ifTrue: [
-        diagnostics := @ self diagnosticsFromCompileResult: compileResult.
-        line := @ String jsonPath: 'line' from: compileResult.
-        message := @ String jsonPath: 'message' from: compileResult.
-        @ Console error: message
-      ] ifFalse: [
-        artifact := @ String jsonPath: 'artifact' from: compileResult.
-        validationResult := @ self validateCompiledCandidate: artifact.
-        ok := @ String jsonPath: 'ok' from: validationResult.
-        (ok ~= 'true') ifTrue: [
-          diagnostics := @ self diagnosticsFromCompileResult: validationResult.
-          line := '1'.
-          message := @ String jsonPath: 'message' from: validationResult.
-          @ Console error: message
-        ] ifFalse: [
-          installResult := @ self installCompiledCandidate: artifact for: className source: sourceFile.
-          ok := @ String jsonPath: 'ok' from: installResult.
-          (ok ~= 'true') ifTrue: [
-            diagnostics := @ self diagnosticsFromCompileResult: installResult.
-            line := '1'
-          ] ifFalse: [
-            testResult := @ self testClassForEdit: className.
-            ok := @ String jsonPath: 'ok' from: testResult.
-            (ok = 'true') ifTrue: [
-              message := 'Compiled and tested ' , className.
-              @ Console print: message.
-              ^ 'saved'
-            ] ifFalse: [
-              diagnostics := @ self diagnosticsFromCompileResult: testResult.
-              line := '1'.
-              message := @ String jsonPath: 'message' from: testResult.
-              @ Console error: message
-            ]
-          ]
-        ]
+      result := @ self installEditedSource: sourceFile class: className.
+      result jsonUnpack: #('ok' 'line' 'message') into: [:ok :failedLine :failure |
+        (ok = 'true') ifTrue: [
+          message := 'Compiled and tested ' , className.
+          @ Console print: message.
+          ^ 'saved'
+        ].
+        diagnostics := @ self diagnosticsFromCompileResult: result.
+        line := failedLine.
+        @ Console error: failure
       ]
     ]
   ]
