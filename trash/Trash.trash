@@ -268,10 +268,11 @@ Trash subclass: Object
   # Space-separated "method:category" metadata from a class's compiled file.
   # Fails, printing nothing, when the class has no compiled file.
   rawMethod: methodCategoriesOf: class_name [
-    local compiled_file="$TRASHDIR/.compiled/$class_name"
+    local compiled_name="${class_name//::/__}"
+    local compiled_file="$TRASHDIR/.compiled/$compiled_name"
     [[ -f "$compiled_file" ]] || return 1
     source "$compiled_file"
-    local cats_var="__${class_name}__methodCategories"
+    local cats_var="__${compiled_name}__methodCategories"
     echo "${!cats_var:-}"
   ]
 
@@ -326,7 +327,7 @@ Trash subclass: Object
 
   # Show inheritance hierarchy for a class
   rawMethod: hierarchyFor: class_name [
-    local compiled_file="$TRASHDIR/.compiled/$class_name"
+    local compiled_file="$TRASHDIR/.compiled/${class_name//::/__}"
 
     if [[ -f "$compiled_file" ]]; then
       echo "Inheritance hierarchy for $class_name:"
@@ -340,7 +341,8 @@ Trash subclass: Object
   # Helper for showing hierarchy (uses compiled metadata)
   rawMethod: _showHierarchy: class_name depth: depth [
     local indent="" i superclass super_var
-    local compiled_file="$TRASHDIR/.compiled/$class_name"
+    local compiled_name="${class_name//::/__}"
+    local compiled_file="$TRASHDIR/.compiled/$compiled_name"
 
     for ((i=0; i<depth; i++)); do
       indent="  $indent"
@@ -355,7 +357,7 @@ Trash subclass: Object
     fi
 
     # Get superclass from metadata
-    super_var="__${class_name}__superclass"
+    super_var="__${compiled_name}__superclass"
     superclass="${!super_var:-}"
     if [[ -n "$superclass" && "$superclass" != "nil" ]]; then
       @ "$_RECEIVER" _showHierarchy: "$superclass" depth: $((depth + 1))
@@ -583,8 +585,9 @@ Trash subclass: Object
   # Get the source hash for a class
   # Usage: @ Trash hashFor: Counter
   rawMethod: hashFor: class_name [
-    local hash_var="__${class_name}__sourceHash"
-    local compiled_file="$TRASHDIR/.compiled/$class_name"
+    local compiled_name="${class_name//::/__}"
+    local hash_var="__${compiled_name}__sourceHash"
+    local compiled_file="$TRASHDIR/.compiled/$compiled_name"
 
     # Try to get from already-loaded class
     if [[ -n "${!hash_var:-}" ]]; then
