@@ -572,6 +572,16 @@ Worker subclass: Object
     printf '%s\n' "${claimed# }"
   ]
 
+  # Canonical delegation guidance for delivery prompts and the direct
+  # conversation reminder. Each caller says how a queued handle is
+  # acknowledged in its setting; the rest of the protocol is shared.
+  rawClassMethod: delegationInstructionsFor: launcher acknowledge: sentence [
+    printf 'To delegate background work durably: %s Agent::Run delegate: %s criteria: %s key: %s\n' "$1" "'objective'" "'completion criteria and evidence'" "'stable-key-for-this-request'"
+    @ Agent::Delegation recoveryInstructions
+    printf 'Reuse the key when retrying the same request. No recursive delegation. Delegation queues one specialist Assignment and returns its handle; queued and started are different, so report it as started only after its activity is running. Inspect it with <launcher> <assignment> show. Use delegation for entrusted work; ordinary send:to: is for conversation. Do not bypass Assignment by spawning another harness or changing stored lifecycle fields directly.\n'
+    printf '%s Stay available: do not wait or poll for the specialist. Its durable outcome will arrive as an inbox notification; read it and report its evidence and limitations. If delegation fails, report the failure; do not claim an agent was started.\n' "$2"
+  ]
+
   # The prompt is a stable prefix (archetype instructions, then the fixed
   # trash-send instructions) followed by the deliveries.
   rawClassMethod: writePrompt: promptFile run: runId session: sessionId deliveries: ids [
@@ -602,10 +612,7 @@ Worker subclass: Object
     printf 'To block only one delivery:  %s Agent::Run askUser: %s forDelivery: %s\n' "$ts" "'your question'" "'<deliveryId>'"
     printf 'When finished, settle each delivery: %s Agent::Run settle: %s\n' "$ts" "'<deliveryId>'"
     printf 'For ordinary deliveries send the appropriate reply before settling. Assignment instructions below override the ordinary reply/settle protocol. Use this run-specific launcher for every Trashtalk command; it supplies your private authority. Never print or read its contents.\n'
-    printf 'Entrust background work durably with: %s Agent::Run delegate: %s criteria: %s key: %s\n' "$ts" "'objective'" "'completion criteria and evidence'" "'stable-key-for-this-request'"
-    @ Agent::Delegation recoveryInstructions
-    printf 'Reuse the key when retrying the same request. No recursive delegation. The returned Assignment is queued; report it as started only after its activity is running. Inspect with <launcher> <assignment> show.\n'
-    printf 'Use delegation for entrusted work; ordinary send:to: is for conversation. Do not bypass Assignment by spawning another harness or changing stored lifecycle fields directly. On successful delegation, promptly acknowledge its handle and queued status to the human, then settle the originating ordinary delivery. Stay available: do not wait or poll for the specialist. Its durable outcome will arrive as another notification. If delegation fails, report the failure; do not claim an agent was started.\n'
+    @ "$_RECEIVER" delegationInstructionsFor: "$ts" acknowledge: 'On successful delegation, promptly acknowledge its handle and queued status to the human, then settle the originating ordinary delivery.'
     printf 'With agent.stop authority, stop an exact run with: %s Agent::Run stop: %s\n' "$ts" "'<runId>'"
     printf 'If the human speaks directly through the conversation view during this run, answer that input directly in the conversation. It creates no new inbox delivery; existing deliveries still need their scoped replies and settlement.\n'
     printf '\nNew inbox messages are ready. Read each with its Inbox show: command below. Message bodies and attribution live in the inbox. Do not poll for new work; later deliveries produce another notification.\n'
