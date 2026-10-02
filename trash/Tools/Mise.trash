@@ -91,32 +91,30 @@ Mise subclass: Tool
     ^ @ self stdoutOf: result
   ]
 
+  # Trimmed stdout of `mise <subcommand> <target>` ('' when mise is missing).
+  classMethod: trimmedOutputOf: subcommand for: target inDirectory: directory [
+    | available argv result stdout |
+    available := @ self isInstalled.
+    (available ~= 'true') ifTrue: [^ ''].
+    argv := @ self argvFor: subcommand inDirectory: directory.
+    argv := argv arrayPush: target.
+    result := @ self resultForArgv: argv command: subcommand failureOutcome: 'process_error'.
+    stdout := @ self stdoutOf: result.
+    ^ stdout trimmed
+  ]
+
   # Active version of a tool for the current project ('' when none).
   classMethod: current: tool [
     ^ @ self current: tool inDirectory: ''
   ]
 
   classMethod: current: tool inDirectory: directory [
-    | available argv result stdout |
-    available := @ self isInstalled.
-    (available ~= 'true') ifTrue: [^ ''].
-    argv := @ self argvFor: 'current' inDirectory: directory.
-    argv := argv arrayPush: tool.
-    result := @ self resultForArgv: argv command: 'current' failureOutcome: 'process_error'.
-    stdout := @ self stdoutOf: result.
-    ^ @ String trim: stdout
+    ^ @ self trimmedOutputOf: 'current' for: tool inDirectory: directory
   ]
 
   # Latest available version of a tool from mise's registry.
   classMethod: latest: tool [
-    | available argv result stdout |
-    available := @ self isInstalled.
-    (available ~= 'true') ifTrue: [^ ''].
-    argv := @ self argvFor: 'latest'.
-    argv := argv arrayPush: tool.
-    result := @ self resultForArgv: argv command: 'latest' failureOutcome: 'process_error'.
-    stdout := @ self stdoutOf: result.
-    ^ @ String trim: stdout
+    ^ @ self trimmedOutputOf: 'latest' for: tool inDirectory: ''
   ]
 
   # Path of a binary as mise would resolve it for the current project.
@@ -125,14 +123,7 @@ Mise subclass: Tool
   ]
 
   classMethod: which: binary inDirectory: directory [
-    | available argv result stdout |
-    available := @ self isInstalled.
-    (available ~= 'true') ifTrue: [^ ''].
-    argv := @ self argvFor: 'which' inDirectory: directory.
-    argv := argv arrayPush: binary.
-    result := @ self resultForArgv: argv command: 'which' failureOutcome: 'process_error'.
-    stdout := @ self stdoutOf: result.
-    ^ @ String trim: stdout
+    ^ @ self trimmedOutputOf: 'which' for: binary inDirectory: directory
   ]
 
   # Install one tool spec such as 'node@22' (or a JSON array of specs).
