@@ -164,17 +164,27 @@ Worker subclass: Object
     ^ 30
   ]
 
-  rawClassMethod: stopRun: run [
-    local path result
+  # Process-lock boundary: queue behind an in-progress tick rather than
+  # silently dropping a user control operation when the lock is busy. Prints
+  # the answer when it is one of the space-separated accepted results;
+  # any other answer goes to stderr as the failure.
+  rawClassMethod: control: selector argument: target accepting: accepted busy: action [
+    local path result ok
     path=$(@ Agent::Worker lockPath) || return 1
-    result=$(@ Process withLock: "$path" receiver: Agent::Worker selector: 'stopOwnedRun:' argument: "$1" waiting: "$(@ Agent::Worker controlWait)") || return 1
+    result=$(@ Process withLock: "$path" receiver: Agent::Worker selector: "$1" argument: "$2" waiting: "$(@ Agent::Worker controlWait)") || return 1
     if [[ -n "$result" ]]; then
-      [[ "$result" == interrupted || "$result" == 'already-stopped' ]] || { printf '%s\n' "$result" >&2; return 1; }
-      printf '%s\n' "$result"
-      return 0
+      for ok in $3; do
+        [[ "$result" == "$ok" ]] && { printf '%s\n' "$result"; return 0; }
+      done
+      printf '%s\n' "$result" >&2
+      return 1
     fi
-    _throw 'WorkerError' 'Worker is busy; stop was not applied. Try again.'
+    _throw 'WorkerError' "Worker is busy; $4 was not applied. Try again."
     return 1
+  ]
+
+  rawClassMethod: stopRun: run [
+    @ Agent::Worker control: 'stopOwnedRun:' argument: "$1" accepting: 'interrupted already-stopped' busy: 'stop'
   ]
 
   classMethod: stopOwnedRun: run [
@@ -242,19 +252,8 @@ Worker subclass: Object
     ]
   ]
 
-  # Process-lock boundary: queue behind an in-progress tick rather than
-  # silently dropping a user control operation when the lock is busy.
   rawClassMethod: terminateSession: sessionId [
-    local path result
-    path=$(@ Agent::Worker lockPath) || return 1
-    result=$(@ Process withLock: "$path" receiver: Agent::Worker selector: 'terminateOwnedSession:' argument: "$1" waiting: "$(@ Agent::Worker controlWait)") || return 1
-    if [[ -n "$result" ]]; then
-      [[ "$result" == terminated ]] || { printf '%s\n' "$result" >&2; return 1; }
-      printf '%s\n' "$result"
-      return 0
-    fi
-    _throw 'WorkerError' 'Worker is busy; session termination was not applied. Try again.'
-    return 1
+    @ Agent::Worker control: 'terminateOwnedSession:' argument: "$1" accepting: 'terminated' busy: 'session termination'
   ]
 
   classMethod: terminateOwnedSession: session [
