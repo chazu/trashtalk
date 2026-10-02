@@ -30,8 +30,9 @@ contains 'header has human participants' 'Gusgus → You' "$text"
 contains 'body preserves paragraph breaks' $'Tests\tpass.\n\nSecond paragraph.' "$text"
 check 'preview omits raw routing metadata' false "$([[ "$text" == *"$session"* || "$text" == *'Id:'* ]] && echo true || echo false)"
 check 'presentation leaves unread state intact' unread "$(@ "$msg" status)"
-record=$(@ MessagePresentation recordFor: "$msg" data: "$data")
+record=$(@ MessagePresentation documentsFor: "$(@ Runtime reloadDataFor: "$msg")" | jq -c .record)
 check 'picker retains exact message id' "$msg" "$(jq -r .id <<< "$record")"
+check 'picker record carries the presented label' 'Tests pass.' "$(jq -r .label <<< "$record")"
 contains 'full source address stays searchable' "session:$session" "$(jq -r .display.search_text <<< "$record")"
 contains 'body stays searchable beyond the headline' 'Second paragraph.' "$(jq -r .display.search_text <<< "$record")"
 @ "$msg" kind: question
@@ -52,5 +53,6 @@ check 'control characters do not enter picker row' 'one two three' "$(@ MessageP
 @ "$msg" body: ''
 check 'empty messages remain selectable' '(empty message)' "$(@ MessagePresentation dataFor: "$msg" | jq -r .label)"
 contains 'full details still contain exact source' "session:$session" "$(@ "$msg" show)"
-check 'shortened names preserve UTF-8' 'あいうえおかきくけこさしすせそたちつて…' "$(@ MessagePresentation rowName: 'あいうえおかきくけこさしすせそたちつてとなに')"
+long=$(@ Inbox send: 'hello' to: reader from: 'あいうえおかきくけこさしすせそたちつてとなに' subject: greeting kind: info)
+contains 'shortened names preserve UTF-8' '● あいうえおかきくけこさしすせそたちつて…  ' "$(@ MessagePresentation documentsFor: "$(@ Runtime reloadDataFor: "$long")" | jq -r .record.display.prefix)"
 echo "=== $passed presentation checks passed ==="
