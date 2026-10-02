@@ -1231,6 +1231,13 @@ def subshell_transform_ivars($ivars; $locals):
 def shell_double_literal:
   gsub("\\\\"; "\\\\") | gsub("\""; "\\\"") | gsub("\\$"; "\\$") | gsub("`"; "\\`");
 
+# Collect local names from statements
+def expr_collect_locals:
+  if .type == "statements" and .body != null then
+    [(.body // [])[] | select(.type == "locals") | (.names // [])[]] | unique
+  else []
+  end;
+
 # Generate code for an expression
 def expr_gen($locals; $ivars; $cvars):
   # A single quoted Bash word for an expression: literals stay literal, so
@@ -1609,10 +1616,7 @@ def expr_gen($locals; $ivars; $cvars):
     # This allows blocks like [@ self doSomething] to be first-class
     (if .tokens != null then
       ({ tokens: .tokens, pos: 0 } | expr_parse_stmts) as $parsed |
-      # Inline expr_collect_locals logic
-      (if $parsed.type == "statements" and $parsed.body != null then
-        [($parsed.body // [])[] | select(.type == "locals") | (.names // [])[]] | unique
-      else [] end) as $declared_locals |
+      ($parsed | expr_collect_locals) as $declared_locals |
       # Generate body - wrap last expression in echo if it's just a value
       (($parsed.body // []) | length) as $stmt_count |
       if $stmt_count == 0 then ""
@@ -1650,10 +1654,7 @@ def expr_gen($locals; $ivars; $cvars):
     # The last expression in a block should produce output (echo)
     (if .tokens != null then
       ({ tokens: .tokens, pos: 0 } | expr_parse_stmts) as $parsed |
-      # Inline expr_collect_locals logic (can't call it due to jq ordering)
-      (if $parsed.type == "statements" and $parsed.body != null then
-        [($parsed.body // [])[] | select(.type == "locals") | (.names // [])[]] | unique
-      else [] end) as $declared_locals |
+      ($parsed | expr_collect_locals) as $declared_locals |
       ($declared_locals + $block_params) as $block_locals |
       # Generate body - wrap last expression in echo if it's just a value
       (($parsed.body // []) | length) as $stmt_count |
@@ -2148,13 +2149,6 @@ def expr_gen_json($locals; $ivars; $cvars):
   else
     # Fallback for non-collection types
     expr_gen($locals; $ivars; $cvars)
-  end;
-
-# Collect local names from statements
-def expr_collect_locals:
-  if .type == "statements" and .body != null then
-    [(.body // [])[] | select(.type == "locals") | (.names // [])[]] | unique
-  else []
   end;
 
 # Generate code for all statements
@@ -2789,9 +2783,7 @@ def generateAdvice($funcPrefix; $qualifiedName; $ivars; $cvars):
   # Compile the block body
   (if .block.tokens != null then
     ({ tokens: .block.tokens, pos: 0 } | expr_parse_stmts) as $parsed |
-    (if $parsed.type == "statements" and $parsed.body != null then
-      [($parsed.body // [])[] | select(.type == "locals") | (.names // [])[]] | unique
-    else [] end) as $locals |
+    ($parsed | expr_collect_locals) as $locals |
     $parsed | expr_gen_stmts($locals; $ivars; $cvars)
   else
     "  : # empty block"
