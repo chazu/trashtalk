@@ -8,9 +8,16 @@ package: Agent
 #
 # Usage:
 #   s=$(@ Agent::Session openFor: $identity archetype: $arch role: $role workspace: /path profile: shell)
-#   @ $s summary
 #   @ $s pause / resume / close / reopen / terminate
 #   @ Agent::Session findFor: $identity workspace: /path
+#
+# Viewing a session (reading never settles deliveries):
+#   @ $s summary            # one line: handle, lifecycle, workspace, pending, run; for listings
+#   @ $s details            # multi-line text report of counts, latest run and error; for reading
+#   @ $s snapshot           # JSON projection behind details; for scripts and UIs
+#   @ $s browse             # interactive picker of session actions (details, messages, runs, retry)
+#   @ Agent::Session browse # the same picker over all sessions, starting from a list
+#   @ $s focus              # live conversation view for talking to the agent (alias: attach)
 Session subclass: Object
   include: Persistable
   include: Agent::LegacyId
