@@ -233,10 +233,13 @@ These are read directly by Bash and are not `Config` keys.
 
 | Variable | Effect |
 | --- | --- |
-| `TRASHTALK_DIR`, `TRASHDIR`, `SQLITE_JSON_DB` | Checkout, class directory (`$TRASHTALK_DIR/trash`), and object database. Each defaults to `~/.trashtalk` independently; set all three for another checkout. |
+| `TRASHTALK_DIR`, `TRASHDIR`, `SQLITE_JSON_DB` | Checkout, class directory, and object database. They default to `~/.trashtalk`, `~/.trashtalk/trash`, and `~/.trashtalk/instances.db` independently; `TRASHDIR` does not follow `TRASHTALK_DIR`, so set all three for another checkout. |
 | `TRASH_SESSION_ID` | Shares the session object cache (`/tmp/trashtalk_<id>`) across shells. Defaults to the creating shell's PID. |
 | `TRASH_KEEP_ENV=1` | Keeps that cache when the creating shell exits. |
 | `TRASH_SKIP_DEPCHECK=1` | Skips the `jq`/`sqlite3`/`uuidgen`/`jo` check when the runtime is sourced. |
+| `TRASHTALK_SKIP_USER_CONFIG=1` | Skips `~/.trashrc` when the runtime is sourced, and the user `Config` file (see [where settings come from](#where-settings-come-from)). |
+| `HONKER_EXT` | Honker SQLite extension path without its `.dylib`/`.so` suffix, tried before the default locations. |
+| `TRASHTALK_INTERACTIVE=1` | Lets `TRASHTALK_PROGRESS=auto` show progress outside an interactive shell; the REPL sets it when attached to a terminal. |
 | `TRASHTALK_LOG_LEVEL`, `TRASHTALK_QUIET` | Diagnostic level; see [performance](performance.md#diagnostics-and-progress). `TRASHTALK_QUIET` means `error` when no level is set. |
 | `TRASHTALK_STRICT=1` | Compiler: parse warnings, and missing or unparseable traits, fail the compile instead of emitting a partial class. |
 | `TRASHTALK_LENIENT=1` | Compiler: ships output containing `# ERROR:` codegen markers with a warning instead of failing. |
@@ -244,6 +247,7 @@ These are read directly by Bash and are not `Config` keys.
 | `TRASHTALK_HISTORY_FILE` | REPL history (default `~/.trash_history`). |
 | `TRASHTALK_WORKER_LOG` | Worker stderr log (default `run/worker/stderr.log`). |
 | `TRASHTALK_JCODE_COMPACT_TIMEOUT` | Seconds to wait for Jcode compaction (default 300). |
+| `TRASHTALK_SHELL_DRIVER` | Script that `Agent::ShellDriver` runs with `bash -c` for the `shell` agent profile, a model-free harness for the delivery loop. |
 
 Test-runner switches (`TRASH_TEST_JOBS`, `TRASH_TEST_TIMEOUT`, `TRASH_TEST_KEEP`,
 `TRASH_TEST_TRACE`) are described in [performance](performance.md).
