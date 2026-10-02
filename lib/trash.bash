@@ -785,14 +785,6 @@ export -f _test_reset _test_summary
 
 # ============================================
 
-function wrapped_readlink {
-  if command -v greadlink >/dev/null 2>&1; then
-    greadlink "$@"
-  else
-    readlink "$@"
-  fi
-}
-
 # ============================================
 # Instance Variable Declaration
 # ============================================
@@ -1960,7 +1952,6 @@ function send {
   set -- "${_ARGS[@]}"
   _trash_log_enabled 4 && _trash_log 4 TRACE "Parsed selector: $_SELECTOR, args: $*"
 
-  local class_file
   local class_name
   local compiled_file
   local exit_code=0
@@ -1986,7 +1977,6 @@ function send {
   local _resolved_for=""
   _CLASS="$class_name"
   local _SUPERCLASS="${_SUPERCLASS:-Object}"
-  class_file="$TRASHDIR/.compiled/${class_name//::/__}"
   local func_prefix="__${class_name//::/__}"
 
   # Push to call stack for debugging (lightweight, always on)
@@ -2029,8 +2019,7 @@ function send {
   normalized_selector="${normalized_selector//:/_}"
   [[ "$_SELECTOR" == *: ]] && normalized_selector="${normalized_selector}_"
 
-  # Check for compiled version first (prevents namespace pollution)
-  # Use _compiled_path to handle namespaced classes (MyApp::Counter -> MyApp__Counter)
+  # Namespaced classes compile to MyApp__Counter.
   compiled_file="$TRASHDIR/.compiled/${class_name//::/__}"
   if [[ -f "$compiled_file" ]]; then
     msg_debug "Found compiled class: $compiled_file"
@@ -2161,51 +2150,16 @@ function send {
     return $exit_code
   fi
 
-  # Legacy mode: source class file directly
-  if [[ ! -f "$class_file" ]]; then
-    # Give a message keyed to what the receiver looks like rather than leaking
-    # an internal compiled-file path. Instance ids are "<lowercase>_<uuid>";
-    # anything else sent as a receiver is treated as a class name.
-    if [[ "$_RECEIVER" == *_*-*-*-*-* || "$_RECEIVER" =~ ^[a-z][a-z0-9_]*_[0-9a-f] ]]; then
-      echo "Error: Instance '$_RECEIVER' not found (not in memory or the Store). It may have been deleted, or never created." >&2
-    else
-      echo "Error: Unknown class '$_RECEIVER' (no compiled class found). Did you misspell it, or forget to run 'make'?" >&2
-    fi
-    _send_cleanup $frame_ensure_start $frame_handler_start 1 "$_profile_start_ms" "error"
-    return 1
-  fi
-
-  # Set legacy route for profiling
-  [[ -z "$_profile_route" ]] && _profile_route="bash:legacy"
-  [[ -n "${TRASH_PROFILE:-}" ]] && _profile_log "→" "$_CLASS" "$_SELECTOR" "$_profile_route"
-
-  source "$class_file"
-
-  if file_defines_function "$class_file" "$_SELECTOR"; then
-    msg_debug "Function $_SELECTOR found in $class_file, calling it"
-    "$_SELECTOR" "$@"
-    exit_code=$?
-  elif declare -F "$_SELECTOR" >/dev/null 2>&1; then
-    shopt -s extdebug
-    local defined_in=$(declare -F "$_SELECTOR" | awk '{print $NF}')
-    shopt -u extdebug
-    if [[ "$defined_in" == *"trash.bash" ]]; then
-      msg_debug "Function $_SELECTOR is generated accessor, calling it"
-      "$_SELECTOR" "$@"
-      exit_code=$?
-    else
-      msg_debug "Function $_SELECTOR from other class, trying method_missing"
-      method_missing "$@"
-      exit_code=$?
-    fi
+  # No compiled class. Give a message keyed to what the receiver looks like
+  # rather than leaking an internal compiled-file path. Instance ids are
+  # "<lowercase>_<uuid>"; anything else sent as a receiver is a class name.
+  if [[ "$_RECEIVER" == *_*-*-*-*-* || "$_RECEIVER" =~ ^[a-z][a-z0-9_]*_[0-9a-f] ]]; then
+    echo "Error: Instance '$_RECEIVER' not found (not in memory or the Store). It may have been deleted, or never created." >&2
   else
-    msg_debug "Function $_SELECTOR not found, trying method_missing"
-    method_missing "$@"
-    exit_code=$?
+    echo "Error: Unknown class '$_RECEIVER' (no compiled class found). Did you misspell it, or forget to run 'make'?" >&2
   fi
-
-  _send_cleanup $frame_ensure_start $frame_handler_start $exit_code "$_profile_start_ms" "$_profile_route"
-  return $exit_code
+  _send_cleanup $frame_ensure_start $frame_handler_start 1 "$_profile_start_ms" "error"
+  return 1
 }
 
 # Internal cleanup function for send()
@@ -2277,17 +2231,6 @@ _send_cleanup() {
 
 # Export send helper for subshells
 export -f _send_cleanup
-
-function receiver_path {
-  local receiver="$1"
-  # Validate: no path separators or traversal (but :: is allowed for namespaces)
-  if [[ "$receiver" =~ [/\\] ]] || [[ "$receiver" == ".." ]] || [[ "$receiver" == "." ]]; then
-    echo "Error: Invalid receiver name: $receiver" >&2
-    return 1
-  fi
-  # Return path to compiled class file
-  _compiled_path "$receiver"
-}
 
 # Last result variable - stores output of most recent @ command
 # Access via $__ in REPL context (double underscore, since $_ is bash special)
@@ -2488,41 +2431,8 @@ function @@ {
     status: "$previous_status" lastResult: "$previous_result"
 }
 
-function file_defines_function() {
-  msg_debug "file_defines_function $@"
-  shopt -s extdebug
-
-  EXPANDED_FILEPATH=$(wrapped_readlink -f "$1")
-  DEFINED_IN=$(declare -F "$2" | awk '{print $NF}')
-  shopt -u extdebug
-  msg_debug "Expanded Filepath: $EXPANDED_FILEPATH"
-  msg_debug "Defined in: $DEFINED_IN"
-
-  if [[ "$EXPANDED_FILEPATH" == "$DEFINED_IN" ]]; then
-    msg_debug "Function $2 found in $1"
-    return 0
-  else
-    msg_debug "Function $2 not found in $1"
-    return 1
-  fi
-}
-
 function is_a() {
   export _SUPERCLASS=$1
-}
-
-# Include a trait (mixin)
-# Named include_trait to avoid collision with common shell patterns like "include ~/.workrc"
-function include_trait() {
-  local trait_name="$1"
-  local trait_file="$TRASHDIR/traits/$trait_name"
-
-  if [[ -f "$trait_file" ]]; then
-    msg_debug "Including trait: $trait_name"
-    source "$trait_file"
-  else
-    echo "Warning: Trait $trait_name not found at $trait_file" >&2
-  fi
 }
 
 function initialize_trash() {
