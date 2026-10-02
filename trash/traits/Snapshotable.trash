@@ -23,17 +23,12 @@ Snapshotable trait
 
   # Set up virtual columns and indexes declared by indexedColumns.
   # Call once at load time. Safe to call repeatedly - errors from existing columns are suppressed.
-  rawClassMethod: initializeSchema [
-    pragma: direct
-    local cols col name path
-    cols=$(@ "$_RECEIVER" indexedColumns)
-    while IFS= read -r col; do
-      [[ -z "$col" ]] && continue
-      name=$(echo "$col" | jq -r '.name')
-      path=$(echo "$col" | jq -r '.path')
-      db_ensure_virtual_column "$name" "$path" 2>/dev/null || true
-      db_create_index "$name" 2>/dev/null || true
-    done < <(echo "$cols" | jq -c '.[]')
+  classMethod: initializeSchema [
+    | cols |
+    cols := @ self indexedColumns.
+    cols jsonRows: #('name' 'path') into: [:name :path |
+      @ Store ensureIndex: name path: path
+    ]
   ]
 
   # Override in subclasses to declare [{name:, path:}] for indexed virtual columns.
