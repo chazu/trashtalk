@@ -4,14 +4,15 @@
 TestCase subclass: Object
   instanceVars: passed:0 failed:0 skipped:0 currentTest:'unknown'
 
-  # Override in subclass for test setup
-  method: setUp [
-    ^ nil
+  # Override in subclass for test setup. The defaults print nothing: runTest:
+  # streams, so a returned value would appear in the runner output.
+  rawMethod: setUp [
+    :
   ]
 
   # Override in subclass for test cleanup
-  method: tearDown [
-    ^ nil
+  rawMethod: tearDown [
+    :
   ]
 
   # ==========================================
