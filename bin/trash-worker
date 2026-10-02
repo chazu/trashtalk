@@ -22,9 +22,9 @@ interval=${TRASHTALK_WORKER_INTERVAL:-1}
 max_interval=${TRASHTALK_WORKER_MAX_INTERVAL:-8}
 max_failures=${TRASHTALK_WORKER_MAX_FAILURES:-5}
 seconds_valid() { [[ "$1" =~ ^[0-9]+([.][0-9]+)?$ && "$1" == *[1-9]* ]]; }
-seconds_valid "$interval" || { echo 'Invalid worker interval' >&2; exit 2; }
-seconds_valid "$max_interval" || { echo 'Invalid worker maximum interval' >&2; exit 2; }
-[[ "$max_failures" =~ ^[1-9][0-9]*$ ]] || { echo 'Invalid worker failure limit' >&2; exit 2; }
+seconds_valid "$interval" || { echo "Invalid TRASHTALK_WORKER_INTERVAL '$interval': expected positive seconds, e.g. 1 or 0.5" >&2; exit 2; }
+seconds_valid "$max_interval" || { echo "Invalid TRASHTALK_WORKER_MAX_INTERVAL '$max_interval': expected positive seconds, e.g. 8" >&2; exit 2; }
+[[ "$max_failures" =~ ^[1-9][0-9]*$ ]] || { echo "Invalid TRASHTALK_WORKER_MAX_FAILURES '$max_failures': expected a positive integer" >&2; exit 2; }
 # Whole milliseconds keep the backoff arithmetic in Bash; sleep takes fractions.
 to_ms() {
   local whole=${1%%.*} frac=0
