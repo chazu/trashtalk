@@ -1876,10 +1876,9 @@ function send {
   # Method dispatch
   # ============================================
 
-  # Normalize selector for pragma marker lookup: do: -> do_, inject:into: -> inject_into_
-  local normalized_selector="${_SELECTOR%:}"
-  normalized_selector="${normalized_selector//:/_}"
-  [[ "$_SELECTOR" == *: ]] && normalized_selector="${normalized_selector}_"
+  # Selector for function and pragma marker lookup. _trash_parse_selector has
+  # already turned keyword selectors into do_ / inject_into_ (no trailing ':').
+  local normalized_selector="${_SELECTOR//:/_}"
 
   # Namespaced classes compile to MyApp__Counter.
   compiled_file="$TRASHDIR/.compiled/${class_name//::/__}"
@@ -1896,17 +1895,23 @@ function send {
     [[ -n "${TRASH_PROFILE:-}" ]] && _profile_log "→" "$_CLASS" "$_SELECTOR" "$_profile_route"
 
     # Source compiled file only once
+    local first_load=""
     if [[ -z "${_SOURCED_COMPILED_CLASSES["$class_name"]:-}" ]]; then
       source "$compiled_file"
       _SOURCED_COMPILED_CLASSES["$class_name"]=1
       msg_debug "Sourced compiled class $class_name"
+      first_load=1
+    fi
 
-      # Set up _SUPERCLASS from compiled metadata for inheritance support
-      local super_var="${func_prefix}__superclass"
-      if [[ -n "${!super_var}" ]]; then
-        _SUPERCLASS="${!super_var}"
-      fi
+    # Set up superclass from compiled class metadata (EVERY call, not just
+    # first); instance_vars below reads it for inherited accessors.
+    local super_var="${func_prefix}__superclass"
+    if [[ -n "${!super_var}" ]]; then
+      _SUPERCLASS="${!super_var}"
+      msg_debug "Set superclass for $class_name: $_SUPERCLASS"
+    fi
 
+    if [[ -n "$first_load" ]]; then
       # Set up instance variables if present (only once)
       # This will also generate accessors for inherited vars via _SUPERCLASS
       local vars_var="${func_prefix}__instanceVars"
@@ -1923,90 +1928,57 @@ function send {
       fi
     fi
 
-    # Set up superclass from compiled class metadata (EVERY call, not just first)
-    local super_var="${func_prefix}__superclass"
-    if [[ -n "${!super_var}" ]]; then
-      _SUPERCLASS="${!super_var}"
-      msg_debug "Set superclass for $class_name: $_SUPERCLASS"
-    fi
-
-    # For class calls (no instance), try class methods FIRST
-    # This prevents instance method `exists` from shadowing class method `exists:`
-    if [[ -z "$_INSTANCE" ]]; then
-      local class_method_func="${func_prefix}__class__${normalized_selector}"
-      if declare -F "$class_method_func" >/dev/null 2>&1; then
-        msg_debug "Calling class method: $class_method_func"
-        "$class_method_func" "$@"
-        exit_code=$?
-        _send_cleanup $frame_ensure_start $frame_handler_start $exit_code "$_profile_start_ms" "$_profile_route"
-        return $exit_code
+    # Choose the target in priority order, then invoke it and clean up once.
+    local target_func=""
+    local class_method_func="${func_prefix}__class__${normalized_selector}"
+    local namespaced_func="${func_prefix}__${normalized_selector}"
+    if [[ -z "$_INSTANCE" ]] && declare -F "$class_method_func" >/dev/null 2>&1; then
+      # For class calls (no instance), try class methods FIRST
+      # This prevents instance method `exists` from shadowing class method `exists:`
+      target_func="$class_method_func"
+    elif declare -F "$namespaced_func" >/dev/null 2>&1; then
+      # Namespaced instance method
+      target_func="$namespaced_func"
+    elif [[ -n "$_INSTANCE" ]] && declare -F "$class_method_func" >/dev/null 2>&1; then
+      # Class method (for instance calls that might fall through)
+      target_func="$class_method_func"
+    else
+      # Trait methods (including class methods)
+      local traits_var="${func_prefix}__traits"
+      if [[ -n "${!traits_var}" ]]; then
+        local trait_name trait_func
+        for trait_name in ${!traits_var}; do
+          _ensure_trait_sourced "$trait_name" || continue
+          # Try trait class method first (for class-level calls), then instance method
+          for trait_func in "__${trait_name//::/__}__class__${normalized_selector}" \
+                            "__${trait_name//::/__}__${normalized_selector}"; do
+            if declare -F "$trait_func" >/dev/null 2>&1; then
+              target_func="$trait_func"
+              break 2
+            fi
+          done
+        done
       fi
     fi
 
-    # Try namespaced instance method
-    local namespaced_func="${func_prefix}__${normalized_selector}"
-    if declare -F "$namespaced_func" >/dev/null 2>&1; then
-      msg_debug "Calling namespaced function: $namespaced_func"
-      "$namespaced_func" "$@"
-      exit_code=$?
-      _send_cleanup $frame_ensure_start $frame_handler_start $exit_code "$_profile_start_ms" "$_profile_route"
-      return $exit_code
-    fi
-
-    # Try class method (for instance calls that might fall through)
-    local class_method_func="${func_prefix}__class__${normalized_selector}"
-    if declare -F "$class_method_func" >/dev/null 2>&1; then
-      msg_debug "Calling class method: $class_method_func"
-      "$class_method_func" "$@"
-      exit_code=$?
-      _send_cleanup $frame_ensure_start $frame_handler_start $exit_code "$_profile_start_ms" "$_profile_route"
-      return $exit_code
-    fi
-
-    # Try trait methods (including class methods)
-    local traits_var="${func_prefix}__traits"
-    if [[ -n "${!traits_var}" ]]; then
-      local trait_name
-      for trait_name in ${!traits_var}; do
-        _ensure_trait_sourced "$trait_name" || continue
-        # Try trait class method first (for class-level calls)
-        local trait_class_func="__${trait_name//::/__}__class__${normalized_selector}"
-        if declare -F "$trait_class_func" >/dev/null 2>&1; then
-          msg_debug "Calling trait class method: $trait_class_func"
-          "$trait_class_func" "$@"
-          exit_code=$?
-          _send_cleanup $frame_ensure_start $frame_handler_start $exit_code "$_profile_start_ms" "$_profile_route"
-          return $exit_code
-        fi
-        # Try trait instance method
-        local trait_func="__${trait_name//::/__}__${normalized_selector}"
-        if declare -F "$trait_func" >/dev/null 2>&1; then
-          msg_debug "Calling trait method: $trait_func"
-          "$trait_func" "$@"
-          exit_code=$?
-          _send_cleanup $frame_ensure_start $frame_handler_start $exit_code "$_profile_start_ms" "$_profile_route"
-          return $exit_code
-        fi
-      done
-    fi
-
     # Try generated accessor
-    if declare -F "$_SELECTOR" >/dev/null 2>&1; then
+    if [[ -z "$target_func" ]] && declare -F "$_SELECTOR" >/dev/null 2>&1; then
       shopt -s extdebug
       local defined_in=$(declare -F "$_SELECTOR" | awk '{print $NF}')
       shopt -u extdebug
       if [[ "$defined_in" == *"trash.bash" ]]; then
-        msg_debug "Calling generated accessor: $_SELECTOR"
-        "$_SELECTOR" "$@"
-        exit_code=$?
-        _send_cleanup $frame_ensure_start $frame_handler_start $exit_code "$_profile_start_ms" "$_profile_route"
-        return $exit_code
+        target_func="$_SELECTOR"
       fi
     fi
 
-    msg_debug "Method $_SELECTOR not in compiled $class_name, checking inheritance"
-    # For compiled classes, use method_missing to walk inheritance chain
-    method_missing "$@"
+    if [[ -n "$target_func" ]]; then
+      msg_debug "Calling $target_func"
+      "$target_func" "$@"
+    else
+      msg_debug "Method $_SELECTOR not in compiled $class_name, checking inheritance"
+      # For compiled classes, use method_missing to walk inheritance chain
+      method_missing "$@"
+    fi
     exit_code=$?
     _send_cleanup $frame_ensure_start $frame_handler_start $exit_code "$_profile_start_ms" "$_profile_route"
     return $exit_code
