@@ -10,6 +10,11 @@ JsonReads subclass: Object
   classMethod: get: data path: path [ ^ data jsonAt: path ]
   classMethod: text: data path: path [ ^ data jsonTextAt: path ]
   classMethod: has: data path: path [ ^ data jsonHas: path ]
+  classMethod: branch: data path: path [
+    (data jsonHas: path) ifFalse: [^ 'absent'].
+    (data jsonHas: path) ifTrue: [^ 'present'].
+    ^ 'unreachable'
+  ]
   classMethod: default: data path: path [ ^ data jsonAt: path ifAbsent: '42' ]
   classMethod: fail: data [
     | value |
@@ -60,6 +65,8 @@ check test "$(@ JsonReads get: "$data" path: nothing)" = null
 check test "$(@ JsonReads get: "$data" path: empty)" = '""'
 check test "$(@ JsonReads has: "$data" path: nothing)" = true
 check test "$(@ JsonReads has: "$data" path: missing)" = false
+check test "$(@ JsonReads branch: "$data" path: nothing)" = present
+check test "$(@ JsonReads branch: "$data" path: missing)" = absent
 check test "$(@ JsonReads default: "$data" path: flag)" = false
 check test "$(@ JsonReads default: "$data" path: nothing)" = null
 check test "$(@ JsonReads default: "$data" path: missing)" = 42
