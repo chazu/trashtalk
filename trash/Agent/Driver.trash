@@ -4,8 +4,8 @@ package: Agent
 # A driver launches one detached harness process per delivery batch, records
 # the process details on the Agent::Run, and later parses the run's output into a
 # normalized outcome. Subclasses supply the argv (launchRef:promptFile:run:token:
-# or its launchPreparedRef: hook), env unsets, and how to find the conversation
-# reference and completion marker in the log.
+# or its launchPreparedRef: hook), env unsets, and the receipt hooks
+# harnessConversationRefFor:, resultSeenFor: and harnessErrorFor:.
 #
 # Selector set (class methods):
 #   capabilities                                   JSON
@@ -144,9 +144,18 @@ Driver subclass: Object
        result_seen: $seen, error: $error}'
   ]
 
-  # Default: the reference recorded at launch or resume.
+  # The harness's own reference when it reports one, else the reference
+  # recorded at launch or resume.
   classMethod: conversationRefFor: runId [
+    | ref |
+    ref := @ self harnessConversationRefFor: runId.
+    (ref notEmpty) ifTrue: [^ ref].
     ^ @ runId externalConversationRef
+  ]
+
+  # Default: the harness reports no conversation reference.
+  classMethod: harnessConversationRefFor: runId [
+    ^ ''
   ]
 
   # Default: any recorded exit counts as a result marker.
@@ -175,8 +184,21 @@ Driver subclass: Object
     echo false
   ]
 
+  # A failure the harness reported itself, else bounded stderr diagnostics.
+  classMethod: errorFor: runId [
+    | error |
+    error := @ self harnessErrorFor: runId.
+    (error notEmpty) ifTrue: [^ error].
+    ^ @ self stderrTailFor: runId
+  ]
+
+  # Default: the harness reports failures only on stderr.
+  classMethod: harnessErrorFor: runId [
+    ^ ''
+  ]
+
   # Bounded diagnostics at the filesystem boundary; stderr is not protocol data.
-  rawClassMethod: errorFor: runId [
+  rawClassMethod: stderrTailFor: runId [
     local log
     log=$(@ "$1" errorLog)
     [[ -z "$log" || ! -f "$log" ]] || tail -c 4096 "$log"

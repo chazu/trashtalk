@@ -246,15 +246,17 @@ Run subclass: Object
 
   # Deliver a result reply to a received message's sender, in its thread and
   # execution workspace. Returns the delivered message id.
-  rawClassMethod: reply: body to: first from: sender thread: thread [
-    local to msg inbox
-    to=$(@ "$2" from)
-    msg=$(@ Message to: "$to" from: "$3" subject: "$(@ "$2" subject)" body: "$1" kind: result)
-    @ "$msg" executionWorkspace: "$(@ "$2" executionWorkspace)"
-    @ "$msg" thread: "$4"
-    @ "$msg" replyTo: "$2"
-    inbox=$(@ Inbox named: "$to")
-    @ "$inbox" deliver: "$msg"
+  classMethod: reply: body to: first from: sender thread: thread [
+    | recipient subject msg workspace inbox |
+    recipient := @ first from.
+    subject := @ first subject.
+    msg := @ Message to: recipient from: sender subject: subject body: body kind: 'result'.
+    workspace := @ first executionWorkspace.
+    @ msg executionWorkspace: workspace.
+    @ msg thread: thread.
+    @ msg replyTo: first.
+    inbox := @ Inbox named: recipient.
+    ^ @ inbox deliver: msg
   ]
 
   # Reply to one held delivery, retaining its thread and authenticated sender.

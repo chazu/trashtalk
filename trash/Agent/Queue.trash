@@ -305,8 +305,7 @@ Queue subclass: Object
 
   classMethod: linkQuestion: message session: session run: run delivery: delivery [
     | ids row |
-    ids := #() asJson.
-    ids := ids arrayPush: delivery.
+    ids := #(delivery) asJson.
     row := #{message_id: message session: session run: run delivery_ids: ids} asJson.
     @ Store insert: row into: 'agent_questions'
   ]

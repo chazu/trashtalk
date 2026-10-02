@@ -76,14 +76,11 @@ MakiDriver subclass: Agent::Driver
 
   # JSONL parsing boundary. The last result wins: a failed result must never
   # be mistaken for success merely because a prior result appeared in the log.
-  rawClassMethod: conversationRefFor: run [
-    local log ref=''
+  rawClassMethod: harnessConversationRefFor: run [
+    local log
     log=$(@ "$1" outputLog)
-    if [[ -f "$log" ]]; then
-      ref=$(jq -r 'select((.type=="system" and .subtype=="init") or .type=="result") | .session_id // empty' "$log" 2>/dev/null | tail -n 1)
-    fi
-    [[ -n "$ref" ]] || ref=$(@ "$1" externalConversationRef)
-    printf '%s\n' "$ref"
+    [[ -f "$log" ]] || return 0
+    jq -r 'select((.type=="system" and .subtype=="init") or .type=="result") | .session_id // empty' "$log" 2>/dev/null | tail -n 1
   ]
 
   rawClassMethod: resultSeenFor: run [
@@ -96,11 +93,9 @@ MakiDriver subclass: Agent::Driver
     fi
   ]
 
-  rawClassMethod: errorFor: run [
-    local log error=''
+  rawClassMethod: harnessErrorFor: run [
+    local log
     log=$(@ "$1" outputLog)
-    if [[ -f "$log" ]]; then
-      error=$(jq -sr '[.[] | select(.type=="result")] | last | select(. != null and (.is_error==true or .subtype!="success")) | .result // .subtype // "Maki run failed"' "$log" 2>/dev/null | tail -c 4096)
-    fi
-    if [[ -n "$error" ]]; then printf '%s\n' "$error"; else @ Agent::Driver errorFor: "$1"; fi
+    [[ -f "$log" ]] || return 0
+    jq -sr '[.[] | select(.type=="result")] | last | select(. != null and (.is_error==true or .subtype!="success")) | .result // .subtype // "Maki run failed"' "$log" 2>/dev/null | tail -c 4096
   ]

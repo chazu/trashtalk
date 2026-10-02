@@ -96,30 +96,19 @@ Delivery subclass: Object
   ]
 
   classMethod: forAssignment: assignment session: session generation: generation message: message [
-    | id d ids key now workspace role revision policy mode |
+    | id d key mode workspace role |
     @ Store requireTransaction.
     id := 'agentdelivery_' , assignment , '_' , generation.
-    d := @ Store create: 'Agent::Delivery' id: id.
-    ids := '[]'.
-    ids := ids arrayPush: message.
     key := assignment , ':' , generation.
-    now := @ Time nowISO.
-    @ d session: session.
-    @ d messageIds: ids.
-    @ d deliveryKey: key.
-    @ d created: now.
+    d := @ self createId: id session: session message: message key: key.
     @ d assignment: assignment.
     @ d generation: generation.
     mode := @ assignment dispatchMode.
     @ d dispatchMode: mode.
     workspace := @ session workspace.
-    role := @ session role.
-    revision := @ role revision.
-    policy := @ role workspacePolicy.
     @ d executionWorkspace: workspace.
-    @ d authorizationRole: role.
-    @ d authorizationRevision: revision.
-    @ d authorizationWorkspacePolicy: policy.
+    role := @ session role.
+    @ d authorizeFor: role.
     @ d save.
     ^ d
   ]
@@ -127,28 +116,41 @@ Delivery subclass: Object
   # Workstation delegation: automatic dispatch to one resolved session, with a
   # deterministic id per (attention, delegation revision) so replay is inert.
   classMethod: forAttention: attention message: message session: session revision: revision [
-    | id d ids key now workspace role roleRevision policy |
+    | id d key workspace role |
     @ Store requireTransaction.
     id := 'agentdelivery_' , attention , '_delegation_' , revision.
-    d := @ Store create: 'Agent::Delivery' id: id.
-    ids := '[]'.
-    ids := ids arrayPush: message.
     key := 'attention:' , attention , ':' , revision.
-    now := @ Time nowISO.
+    d := @ self createId: id session: session message: message key: key.
+    @ d dispatchMode: 'automatic'.
     workspace := @ message executionWorkspace.
+    @ d executionWorkspace: workspace.
     role := @ session role.
     role := @ Store read: role class: 'Agent::Role'.
-    roleRevision := @ role revision.
-    policy := @ role workspacePolicy.
+    @ d authorizeFor: role.
+    @ d save.
+    ^ d
+  ]
+
+  # Unsaved single-message delivery with a deterministic id; callers add
+  # dispatch and authorization fields, then save.
+  classMethod: createId: id session: session message: message key: key [
+    | d ids now |
+    d := @ Store create: 'Agent::Delivery' id: id.
+    ids := #(message) asJson.
+    now := @ Time nowISO.
     @ d session: session.
     @ d messageIds: ids.
     @ d deliveryKey: key.
     @ d created: now.
-    @ d dispatchMode: 'automatic'.
-    @ d executionWorkspace: workspace.
-    @ d authorizationRole: role.
-    @ d authorizationRevision: roleRevision.
-    @ d authorizationWorkspacePolicy: policy.
-    @ d save.
     ^ d
+  ]
+
+  # Record the role revision and workspace policy this delivery was authorized under.
+  method: authorizeFor: role [
+    | revision policy |
+    revision := @ role revision.
+    policy := @ role workspacePolicy.
+    @ self authorizationRole: role.
+    @ self authorizationRevision: revision.
+    @ self authorizationWorkspacePolicy: policy
   ]
