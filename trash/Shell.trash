@@ -45,8 +45,9 @@ Shell subclass: Object
   # ==========================================
 
   # Execute command and return both stdout and stderr combined
-  # Usage: output := @ Shell execAll: 'make 2>&1'
-  # Note: Using bash -c to avoid tokenizer mangling 2>&1 into 2 >& 1
+  # Usage: output := @ Shell execAll: 'make'
+  # Runs in a separate bash, so the command cannot see this shell's functions
+  # or unexported variables.
   rawClassMethod: execAll: command [
     bash -c "$1 2>&1"
   ]
@@ -75,7 +76,6 @@ Shell subclass: Object
 
   # Spawn a command in the background, return PID
   # Usage: pid := @ Shell spawn: 'sleep 10'
-  # Note: Using subshell to avoid tokenizer mangling redirects
   rawClassMethod: spawn: command [
     ( eval "$1" ) > /dev/null &
     echo $!
@@ -94,7 +94,7 @@ Shell subclass: Object
 
   # Check if a PID is still running
   # Usage: running := @ Shell isAlive: pid
-  # Note: Using ps instead of kill -0 to avoid tokenizer mangling 2>/dev/null
+  # ps also sees processes owned by other users, where kill -0 fails with EPERM.
   rawClassMethod: isAlive: pid [
     if ps -p "$1" > /dev/null; then
       echo "true"
