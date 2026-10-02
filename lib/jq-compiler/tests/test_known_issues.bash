@@ -142,9 +142,3 @@ has_intact=$(echo "$compiled" | grep -c '@ MyPkg::Helper' || true)
 
 run_test "namespace ref in rawMethod body is not split" "0" "$has_split"
 run_test "namespace ref in rawMethod body stays intact" "1" "$has_intact"
-
-# ==============================================================================
-# Summary
-# ==============================================================================
-
-print_test_summary
