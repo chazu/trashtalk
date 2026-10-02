@@ -6,7 +6,7 @@ _trash_with_process_lock() (
     perl -MErrno=EWOULDBLOCK,EAGAIN -e 'exit 0 if flock(STDIN, 6); exit(($! == EWOULDBLOCK || $! == EAGAIN) ? 75 : 1)' <&"$TRASH_PROCESS_LOCK_FD"
     status=$?
     [[ "$status" != 75 ]] || exit 0
-    [[ "$status" == 0 ]] || { echo 'Unable to lock worker store' >&2; exit 1; }
+    [[ "$status" == 0 ]] || { echo "Unable to lock worker store at $1" >&2; exit 1; }
     @ "$2" "$3" "$4"
 )
 
@@ -21,7 +21,7 @@ _trash_with_process_lock_wait() (
     perl -e '$SIG{ALRM} = sub { exit 75 }; alarm $ARGV[0]; exit 0 if flock(STDIN, 2); exit 1' "$2" <&"$TRASH_PROCESS_LOCK_FD"
     status=$?
     [[ "$status" != 75 ]] || exit 0
-    [[ "$status" == 0 ]] || { echo 'Unable to lock worker store' >&2; exit 1; }
+    [[ "$status" == 0 ]] || { echo "Unable to lock worker store at $1" >&2; exit 1; }
     @ "$3" "$4" "$5"
 )
 

@@ -17,7 +17,7 @@ _store_tx_sql() {
 
 _store_tx_import() {
     local id="$1"
-    _db_validate_id "$id" || { _store_tx_fail 'Invalid object id'; return 1; }
+    _db_validate_id "$id" || { _store_tx_fail "Invalid object id '$id'"; return 1; }
     [[ $(_store_tx_sql "SELECT EXISTS(SELECT 1 FROM instances WHERE id='$id') OR EXISTS(SELECT 1 FROM store_reads WHERE id='$id');") == 0 ]] || return 0
     _store_tx_sql -bail <<SQL
 ATTACH '$(_db_escape "$_STORE_LIVE")' AS origin;
@@ -98,7 +98,7 @@ _store_matching_lines() {
 # uniqueness and constraints. Their SQL is generated from validated identifiers.
 _store_tx_insert() {
     [[ -n ${_STORE_TX:-} && ${_STORE_READONLY:-0} == 0 ]] || { _store_tx_fail 'Row insert requires a writable transaction'; return 1; }
-    [[ "$1" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ && "$1" != instances && "$1" != store_* ]] || { _store_tx_fail 'Invalid auxiliary table'; return 1; }
+    [[ "$1" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ && "$1" != instances && "$1" != store_* ]] || { _store_tx_fail "Invalid auxiliary table '$1'"; return 1; }
     local statement
     statement=$(printf '%s' "$2" | jq -er --arg table "$1" '
       def quote: "\u0027" + (tostring | gsub("\u0027";"\u0027\u0027")) + "\u0027";
