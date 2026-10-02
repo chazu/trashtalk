@@ -23,28 +23,28 @@ Counter subclass: Object
 
   method: increment [
     | newVal |
-    newVal := value + step
-    value := newVal + 0
-    ^ newVal + 0
+    newVal := value + step.
+    value := newVal.
+    ^ newVal
   ]
 
   method: decrement [
     | newVal |
-    newVal := value - step
-    value := newVal + 0
-    ^ newVal + 0
+    newVal := value - step.
+    value := newVal.
+    ^ newVal
   ]
 
   method: incrementBy: amount [
     | newVal |
-    newVal := value + amount
-    value := newVal + 0
+    newVal := value + amount.
+    value := newVal
   ]
 
   method: reset [
-    value := 0 + 0
+    value := 0
   ]
 
   classMethod: description [
-    ^ "A simple counter"
+    ^ 'A simple counter'
   ]

@@ -41,6 +41,8 @@ Assignment subclass: Object
     @ a requester: human.
     @ a owner: human.
     @ a created: now.
+    # Not redundant with the defaults: readers of the stored record (and the
+    # tests) expect these fields present as '' rather than absent.
     @ a requesterSession: ''.
     @ a originMessage: ''.
     @ a assignee: ''.
