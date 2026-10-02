@@ -17,17 +17,19 @@ Attention subclass: Object
   ]
 
   classMethod: interpret: answers [
-    | likelyAction likelyReply possibleAction possibleReply disposition |
-    likelyAction := (@ Decision::Answer probability: (answers jsonAt: 'action.noul') atLeast: '0.8') ifFailed: [:error | @ error signal].
-    likelyReply := (@ Decision::Answer probability: (answers jsonAt: 'reply.noul') atLeast: '0.8') ifFailed: [:error | @ error signal].
-    possibleAction := (@ Decision::Answer probability: (answers jsonAt: 'action.noul') atLeast: '0.2') ifFailed: [:error | @ error signal].
-    possibleReply := (@ Decision::Answer probability: (answers jsonAt: 'reply.noul') atLeast: '0.2') ifFailed: [:error | @ error signal].
+    | action reply likelyAction likelyReply possibleAction possibleReply disposition |
+    action := answers jsonAt: 'action.noul'.
+    reply := answers jsonAt: 'reply.noul'.
+    likelyAction := (@ Decision::Answer probability: action atLeast: '0.8') ifFailed: [:error | @ error signal].
+    likelyReply := (@ Decision::Answer probability: reply atLeast: '0.8') ifFailed: [:error | @ error signal].
+    possibleAction := (@ Decision::Answer probability: action atLeast: '0.2') ifFailed: [:error | @ error signal].
+    possibleReply := (@ Decision::Answer probability: reply atLeast: '0.2') ifFailed: [:error | @ error signal].
     disposition := 'read_when_convenient'.
     (possibleAction = 'true') ifTrue: [disposition := 'review_uncertain'].
     (possibleReply = 'true') ifTrue: [disposition := 'review_uncertain'].
     (likelyAction = 'true') ifTrue: [disposition := 'review_for_action'].
     (likelyReply = 'true') ifTrue: [disposition := 'consider_reply'].
-    ^ #{suggestion: disposition replyProbability: ((answers jsonAt: 'reply.noul') jsonValue)
-        actionProbability: ((answers jsonAt: 'action.noul') jsonValue)
+    ^ #{suggestion: disposition replyProbability: (reply jsonValue)
+        actionProbability: (action jsonValue)
         urgency: ((answers jsonAt: 'urgency') jsonValue)} asJson
   ]
