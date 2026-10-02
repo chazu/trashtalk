@@ -719,6 +719,7 @@ last := $(@ $arr pop)
 | `collect:` | Map with block |
 | `select:` | Filter with block |
 | `inject:into:` | Reduce with block |
+| `fromJson:` | Create from a JSON array (class method) |
 
 ## Dictionary Class
 
