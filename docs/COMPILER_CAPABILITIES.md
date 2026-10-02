@@ -5,8 +5,8 @@ model: `.trash` → Bash tokenizer → jq parser → jq code generator → Bash 
 The retired Procyon backends are historical, not compatibility targets.
 
 The parser owns class/trait structure. The expression parser inside
-`lib/jq-compiler/codegen.jq` handles DSL method bodies; raw bodies are reconstructed
-as Bash. `driver.bash` is the production entry point. Generated files live only
+`lib/jq-compiler/codegen.jq` handles DSL method bodies; raw bodies are reproduced
+as Bash from token positions. `driver.bash` is the production entry point. Generated files live only
 in `trash/.compiled/`; edit source and rebuild with `make bash`.
 
 | Supported surface | Regression coverage in `lib/jq-compiler/tests/` |
@@ -19,7 +19,7 @@ in `trash/.compiled/`; edit source and rebuild with `make bash`.
 | Arrays, dictionaries, typed JSON construction, reads and traversal | `test_arrays`, `test_dicts`, `test_json_values`, `test_json_reads`, `test_json_primitives`, `test_json_primitives_runtime` |
 | Packages, qualified sends (including raw methods), `super` | `test_namespaces`, `test_known_issues`, `test_super` |
 | Cascades, aliases, protocols, advice, method categories | `test_cascades`, `test_aliases`, `test_protocols`, `test_protocol_dispatch`, `test_protocol_fortification`, `test_advice`, `test_method_categories` |
-| Raw Bash boundaries and sequence ranges, `pragma: direct`, `pragma: primitive` | `test_rawmethod_assignments`, `test_raw_ranges`, `test_pragmas` |
+| Raw Bash boundaries reproduced as written, sequence ranges, `pragma: direct`, `pragma: primitive` | `test_raw_source_fidelity`, `test_rawmethod_assignments`, `test_raw_ranges`, `test_pragmas` |
 | String intrinsics on implicit receivers, unknown-message diagnostics | `test_string_intrinsics` |
 | `signal:`, `self error:`, `ifFailed:`, re-raise, error recovery from captured sends | `test_failure_forms` |
 | Statement value discipline, `pragma: stream`, `linesDo:`, `caseOf:`, literal `Env get:` | `test_statement_values` |

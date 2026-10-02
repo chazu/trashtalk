@@ -324,7 +324,7 @@ tokenize() {
                         done
 
                         # Extract delimiter (may be quoted or unquoted)
-                        local delim=""
+                        local delim="" delim_source=""
                         local delim_char="${chars[i]-}"
                         if [[ "$delim_char" == "'" || "$delim_char" == '"' ]]; then
                             # Quoted delimiter - find closing quote
@@ -338,6 +338,8 @@ tokenize() {
                             done
                             ((i++))  # skip closing quote
                             ((col++))
+                            # Quoting disables expansion in the body; keep it.
+                            delim_source="${quote_char}${delim}${quote_char}"
                         else
                             # Unquoted delimiter - read until whitespace/newline
                             while ((i < len)) && [[ "${chars[i]}" == [a-zA-Z0-9_] ]]; do
@@ -347,8 +349,13 @@ tokenize() {
                             done
                         fi
 
-                        # Skip to end of line (heredoc body starts on next line)
+                        [[ -n "$delim_source" ]] || delim_source="$delim"
+
+                        # The rest of the line (redirects, pipes) stays with
+                        # the command; the body starts on the next line.
+                        local heredoc_rest=""
                         while ((i < len)) && [[ "${chars[i]}" != $'\n' ]]; do
+                            heredoc_rest+="${chars[i]}"
                             ((i++))
                             ((col++))
                         done
@@ -399,8 +406,8 @@ tokenize() {
                         done
 
                         # Emit heredoc as single HEREDOC_BLOCK token
-                        # Value format: "DELIM:body" where body preserves newlines
-                        add_token "HEREDOC_BLOCK" "<<${strip_tabs}${delim}"$'\n'"${body}${delim}" "$heredoc_start_line" "$heredoc_start_col"
+                        # Value: the operator line as written, then the body and terminator
+                        add_token "HEREDOC_BLOCK" "<<${strip_tabs}${delim_source}${heredoc_rest}"$'\n'"${body}${delim}" "$heredoc_start_line" "$heredoc_start_col"
                     fi
                 elif [[ "$next" == "=" ]]; then
                     add_token "LE" "<=" "$line" "$col"

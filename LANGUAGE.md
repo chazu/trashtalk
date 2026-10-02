@@ -1070,11 +1070,6 @@ task=$(@ Task titled "Write docs")
 - **Keyword selectors beginning with `_`** (`@ self _load: x from: y`)
   miscompile at the send site. Name keyword helpers without a leading underscore.
 - **`@ Console print: ''`** prints nothing, not an empty line.
-- **Raw bodies are rebuilt from tokens**, so a few Bash spellings change. Quote
-  hyphenated bare words (`send-keys` becomes `send -keys`) and bare assignment
-  values (`local a=b` becomes `a= b`). `--` is glued to a following quoted word
-  (`-- "$x"` becomes `--"$x"`). ANSI-C quoting (`$'\t'`) and bracket globs with
-  `!` (`*[!0-9]*`) break; use `printf -v tab '\t'` and a `[[ =~ ]]` test.
 - **Arithmetic:** Bash arithmetic operates on integers; JSON numbers do not add
   floating point arithmetic to DSL expressions.
 
@@ -1082,6 +1077,9 @@ Unary `skip` and keyword `skip:` are distinct selectors; negative arguments and
 qualified names such as `@ Pkg::Class method` in raw bodies are supported.
 `test_known_issues.bash`, `test_namespaces.bash`, and `test_expr_codegen.bash`
 exercise these formerly broken cases through the production compiler.
+Raw bodies keep the spelling and spacing they were written with (hyphenated
+words, `--`, `$'\t'`, `x+=(y)`, bracket globs, nested quotes in expansions,
+quoted heredoc delimiters); `test_raw_source_fidelity.bash` executes them.
 Raw methods preserve standalone Bash sequence words such as `{1..50}`,
 `{-2..2..2}`, and `{a..e..2}`. `test_raw_ranges.bash` executes compiled loops
 to verify their iteration counts; `test_agent_conversation.bash` checks direct

@@ -2433,116 +2433,28 @@ def generateRequires:
 def transformRawMethodBody:
   # Reconstruct explicit raw Bash bodies from tokens.
   def tokensToString:
-    # Every normalization below matches on a space. Literal text keeps its
-    # spaces as U+0001 until normalization is done, so quoted strings and
-    # heredoc bodies come through verbatim.
-    def protect_spaces: gsub(" "; "\u0001");
-    # Token conversion phase
-    reduce .[] as $tok ("";
-      if $tok.type == "NAMESPACE_SEP" then
-        # Join qualified names (Pkg::Class) without surrounding spaces. The
-        # preceding identifier already appended a trailing space, so strip it
-        # and attach "::"; the following identifier re-adds its own space.
-        # Without this, raw method bodies emit "@ Pkg :: Class" which breaks.
-        (. | rtrimstr(" ")) + "::"
-      else
-      . + (
-        if $tok.type == "NEWLINE" then "\n"
-        # Comments
-        elif $tok.type == "COMMENT" then $tok.value
-        # Message and assignment tokens
-        elif $tok.type == "AT" then $tok.value + " "
-        elif $tok.type == "ASSIGN" then $tok.value + " "
-        elif $tok.type == "CARET" then "^"
-        # Brackets
-        elif $tok.type == "PIPE" then "| "
-        elif $tok.type == "LBRACKET" then "["
-        elif $tok.type == "RBRACKET" then "]"
-        elif $tok.type == "DLBRACKET" then "[[ "
-        elif $tok.type == "DRBRACKET" then " ]]"
-        elif $tok.type == "LPAREN" then "("
-        elif $tok.type == "RPAREN" then ") "
-        # Preserve subshell source
-        elif $tok.type == "SUBSHELL" then
-          $tok.value
-        # Arithmetic
-        elif $tok.type == "ARITHMETIC" then $tok.value
-        elif $tok.type == "ARITH_CMD" then $tok.value
-        # Values with trailing space
-        elif $tok.type == "VARIABLE" then $tok.value + " "
-        elif $tok.type == "DSTRING" then ($tok.value | protect_spaces) + " "
-        elif $tok.type == "STRING" then ($tok.value | protect_spaces) + " "
-        elif $tok.type == "TRIPLESTRING" then "$'\($tok.value | gsub("\\\\"; "\\\\") | gsub("'"; "\\'") | gsub("\n"; "\\n"))' "
-        elif $tok.type == "NUMBER" then $tok.value + " "
-        elif $tok.type == "KEYWORD" then $tok.value + " "
-        elif $tok.type == "PATH" then $tok.value + " "
-        # Operators
-        elif $tok.type == "SEMI" then "; "
-        elif $tok.type == "AND" then " && "
-        elif $tok.type == "OR" then " || "
-        elif $tok.type == "REDIRECT" then $tok.value
-        elif $tok.type == "GT" then " >"
-        elif $tok.type == "LT" then " <"
-        elif $tok.type == "HEREDOC" then "<<"
-        elif $tok.type == "HEREDOC_BLOCK" then ($tok.value | protect_spaces) + "\n"
-        elif $tok.type == "HERESTRING" then "<<< "
-        elif $tok.type == "MATCH" then " =~ "
-        elif $tok.type == "EQ" then " == "
-        elif $tok.type == "NE" then " != "
-        elif $tok.type == "EQUALS" then "= "
-        elif $tok.type == "BANG" then "! "
-        elif $tok.type == "AMP" then " &"
-        # Punctuation
-        elif $tok.type == "DOT" then "."
-        elif $tok.type == "SLASH" then "/"
-        elif $tok.type == "QUESTION" then "?"
-        elif $tok.type == "PLUS" then "+"
-        elif $tok.type == "MINUS" then "-"
-        elif $tok.type == "STAR" then "*"
-        elif $tok.type == "COMMA" then ", "
-        elif $tok.type == "TILDE" then "~"
-        elif $tok.type == "PERCENT" then "%"
-        elif $tok.type == "BACKSLASH" then "\\"
-        elif $tok.type == "LITERAL" then $tok.value
-        elif $tok.type == "SYMBOL" then "\"\($tok.value)\" "
-        elif $tok.type == "HASH_LPAREN" then "#( "
-        elif $tok.type == "HASH_LBRACE" then "#{ "
-        elif $tok.type == "LBRACE" then "{ "
-        elif $tok.type == "RBRACE" then "} "
-        else $tok.value + " "
-        end
-      )
-      end
-    ) |
-    # Post-processing: normalization gsubs
-    # Normalize token spacing
-    gsub(" +"; " ") |                  # Collapse multiple spaces
-    gsub(" ;"; ";") |                  # Remove space before semicolon
-    gsub(" \\]\\]"; " ]]") |           # Keep space before ]]
-    gsub("\\[\\[ "; "[[ ") |           # Keep space after [[
-    gsub("\\[(?<a>[0-9]) -(?<b>[0-9])"; "[\(.a)-\(.b)") |  # Fix char class ranges like [0-9]
-    gsub("(?<a>[a-zA-Z0-9]) \\](?<b>[^\\]])"; "\(.a)]\(.b)") |  # Remove space before ] not followed by ]
-    gsub("(?<n>[0-9]) >"; "\(.n)>") |  # Fix number before redirect: 2> not 2 >
-      gsub("; ;"; ";;") |              # Fix double semicolon
-      gsub("(?<a>[a-zA-Z_][a-zA-Z0-9_]*) \\[(?<b>[\"$])"; "\(.a)[\(.b)") |  # Fix array access: VAR ["$key"] → VAR["$key"]
-      gsub(" \\]= "; "]=") |           # Fix array assignment: ]= → ]=
-      gsub("\" \\*"; "\"*") |          # Fix pattern glob: "${prefix}" * → "${prefix}"*
-      gsub("} \\*"; "}*") |            # Fix pattern glob: ${prefix} * → ${prefix}*
-      gsub("(?<a>[a-zA-Z0-9_]) \\*"; "\(.a)*") |  # Fix path glob: /path_ * → /path_*
-      gsub("(?<a>[a-zA-Z0-9]) \\](?<b>[+*?$])"; "\(.a)]\(.b)") |  # Remove space before ] when followed by quantifier
-      gsub("(?<a>[a-zA-Z0-9]) \\](?<b> \\]\\])"; "\(.a)]\(.b)") |  # Remove space before ] when followed by ]]
-      gsub(" \\)"; ")") |              # Remove space before )
-      gsub("\\( "; "(") |              # Remove space after (
-      gsub("> /"; ">/") |              # Remove space after > before path
-      gsub("< (?<c>[^<])"; "<\(.c)") |  # Remove space after < unless followed by < (process substitution)
-      gsub("(?<a>[a-zA-Z0-9_]) = (?<c>[0-9\"'$(])"; "\(.a)=\(.c)") |  # Fix assignments: var = "val" → var="val"
-      gsub("(?<a>[a-zA-Z0-9_]) =(?<c>[\"'$])"; "\(.a)=\(.c)") |  # Fix assignments: var ="val" → var="val"
-      gsub("(?<a>[a-zA-Z0-9_])= (?<c>true|false|yes|no)(?<d>[ \n;)$])"; "\(.a)=\(.c)\(.d)") |  # Fix bool: var= true → var=true
-      gsub("(?<a>[a-zA-Z0-9_]) = (?<c>true|false|yes|no)(?<d>[ \n;)$])"; "\(.a)=\(.c)\(.d)") |  # Fix bool: var = true → var=true
-      gsub("(?<a>[a-zA-Z0-9_]) = (?<c>[a-zA-Z])"; "\(.a)= \(.c)") |  # Keep space for env var assignments: IFS= read
-      gsub("\u0001"; " ")
-
-    ;
+    # Raw Bash is reproduced from token positions: tokens keep the spacing
+    # they had in the source, so words such as send-keys, $'\t', x+=(y),
+    # [0-9] and "${x#*"$y"}" come through as written. Only Smalltalk
+    # literals are rewritten. Lines are re-indented afterwards.
+    def source_length:
+      if .type == "SYMBOL" then (.value | length) + 1
+      elif .type == "TRIPLESTRING" then (.value | length) + 6
+      else .value | length end;
+    def render:
+      if .type == "NEWLINE" then "\n"
+      elif .type == "HEREDOC_BLOCK" then .value + "\n"
+      elif .type == "SYMBOL" then "\"\(.value)\""
+      elif .type == "TRIPLESTRING" then "$'\(.value | gsub("\\\\"; "\\\\") | gsub("'"; "\\'") | gsub("\n"; "\\n"))'"
+      else .value end;
+    reduce .[] as $tok ({text: "", prev: null};
+      (if .prev == null or (.prev.type | IN("NEWLINE", "HEREDOC_BLOCK")) then ""
+       elif .prev.line != $tok.line then " "
+       else ($tok.col - .prev.col - (.prev | source_length)) as $gap |
+         if $gap > 0 then " " * $gap elif $gap == 0 then "" else " " end
+       end) as $space |
+      .text += $space + ($tok | render) | .prev = $tok
+    ) | .text;
 
   # Helper to strip leading/trailing empty lines from array
   def stripEmptyLines:
@@ -2597,9 +2509,10 @@ def transformRawMethodBody:
          end) as $newDepth |
         # Check if line ends with continuation
         ($trimmed | test("\\\\$")) as $isContinuation |
-        # Check if line starts a heredoc (<<EOF or <<'EOF' or <<"EOF")
-        (if ($trimmed | test("<<-?'?\"?([A-Za-z_][A-Za-z0-9_]*)'?\"?\\s*$")) then
-          $trimmed | capture("<<-?'?\"?(?<term>[A-Za-z_][A-Za-z0-9_]*)'?\"?\\s*$") | .term
+        # Check if line starts a heredoc (<<EOF or <<'EOF' or <<"EOF"); a pipe
+        # or redirect may follow the delimiter on the same line
+        (if ($trimmed | test("(?<!<)<<-?['\"]?[A-Za-z_][A-Za-z0-9_]*['\"]?(\\s|$)")) then
+          $trimmed | capture("(?<!<)<<-?['\"]?(?<term>[A-Za-z_][A-Za-z0-9_]*)['\"]?(\\s|$)") | .term
         else
           null
         end) as $heredocStart |

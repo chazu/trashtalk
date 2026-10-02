@@ -55,8 +55,12 @@
 
 ### Fixed
 
-- Raw method bodies keep quoted strings and heredoc bodies verbatim; runs of
-  spaces were collapsed, which broke help columns, jq programs and templates.
+- Raw method bodies are reproduced from token positions instead of being
+  respaced and regex-repaired. Hyphenated words (`--connect-timeout` had become
+  `--connect -timeout` in `Http`), `$'\t'`, `x+=(y)`, bracket globs, nested
+  quotes, `[[ $a = "x" ]]` and the spacing inside strings and heredocs now
+  compile as written. Quoted heredoc delimiters stay quoted (bodies no longer
+  expand), and a pipe or redirect after the delimiter is kept.
 - `(x jsonHas: k) ifTrue:`/`ifFalse:` branch correctly; they compiled to an
   arithmetic test that was always false.
 - `'a' , self , 'b'` no longer reads `$_RECEIVER` followed by literal text as
