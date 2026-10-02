@@ -168,9 +168,10 @@ def parseClassHeader:
     fail
   end;
 
-# Simpler instanceVars parser - just collect keywords and identifiers
-def parseInstanceVarsSimple:
-  if current.value == "instanceVars:" then
+# Parse a variable declaration list such as `instanceVars: a b:0 c:'x'`.
+# $kind is the declaring keyword without its colon and the result node type.
+def parseVarDeclarations($kind):
+  if current.value == ($kind + ":") then
     advance | skipNewlines |
     # Collect all var specs manually
     {vars: [], warnings: [], state: ., stop: false} |
@@ -214,7 +215,7 @@ def parseInstanceVarsSimple:
           # Bare identifier after keyword with space (e.g., "name: value") - treat as two vars
           .warnings += [{
             type: "possible_typo",
-            message: ("instanceVars: '" + $name + ": " + (.state | current.value) + "' - if this is meant to be a default, remove the space: '" + $name + ":" + (.state | current.value) + "'"),
+            message: ($kind + ": '" + $name + ": " + (.state | current.value) + "' - if this is meant to be a default, remove the space: '" + $name + ":" + (.state | current.value) + "'"),
             token: {line: $loc.line, col: $loc.col}
           }] |
           # Treat keyword without value (name gets no default)
@@ -236,83 +237,13 @@ def parseInstanceVarsSimple:
     ) |
     .vars as $vars |
     .warnings as $warnings |
-    .state | .result = {type: "instanceVars", vars: $vars, warnings: $warnings}
+    .state | .result = {type: $kind, vars: $vars, warnings: $warnings}
   else
     fail
   end;
 
-# Simpler classInstanceVars parser - just collect keywords and identifiers
-def parseClassInstanceVarsSimple:
-  if current.value == "classInstanceVars:" then
-    advance | skipNewlines |
-    # Collect all var specs manually
-    {vars: [], warnings: [], state: ., stop: false} |
-    until(
-      .stop or
-      .state.pos >= (.state.tokens | length) or
-      (.state | current.type) == "NEWLINE" or
-      (.state | current.value) == "method:" or
-      (.state | current.value) == "classMethod:" or
-      (.state | current.value) == "rawMethod:" or
-      (.state | current.value) == "rawClassMethod:" or
-      (.state | current.value) == "include:" or
-      (.state | isSyncPoint);
-
-      if (.state | current.type) == "KEYWORD" then
-        # Keyword token may be "name:" or "name:42" (for varspec with inline numeric default)
-        {line: (.state | current.line), col: (.state | current.col)} as $loc |
-        (.state | current.value) as $kw |
-        # Split on first colon to get name and potential embedded numeric default
-        ($kw | split(":")) as $parts |
-        ($parts[0]) as $name |
-        (if ($parts | length) > 1 and $parts[1] != "" then $parts[1:] | join(":") else null end) as $embedded_default |
-        .state |= advance |
-        .state |= skipNewlines |
-        if $embedded_default != null then
-          # Numeric default was embedded in the keyword token (e.g., "value:42")
-          .vars += [{name: $name, default: {type: "number", value: $embedded_default}, location: $loc}]
-        elif (.state | current.type) == "NUMBER" then
-          .vars += [{name: $name, default: {type: "number", value: (.state | current.value)}, location: $loc}] |
-          .state |= advance |
-          .state |= skipNewlines
-        elif (.state | current.type) == "STRING" then
-          .vars += [{name: $name, default: {type: "string", value: ((.state | current.value) | ltrimstr("'") | rtrimstr("'"))}, location: $loc}] |
-          .state |= advance |
-          .state |= skipNewlines
-        elif (.state | current.type) == "TRIPLESTRING" then
-          .vars += [{name: $name, default: {type: "triplestring", value: (.state | current.value)}, location: $loc}] |
-          .state |= advance |
-          .state |= skipNewlines
-        elif (.state | current.type) == "IDENTIFIER" then
-          # Bare identifier after keyword with space (e.g., "name: value") - treat as two vars
-          .warnings += [{
-            type: "possible_typo",
-            message: ("classInstanceVars: '" + $name + ": " + (.state | current.value) + "' - if this is meant to be a default, remove the space: '" + $name + ":" + (.state | current.value) + "'"),
-            token: {line: $loc.line, col: $loc.col}
-          }] |
-          # Treat keyword without value (name gets no default)
-          .vars += [{name: $name, default: null, location: $loc}]
-          # Don't advance - let the identifier be parsed as a separate var
-        else
-          .vars += [{name: $name, default: null, location: $loc}]
-        end
-      elif (.state | current.type) == "IDENTIFIER" then
-        # Capture location from identifier token
-        {line: (.state | current.line), col: (.state | current.col)} as $loc |
-        .vars += [{name: (.state | current.value), default: null, location: $loc}] |
-        .state |= advance |
-        .state |= skipNewlines
-      else
-        # Unknown token, stop
-        .stop = true
-      end
-    ) |
-    .vars as $vars |
-    .warnings as $warnings |
-    .state | .result = {type: "classInstanceVars", vars: $vars, warnings: $warnings}
-  else
-    fail
-  end;
+def parseInstanceVarsSimple: parseVarDeclarations("instanceVars");
+def parseClassInstanceVarsSimple: parseVarDeclarations("classInstanceVars");
 
 # Parse: include: TraitName (may be qualified: include: OtherPkg::Debuggable)
 def parseInclude:
