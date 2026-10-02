@@ -107,11 +107,15 @@ Session subclass: Object
 
   # All public creation paths use the same guarded transaction.
   classMethod: openFor: identityId archetype: archetypeId role: roleId workspace: path profile: profileName [
+    ^ @ self creation: 'openWithin:' for: identityId archetype: archetypeId role: roleId workspace: path profile: profileName replaying: false
+  ]
+
+  classMethod: creation: selector for: identityId archetype: archetypeId role: roleId workspace: path profile: profileName replaying: replay [
     | args workspace |
     workspace := @ self workspaceFor: path.
     args := #{identity: identityId archetype: archetypeId role: roleId workspace: workspace profile: profileName} asJson.
     @ self ensureSchema.
-    ^ @ Store transaction: self sending: 'openWithin:' with: args
+    ^ @ Store transaction: self sending: selector with: args replaying: replay
   ]
 
   # Constructor is private to a Store unit of work; session and inbox publish together.
@@ -221,11 +225,7 @@ Session subclass: Object
   ]
 
   classMethod: ensureFor: identityId archetype: archetypeId role: roleId workspace: path profile: profileName [
-    | args workspace |
-    workspace := @ self workspaceFor: path.
-    args := #{identity: identityId archetype: archetypeId role: roleId workspace: workspace profile: profileName} asJson.
-    @ self ensureSchema.
-    ^ @ Store transaction: self sending: 'ensureWithin:' with: args replaying: true
+    ^ @ self creation: 'ensureWithin:' for: identityId archetype: archetypeId role: roleId workspace: path profile: profileName replaying: true
   ]
 
   # Guarded queries detect competing creation even for an empty result.
@@ -255,7 +255,6 @@ Session subclass: Object
     role := @ Store read: (args objectAt: 'role') class: 'Agent::Role'.
     profile := args objectAt: 'profile'.
     session := @ self createWithinFor: identity archetype: archetype role: role workspace: path profile: profile.
-    scope := @ identity sessionScope.
     (scope = 'identity') ifTrue: [
       @ identity currentSession: session.
       @ identity save
@@ -264,11 +263,7 @@ Session subclass: Object
   ]
 
   classMethod: freshFor: identityId archetype: archetypeId role: roleId workspace: path profile: profileName [
-    | args workspace |
-    workspace := @ self workspaceFor: path.
-    args := #{identity: identityId archetype: archetypeId role: roleId workspace: workspace profile: profileName} asJson.
-    @ self ensureSchema.
-    ^ @ Store transaction: self sending: 'freshWithin:' with: args
+    ^ @ self creation: 'freshWithin:' for: identityId archetype: archetypeId role: roleId workspace: path profile: profileName replaying: false
   ]
 
   # A focused human may explicitly replace the conversation they are currently
