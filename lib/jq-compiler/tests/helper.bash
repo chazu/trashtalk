@@ -5,11 +5,8 @@
 # Source this file at the start of any test that needs COMPILER_DIR and run_test
 # ==============================================================================
 
-# Only set up if not already set (allows harness to override)
-if [[ -z "${COMPILER_DIR:-}" ]]; then
-    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[1]:-${BASH_SOURCE[0]}}")" && pwd)"
-    COMPILER_DIR="$(dirname "$SCRIPT_DIR")"
-fi
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[1]:-${BASH_SOURCE[0]}}")" && pwd)"
+COMPILER_DIR="$(dirname "$SCRIPT_DIR")"
 
 # Colors for output
 RED='\033[0;31m'
@@ -17,14 +14,12 @@ GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
 NC='\033[0m'
 
-# Counters (only initialize if not already set by harness)
-: "${TESTS_RUN:=0}"
-: "${TESTS_PASSED:=0}"
-: "${TESTS_FAILED:=0}"
-: "${CURRENT_SECTION:=}"
-if ! declare -p FAILED_TESTS &>/dev/null; then
-    FAILED_TESTS=()
-fi
+# Counters
+TESTS_RUN=0
+TESTS_PASSED=0
+TESTS_FAILED=0
+CURRENT_SECTION=
+FAILED_TESTS=()
 
 # Run a test and check result
 # Usage: run_test "test name" expected actual

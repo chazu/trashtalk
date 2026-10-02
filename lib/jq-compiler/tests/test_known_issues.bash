@@ -4,7 +4,8 @@ if [[ "${TRASHTALK_TEST_ISOLATED:-}" != 1 ]]; then
     exec bash "$(dirname "${BASH_SOURCE[0]}")/../../test-isolated.bash" "${BASH_SOURCE[0]}" "$@"
 fi
 # ==============================================================================
-# Regression tests for known issues documented in CLAUDE.md
+# Regression tests for formerly known compiler issues; see LANGUAGE.md
+# "Limitations and regression coverage" for what remains open
 # ==============================================================================
 # Former defects remain ordinary failing regressions if they return.
 # The production tokenizer, parser, and generator are used below.
