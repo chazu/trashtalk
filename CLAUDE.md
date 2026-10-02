@@ -11,16 +11,8 @@ Trashtalk is a Smalltalk-inspired DSL compiler and runtime for Bash. It transfor
 ### Compilation Pipeline
 
 ```
-.trash source → jq-compiler → Compiled Bash
-                    │
-              ┌─────┴─────┐
-              │           │
-         tokenizer    codegen
-          (bash)        (jq)
-              │           │
-              └─────┬─────┘
-                    ▼
-           trash/.compiled/*
+.trash → tokenizer.bash → JSON tokens → parser.jq → class/trait AST
+       → codegen.jq (including DSL expression parsing) → trash/.compiled/*
 ```
 
 ### Key Components
@@ -35,8 +27,13 @@ Trashtalk is a Smalltalk-inspired DSL compiler and runtime for Bash. It transfor
 
 The jq-compiler is a three-stage pipeline:
 - **Tokenizer** (`tokenizer.bash`): Converts .trash source to JSON tokens
-- **Parser** (`parser.jq`): PEG-style combinators parse tokens to JSON AST
-- **CodeGen** (`codegen.jq`): Generates bash functions from AST
+- **Parser** (`parser.jq`): PEG-style combinators parse tokens to a class/trait AST;
+  method bodies stay as tokens
+- **CodeGen** (`codegen.jq`): Parses `method:` bodies with its expression parser
+  and generates bash functions; raw bodies are reconstructed from tokens
+
+`driver.bash` runs the stages and the cached, parallel build. See
+[lib/jq-compiler/README.md](lib/jq-compiler/README.md).
 
 ### Runtime Execution Model
 
@@ -53,7 +50,7 @@ make single CLASS=Counter  # Compile single class
 make verify       # Build, then run both isolated suites (both always run)
 make test         # Run isolated runtime tests in parallel
 make test-compiler # Run isolated compiler tests in parallel
-make test-serial  # Run tests sequentially
+make test-serial  # Run runtime tests sequentially
 make test-verbose # Run tests with bash -x tracing
 make clean        # Remove build artifacts
 make bench        # Build and measure public messages with isolated object state
