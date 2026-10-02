@@ -90,16 +90,6 @@ MessagePresentation subclass: Object
     @ Console print: (data jsonTextAt: 'body')
   ]
 
-  classMethod: recordFor: message data: data [
-    | label prefix search kind path |
-    label := data jsonTextAt: 'label'.
-    prefix := data jsonTextAt: 'prefix'.
-    search := data jsonTextAt: 'search'.
-    kind := @ message kind.
-    path := message , '.txt'.
-    ^ #{schema_version: 1 id: message label: label kind: kind detail: prefix path: path line: 1 column: 1 display: #{prefix: prefix preview_title: 'Message' search_text: search}} asJson
-  ]
-
   classMethod: displayFor: message [
     | data |
     data := @ self dataFor: message.
@@ -120,10 +110,4 @@ MessagePresentation subclass: Object
   # whitespace before putting untrusted message text on a single terminal row.
   rawClassMethod: singleLine: text [
     printf '%s' "$1" | jq -Rrs 'gsub("[\u0000-\u001f\u007f-\u009f]"; " ") | gsub("\\s+"; " ") | sub("^ +"; "") | sub(" +$"; "")'
-  ]
-
-  # Unicode slicing at the jq boundary: Bash substring under LC_ALL=C may
-  # split a UTF-8 name mid-character. Preserve the full name in the preview.
-  rawClassMethod: rowName: name [
-    printf '%s' "$1" | jq -Rrs 'if length > 20 then .[:19] + "…" else . end'
   ]

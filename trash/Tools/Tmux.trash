@@ -83,15 +83,6 @@ Tmux subclass: Tool
     ^ 'true'
   ]
 
-  # Attach to a session
-  classMethod: attachToSession: sessionName [
-    | arguments argv |
-    (@ self requireSession: sessionName) ifFailed: [:error | @ error signal].
-    arguments := #('attach-session' '-t' sessionName) asJson.
-    argv := (@ self argvFor: arguments) ifFailed: [:error | @ error signal].
-    ^ @ self runArgvJson: argv
-  ]
-
   # Kill a session; 'true' when tmux killed it, 'false' otherwise
   classMethod: killSession: sessionName [
     | arguments |

@@ -4,7 +4,7 @@
 #
 # Tool subclasses are singletons - use class methods directly:
 #   @ Tools::Jq ensure
-#   @ Tools::Jq runAsync: "-cn '{answer:42}'"
+#   @ Tools::Jq runArgvJson: '["jq","-n","42"]'
 #
 # Subclass example (see trash/Tools/):
 #   package: Tools
@@ -113,15 +113,6 @@ Tool subclass: Object
     installed := @ self isInstalled.
     (installed = 'true') ifFalse: [@ PathError signal: toolName , ' installed but not found on PATH'].
     ^ 'true'
-  ]
-
-  # Run the tool with arguments (synchronous)
-  classMethod: run: args [
-    | toolName toolPath |
-    toolName := @ self name.
-    toolPath := @ self path.
-    (toolPath isEmpty) ifTrue: [ @ ToolError signal: toolName , ' is not installed' ].
-    ^ @ Shell exec: toolPath , ' ' , args
   ]
 
   # Execute an exact argv vector represented as JSON. The DSL builds the typed
@@ -498,6 +489,14 @@ Tool subclass: Object
     capture := @ self captureArgvJson: argv.
     result := @ self resultFrom: capture command: command failureOutcome: 'process_error'.
     ^ @ self stdoutOf: result
+  ]
+
+  # Like resultForArgv:command:failureOutcome:, run in a checkout. Callers build
+  # argv from the tool path, so they answer missingToolResult: themselves.
+  classMethod: resultForArgv: argv inDirectory: directory command: command failureOutcome: failureOutcome [
+    | capture |
+    capture := @ self captureArgvJson: argv inDirectory: directory.
+    ^ @ self resultFrom: capture command: command failureOutcome: failureOutcome
   ]
 
   # Convenience projection: stdout of a successful result. On failure the

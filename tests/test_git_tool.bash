@@ -31,6 +31,11 @@ result=$(@ Tools::Git worktreeListInDirectory: "$test_dir/repository")
 check 'Git worktree inspection preserves output' 'fixture output' "$(printf '%s' "$result" | jq -r '.stdout | rtrimstr("\n")')"
 check 'Git worktree inspection uses explicit checkout' "$test_dir/repository" "$(cat "$GIT_CWD")"
 check 'Git worktree inspection has fixed porcelain argv' '["worktree","list","--porcelain"]' "$(jq -c . "$GIT_ARGV")"
+check 'Git inspection is a normalized tool result' 'git inspect success 0' "$(jq -r '"\(.tool) \(.command) \(.outcome) \(.exit_code)"' <<< "$result")"
+missing=$(@ Tools::Git missingToolResult: inspect)
+check 'Installed and missing Git results share one shape' "$(jq -c 'keys' <<< "$missing")" "$(jq -c 'keys' <<< "$result")"
+result=$(@ Tools::Git headInDirectory: "$test_dir/absent")
+check 'Git inspection of a missing checkout is a process error' 'process_error 72' "$(jq -r '"\(.outcome) \(.exit_code)"' <<< "$result")"
 
 result=$(@ Tools::Git statusInDirectory: "$test_dir/repository")
 check 'Git status uses fixed observational argv' '["status","--porcelain=v1","--branch","--untracked-files=normal"]' "$(jq -c . "$GIT_ARGV")"

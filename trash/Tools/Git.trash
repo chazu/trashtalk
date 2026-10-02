@@ -61,5 +61,5 @@ Git subclass: Tool
     (available ~= 'true') ifTrue: [^ @ self missingToolResult: 'inspect'].
     argv := @ self baseArgv.
     argv := @ self argv: argv appendEach: arguments.
-    ^ @ self captureArgvJson: argv inDirectory: directory
+    ^ @ self resultForArgv: argv inDirectory: directory command: 'inspect' failureOutcome: 'process_error'
   ]

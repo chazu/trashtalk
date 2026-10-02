@@ -15,6 +15,8 @@ a=$(@ Workstation::Attention createFrom: "$doc")
 @ "$a" acknowledge >/dev/null
 @ "$a" reload
 [[ $(@ "$a" state) == acknowledged ]]
+summary=$(@ "$a" summary)
+[[ $summary == "$a acknowledged events=0 ws=- session=-" ]] || { echo "FAIL: summary $summary"; exit 1; }
 @ "$a" snoozeUntil: '2099-01-01T00:00:00Z' >/dev/null
 @ "$a" reload
 [[ $(@ "$a" state) == snoozed ]]

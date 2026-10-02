@@ -32,6 +32,11 @@ result=$(@ Tools::Worktrunk listInDirectory: "$test_dir/repository")
 check 'Worktrunk list preserves child output' 'feature/agent ready' "$(printf '%s' "$result" | jq -r '.stdout | rtrimstr("\n")')"
 check 'Worktrunk list uses explicit checkout directory' "$test_dir/repository" "$(cat "$WORKTRUNK_CWD")"
 check 'Worktrunk list uses a fixed read-only argv' '["list"]' "$(jq -c . "$WORKTRUNK_ARGV")"
+check 'Worktrunk list is a normalized tool result' 'wt list success 0' "$(jq -r '"\(.tool) \(.command) \(.outcome) \(.exit_code)"' <<< "$result")"
+missing=$(@ Tools::Worktrunk missingToolResult: list)
+check 'Installed and missing Worktrunk results share one shape' "$(jq -c 'keys' <<< "$missing")" "$(jq -c 'keys' <<< "$result")"
+result=$(@ Tools::Worktrunk listInDirectory: "$test_dir/absent")
+check 'Worktrunk list in a missing checkout is a process error' 'process_error 72' "$(jq -r '"\(.outcome) \(.exit_code)"' <<< "$result")"
 
 PATH="$original_path"
 export PATH

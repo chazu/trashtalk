@@ -12,7 +12,7 @@ Worktrunk subclass: Tool
   classMethod: installCommand [ ^ 'brew install worktrunk' ]
 
   # Read-only inventory. The command's human-oriented text is deliberately
-  # retained in the standard process envelope until Worktrunk publishes a
+  # retained as stdout in the standard tool result until Worktrunk publishes a
   # stable machine-readable list contract that warrants a typed model.
   classMethod: listInDirectory: directory [
     | available argv tool |
@@ -21,5 +21,5 @@ Worktrunk subclass: Tool
     (available ~= 'true') ifTrue: [^ @ self missingToolResult: 'list'].
     tool := @ self path.
     argv := #(tool 'list') asJson.
-    ^ @ self captureArgvJson: argv inDirectory: directory
+    ^ @ self resultForArgv: argv inDirectory: directory command: 'list' failureOutcome: 'process_error'
   ]

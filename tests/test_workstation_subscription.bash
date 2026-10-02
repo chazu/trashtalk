@@ -22,6 +22,9 @@ sub=$(@ Workstation::EventSubscription createFrom: "$doc")
 @ "$sub" pauseDispatch: 'manual pause'
 @ "$sub" reload
 [[ $(@ "$sub" revision) == 5 ]]
+summary=$(@ "$sub" summary)
+[[ $summary == "$sub local-user enabled=true dispatch=paused target=- mode=manual rev=5" ]] || { echo "FAIL: summary $summary"; exit 1; }
+@ "$sub" display | jq -e '.revision==5 and .enabled==true' >/dev/null
 for op in duplicate owner adapter grouping consumer unknown; do
  bad=$doc
  if [[ $op != duplicate ]]; then

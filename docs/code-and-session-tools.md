@@ -93,8 +93,11 @@ surface is deliberately read-only:
 @ Tools::Worktrunk listInDirectory: "$PWD"
 ```
 
-It runs `wt list` in the explicit checkout directory and returns the standard
-process envelope. Worktrunk's list output is presently treated as text, not a
+It runs `wt list` in the explicit checkout directory and returns the result
+object described above, without `data`: `outcome` is `success`,
+`missing_tool`, or `process_error`, and the text is in `stdout`. Whether or not
+`wt` is installed, the shape is the same. Worktrunk's list output is presently
+treated as text, not a
 stable Trashtalk worktree model. The adapter exposes no `switch`, `remove`, or
 `merge` messages yet. Creating, assigning, merging, and removing agent
 worktrees needs a separate durable lifecycle and recovery design, rather than
@@ -115,8 +118,9 @@ admit and reconcile future worktree operations:
 ```
 
 The last two use `status --porcelain=v1 --branch --untracked-files=normal` and
-`worktree list --porcelain` respectively. Output is retained as process
-evidence. The Tool does not create branches or worktrees, commit, merge, push,
+`worktree list --porcelain` respectively. Each returns the same result shape
+as Worktrunk, with `command` set to `inspect`; Git's output is retained in
+`stdout` as evidence. The Tool does not create branches or worktrees, commit, merge, push,
 or alter configuration. Those actions need an explicit policy and durable
 operation lifecycle above this adapter.
 
