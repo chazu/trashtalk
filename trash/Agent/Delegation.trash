@@ -163,8 +163,8 @@ Delegation subclass: Object
 
   # Storage projection: a committed terminal Assignment remains an outstanding
   # notification obligation until its status Message records that state.
-  rawClassMethod: statusCandidates [
-    @ Store findByClass: Assignment where: "json_extract(data,'$.dispatchMode')='automatic' AND
+  classMethod: statusCandidates [
+    ^ @ Store findByClass: 'Assignment' where: "json_extract(data,'$.dispatchMode')='automatic' AND
       (json_extract(data,'$.state')='open' OR NOT EXISTS(SELECT 1 FROM instances m
         WHERE m.id=json_extract(instances.data,'$.statusMessage')
         AND json_extract(m.data,'$.assignmentState')=json_extract(instances.data,'$.state')))" orderBy: 'created_at ASC' limit: 1000

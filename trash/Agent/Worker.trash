@@ -81,8 +81,8 @@ Worker subclass: Object
     return "$rc"
   ]
 
-  rawClassMethod: tickableSessions [
-    @ Store findByClass: Agent::Session where: "json_extract(data,'$.lifecycleState') IN ('open','paused') OR id IN (SELECT json_extract(data,'$.session') FROM instances WHERE class='Agent::Run' AND json_extract(data,'$.state') IN ('starting','running','recovering'))" orderBy: 'created_at ASC' limit: 1000
+  classMethod: tickableSessions [
+    ^ @ Store findByClass: 'Agent::Session' where: "json_extract(data,'$.lifecycleState') IN ('open','paused') OR id IN (SELECT json_extract(data,'$.session') FROM instances WHERE class='Agent::Run' AND json_extract(data,'$.state') IN ('starting','running','recovering'))" orderBy: 'created_at ASC' limit: 1000
   ]
 
   # Supervisor probe: an active run still needs prompt reconciliation, so
