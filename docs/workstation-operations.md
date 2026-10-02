@@ -61,8 +61,9 @@ a=$(@ Workstation::Attention createFrom: "$attentionDocument")
 @ Workstation::EventSubscription read: "$sub"
 @ Workstation::EventSubscription listByOwner: "$TRASHTALK_USER"
 @ Workstation::Attention read: "$a"
-@ "$sub" summary
-@ "$a" summary
+@ "$sub" summary    # one line: owner, enabled, dispatch, target, mode, revision
+@ "$a" summary      # one line: state, event count, workspace, delegated session
+@ "$a" display      # the same fields and more as JSON
 ```
 
 CUE runs **before** the Store transaction. Native checks inside it enforce the

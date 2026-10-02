@@ -174,7 +174,15 @@ EventSubscription subclass: Object
     data := @ self asJson.
     ^ data jsonTextAt: 'enabled'
   ]
-  alias: summary for: display
+  # One human line for the operator; display is the JSON projection.
+  method: summary [
+    | flag mode target |
+    flag := @ self enabled.
+    mode := @ self delegationMode.
+    target := targetIdentity.
+    target isEmpty ifTrue: [target := '-'].
+    ^ self , ' ' , owner , ' enabled=' , flag , ' dispatch=' , dispatchState , ' target=' , target , ' mode=' , mode , ' rev=' , revision
+  ]
   method: display [
     | flag mode |
     flag := @ self enabled.

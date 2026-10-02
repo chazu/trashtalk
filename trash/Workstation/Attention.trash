@@ -112,7 +112,15 @@ Attention subclass: Object
   method: resolveWithNote: note [ ^ @ self transitionTo: 'resolved' until: '' note: note ]
   method: suppress: note [ ^ @ self transitionTo: 'suppressed' until: '' note: note ]
   method: reopen [ ^ @ self transitionTo: 'open' until: '' note: '' ]
-  alias: summary for: display
+  # One human line for the operator; display is the JSON projection.
+  method: summary [
+    | ws session |
+    ws := workspace.
+    ws isEmpty ifTrue: [ws := '-'].
+    session := delegatedSession.
+    session isEmpty ifTrue: [session := '-'].
+    ^ self , ' ' , state , ' events=' , eventCount , ' ws=' , ws , ' session=' , session
+  ]
   method: display [
     ^ #{id: self subscription: subscription groupKey: groupKey state: state eventCount: (eventCount jsonValue) updatedAt: updatedAt workspace: workspace delegationRevision: (delegationRevision jsonValue) delegatedSession: delegatedSession routingNote: routingNote} asJson
   ]
