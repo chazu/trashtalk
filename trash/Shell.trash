@@ -54,20 +54,23 @@ Shell subclass: Object
 
   # Execute command and return JSON with stdout, stderr, exitCode
   # Usage: result := @ Shell execFull: 'make test'
+  # Private temp files keep concurrent calls apart; jq encodes the captured
+  # text verbatim (jo would read a file for output beginning with @).
   rawClassMethod: execFull: command [
-    local stdout_file="/tmp/shell_$$_stdout"
-    local stderr_file="/tmp/shell_$$_stderr"
+    local stdout_file stderr_file exit_code stdout stderr
+    stdout_file=$(mktemp) || return
+    stderr_file=$(mktemp) || { rm -f "$stdout_file"; return 1; }
 
     # Run in subshell to capture exit code even for 'exit N' commands
     (eval "$1") >"$stdout_file" 2>"$stderr_file"
-    local exit_code=$?
+    exit_code=$?
 
-    local stdout stderr
-    stdout=$(cat "$stdout_file" 2>/dev/null)
-    stderr=$(cat "$stderr_file" 2>/dev/null)
+    stdout=$(<"$stdout_file")
+    stderr=$(<"$stderr_file")
     rm -f "$stdout_file" "$stderr_file"
 
-    jo stdout="$stdout" stderr="$stderr" exitCode="$exit_code"
+    jq -cn --arg stdout "$stdout" --arg stderr "$stderr" --argjson exitCode "$exit_code" \
+      '{stdout: $stdout, stderr: $stderr, exitCode: $exitCode}'
   ]
 
   # ==========================================
