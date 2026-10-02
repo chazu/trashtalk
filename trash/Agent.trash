@@ -54,17 +54,17 @@ Agent subclass: Object
     ^ @ SourceProposal reviewAndApply: proposal
   ]
 
-  classMethod: errorLabelForOutcome: outcome backend: backend [
-    (outcome = 'missing_tool') ifTrue: [^ 'Codex unavailable'].
-    (outcome = 'configuration_error') ifTrue: [^ 'Codex authentication error'].
-    (outcome = 'invalid_output') ifTrue: [^ 'Codex returned no final answer'].
-    ^ 'Codex execution error'
+  classMethod: errorLabelForOutcome: outcome [
+    ^ outcome caseOf: {
+      'missing_tool' -> [ 'Codex unavailable' ].
+      'configuration_error' -> [ 'Codex authentication error' ].
+      'invalid_output' -> [ 'Codex returned no final answer' ]
+    } otherwise: [ 'Codex execution error' ]
   ]
 
   classMethod: answerFromRun: runResult [
-    | outcome backend content detail label exitCode |
+    | outcome content detail label exitCode |
     outcome := @ String jsonPath: 'outcome' from: runResult.
-    backend := @ String jsonPath: 'backend' from: runResult.
     (outcome = 'success') ifTrue: [
       content := @ String jsonPath: 'result.content' from: runResult.
       content isEmpty ifTrue: [content := @ String jsonPath: 'result' from: runResult].
@@ -72,7 +72,7 @@ Agent subclass: Object
     ].
     detail := @ String jsonPath: 'stderr' from: runResult.
     detail isEmpty ifTrue: [detail := @ String jsonPath: 'stdout' from: runResult].
-    label := @ self errorLabelForOutcome: outcome backend: backend.
+    label := @ self errorLabelForOutcome: outcome.
     exitCode := @ String jsonPath: 'exit_code' from: runResult.
     ^ label , ' (exit ' , exitCode , '): ' , detail
   ]
