@@ -77,7 +77,7 @@ String subclass: Object
   # String Splitting
   # ========================================
 
-  # Split string on delimiter, return as JSON array
+  # Split string on delimiter, return as a JSON array of strings
   rawClassMethod: splitToArray: str on: delim [
     local IFS="$delim"
     local parts newline
@@ -88,12 +88,13 @@ String subclass: Object
     else
       read -ra parts <<< "$str"
     fi
-    # jo with no arguments reads stdin, which blocks when stdin is open.
     if (( ${#parts[@]} == 0 )); then
       echo '[]'
       return
     fi
-    jo -a "${parts[@]}"
+    # Every element stays a string: jo -a would type numbers and booleans
+    # and read a file for an element starting with @.
+    printf '%s\0' "${parts[@]}" | jq -Rsc 'split("\u0000") | .[:-1]'
   ]
 
   # Get part before delimiter (replaces ${str%%delim*})
