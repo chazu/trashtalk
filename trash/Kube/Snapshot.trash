@@ -48,19 +48,13 @@ Snapshot subclass: Object
   ]
 
   # Most recent saved snapshot with the given label on the given cluster.
-  rawClassMethod: latest: label onCluster: ctx [
-    local esc_label esc_ctx
-    esc_label=$(_db_escape "$label")
-    esc_ctx=$(_db_escape "$ctx")
-    db_query "class = 'Kube::Snapshot' AND json_extract(data, '$.label') = '$esc_label' AND json_extract(data, '$.cluster') = '$esc_ctx' ORDER BY json_extract(data, '$.takenAt') DESC LIMIT 1"
+  classMethod: latest: label onCluster: ctx [
+    ^ @ Store findByClass: 'Kube::Snapshot' matching: (#{label: label cluster: ctx} asJson) orderBy: "json_extract(data, '$.takenAt') DESC" limit: 1
   ]
 
   # All saved snapshots with the given label, ordered newest first.
-  rawClassMethod: history: label onCluster: ctx [
-    local esc_label esc_ctx
-    esc_label=$(_db_escape "$label")
-    esc_ctx=$(_db_escape "$ctx")
-    db_query "class = 'Kube::Snapshot' AND json_extract(data, '$.label') = '$esc_label' AND json_extract(data, '$.cluster') = '$esc_ctx' ORDER BY json_extract(data, '$.takenAt') DESC"
+  classMethod: history: label onCluster: ctx [
+    ^ @ Store findByClass: 'Kube::Snapshot' matching: (#{label: label cluster: ctx} asJson) orderBy: "json_extract(data, '$.takenAt') DESC" limit: ''
   ]
 
   # Append a resource instance ID to the resourceIds array.
