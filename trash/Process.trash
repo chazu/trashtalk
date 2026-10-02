@@ -42,7 +42,6 @@ Process subclass: Object
   classPrimitive: signal: processId in: directory with: sig calls: _trash_process_signal
   classPrimitive: cleanupDirectory: directory calls: _trash_process_cleanup
 
-  # List running Process instances, one instance id per line
   # OS boundary: flock is held by this shell's open file description. Perl
   # supplies flock(2) on both macOS and Linux. Crash/exit closes the descriptor;
   # there is no expiring lease that can admit a second live owner. Busy = no-op.
@@ -58,6 +57,7 @@ Process subclass: Object
     _trash_with_process_lock_wait "$1" "$5" "$2" "$3" "$4"
   ]
 
+  # List running Process instances, one instance id per line
   rawClassMethod: listProcesses [
     @ Runtime dataForClass: Process | jq -r 'to_entries[] | select(.value.status == "running") | .key'
   ]
@@ -152,25 +152,18 @@ Process subclass: Object
   # Get process info
   method: info [
     pragma: stream
-    | duration formattedStart formattedEnd line |
-    line := 'Command: ' , command.
-    @ Console print: line.
-    line := 'PID: ' , pid.
-    @ Console print: line.
-    line := 'Status: ' , status.
-    @ Console print: line.
-    line := 'Exit Code: ' , exitCode.
-    @ Console print: line.
+    | duration formattedStart formattedEnd |
+    @ Console print: 'Command: ' , command.
+    @ Console print: 'PID: ' , pid.
+    @ Console print: 'Status: ' , status.
+    @ Console print: 'Exit Code: ' , exitCode.
     formattedStart := @ Time formatISO: startTime.
-    line := 'Started: ' , formattedStart.
-    @ Console print: line.
+    @ Console print: 'Started: ' , formattedStart.
     endTime notEmpty ifTrue: [
       formattedEnd := @ Time formatISO: endTime.
-      line := 'Ended: ' , formattedEnd.
-      @ Console print: line.
+      @ Console print: 'Ended: ' , formattedEnd.
       duration := @ Time from: startTime to: endTime.
-      line := 'Duration: ' , duration , 's'.
-      @ Console print: line
+      @ Console print: 'Duration: ' , duration , 's'
     ]
   ]
 
@@ -190,20 +183,19 @@ Process subclass: Object
 
   # Show help
   method: help [
-    pragma: stream
-    @ Console print: "=== Process Management ==="
-    @ Console print: ""
-    @ Console print: "Instance Methods (for managed processes):"
-    @ Console print: "  proc=\$(@ Process for: \"command\")   - Create process wrapper"
-    @ Console print: "  @ \$proc run                          - Run blocking, capture output"
-    @ Console print: "  @ \$proc start                        - Run in background"
-    @ Console print: "  @ \$proc wait                         - Wait for background completion"
-    @ Console print: "  @ \$proc isRunning                    - Check if still running"
-    @ Console print: "  @ \$proc terminate                    - Send SIGTERM"
-    @ Console print: "  @ \$proc kill                         - Send SIGKILL"
-    @ Console print: "  @ \$proc output                       - Get stdout"
-    @ Console print: "  @ \$proc errors                       - Get stderr"
-    @ Console print: "  @ \$proc exitCode                     - Get exit code"
-    @ Console print: "  @ \$proc succeeded                    - Check if exit code is 0"
-    @ Console print: "  @ \$proc info                         - Show process info"
+    ^ '''=== Process Management ===
+
+Instance Methods (for managed processes):
+  proc=$(@ Process for: "command")   - Create process wrapper
+  @ $proc run                          - Run blocking, capture output
+  @ $proc start                        - Run in background
+  @ $proc wait                         - Wait for background completion
+  @ $proc isRunning                    - Check if still running
+  @ $proc terminate                    - Send SIGTERM
+  @ $proc kill                         - Send SIGKILL
+  @ $proc output                       - Get stdout
+  @ $proc errors                       - Get stderr
+  @ $proc exitCode                     - Get exit code
+  @ $proc succeeded                    - Check if exit code is 0
+  @ $proc info                         - Show process info'''
   ]
