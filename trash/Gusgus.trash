@@ -34,16 +34,20 @@ Gusgus subclass: Object
 
   # Gusgus-specific human command wrapper. Other stable facades may expose a
   # different UX, but all use the same durable Inbox/Agent::Session boundary.
-  rawClassMethod: chat: text workingDirectory: dir status: status lastResult: lastResult [
-    local text="$1" dir="$2" status="$3" last="$4" session inbox owner body msg
-    session=$(@ "$_RECEIVER" sessionFor: "$dir") || return 1
-    inbox=$(@ "$session" inbox)
-    owner=$(@ "$_RECEIVER" owner)
-    body=$(printf '%s\n\n[context] working_directory=%s last_status=%s' "$text" "$dir" "$status")
-    if [[ -n "$last" ]]; then body=$(printf '%s\n[last_result]\n%s' "$body" "${last:0:2000}"); fi
-    msg=$(@ Inbox send: "$body" to: "$inbox" from: "$owner" subject: "" kind: question in: "$dir") || return 1
-    printf '%s\n' "$msg"
-    printf "Gusgus will reply in inbox '%s' (thread %s)\n" "$owner" "$msg" >&2
+  classMethod: chat: text workingDirectory: dir status: status lastResult: lastResult [
+    | session inbox owner body msg |
+    session := @ self sessionFor: dir ifFailed: [:e | @ e signal].
+    inbox := @ session inbox.
+    owner := @ self owner.
+    body := text , '
+
+[context] working_directory=' , dir , ' last_status=' , status.
+    (lastResult notEmpty) ifTrue: [body := body , '
+[last_result]
+' , (lastResult first: 2000)].
+    msg := @ Inbox send: body to: inbox from: owner subject: '' kind: 'question' in: dir ifFailed: [:e | @ e signal].
+    @ Console error: "Gusgus will reply in inbox '" , owner , "' (thread " , msg , ')'.
+    ^ msg
   ]
 
   classMethod: help [
