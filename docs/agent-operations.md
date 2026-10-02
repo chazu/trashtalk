@@ -400,8 +400,8 @@ required by these tests.
 ## One-shot requests
 
 `@ Agent ask: 'question' workingDirectory: "$PWD" status: '0' lastResult: ''`
-uses the one-shot `Agent` facade, selected by
-`TRASHTALK_AGENT_BACKEND=codex` (the default). `@ Agent dryRun:workingDirectory:status:lastResult:` previews that
+uses the one-shot `Agent` facade, which always uses Codex (`@ Trash doctor`
+warns about any other `TRASHTALK_AGENT_BACKEND`). `@ Agent dryRun:workingDirectory:status:lastResult:` previews that
 request without running a model. These do not join the persistent Gusgus session.
 Codex one-shot requests require ChatGPT CLI login, remove API-key overrides, and
 use ephemeral read-only execution. Proposal application remains a separate
