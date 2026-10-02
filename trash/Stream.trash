@@ -32,36 +32,36 @@ Stream subclass: Object
   # Create a stream consumer (reader end — tracks offsets). Names are stored
   # through Store so another process can find and reuse the handle; plain
   # setters would only cache them in this session.
-  rawClassMethod: named: name consumer: consumer [
-    local id
-    id=$(_generate_instance_id Stream)
-    _create_instance Stream "$id" || return 1
-    @ Store patch: "$id" with: "$(jq -cn --arg s "$1" --arg c "$2" '{streamName:$s,consumerName:$c,readerPid:""}')" || return 1
-    echo "$id"
+  classMethod: named: name consumer: consumer [
+    | id fields |
+    id := (@ Stream new) ifFailed: [:error | @ error signal].
+    fields := #{streamName: name consumerName: consumer readerPid: ''} asJson.
+    (@ Store patch: id with: fields) ifFailed: [:error | @ error signal].
+    ^ id
   ]
 
   # Find or create the durable producer handle for a stream name, so repeated
   # publishes from short-lived processes do not each store a new row.
-  rawClassMethod: producerNamed: name [
-    [[ -n "$1" ]] || { _throw StreamError 'Stream producerNamed: requires a stream name'; return 1; }
-    @ "$_RECEIVER" _handleNamed: "$1" consumer: ''
+  classMethod: producerNamed: name [
+    name isEmpty ifTrue: [@ StreamError signal: 'Stream producerNamed: requires a stream name'].
+    ^ @ self handleNamed: name consumer: ''
   ]
 
   # Find or create the durable consumer handle for one (stream, consumer)
   # pair, as Inbox named: does. Honker owns the offset; the instance is only a
   # reusable handle, so callers must not create and delete one per read.
-  rawClassMethod: consumerNamed: name consumer: consumer [
-    [[ -n "$1" && -n "$2" ]] || { _throw StreamError 'Stream consumerNamed:consumer: requires a stream and consumer name'; return 1; }
-    @ "$_RECEIVER" _handleNamed: "$1" consumer: "$2"
+  classMethod: consumerNamed: name consumer: consumer [
+    (name isEmpty or: [consumer isEmpty]) ifTrue: [@ StreamError signal: 'Stream consumerNamed:consumer: requires a stream and consumer name'].
+    ^ @ self handleNamed: name consumer: consumer
   ]
 
   # Shared lookup for the named handles above; an empty consumer is a producer.
-  rawClassMethod: _handleNamed: name consumer: consumer [
-    local existing filter
-    filter=$(jq -cn --arg s "$1" --arg c "$2" '{streamName:$s,consumerName:$c}')
-    existing=$(@ Store findByClass: Stream matching: "$filter" orderBy: 'created_at ASC, id ASC' limit: 1) || return 1
-    if [[ -n "$existing" ]]; then echo "$existing"; return 0; fi
-    @ Stream named: "$1" consumer: "$2"
+  classMethod: handleNamed: name consumer: consumer [
+    | filter existing |
+    filter := #{streamName: name consumerName: consumer} asJson.
+    existing := (@ Store findByClass: 'Stream' matching: filter orderBy: 'created_at ASC, id ASC' limit: 1) ifFailed: [:error | @ error signal].
+    existing notEmpty ifTrue: [^ existing].
+    ^ @ Stream named: name consumer: consumer
   ]
 
   # Publish a message to the stream
@@ -212,25 +212,25 @@ Stream subclass: Object
     @ Runtime delete: "$_INSTANCE"
   ]
 
-  rawClassMethod: help [
-    echo "=== Stream - Durable Cross-Process Streams ==="
-    echo ""
-    echo "Producer:"
-    echo "  s=\$(@ Stream named: 'metrics')"
-    echo "  @ \$s publish: '{\"cpu\":42}'"
-    echo "  @ \$s publish: '{\"cpu\":42}' key: 'host1'"
-    echo ""
-    echo "Consumer:"
-    echo "  c=\$(@ Stream named: 'metrics' consumer: 'dashboard')"
-    echo "  msgs=\$(@ \$c read)"
-    echo "  @ \$c ack: 5"
-    echo "  @ \$c offset"
-    echo ""
-    echo "Continuous consumption:"
-    echo "  @ \$c consumeDo: \$handlerBlock"
-    echo "  @ \$c consumeWith: 'my_callback_fn'"
-    echo "  @ \$c stopConsuming"
-    echo "  @ \$c isConsuming"
+  classMethod: help [
+    ^ '''=== Stream - Durable Cross-Process Streams ===
+
+Producer:
+  s=$(@ Stream named: 'metrics')
+  @ $s publish: '{"cpu":42}'
+  @ $s publish: '{"cpu":42}' key: 'host1'
+
+Consumer:
+  c=$(@ Stream named: 'metrics' consumer: 'dashboard')
+  msgs=$(@ $c read)
+  @ $c ack: 5
+  @ $c offset
+
+Continuous consumption:
+  @ $c consumeDo: $handlerBlock
+  @ $c consumeWith: 'my_callback_fn'
+  @ $c stopConsuming
+  @ $c isConsuming'''
   ]
 
   # Honker-owned consumer registration is atomic and insert-only. From-now is
