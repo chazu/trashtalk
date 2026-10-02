@@ -448,34 +448,23 @@ Trash subclass: Object
       return 1
     fi
 
-    local compiled_name="${class_name//::/__}" source_name="${class_name//:://}"
-    local source_file="$TRASHDIR/${source_name}.trash"
-    local user_source="$TRASHDIR/user/${source_name}.trash"
-    local trait_source="$TRASHDIR/traits/${source_name}.trash"
-    local target_file=""
-    local file_to_compile=""
-
-    # Find source file and determine target (check user dir before system dir)
-    if [[ -f "$user_source" ]]; then
-      file_to_compile="$user_source"
-      target_file="$TRASHDIR/.compiled/$compiled_name"
-      echo "Compiling user class $class_name..."
-    elif [[ -f "$trait_source" ]]; then
-      file_to_compile="$trait_source"
-      target_file="$TRASHDIR/.compiled/traits/$compiled_name"
-      echo "Compiling trait $class_name..."
-    elif [[ -f "$source_file" ]]; then
-      file_to_compile="$source_file"
-      target_file="$TRASHDIR/.compiled/$compiled_name"
-      echo "Compiling class $class_name..."
-    else
+    # sourceFileFor: owns the lookup order, so edit: and this agree.
+    local source_name="${class_name//:://}" file_to_compile target_file
+    file_to_compile=$(@ "$_RECEIVER" sourceFileFor: "$class_name")
+    if [[ -z "$file_to_compile" ]]; then
       echo "Error: No source file found for $class_name"
       echo "Searched:"
-      echo "  - $user_source"
-      echo "  - $source_file"
-      echo "  - $trait_source"
+      echo "  - $TRASHDIR/user/${source_name}.trash"
+      echo "  - $TRASHDIR/${source_name}.trash"
+      echo "  - $TRASHDIR/traits/${source_name}.trash"
       return 1
     fi
+    target_file=$(@ "$_RECEIVER" compiledTargetFor: "$class_name" source: "$file_to_compile")
+    case "$file_to_compile" in
+      "$TRASHDIR/user/"*) echo "Compiling user class $class_name..." ;;
+      "$TRASHDIR/traits/"*) echo "Compiling trait $class_name..." ;;
+      *) echo "Compiling class $class_name..." ;;
+    esac
 
     # Graph validation includes registered reverse dependencies before installing.
     if ! "$SCRIPT_DIR/jq-compiler/driver.bash" 'compile-cached' "$file_to_compile" "$target_file"; then
@@ -866,15 +855,20 @@ EOF
     fi
   ]
 
+  # Installed artifact path for a source: global traits build under traits/.
+  rawMethod: compiledTargetFor: className source: sourceFile [
+    local compiled_name="${className//::/__}"
+    if [[ "$sourceFile" == *"/traits/"* ]]; then
+      printf '%s\n' "$TRASHDIR/.compiled/traits/$compiled_name"
+    else
+      printf '%s\n' "$TRASHDIR/.compiled/$compiled_name"
+    fi
+  ]
+
   rawMethod: installCompiledCandidate: artifact for: className source: sourceFile [
     pragma: direct
-    local compiled_name target output
-    compiled_name="${className//::/__}"
-    if [[ "$sourceFile" == *"/traits/"* ]]; then
-      target="$TRASHDIR/.compiled/traits/$compiled_name"
-    else
-      target="$TRASHDIR/.compiled/$compiled_name"
-    fi
+    local target output
+    target=$(@ "$_RECEIVER" compiledTargetFor: "$className" source: "$sourceFile")
     mkdir -p "$(dirname "$target")"
     if ! output=$("$SCRIPT_DIR/jq-compiler/driver.bash" 'compile-cached' "$sourceFile" "$target" 2>&1); then
       rm -f "$artifact"
