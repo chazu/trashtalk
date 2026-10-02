@@ -31,12 +31,13 @@ Console subclass: Object
   ]
 
   # Print formatted message to stdout
-  # Usage: @ Console printf: '%s: %d' with: name and: count
+  # Usage: @ Console printf: '%s\n' with: name
   rawClassMethod: printf: format with: arg1 [
     printf "$1" "$2"
   ]
 
   # Print formatted message with two args
+  # Usage: @ Console printf: '%s: %d\n' with: name and: count
   rawClassMethod: printf: format with: arg1 and: arg2 [
     printf "$1" "$2" "$3"
   ]
@@ -96,9 +97,7 @@ Console subclass: Object
   ]
 
   # Clear the terminal screen
-  rawClassMethod: clear [
-    clear
-  ]
+  classPrimitive: clear calls: clear
 
   # Print with color (basic ANSI colors)
   # Colors: black, red, green, yellow, blue, magenta, cyan, white
