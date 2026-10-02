@@ -5,22 +5,26 @@ package: Agent
 # Reading a conversation marks its messages read without signalling execution.
 Browser subclass: Object
 
-  # OS boundary: temporary preview files and signal/exit cleanup.
-  rawClassMethod: browse [
-    (
-      local dir
-      dir=$(mktemp -d "${TMPDIR:-/tmp}/trash-sessions.XXXXXX") || exit 1
-      trap 'rm -rf "$dir"' EXIT
-      @ Agent::Browser browseIn: "$dir"
-    )
+  classMethod: browse [
+    ^ @ self previewSession: ''
   ]
 
-  rawClassMethod: browseSession: session [
+  classMethod: browseSession: session [
+    ^ @ self previewSession: session
+  ]
+
+  # OS boundary: temporary preview files and signal/exit cleanup. An empty
+  # session browses the session list; otherwise it opens that session.
+  rawClassMethod: previewSession: session [
     (
       local dir
       dir=$(mktemp -d "${TMPDIR:-/tmp}/trash-sessions.XXXXXX") || exit 1
       trap 'rm -rf "$dir"' EXIT
-      @ Agent::Browser session: "$1" in: "$dir"
+      if [[ -z "$1" ]]; then
+        @ Agent::Browser browseIn: "$dir"
+      else
+        @ Agent::Browser session: "$1" in: "$dir"
+      fi
     )
   ]
 
