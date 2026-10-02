@@ -294,6 +294,11 @@ SourceProposal subclass: Object
       baseHash := hash
     ].
 
+    # Not Trash installEditedSource:class:. That gate installs saved source and
+    # then tests the installed class. A proposal adds the identity gate, tests
+    # the candidate artifact before anything is installed, discards the staged
+    # copy on failure, and installs only through commit:, which re-checks the
+    # base hash and restores source and artifact on failure.
     compileResult := @ Trash compileClass: className source: candidate.
     failed := @ self failedGate: compileResult phase: 'compile' candidate: candidate artifact: ''.
     failed notEmpty ifTrue: [^ failed].
