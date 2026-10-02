@@ -11,9 +11,7 @@ Chad subclass: Tool
 
   # Metadata only: upstream levers does not load or download a model.
   classMethod: levers [
-    | available argv |
-    available := @ self isInstalled.
-    (available ~= 'true') ifTrue: [^ @ self missingJsonToolResult: 'levers'].
+    | argv |
     argv := @ self baseArgv.
     argv := argv arrayPush: 'levers'.
     ^ @ self captureJsonArgv: argv command: 'levers' inDirectory: ''

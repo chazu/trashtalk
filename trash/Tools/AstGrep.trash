@@ -21,13 +21,11 @@ AstGrep subclass: Tool
   ]
 
   classMethod: search: pattern language: language files: files inDirectory: directory [
-    | available argv |
+    | argv |
     directory isEmpty ifTrue: [^ @ Require reject: 'A search directory is required'].
     files isEmpty ifTrue: [^ @ Require reject: 'Search files are required'].
     pattern isEmpty ifTrue: [^ @ Require reject: 'A search pattern is required'].
     language isEmpty ifTrue: [^ @ Require reject: 'A language is required'].
-    available := @ self isInstalled.
-    (available ~= 'true') ifTrue: [^ @ self missingJsonToolResult: 'search'].
     argv := @ self argvFor: pattern language: language.
     argv := argv arrayPush: '--'.
     argv := @ self argv: argv appendEach: files.

@@ -11,8 +11,11 @@ JsonOutput trait
     ^ result objectAt: 'data' putJson: 'null'
   ]
 
+  # A tool that is not on PATH answers missingJsonToolResult: without running.
   classMethod: captureJsonArgv: argv command: command inDirectory: directory [
-    | capture |
+    | available capture |
+    available := @ self isInstalled.
+    (available ~= 'true') ifTrue: [^ @ self missingJsonToolResult: command].
     capture := @ self captureArgvJson: argv inDirectory: directory.
     ^ @ self jsonResultFrom: capture command: command
   ]

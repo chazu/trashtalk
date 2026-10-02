@@ -43,12 +43,10 @@ Roam subclass: Tool
   ]
 
   classMethod: invoke: command target: target inDirectory: directory [
-    | available argv allowed |
+    | argv allowed |
     directory isEmpty ifTrue: [^ @ Require reject: 'A checkout directory is required'].
     allowed := @ Require contains: command in: '["index","index-stats","search","context","impact"]'.
     (allowed ~= 'true') ifTrue: [^ @ Require reject: 'Unsupported Roam command'].
-    available := @ self isInstalled.
-    (available ~= 'true') ifTrue: [^ @ self missingJsonToolResult: command].
     argv := @ self argvFor: command.
     argv := @ self argv: argv option: '--' value: target.
     ^ @ self captureJsonArgv: argv command: command inDirectory: directory

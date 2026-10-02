@@ -20,9 +20,7 @@ Cass subclass: Tool
   classMethod: status [ ^ @ self statusInDataDirectory: '' ]
 
   classMethod: statusInDataDirectory: directory [
-    | available argv |
-    available := @ self isInstalled.
-    (available ~= 'true') ifTrue: [^ @ self missingJsonToolResult: 'status'].
+    | argv |
     argv := @ self argvFor: 'status' dataDirectory: directory.
     argv := argv arrayPush: '--robot-meta'.
     ^ @ self captureJsonArgv: argv command: 'status' inDirectory: ''
@@ -33,9 +31,7 @@ Cass subclass: Tool
   classMethod: index [ ^ @ self indexInDataDirectory: '' ]
 
   classMethod: indexInDataDirectory: directory [
-    | available argv |
-    available := @ self isInstalled.
-    (available ~= 'true') ifTrue: [^ @ self missingJsonToolResult: 'index'].
+    | argv |
     argv := @ self argvFor: 'index' dataDirectory: directory.
     ^ @ self captureJsonArgv: argv command: 'index' inDirectory: ''
   ]
@@ -48,12 +44,10 @@ Cass subclass: Tool
   ]
 
   classMethod: search: query inWorkspace: workspace agent: agent limit: limit dataDirectory: directory [
-    | available argv valid |
+    | argv valid |
     query isEmpty ifTrue: [^ @ Require reject: 'A session search query is required'].
     valid := @ self validLimit: limit.
     (valid ~= 'true') ifTrue: [^ @ Require reject: 'Limit must be an integer from 1 through 1000'].
-    available := @ self isInstalled.
-    (available ~= 'true') ifTrue: [^ @ self missingJsonToolResult: 'search'].
     argv := @ self argvFor: 'search' dataDirectory: directory.
     argv := @ self argv: argv appendEach: '["--mode","lexical","--no-daemon","--robot-meta","--timeout","5000","--max-content-length","2000"]'.
     argv := argv arrayPush: '--limit'.
@@ -67,12 +61,10 @@ Cass subclass: Tool
 
   # Follow source_path and line_number returned by search; preserve native JSON.
   classMethod: view: path line: line [
-    | available argv pattern |
+    | argv pattern |
     path isEmpty ifTrue: [^ @ Require reject: 'A session source path is required'].
     pattern := '^[1-9][0-9]*$'.
     (line matches: pattern) ifFalse: [^ @ Require reject: 'Line must be a positive integer'].
-    available := @ self isInstalled.
-    (available ~= 'true') ifTrue: [^ @ self missingJsonToolResult: 'view'].
     argv := @ self argvFor: 'view' dataDirectory: ''.
     argv := @ self argv: argv appendEach: '["--context","5"]'.
     argv := argv arrayPush: '--line'.
