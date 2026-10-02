@@ -17,7 +17,7 @@
 #
 #   # Query persisted objects
 #   @ Counter findAll           # All saved Counter instances
-#   @ Counter find 'value > 5'  # Filtered query
+#   @ Counter find: 'value > 5'  # Filtered query
 #   @ Counter count             # Number of saved instances
 
 Persistable trait
@@ -74,7 +74,7 @@ Persistable trait
   ]
 
   # Find persisted instances matching a predicate
-  # Usage: @ Counter find 'value > 5'
+  # Usage: @ Counter find: 'value > 5'
   # Supports: =, !=, >, <, >=, <=
   # When no predicate given, returns all (same as findAll)
   classMethod: find: predicate [

@@ -1,18 +1,18 @@
 # Store - OO wrapper for sqlite-json instance persistence
 #
 # Class methods (no instance needed):
-#   @ Store init                              - Initialize database
-#   @ Store createInstance <class> <id> <json> - Create instance
-#   @ Store getInstance <id>                  - Get instance JSON
-#   @ Store getField <id> <field>             - Get specific field
-#   @ Store setField <id> <field> <value>     - Set specific field
-#   @ Store deleteInstance <id>               - Delete instance
-#   @ Store getClass <id>                     - Get instance class
-#   @ Store findByClass <class>               - Find all of class
-#   @ Store countByClass <class>              - Count instances
-#   @ Store listClasses                       - List all classes
-#   @ Store query <where>                     - Raw SQL query
-#   @ Store ensureIndex <name> <path>         - Create virtual column + index
+#   @ Store init                                      - Initialize database
+#   @ Store createInstance: cls id: id data: json     - Create instance
+#   @ Store getInstance: id                           - Get instance JSON
+#   @ Store getField: id field: name                  - Get specific field
+#   @ Store setField: id field: name value: v         - Set specific field
+#   @ Store deleteInstance: id                        - Delete instance
+#   @ Store getClass: id                              - Get instance class
+#   @ Store findByClass: cls                          - Find all of class
+#   @ Store countByClass: cls                         - Count instances
+#   @ Store listClasses                               - List all classes
+#   @ Store query: where                              - Raw SQL query
+#   @ Store ensureIndex: name path: jsonPath          - Create virtual column + index
 
 Store subclass: Object
 
@@ -20,7 +20,7 @@ Store subclass: Object
   classPrimitive: init calls: db_init
 
   # Create a new instance
-  # Usage: @ Store createInstance <class_name> <instance_id> <json_data>
+  # Usage: @ Store createInstance: className id: instanceId data: json
   rawClassMethod: createInstance: class_name id: instance_id data: initial_data [
     local created_at full_data
     created_at=$(date +%s)
@@ -29,11 +29,11 @@ Store subclass: Object
   ]
 
   # Get full instance JSON
-  # Usage: @ Store getInstance <instance_id>
+  # Usage: @ Store getInstance: instanceId
   classPrimitive: getInstance: instance_id calls: db_get
 
   # Get a specific field from instance
-  # Usage: @ Store getField <instance_id> <field_name>
+  # Usage: @ Store getField: instanceId field: fieldName
   rawClassMethod: getField: instance_id field: field [
     local data
     data=$(db_get "$instance_id")
@@ -82,17 +82,17 @@ Store subclass: Object
   ]
 
   # Delete an instance
-  # Usage: @ Store deleteInstance <instance_id>
+  # Usage: @ Store deleteInstance: instanceId
   classPrimitive: deleteInstance: instance_id calls: db_delete
 
   # Get the class of an instance
-  # Usage: @ Store getClass <instance_id>
+  # Usage: @ Store getClass: instanceId
   classMethod: getClass: instance_id [
     ^ @ self getField: instance_id field: 'class'
   ]
 
   # Find all instances of a class
-  # Usage: @ Store findByClass <class_name>
+  # Usage: @ Store findByClass: className
   classPrimitive: findByClass: class_name calls: db_find_by_class
 
   # Find instances of a class matching a predicate
@@ -101,7 +101,7 @@ Store subclass: Object
   classPrimitive: findByClass: class_name where: predicate calls: _find_with_predicate
 
   # Count instances of a class
-  # Usage: @ Store countByClass <class_name>
+  # Usage: @ Store countByClass: className
   classPrimitive: countByClass: class_name calls: db_count_by_class
 
   # List all distinct classes
@@ -109,11 +109,11 @@ Store subclass: Object
   classPrimitive: listClasses calls: db_list_classes
 
   # Raw query (returns instance IDs)
-  # Usage: @ Store query <where_clause>
+  # Usage: @ Store query: whereClause
   classPrimitive: query: where_clause calls: db_query
 
   # Ensure a virtual column and index exist
-  # Usage: @ Store ensureIndex <column_name> <json_path>
+  # Usage: @ Store ensureIndex: columnName path: jsonPath
   rawClassMethod: ensureIndex: column_name path: json_path [
     db_ensure_virtual_column "$column_name" "$json_path" 2>/dev/null || true
     db_create_index "$column_name" 2>/dev/null || true
