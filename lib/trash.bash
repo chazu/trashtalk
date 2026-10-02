@@ -441,7 +441,26 @@ _env_cleanup_on_exit() {
   [[ -n "${TRASH_KEEP_ENV:-}" ]] && return 0
   _env_cleanup
 }
-trap _env_cleanup_on_exit EXIT
+# Chain an EXIT trap the sourcing script already set instead of replacing it,
+# or a script that cleans up its own scratch (or kills its children) and then
+# sources the runtime silently loses that cleanup. The prior trap runs after
+# ours and sees the exiting status. Re-sourcing keeps the first saved trap.
+# A subshell lists its parent's trap without inheriting it, so only the
+# process's own shell chains; adopting it there would run the parent's cleanup.
+_trash_on_exit() {
+  local status=$?
+  _env_cleanup_on_exit
+  [[ -n "${_TRASH_PRIOR_EXIT_TRAP:-}" && "$BASHPID" == "${_TRASH_PRIOR_EXIT_PID:-}" ]] || return 0
+  (exit "$status"); eval "$_TRASH_PRIOR_EXIT_TRAP"
+}
+_trash_exit_listing=$(trap -p EXIT)
+if [[ "$BASHPID" == "$$" && "$_trash_exit_listing" != *_trash_on_exit* ]]; then
+  _trash_exit_listing=${_trash_exit_listing#"trap -- "}
+  eval "_TRASH_PRIOR_EXIT_TRAP=${_trash_exit_listing%" EXIT"}"
+  _TRASH_PRIOR_EXIT_PID=$BASHPID
+fi
+unset _trash_exit_listing
+trap _trash_on_exit EXIT
 
 # Reject path-like receivers (.. , /foo, foo/bar) that could escape the compiled
 # class directory. Shared by both message-send entrypoints so the rule can't drift.
