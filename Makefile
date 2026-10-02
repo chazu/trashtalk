@@ -137,7 +137,7 @@ watch:
 		fswatch -o $(TRASH_DIR)/*.trash $(TRASH_DIR)/traits/*.trash $(TRASH_DIR)/user/*.trash $(TRASH_DIR)/*/*.trash 2>/dev/null | \
 		while read; do \
 			echo ""; \
-			echo "[$(shell date '+%H:%M:%S')] Change detected, rebuilding..."; \
+			echo "[$$(date '+%H:%M:%S')] Change detected, rebuilding..."; \
 			$(MAKE) bash; \
 		done; \
 	else \
