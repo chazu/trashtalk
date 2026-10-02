@@ -5,9 +5,23 @@
 SourceProposal subclass: Object
 
   classMethod: result: outcome phase: phase message: message [
-    | result |
-    result := #{schema_version: 1 outcome: outcome phase: phase message: message} asJson.
-    ^ result
+    ^ #{schema_version: 1 outcome: outcome phase: phase message: message} asJson
+  ]
+
+  # A gate that did not pass discards the staged candidate, and the compiled
+  # artifact when one is named. Prints the gate_failed result, or nothing.
+  classMethod: failedGate: gate phase: phase candidate: candidate artifact: artifact [
+    | ok file unused message |
+    ok := @ String jsonPath: 'ok' from: gate.
+    (ok = 'true') ifTrue: [^ ''].
+    file := @ File at: candidate.
+    unused := @ file delete.
+    (artifact notEmpty) ifTrue: [
+      file := @ File at: artifact.
+      unused := @ file delete
+    ].
+    message := @ String jsonPath: 'message' from: gate.
+    ^ @ self result: 'gate_failed' phase: phase message: message
   ]
 
   # jq owns structural JSON validation. This is deliberately a closed schema:
@@ -229,7 +243,7 @@ SourceProposal subclass: Object
   ]
 
   classMethod: reviewAndApply: proposal [
-    | validated ok message className declaredPath diff sourceFile available review reviewOutcome staged candidate compileResult artifact gate commit phase candidateFile unused title baseHash validReview |
+    | validated ok message className declaredPath diff sourceFile available review reviewOutcome staged candidate compileResult artifact gate failed commit phase title baseHash validReview |
     validated := @ self validate: proposal.
     ok := @ String jsonPath: 'ok' from: validated.
     (ok ~= 'true') ifTrue: [
@@ -283,40 +297,18 @@ SourceProposal subclass: Object
     ].
 
     compileResult := @ Trash compileClass: className source: candidate.
-    ok := @ String jsonPath: 'ok' from: compileResult.
-    (ok ~= 'true') ifTrue: [
-      candidateFile := @ File at: candidate.
-      unused := @ candidateFile delete.
-      message := @ String jsonPath: 'message' from: compileResult.
-      ^ @ self result: 'gate_failed' phase: 'compile' message: message
-    ].
+    failed := @ self failedGate: compileResult phase: 'compile' candidate: candidate artifact: ''.
+    failed notEmpty ifTrue: [^ failed].
     artifact := @ String jsonPath: 'artifact' from: compileResult.
     gate := @ Trash validateCompiledCandidate: artifact.
-    ok := @ String jsonPath: 'ok' from: gate.
-    (ok ~= 'true') ifTrue: [
-      candidateFile := @ File at: candidate.
-      unused := @ candidateFile delete.
-      message := @ String jsonPath: 'message' from: gate.
-      ^ @ self result: 'gate_failed' phase: 'bash' message: message
-    ].
+    failed := @ self failedGate: gate phase: 'bash' candidate: candidate artifact: ''.
+    failed notEmpty ifTrue: [^ failed].
     gate := @ Trash validateCompiledIdentity: artifact class: className.
-    ok := @ String jsonPath: 'ok' from: gate.
-    (ok ~= 'true') ifTrue: [
-      candidateFile := @ File at: candidate.
-      unused := @ candidateFile delete.
-      message := @ String jsonPath: 'message' from: gate.
-      ^ @ self result: 'gate_failed' phase: 'identity' message: message
-    ].
+    failed := @ self failedGate: gate phase: 'identity' candidate: candidate artifact: ''.
+    failed notEmpty ifTrue: [^ failed].
     gate := @ Trash testCompiledCandidate: artifact class: className.
-    ok := @ String jsonPath: 'ok' from: gate.
-    (ok ~= 'true') ifTrue: [
-      candidateFile := @ File at: candidate.
-      unused := @ candidateFile delete.
-      candidateFile := @ File at: artifact.
-      unused := @ candidateFile delete.
-      message := @ String jsonPath: 'message' from: gate.
-      ^ @ self result: 'gate_failed' phase: 'test' message: message
-    ].
+    failed := @ self failedGate: gate phase: 'test' candidate: candidate artifact: artifact.
+    failed notEmpty ifTrue: [^ failed].
 
     commit := @ self commit: candidate artifact: artifact source: sourceFile class: className expectedHash: baseHash.
     ok := @ String jsonPath: 'ok' from: commit.
