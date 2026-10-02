@@ -88,22 +88,19 @@ Http subclass: Object
 
   # GET with multiple headers (as JSON object)
   # Usage: response := @ Http get: url headers: '{"X-Api-Key":"abc","Accept":"application/json"}'
+  # jq emits alternating flag/value lines, so values reach curl unexpanded.
   rawClassMethod: get: url headers: headersJson [
-    local args="-s"
-    while IFS= read -r header; do
-      args="$args -H \"$header\""
-    done < <(echo "$2" | jq -r 'to_entries | .[] | "\(.key): \(.value)"')
-    eval "curl $args \"$1\""
+    local -a headers
+    mapfile -t headers < <(jq -r 'to_entries[] | "-H", "\(.key): \(.value)"' <<< "$2")
+    curl -s "${headers[@]}" "$1"
   ]
 
   # POST with custom headers
   # Usage: response := @ Http post: data to: url headers: '{"Authorization":"Bearer token"}'
   rawClassMethod: post: data to: url headers: headersJson [
-    local args="-s -X POST -H \"Content-Type: application/json\""
-    while IFS= read -r header; do
-      args="$args -H \"$header\""
-    done < <(echo "$3" | jq -r 'to_entries | .[] | "\(.key): \(.value)"')
-    eval "curl $args -d '$1' \"$2\""
+    local -a headers
+    mapfile -t headers < <(jq -r 'to_entries[] | "-H", "\(.key): \(.value)"' <<< "$3")
+    curl -s -X POST -H "Content-Type: application/json" "${headers[@]}" -d "$1" "$2"
   ]
 
   # ==========================================
@@ -167,11 +164,9 @@ Http subclass: Object
   # POST multipart form data
   # Usage: response := @ Http postMultipart: '{"field1":"value1","field2":"value2"}' to: url
   rawClassMethod: postMultipart: fieldsJson to: url [
-    local args="-s -X POST"
-    while IFS= read -r field; do
-      args="$args -F \"$field\""
-    done < <(echo "$1" | jq -r 'to_entries | .[] | "\(.key)=\(.value)"')
-    eval "curl $args \"$2\""
+    local -a fields
+    mapfile -t fields < <(jq -r 'to_entries[] | "-F", "\(.key)=\(.value)"' <<< "$1")
+    curl -s -X POST "${fields[@]}" "$2"
   ]
 
   # ==========================================
@@ -203,8 +198,8 @@ Http subclass: Object
   # GET with full response info as JSON
   # Usage: info := @ Http getFull: url
   rawClassMethod: getFull: url [
-    local body status time_total
-    local tmp="/tmp/http_$$_body"
+    local body status tmp
+    tmp=$(mktemp) || return
 
     status=$(curl -s -o "$tmp" -w "%{http_code}" "$1")
     body=$(cat "$tmp" 2>/dev/null)

@@ -183,35 +183,35 @@ File subclass: Object
   ]
 
   # Show help
-  rawMethod: help [
-    echo "=== File Operations ==="
-    echo ""
-    echo "Creating File objects:"
-    echo "  file=\$(@ File at: \"/path/to/file\")   - Reference existing/new file"
-    echo "  file=\$(@ File temp)                   - Create temp file"
-    echo "  file=\$(@ File tempWithPrefix: \"st-\") - Temp with prefix"
-    echo "  fifo=\$(@ File mkfifo: \"/tmp/pipe\")   - Create named pipe"
-    echo ""
-    echo "Reading:"
-    echo "  @ \$file read                          - Read entire contents"
-    echo ""
-    echo "Writing:"
-    echo "  @ \$file write: \"content\"              - Write (overwrite)"
-    echo "  @ \$file writeLine: \"content\"          - Write with newline"
-    echo ""
-    echo "Queries:"
-    echo "  @ \$file exists                        - Check existence"
-    echo "  @ \$file isFile / isDirectory / isFifo - Type checks"
-    echo "  @ \$file size                          - Size in bytes"
-    echo "  @ \$file path / directory / basename   - Path info"
-    echo "  @ \$file extension                     - Filename extension"
-    echo "  @ \$file modificationTime              - Unix timestamp"
-    echo ""
-    echo "Operations:"
-    echo "  @ \$file delete                        - Remove file"
-    echo "  @ \$file touch                         - Create/update timestamp"
-    echo ""
-    echo "Quick class methods:"
-    echo "  @ File read: \"/path\"                  - Read file directly"
-    echo "  @ File write: \"x\" to: \"/path\"         - Write directly"
+  method: help [
+    ^ '''=== File Operations ===
+
+Creating File objects:
+  file=$(@ File at: "/path/to/file")    - Reference existing/new file
+  file=$(@ File temp)                   - Create temp file
+  file=$(@ File tempWithPrefix: "st-")  - Temp with prefix
+  fifo=$(@ File mkfifo: "/tmp/pipe")    - Create named pipe
+
+Reading:
+  @ $file read                          - Read entire contents
+
+Writing:
+  @ $file write: "content"              - Write (overwrite)
+  @ $file writeLine: "content"          - Write with newline
+
+Queries:
+  @ $file exists                        - Check existence
+  @ $file isFile / isDirectory / isFifo - Type checks
+  @ $file size                          - Size in bytes
+  @ $file path / directory / basename   - Path info
+  @ $file extension                     - Filename extension
+  @ $file modificationTime              - Unix timestamp
+
+Operations:
+  @ $file delete                        - Remove file
+  @ $file touch                         - Create/update timestamp
+
+Quick class methods:
+  @ File read: "/path"                  - Read file directly
+  @ File write: "x" to: "/path"         - Write directly'''
   ]

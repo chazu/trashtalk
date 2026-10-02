@@ -34,7 +34,7 @@ FIFO subclass: Object
   # Open the FIFO read-write to prevent blocking
   # Spawns a background process that holds the FIFO open
   rawMethod: open [
-    local p keeper_pid pidfile
+    local p pidfile
     p="$(_ivar path)"
     pidfile="/tmp/fifo_keeper_${_INSTANCE}.pid"
 
@@ -44,11 +44,7 @@ FIFO subclass: Object
     # trap '' INT makes it ignore interrupt signals, across the exec too
     /bin/bash -c 'trap "" INT; echo $$ > "$2"; exec 3<>"$1"; exec sleep 2147483647' _ "$p" "$pidfile" </dev/null >/dev/null 2>&1 &
 
-    sleep 0.1
-    keeper_pid=$(cat "$pidfile" 2>/dev/null)
-    rm -f "$pidfile"
-
-    _ivar_set keeperPid "$keeper_pid"
+    @ "$_RECEIVER" recordPid: keeperPid from: "$pidfile"
   ]
 
   # Close the FIFO (kills the keeper process)
@@ -63,7 +59,7 @@ FIFO subclass: Object
 
   # Write a line to the FIFO
   rawMethod: writeLine: text [
-    local p text="$1"
+    local p
     p="$(_ivar path)"
     echo "$text" > "$p"
   ]
@@ -79,7 +75,7 @@ FIFO subclass: Object
 
   # Read a line with timeout (seconds)
   rawMethod: readLineTimeout: seconds [
-    local p line seconds="$1"
+    local p line
     p="$(_ivar path)"
     if read -t "$seconds" -r line < "$p" 2>/dev/null; then
       echo "$line"
@@ -106,7 +102,7 @@ FIFO subclass: Object
   # The command's stdout is redirected to the FIFO
   rawMethod: startWriter: cmd [
     pragma: direct
-    local p cmd="$1" pidfile writer_pid
+    local p pidfile
     p="$(_ivar path)"
     pidfile="/tmp/fifo_writer_${_INSTANCE}.pid"
 
@@ -115,23 +111,13 @@ FIFO subclass: Object
     # Opens FIFO read-write (<>) to avoid blocking on open
     /bin/bash -c 'trap "" INT; echo $$ > "$2"; exec 1<>"$3"; eval "$1"' _ "$cmd" "$pidfile" "$p" </dev/null 2>&1 &
 
-    sleep 0.1
-    writer_pid=$(cat "$pidfile" 2>/dev/null)
-    rm -f "$pidfile"
-
-    _ivar_set writerPid "$writer_pid"
+    @ "$_RECEIVER" recordPid: writerPid from: "$pidfile"
   ]
 
   # Stop the writer process
   rawMethod: stopWriter [
     pragma: direct
-    local writer_pid
-    writer_pid="$(_ivar writerPid)"
-    if [[ -n "$writer_pid" ]]; then
-      kill "$writer_pid" 2>/dev/null
-      kill -9 "$writer_pid" 2>/dev/null
-      _ivar_set writerPid ""
-    fi
+    @ "$_RECEIVER" killPidIn: writerPid
   ]
 
   # =========================================================================
@@ -142,7 +128,7 @@ FIFO subclass: Object
   # The current line is available in $__FIFO_LINE
   rawMethod: startReader: handler [
     pragma: direct
-    local p handler="$1" pidfile reader_pid
+    local p pidfile
     p="$(_ivar path)"
     pidfile="/tmp/fifo_reader_${_INSTANCE}.pid"
 
@@ -151,21 +137,38 @@ FIFO subclass: Object
     # Opens FIFO read-write (<>) to avoid blocking on open
     /bin/bash -c 'trap "" INT; echo $$ > "$2"; exec 0<>"$3"; while IFS= read -r __FIFO_LINE; do eval "$1"; done' _ "$handler" "$pidfile" "$p" </dev/null 2>&1 &
 
-    sleep 0.1
-    reader_pid=$(cat "$pidfile" 2>/dev/null)
-    rm -f "$pidfile"
-
-    _ivar_set readerPid "$reader_pid"
+    @ "$_RECEIVER" recordPid: readerPid from: "$pidfile"
   ]
 
   # Stop the reader process
   rawMethod: stopReader [
     pragma: direct
-    local reader_pid
-    reader_pid="$(_ivar readerPid)"
-    if [[ -n "$reader_pid" ]]; then
-      kill "$reader_pid" 2>/dev/null
-      kill -9 "$reader_pid" 2>/dev/null
-      _ivar_set readerPid ""
+    @ "$_RECEIVER" killPidIn: readerPid
+  ]
+
+  # =========================================================================
+  # Background process bookkeeping
+  # =========================================================================
+
+  # Spawned processes write their own pid; give them a moment, then record it
+  # in the named pid ivar.
+  rawMethod: recordPid: pidVar from: pidfile [
+    pragma: direct
+    local pid
+    sleep 0.1
+    pid=$(cat "$2" 2>/dev/null)
+    rm -f "$2"
+    _ivar_set "$1" "$pid"
+  ]
+
+  # Kill the process recorded in the named pid ivar and clear it.
+  rawMethod: killPidIn: pidVar [
+    pragma: direct
+    local pid
+    pid="$(_ivar "$1")"
+    if [[ -n "$pid" ]]; then
+      kill "$pid" 2>/dev/null
+      kill -9 "$pid" 2>/dev/null
+      _ivar_set "$1" ""
     fi
   ]
