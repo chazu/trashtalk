@@ -4,7 +4,7 @@
 #
 # Tool subclasses are singletons - use class methods directly:
 #   @ JqTool ensure
-#   @ JqTool run: '.foo'
+#   @ JqTool runArgvJson: '["jq",".foo"]'
 #
 # Subclass example:
 #   JqTool subclass: Tool
@@ -113,15 +113,6 @@ Tool subclass: Object
     installed := @ self isInstalled.
     (installed = 'true') ifFalse: [@ PathError signal: toolName , ' installed but not found on PATH'].
     ^ 'true'
-  ]
-
-  # Run the tool with arguments (synchronous)
-  classMethod: run: args [
-    | toolName toolPath |
-    toolName := @ self name.
-    toolPath := @ self path.
-    (toolPath isEmpty) ifTrue: [ @ ToolError signal: toolName , ' is not installed' ].
-    ^ @ Shell exec: toolPath , ' ' , args
   ]
 
   # Execute an exact argv vector represented as JSON. The DSL builds the typed
