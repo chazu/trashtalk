@@ -98,6 +98,16 @@ else
     fail "debug: silent when TRASH_DEBUG=0" "(empty)" "$silent_output"
 fi
 
+# TRASHTALK_LOG_LEVEL is the current switch and overrides TRASH_DEBUG
+level_output=$(TRASHTALK_LOG_LEVEL=debug TRASH_DEBUG=0 @ "$arr" debug: "level message" 2>&1)
+assert_contains "debug: outputs at TRASHTALK_LOG_LEVEL=debug" "level message" "$level_output"
+quiet_output=$(TRASHTALK_LOG_LEVEL=warn TRASH_DEBUG=1 @ "$arr" debug: "should not appear" 2>&1)
+if [[ -z "$quiet_output" ]]; then
+    pass "debug: silent at TRASHTALK_LOG_LEVEL=warn despite TRASH_DEBUG=1"
+else
+    fail "debug: silent at TRASHTALK_LOG_LEVEL=warn" "(empty)" "$quiet_output"
+fi
+
 # ------------------------------------------------------------------------------
 echo ""
 echo "--- 3. Trait Method: trace:args: ---"

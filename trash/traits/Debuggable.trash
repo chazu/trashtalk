@@ -3,16 +3,23 @@
 Debuggable trait
 
   # Output debug message to stderr with timestamp
-  # Only outputs if TRASH_DEBUG is set and non-zero
+  # Outputs when TRASHTALK_LOG_LEVEL is debug or trace. Without an explicit
+  # level, the legacy TRASH_DEBUG switch applies: set and non-zero enables it.
   # Usage: @ self debug: 'Something happened'
   method: debug: message [
-    | debugFlag timestamp output |
-    debugFlag := @ Env get: 'TRASH_DEBUG' default: '0'.
-    (debugFlag == '0') ifFalse: [
-      timestamp := @ Time nowFormatted: '%Y-%m-%d %H:%M:%S'.
-      output := "[" , timestamp , "] DEBUG (" , self , "): " , message.
-      @ Console error: output
-    ]
+    | level debugFlag timestamp output |
+    level := @ Env get: 'TRASHTALK_LOG_LEVEL' default: ''.
+    (level isEmpty) ifTrue: [
+      debugFlag := @ Env get: 'TRASH_DEBUG' default: '0'.
+      (debugFlag = '0') ifFalse: [level := 'debug']
+    ].
+    level caseOf: {
+      #('debug' 'trace') -> [
+        timestamp := @ Time nowFormatted: '%Y-%m-%d %H:%M:%S'.
+        output := "[" , timestamp , "] DEBUG (" , self , "): " , message.
+        @ Console error: output
+      ]
+    }
   ]
 
   # Trace a method call
