@@ -54,8 +54,7 @@ MAKI
 chmod +x "$tmp/bin/curl" "$MAKI_TEST_BINARY"
 export PATH="$tmp/bin"
 passed=0
-check() { if [[ "$2" == "$3" ]]; then echo "PASS: $1"; passed=$((passed+1)); else echo "FAIL: $1 expected=$2 got=$3"; exit 1; fi; }
-contains() { [[ "$3" == *"$2"* ]] || { echo "FAIL: $1 missing $2"; exit 1; }; echo "PASS: $1"; passed=$((passed+1)); }
+source tests/helpers/check.bash
 @ Maki name >/dev/null
 check 'Maki is a Tool subclass' Tool "$(@ Runtime superclassOf: Maki)"
 check 'missing Maki is detected' false "$(@ Maki isInstalled)"

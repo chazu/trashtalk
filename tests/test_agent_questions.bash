@@ -10,7 +10,7 @@ trap 'rm -rf "$tmp"' EXIT
 export SQLITE_JSON_DB="$tmp/state.db" TRASHTALK_USER=question-owner TRASHTALK_GUSGUS_PROFILE=shell TRASHTALK_NO_AUTOTICK=1
 db_init
 passed=0
-check() { if [[ "$2" == "$3" ]]; then echo "PASS: $1"; passed=$((passed+1)); else printf 'FAIL: %s expected=%s got=%s\n' "$1" "$2" "$3"; exit 1; fi; }
+source tests/helpers/check.bash
 state() { db_get "$1" | jq -r .state; }
 start_run() {
     local pair

@@ -12,8 +12,7 @@ export SQLITE_JSON_DB="$tmp/state.db" TRASHTALK_USER=session-owner TRASHTALK_NO_
 unset TRASHTALK_RUN_TOKEN
 db_init
 passed=0
-check() { if [[ "$2" == "$3" ]]; then echo "PASS: $1"; passed=$((passed+1)); else printf 'FAIL: %s expected=%s got=%s\n' "$1" "$2" "$3"; exit 1; fi; }
-must() { "$@" || { printf 'FAIL: command failed: %s\n' "$*" >&2; exit 1; }; }
+source tests/helpers/check.bash
 reject() { local name="$1"; shift; if "$@" >"$tmp/rejected.out" 2>"$tmp/rejected.err"; then echo "FAIL: accepted $name"; exit 1; else echo "PASS: $name"; passed=$((passed+1)); fi; }
 ensure() { @ Agent::Session ensureFor: "$1" archetype: "$arch" role: "$role" workspace: "$2" profile: shell; }
 mkdir "$tmp/one" "$tmp/two"

@@ -11,8 +11,7 @@ export SQLITE_JSON_DB="$tmp/state.db" TRASHTALK_USER=workboard-owner TRASHTALK_N
 unset TRASHTALK_RUN_TOKEN TRASHTALK_ASSIGNMENT_ID
 db_init
 passed=0
-check() { if [[ "$2" == "$3" ]]; then echo "PASS: $1"; passed=$((passed+1)); else printf 'FAIL: %s expected=%s got=%s\n' "$1" "$2" "$3"; exit 1; fi; }
-must() { "$@" || { printf 'FAIL: command failed: %s\n' "$*" >&2; exit 1; }; }
+source tests/helpers/check.bash
 
 identity=$(must @ Agent::Identity named: workboard-specialist)
 @ "$identity" owner: workboard-owner; @ "$identity" save
