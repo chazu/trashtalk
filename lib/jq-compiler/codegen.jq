@@ -1528,42 +1528,26 @@ def expr_gen($locals; $ivars; $cvars):
     (.value.type == "string") as $is_string |
     (.value.type == "dstring") as $is_dstring |
     (.value.type == "message_send" or .value.type == "cascade") as $is_message |
-    # Check for arithmetic binary ops - generate without subprocess capture code (no subshell wrapper)
-    (.value.type == "binary" and (.value.op == "+" or .value.op == "-" or .value.op == "*" or .value.op == "/" or .value.op == "%")) as $is_arithmetic |
-    # Also check for unary minus (negation)
-    (.value.type == "unary" and .value.op == "-") as $is_unary_arith |
+    # Arithmetic binary ops and unary minus assign without a subshell capture
+    ((.value.type == "binary" and (.value.op == "+" or .value.op == "-" or .value.op == "*" or .value.op == "/" or .value.op == "%")) or
+     (.value.type == "unary" and .value.op == "-")) as $is_arithmetic |
     (.value | if .type == "message_send" and env.TRASHTALK_VALUE_SEND == "1" then .valueCapture=true else . end | expr_gen($locals; $ivars; $cvars)) as $val_code |
     # For message sends, wrap in $() for command substitution
     (if $is_message then "$(\($val_code))" else $val_code end) as $final_val |
-    if expr_is_local(.target; $locals) then
-      if $is_arithmetic then
-        # Use (( var = expr )) to avoid subshell capture
-        "(( \(.target) = \(.value | arith_code) ))"
-      elif $is_unary_arith then
-        "(( \(.target) = \(.value | arith_code) ))"
-      elif $is_collection then "\(.target)=\($val_code)"
-      elif $is_string then "\(.target)=\"\(.value.value | shell_double_literal)\""  # Use raw string value
-      elif $is_dstring then "\(.target)=\($val_code)"  # dstrings already have quotes
-      elif $is_message then "\(.target)=\"\($final_val)\""
-      else "\(.target)=\"\($val_code)\""
-      end
-    elif expr_is_ivar(.target; $ivars) then
+    expr_is_local(.target; $locals) as $is_local |
+    if ($is_local | not) and expr_is_ivar(.target; $ivars) then
       # For ivars, use _ivar_set (collection literals rare in loop bodies)
       if $is_arithmetic then
         # Use temp var + arithmetic command to avoid subshell capture
-        "local __arith__; (( __arith__ = \(.value | arith_code) )); _ivar_set \(.target) \"$__arith__\""
-      elif $is_unary_arith then
         "local __arith__; (( __arith__ = \(.value | arith_code) )); _ivar_set \(.target) \"$__arith__\""
       elif $is_string then "_ivar_set \(.target) \(.value.value | @sh)"
       elif $is_dstring then "_ivar_set \(.target) \($val_code)"
       elif $is_message then "local __assigned__; __assigned__=\"\($final_val)\" && _ivar_set \(.target) \"$__assigned__\""
       else "_ivar_set \(.target) \"\($val_code)\""
       end
-    elif expr_is_cvar(.target; $cvars) then
+    elif ($is_local | not) and expr_is_cvar(.target; $cvars) then
       # For cvars, use _cvar_set
       if $is_arithmetic then
-        "local __arith__; (( __arith__ = \(.value | arith_code) )); _cvar_set \(.target) \"$__arith__\""
-      elif $is_unary_arith then
         "local __arith__; (( __arith__ = \(.value | arith_code) )); _cvar_set \(.target) \"$__arith__\""
       elif $is_string then "_cvar_set \(.target) \(.value.value | @sh)"
       elif $is_dstring then "_cvar_set \(.target) \($val_code)"
@@ -1571,9 +1555,9 @@ def expr_gen($locals; $ivars; $cvars):
       else "_cvar_set \(.target) \"\($val_code)\""
       end
     else
+      # Locals and undeclared names assign directly
       if $is_arithmetic then
-        "(( \(.target) = \(.value | arith_code) ))"
-      elif $is_unary_arith then
+        # Use (( var = expr )) to avoid subshell capture
         "(( \(.target) = \(.value | arith_code) ))"
       elif $is_collection then "\(.target)=\($val_code)"
       elif $is_string then "\(.target)=\"\(.value.value | shell_double_literal)\""  # Use raw string value
