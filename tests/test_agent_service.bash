@@ -23,11 +23,17 @@ plist="$tmp/home/Library/LaunchAgents/org.trashtalk.agent-worker.plist"
 plutil -extract ProgramArguments.1 raw -o - "$plist" | rg -F "$root/bin/trash-worker"
 [[ "$(plutil -extract AbandonProcessGroup raw -o - "$plist")" == true ]]
 [[ "$(plutil -extract KeepAlive raw -o - "$plist")" == true ]]
+# Without SQLITE_JSON_DB the worker uses the runtime's default store.
+[[ "$(plutil -extract EnvironmentVariables.SQLITE_JSON_DB raw -o - "$plist")" == "$SQLITE_JSON_DB" ]]
+env -u SQLITE_JSON_DB HOME="$tmp/home" TRASHTALK_DIR="$root" "$root/bin/trash-worker-service" install
+[[ "$(plutil -extract EnvironmentVariables.SQLITE_JSON_DB raw -o - "$plist")" == "$tmp/home/.trashtalk/instances.db" ]]
 export TEST_PLATFORM=Linux
 HOME="$tmp/home" XDG_CONFIG_HOME="$tmp/config" TRASHTALK_DIR="$root" "$root/bin/trash-worker-service" install
 unit="$tmp/config/systemd/user/org.trashtalk.agent-worker.service"
 rg -q '^KillMode=process$' "$unit"
 rg -q '^Restart=always$' "$unit"
+env -u SQLITE_JSON_DB HOME="$tmp/home" XDG_CONFIG_HOME="$tmp/config" TRASHTALK_DIR="$root" "$root/bin/trash-worker-service" install
+rg -qF "Environment=\"SQLITE_JSON_DB=$tmp/home/.trashtalk/instances.db\"" "$unit"
 rg -q '^--user daemon-reload$' "$SERVICE_CALLS"
 HOME="$tmp/home" XDG_CONFIG_HOME="$tmp/config" "$root/bin/trash-worker-service" start
 rg -q '^--user enable --now org.trashtalk.agent-worker.service$' "$SERVICE_CALLS"

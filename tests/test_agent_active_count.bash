@@ -69,4 +69,11 @@ _db_sql "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<11
 printf invalid > "$TMPDIR/broken.db"
 if SQLITE_JSON_DB="$TMPDIR/broken.db" "$api" > "$TMPDIR/out" 2>/dev/null; then exit 1; fi
 [[ ! -s "$TMPDIR/out" ]]
+# Without SQLITE_JSON_DB the store is ~/.trashtalk/instances.db, as for the
+# runtime, wherever the checkout lives.
+mkdir -p "$TMPDIR/home/.trashtalk"
+printf invalid > "$TMPDIR/home/.trashtalk/instances.db"
+if env -u SQLITE_JSON_DB HOME="$TMPDIR/home" "$api" >/dev/null 2>&1; then exit 1; fi
+rm "$TMPDIR/home/.trashtalk/instances.db"
+[[ $(env -u SQLITE_JSON_DB HOME="$TMPDIR/home" "$api") == 0 ]]
 echo 'PASS: active session semantics, indexed plan, jq-free CLI and failures'

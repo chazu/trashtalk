@@ -47,8 +47,8 @@ tracked state, not an OS process-liveness probe, and does not reconcile records.
 Ordinary shell consumers can call `~/.trashtalk/bin/trash-active-sessions`
 without loading the runtime or installing jq. It uses Bash and SQLite only,
 prints `0` for an absent store without creating it, and fails on storage errors.
-`SQLITE_JSON_DB` overrides the store, otherwise `TRASHTALK_DIR/instances.db`
-(or `~/.trashtalk/instances.db`) is used. `TRASH_SQLITE3` / `SQLITE3` can select
+`SQLITE_JSON_DB` overrides the store, otherwise `~/.trashtalk/instances.db` is
+used, as for the runtime and the installed worker service. `TRASH_SQLITE3` / `SQLITE3` can select
 SQLite. Both APIs share one scalar query, an active-run-only partial index and
 primary-key session probes. The index is installed lazily on existing stores
 (first use needs write access), with a 50 ms lock timeout. Subsequent reads scan

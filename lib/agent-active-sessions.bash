@@ -5,7 +5,7 @@ trashtalk_active_session_count() {
         printf 'Active session count is a persisted snapshot, not a Store transaction query.\n' >&2
         return 1
     fi
-    local db="${SQLITE_JSON_DB:-${TRASHTALK_DIR:-$HOME/.trashtalk}/instances.db}"
+    local db="${SQLITE_JSON_DB:-$HOME/.trashtalk/instances.db}"
     local sqlite="${TRASH_SQLITE3:-${SQLITE3:-${_SQLITE3:-sqlite3}}}"
     [[ -f "$db" ]] || { printf '0\n'; return; }
     # Idempotent lazy index installation also supports existing stores. Only
