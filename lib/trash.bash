@@ -1214,17 +1214,9 @@ function _create_instance_legacy {
     if [[ -z "$default_val" ]]; then
       # No default - use null
       data=$(echo "$data" | jq -c ". + {\"$var\": null}")
-    elif [[ "$default_val" =~ ^-?[0-9]+$ ]]; then
-      # Numeric default
-      data=$(echo "$data" | jq -c ". + {\"$var\": $default_val}")
-    elif [[ "$default_val" =~ ^-?[0-9]+\.[0-9]+$ ]]; then
-      # Float default
-      data=$(echo "$data" | jq -c ". + {\"$var\": $default_val}")
-    elif [[ "$default_val" == "true" || "$default_val" == "false" ]]; then
-      # Boolean default
-      data=$(echo "$data" | jq -c ". + {\"$var\": $default_val}")
-    elif [[ "$default_val" == "[]" || "$default_val" == "{}" ]]; then
-      # Empty array or object
+    elif [[ "$default_val" =~ ^-?[0-9]+(\.[0-9]+)?$ || "$default_val" == true || "$default_val" == false \
+            || "$default_val" == "[]" || "$default_val" == "{}" ]]; then
+      # Integer, float, boolean, or empty array/object: a raw JSON literal
       data=$(echo "$data" | jq -c ". + {\"$var\": $default_val}")
     else
       # String default (use --arg for safe escaping)
