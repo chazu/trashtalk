@@ -40,150 +40,172 @@ Trash subclass: Object
   # and whether classes have been compiled. Checks the selected session harness;
   # Maki installation is automatic only when the Maki profile is selected.
   # Exits non-zero if a required check or selected Maki installation fails.
+  #
+  # Each doctor* check prints findings as ok, warn or bad, a tab, then the
+  # message (the Config check format); doctor colours and tallies them. Other
+  # lines, such as a multi-line message's continuation, are shown as they are.
   rawMethod: doctor [
-    local ok=0 warn=0 bad=0
+    local ok=0 warn=0 bad=0 tab check report line
     local g='\033[0;32m' y='\033[0;33m' r='\033[0;31m' n='\033[0m'
-    _d_ok()   { echo -e "  ${g}OK${n}   $1"; ok=$((ok+1)); }
-    _d_warn() { echo -e "  ${y}WARN${n} $1"; warn=$((warn+1)); }
-    _d_bad()  { echo -e "  ${r}FAIL${n} $1"; bad=$((bad+1)); }
+    printf -v tab '\t'
 
     echo "=== Trashtalk Doctor ==="
+    for check in doctorBash doctorTools doctorConfig doctorInnards doctorHarness \
+                 doctorAgent doctorSqlite doctorWorkstation doctorCompiled; do
+      report=$(@ "$_RECEIVER" "$check")
+      [[ -n "$report" ]] || continue
+      while IFS= read -r line; do
+        case "$line" in
+          "ok$tab"*) echo -e "  ${g}OK${n}   ${line#*$tab}"; ok=$((ok+1)) ;;
+          "warn$tab"*) echo -e "  ${y}WARN${n} ${line#*$tab}"; warn=$((warn+1)) ;;
+          "bad$tab"*) echo -e "  ${r}FAIL${n} ${line#*$tab}"; bad=$((bad+1)) ;;
+          *) echo -e "$line" ;;
+        esac
+      done <<< "$report"
+    done
 
-    # Bash 4.4+ (mapfile -d for exact argv)
+    echo ""
+    echo "Summary: $ok ok, $warn warning(s), $bad problem(s)"
+    [[ $bad -eq 0 ]]
+  ]
+
+  # Bash 4.4+ (mapfile -d for exact argv)
+  rawMethod: doctorBash [
     if (( BASH_VERSINFO[0] > 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] >= 4) )); then
-      _d_ok "bash ${BASH_VERSION%%(*} (>= 4.4)"
+      printf 'ok\t%s\n' "bash ${BASH_VERSION%%(*} (>= 4.4)"
     else
-      _d_bad "bash ${BASH_VERSION%%(*} too old; need 4.4+ (macOS: brew install bash)"
+      printf 'bad\t%s\n' "bash ${BASH_VERSION%%(*} too old; need 4.4+ (macOS: brew install bash)"
     fi
+  ]
 
-    # required tools
+  rawMethod: doctorTools [
     local tool
     for tool in jo jq sqlite3 uuidgen; do
       if command -v "$tool" >/dev/null 2>&1; then
-        _d_ok "$tool found ($(command -v "$tool"))"
+        printf 'ok\t%s\n' "$tool found ($(command -v "$tool"))"
       else
-        _d_bad "$tool missing (macOS: brew install jo jq sqlite; uuidgen is built in)"
+        printf 'bad\t%s\n' "$tool missing (macOS: brew install jo jq sqlite; uuidgen is built in)"
       fi
     done
+  ]
 
-    # User config: file syntax, unknown keys, invalid values, env overrides.
-    local config_report config_level config_message tab
-    config_report=$(@ Config check)
-    printf -v tab '\t'
-    while IFS="$tab" read -r config_level config_message; do
-      case "$config_level" in
-        ok) _d_ok "$config_message" ;;
-        warn) _d_warn "$config_message" ;;
-        bad) _d_bad "$config_message" ;;
-      esac
-    done <<< "$config_report"
+  # User config: file syntax, unknown keys, invalid values, env overrides.
+  rawMethod: doctorConfig [
+    @ Config check
+  ]
 
-    # Innards is optional; edit/page/browse each retain a terminal fallback.
+  # Innards is optional; edit/page/browse each retain a terminal fallback.
+  rawMethod: doctorInnards [
     if command -v inmacs >/dev/null 2>&1 && command -v inpage >/dev/null 2>&1; then
-      _d_ok "Innards found (inmacs and inpage)"
+      printf 'ok\t%s\n' "Innards found (inmacs and inpage)"
     else
-      _d_warn "Innards not found; edit/page workflows use VISUAL/EDITOR and PAGER fallbacks"
+      printf 'warn\t%s\n' "Innards not found; edit/page workflows use VISUAL/EDITOR and PAGER fallbacks"
     fi
     if command -v inpick >/dev/null 2>&1; then
-      _d_ok "Innards picker found (inpick)"
+      printf 'ok\t%s\n' "Innards picker found (inpick)"
     elif command -v fzf >/dev/null 2>&1; then
-      _d_warn "inpick not found; browser workflows use the fzf fallback"
+      printf 'warn\t%s\n' "inpick not found; browser workflows use the fzf fallback"
     else
-      _d_warn "inpick and fzf not found; install Innards or fzf for interactive browsing"
+      printf 'warn\t%s\n' "inpick and fzf not found; install Innards or fzf for interactive browsing"
     fi
     if command -v inui >/dev/null 2>&1; then
-      _d_ok "Innards UI toolkit found (inui); inspect opens the object inspector"
+      printf 'ok\t%s\n' "Innards UI toolkit found (inui); inspect opens the object inspector"
     else
-      _d_warn "inui not found; inspect prints a textual object description"
+      printf 'warn\t%s\n' "inui not found; inspect prints a textual object description"
     fi
+  ]
 
-    # Check the configured session harness; provider login stays interactive.
+  # Check the configured session harness; provider login stays interactive.
+  rawMethod: doctorHarness [
     local session_profile session_executable session_version
     session_profile=$(@ Gusgus profile)
     case "$session_profile" in
       jcode)
         session_executable=$(@ Jcode path)
         if [[ -n "$session_executable" ]] && session_version=$("$session_executable" --version 2>&1); then
-          _d_ok "Jcode found ($session_executable); $session_version"
+          printf 'ok\t%s\n' "Jcode found ($session_executable); $session_version"
         else
-          _d_bad "Jcode is missing or cannot run; $(@ Jcode installCommand)"
+          printf 'bad\t%s\n' "Jcode is missing or cannot run; $(@ Jcode installCommand)"
         fi
         ;;
       maki)
         if @ Maki ensure >/dev/null; then
-          _d_ok "Maki found ($(@ Maki path)); $(@ Maki version)"
+          printf 'ok\t%s\n' "Maki found ($(@ Maki path)); $(@ Maki version)"
         else
-          _d_bad "Maki installation/check failed; retry with: @ Maki install"
+          printf 'bad\t%s\n' "Maki installation/check failed; retry with: @ Maki install"
         fi
         ;;
     esac
+  ]
 
-    # The selected one-shot backend is optional. Installation and authentication stay
-    # explicit because they belong to the external harness.
+  # The selected one-shot backend is optional. Installation and authentication stay
+  # explicit because they belong to the external harness.
+  rawMethod: doctorAgent [
     local agent_backend="${TRASHTALK_AGENT_BACKEND:-codex}" agent_auth
     case "$agent_backend" in
       codex|CodexAgent)
         if command -v codex >/dev/null 2>&1; then
-          _d_ok "Codex found ($(command -v codex)); one-shot Agent backend selected"
+          printf 'ok\t%s\n' "Codex found ($(command -v codex)); one-shot Agent backend selected"
           if agent_auth=$(codex login status 2>&1) && [[ "$agent_auth" == *ChatGPT* ]]; then
-            _d_ok "$agent_auth; subscription-backed one-shot Agent is available"
+            printf 'ok\t%s\n' "$agent_auth; subscription-backed one-shot Agent is available"
           else
-            _d_warn "Codex is not authenticated with ChatGPT; run: codex login (${agent_auth:-status unavailable})"
+            printf 'warn\t%s\n' "Codex is not authenticated with ChatGPT; run: codex login (${agent_auth:-status unavailable})"
           fi
         else
-          _d_warn "Codex backend selected but codex is not installed"
+          printf 'warn\t%s\n' "Codex backend selected but codex is not installed"
         fi
         ;;
       *)
-        _d_warn "Unknown TRASHTALK_AGENT_BACKEND '$agent_backend'; one-shot Agent uses CodexAgent"
+        printf 'warn\t%s\n' "Unknown TRASHTALK_AGENT_BACKEND '$agent_backend'; one-shot Agent uses CodexAgent"
         ;;
     esac
     if command -v indiff >/dev/null 2>&1 && command -v patch >/dev/null 2>&1; then
-      _d_ok "proposal review found (indiff and patch)"
+      printf 'ok\t%s\n' "proposal review found (indiff and patch)"
     else
-      _d_warn "proposal review unavailable; install Innards indiff and patch to review source proposals"
+      printf 'warn\t%s\n' "proposal review unavailable; install Innards indiff and patch to review source proposals"
     fi
+  ]
 
-    # sqlite3 binary actually in use + honker extension loadability
+  # sqlite3 binary actually in use + honker extension loadability
+  rawMethod: doctorSqlite [
     echo "  sqlite3 in use: ${_SQLITE3:-sqlite3}"
-    local ext_suffix ext_base ext_path ext_found=""
+    local ext_suffix ext_base ext_found=""
     [[ "$(uname)" == "Darwin" ]] && ext_suffix="dylib" || ext_suffix="so"
     for ext_base in "$HONKER_EXT" "$HOME/.trashtalk/lib/vendor/honker/libhonker_ext" "/usr/local/lib/libhonker_ext" "/opt/homebrew/lib/libhonker_ext"; do
       [[ -n "$ext_base" && -f "${ext_base}.${ext_suffix}" ]] && { ext_found="${ext_base}.${ext_suffix}"; break; }
     done
     if [[ -z "$ext_found" ]]; then
-      _d_warn "honker extension not installed (optional; run bin/install-honker)"
+      printf 'warn\t%s\n' "honker extension not installed (optional; run bin/install-honker)"
     elif "${_SQLITE3:-sqlite3}" ":memory:" ".load ${ext_found}" "SELECT 1;" >/dev/null 2>&1; then
-      _d_ok "honker extension loadable via ${_SQLITE3:-sqlite3}"
+      printf 'ok\t%s\n' "honker extension loadable via ${_SQLITE3:-sqlite3}"
     else
-      _d_warn "honker found but ${_SQLITE3:-sqlite3} can't load it; install extension-capable sqlite3 (brew install sqlite) and set TRASH_SQLITE3"
+      printf 'warn\t%s\n' "honker found but ${_SQLITE3:-sqlite3} can't load it; install extension-capable sqlite3 (brew install sqlite) and set TRASH_SQLITE3"
     fi
+  ]
 
-    # Workstation feature capabilities are warnings, not global requirements.
-    # Introspection only: never bootstrap, read or acknowledge a Stream here.
+  # Workstation feature capabilities are warnings, not global requirements.
+  # Introspection only: never bootstrap, read or acknowledge a Stream here.
+  rawMethod: doctorWorkstation [
     if [[ $(@ Tools::Cue isInstalled) == true ]]; then
-      _d_ok "Workstation CUE validation available"
+      printf 'ok\t%s\n' "Workstation CUE validation available"
     else
-      _d_warn "Workstation CUE unavailable; install explicitly: go install cuelang.org/go/cmd/cue@latest"
+      printf 'warn\t%s\n' "Workstation CUE unavailable; install explicitly: go install cuelang.org/go/cmd/cue@latest"
     fi
     if [[ $(@ Workstation::Schema streamAvailable) == true ]]; then
-      _d_ok "Workstation Honker Stream capability available (receipts, attention, and routing)"
+      printf 'ok\t%s\n' "Workstation Honker Stream capability available (receipts, attention, and routing)"
     else
-      _d_warn "Workstation Honker Stream unavailable; run bin/install-honker and use extension-capable TRASH_SQLITE3"
+      printf 'warn\t%s\n' "Workstation Honker Stream unavailable; run bin/install-honker and use extension-capable TRASH_SQLITE3"
     fi
+  ]
 
-    # compiled classes present
+  rawMethod: doctorCompiled [
     local nclasses
     nclasses=$(find "$TRASHDIR/.compiled" -maxdepth 1 -type f 2>/dev/null | wc -l | tr -d ' ')
     if [[ "${nclasses:-0}" -gt 0 ]]; then
-      _d_ok "$nclasses compiled classes in $TRASHDIR/.compiled"
+      printf 'ok\t%s\n' "$nclasses compiled classes in $TRASHDIR/.compiled"
     else
-      _d_bad "no compiled classes in $TRASHDIR/.compiled -- run 'make'"
+      printf 'bad\t%s\n' "no compiled classes in $TRASHDIR/.compiled -- run 'make'"
     fi
-
-    echo ""
-    echo "Summary: $ok ok, $warn warning(s), $bad problem(s)"
-    [[ $bad -eq 0 ]]
   ]
 
   # List all available objects (compiled classes)
@@ -448,34 +470,23 @@ Trash subclass: Object
       return 1
     fi
 
-    local compiled_name="${class_name//::/__}" source_name="${class_name//:://}"
-    local source_file="$TRASHDIR/${source_name}.trash"
-    local user_source="$TRASHDIR/user/${source_name}.trash"
-    local trait_source="$TRASHDIR/traits/${source_name}.trash"
-    local target_file=""
-    local file_to_compile=""
-
-    # Find source file and determine target (check user dir before system dir)
-    if [[ -f "$user_source" ]]; then
-      file_to_compile="$user_source"
-      target_file="$TRASHDIR/.compiled/$compiled_name"
-      echo "Compiling user class $class_name..."
-    elif [[ -f "$trait_source" ]]; then
-      file_to_compile="$trait_source"
-      target_file="$TRASHDIR/.compiled/traits/$compiled_name"
-      echo "Compiling trait $class_name..."
-    elif [[ -f "$source_file" ]]; then
-      file_to_compile="$source_file"
-      target_file="$TRASHDIR/.compiled/$compiled_name"
-      echo "Compiling class $class_name..."
-    else
+    # sourceFileFor: owns the lookup order, so edit: and this agree.
+    local source_name="${class_name//:://}" file_to_compile target_file
+    file_to_compile=$(@ "$_RECEIVER" sourceFileFor: "$class_name")
+    if [[ -z "$file_to_compile" ]]; then
       echo "Error: No source file found for $class_name"
       echo "Searched:"
-      echo "  - $user_source"
-      echo "  - $source_file"
-      echo "  - $trait_source"
+      echo "  - $TRASHDIR/user/${source_name}.trash"
+      echo "  - $TRASHDIR/${source_name}.trash"
+      echo "  - $TRASHDIR/traits/${source_name}.trash"
       return 1
     fi
+    target_file=$(@ "$_RECEIVER" compiledTargetFor: "$class_name" source: "$file_to_compile")
+    case "$file_to_compile" in
+      "$TRASHDIR/user/"*) echo "Compiling user class $class_name..." ;;
+      "$TRASHDIR/traits/"*) echo "Compiling trait $class_name..." ;;
+      *) echo "Compiling class $class_name..." ;;
+    esac
 
     # Graph validation includes registered reverse dependencies before installing.
     if ! "$SCRIPT_DIR/jq-compiler/driver.bash" 'compile-cached' "$file_to_compile" "$target_file"; then
@@ -866,15 +877,20 @@ EOF
     fi
   ]
 
+  # Installed artifact path for a source: global traits build under traits/.
+  rawMethod: compiledTargetFor: className source: sourceFile [
+    local compiled_name="${className//::/__}"
+    if [[ "$sourceFile" == *"/traits/"* ]]; then
+      printf '%s\n' "$TRASHDIR/.compiled/traits/$compiled_name"
+    else
+      printf '%s\n' "$TRASHDIR/.compiled/$compiled_name"
+    fi
+  ]
+
   rawMethod: installCompiledCandidate: artifact for: className source: sourceFile [
     pragma: direct
-    local compiled_name target output
-    compiled_name="${className//::/__}"
-    if [[ "$sourceFile" == *"/traits/"* ]]; then
-      target="$TRASHDIR/.compiled/traits/$compiled_name"
-    else
-      target="$TRASHDIR/.compiled/$compiled_name"
-    fi
+    local target output
+    target=$(@ "$_RECEIVER" compiledTargetFor: "$className" source: "$sourceFile")
     mkdir -p "$(dirname "$target")"
     if ! output=$("$SCRIPT_DIR/jq-compiler/driver.bash" 'compile-cached' "$sourceFile" "$target" 2>&1); then
       rm -f "$artifact"
@@ -915,21 +931,24 @@ EOF
   # introduced.
   rawMethod: astRecords [
     pragma: direct
-    local -a sources
-    mapfile -d '' -t sources < <(find "$TRASHDIR" -type f -name '*.trash' \
-      -not -path "$TRASHDIR/.compiled/*" -print0)
-    [[ ${#sources[@]} -gt 0 ]] || return 0
-    "$SCRIPT_DIR/jq-compiler/driver.bash" 'parse-many' "${sources[@]}"
+    @ "$_RECEIVER" compilerCommand: 'parse-many' overSourcesShowing: ''
   ]
 
   # Source discovery and compiler invocation are an OS boundary. The compiler
   # owns content/query invalidation for the derived public symbol records.
   rawMethod: symbolRecords [
+    @ "$_RECEIVER" compilerCommand: 'symbols-many' overSourcesShowing: 'Indexing symbols'
+  ]
+
+  # Run one driver command over every .trash source outside .compiled/. An
+  # empty label runs without a progress indicator.
+  rawMethod: compilerCommand: command overSourcesShowing: label [
+    pragma: direct
     local -a sources
     mapfile -d '' -t sources < <(find "$TRASHDIR" -type f -name '*.trash' \
       -not -path "$TRASHDIR/.compiled/*" -print0)
     [[ ${#sources[@]} -gt 0 ]] || return 0
-    _trash_with_progress 'Indexing symbols' "$SCRIPT_DIR/jq-compiler/driver.bash" 'symbols-many' "${sources[@]}"
+    _trash_with_progress "$label" "$SCRIPT_DIR/jq-compiler/driver.bash" "$command" "${sources[@]}"
   ]
 
   rawMethod: symbolRecordsForSource: sourceFile [
