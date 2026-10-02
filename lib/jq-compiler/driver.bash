@@ -160,6 +160,11 @@ Commands:
   ast <file>          Pretty-print the AST with syntax highlighting
   compile <file>      Compile to bash and output to stdout
   compile <file> -o <output>  Compile to bash and write to file
+  compile-preview <file> <output>  Compile one class without installing it
+  compile-cached <file> <output>   Build and install one class (make single)
+  compile-many <dir> <jobs> <files>  Build classes into <dir> (what make runs)
+  fingerprint         Print the compiler version used in cache keys
+  (build-metadata and build-worker are internal to compile-many)
 
 Options:
   -o, --output <file>   Write output to file instead of stdout
@@ -577,7 +582,7 @@ cmd_compile() {
 
     # Check if codegen exists
     if [[ ! -f "$CODEGEN" ]]; then
-        error "Code generator not found: $CODEGEN (not yet implemented)"
+        error "Code generator not found: $CODEGEN"
     fi
 
     # Parse to AST
@@ -762,6 +767,7 @@ main() {
             ;;
 
         compile-preview)
+            [[ $# == 2 ]] || error 'Usage: compile-preview <source> <output>'
             preview_dir=$(mktemp -d "${TMPDIR:-/tmp}/trash-preview.XXXXXX")
             if BUILD_SINGLE_OUTPUT="$preview_dir/candidate" cmd_compile_many "$preview_dir" 1 "$1" >&2; then
                 cp "$preview_dir/candidate" "$2"
