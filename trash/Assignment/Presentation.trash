@@ -73,23 +73,22 @@ Presentation trait
   ]
 
   method: show [
-
     pragma: stream
-    | data execution history events questions value runs answer text |
+    | data execution history events questions value runs answer |
     data := @ self snapshot.
-    text := 'Assignment: ' , (data objectAt: 'objective'). @ Console print: text.
-    text := 'State: ' , (data objectAt: 'state') , ' (' , (data objectAt: 'activity') , ')'. @ Console print: text.
-    text := 'Criteria: ' , (data objectAt: 'completionCriteria'). @ Console print: text.
-    text := 'Attempts: ' , (data objectAt: 'attempts') , ' of ' , (data objectAt: 'attemptLimit'). @ Console print: text.
-    text := 'Requester: ' , (data objectAt: 'requester') , '  Origin: ' , (data objectAt: 'originMessage'). @ Console print: text.
-    text := 'Assignee: ' , (data objectAt: 'assignee'). @ Console print: text.
-    text := 'Workspace: ' , (data objectAt: 'workspace'). @ Console print: text.
-    text := 'Session: ' , (data objectAt: 'currentSession') , '  Delivery: ' , (data objectAt: 'delivery'). @ Console print: text.
+    @ Console print: 'Assignment: ' , (data objectAt: 'objective').
+    @ Console print: 'State: ' , (data objectAt: 'state') , ' (' , (data objectAt: 'activity') , ')'.
+    @ Console print: 'Criteria: ' , (data objectAt: 'completionCriteria').
+    @ Console print: 'Attempts: ' , (data objectAt: 'attempts') , ' of ' , (data objectAt: 'attemptLimit').
+    @ Console print: 'Requester: ' , (data objectAt: 'requester') , '  Origin: ' , (data objectAt: 'originMessage').
+    @ Console print: 'Assignee: ' , (data objectAt: 'assignee').
+    @ Console print: 'Workspace: ' , (data objectAt: 'workspace').
+    @ Console print: 'Session: ' , (data objectAt: 'currentSession') , '  Delivery: ' , (data objectAt: 'delivery').
     execution := data jsonAt: 'execution'.
     value := execution objectAt: 'deliveryState'.
-    (value notEmpty) ifTrue: [text := 'Execution: ' , (execution objectAt: 'sessionState') , ', delivery ' , value , ', run ' , (execution objectAt: 'runState') , ' ' , (execution objectAt: 'error'). @ Console print: text].
+    (value notEmpty) ifTrue: [@ Console print: 'Execution: ' , (execution objectAt: 'sessionState') , ', delivery ' , value , ', run ' , (execution objectAt: 'runState') , ' ' , (execution objectAt: 'error')].
     value := data objectAt: 'externalIssue'.
-    (value notEmpty) ifTrue: [text := 'Issue reference: ' , value. @ Console print: text].
+    (value notEmpty) ifTrue: [@ Console print: 'Issue reference: ' , value].
     history := data jsonAt: 'history'.
     history arrayEach: [:entry |
       runs := entry jsonAt: 'runs'.
@@ -99,16 +98,16 @@ Presentation trait
         value := value , run
       ].
       runs := value.
-      text := 'Participation ' , (entry objectAt: 'generation') , ': ' , (entry objectAt: 'session') , '  Runs: ' , runs. @ Console print: text
+      @ Console print: 'Participation ' , (entry objectAt: 'generation') , ': ' , (entry objectAt: 'session') , '  Runs: ' , runs
     ].
     events := data jsonAt: 'events'.
-    events arrayEach: [:event | text := (event objectAt: 'kind') , ' [' , (event objectAt: 'actor') , ']: ' , (event objectAt: 'body'). @ Console print: text].
+    events arrayEach: [:event | @ Console print: (event objectAt: 'kind') , ' [' , (event objectAt: 'actor') , ']: ' , (event objectAt: 'body')].
     questions := data jsonAt: 'questions'.
     questions arrayEach: [:question |
       answer := question objectAt: 'answer'.
       (answer isEmpty) ifTrue: [answer := 'awaiting reply'].
-      text := 'Question: ' , (question objectAt: 'message') , '  Answer: ' , answer. @ Console print: text
+      @ Console print: 'Question: ' , (question objectAt: 'message') , '  Answer: ' , answer
     ].
     value := data objectAt: 'resultMessage'.
-    (value notEmpty) ifTrue: [text := 'Outcome message: ' , value. @ Console print: text]
+    (value notEmpty) ifTrue: [@ Console print: 'Outcome message: ' , value]
   ]
