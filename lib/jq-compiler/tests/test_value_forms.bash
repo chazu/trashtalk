@@ -115,3 +115,12 @@ for attempt in 1 2; do
     grep -q 'Code outside a method never runs' "$scratch/late.err" || { cat "$scratch/late.err" >&2; exit 1; }
 done
 echo "PASS: code after the class body is rejected, including from the AST cache"
+
+# `compile --check` names the syntax error instead of exiting silently.
+printf 'Bad subclass: Object\n  rawMethod: bad [\n    if then fi\n  ]\n' > "$scratch/Bad.trash"
+if "$COMPILER_DIR/driver.bash" compile "$scratch/Bad.trash" --check >/dev/null 2>"$scratch/bad.err"; then
+    echo "FAIL: --check accepted invalid Bash" >&2; exit 1
+fi
+grep -q 'Syntax errors in compiled output' "$scratch/bad.err" && grep -q "unexpected token" "$scratch/bad.err" \
+    || { echo "FAIL: --check did not report the syntax error:" >&2; cat "$scratch/bad.err" >&2; exit 1; }
+echo "PASS: compile --check reports syntax errors"

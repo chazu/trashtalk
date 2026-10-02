@@ -164,7 +164,6 @@ Commands:
 Options:
   -o, --output <file>   Write output to file instead of stdout
   -c, --check           Validate compiled output with bash -n
-  -v, --verbose         Show intermediate steps
   -h, --help            Show this help message
 
 Examples:
@@ -657,8 +656,9 @@ cmd_compile() {
     # Optionally validate bash syntax
     if [[ "$check_syntax" == "true" ]]; then
         local syntax_errors
-        syntax_errors=$(bash -n <<<"$output" 2>&1)
-        if [[ $? -ne 0 ]]; then
+        # Test the assignment itself: under set -e a bare failing assignment
+        # exits before the errors below are printed.
+        if ! syntax_errors=$(bash -n <<<"$output" 2>&1); then
             echo -e "${RED}Syntax errors in compiled output:${NC}" >&2
             echo "$syntax_errors" >&2
             exit 1
