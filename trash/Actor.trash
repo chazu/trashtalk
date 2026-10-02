@@ -66,23 +66,24 @@ Actor subclass: Object
         claimed=$(honker_claim "$queue" "$worker_id" 1 30)
 
         if [[ -n "$claimed" && "$claimed" != "[]" && "$claimed" != "null" ]]; then
-          local job_id payload selector recv args
-          job_id=$(echo "$claimed" | jq -r '.[0].id // empty' 2>/dev/null)
-          payload=$(echo "$claimed" | jq -r '.[0].payload // empty' 2>/dev/null)
+          # One decode yields the job id, selector, receiver, then each
+          # argument, NUL-separated so arguments keep spaces and newlines.
+          local -a fields
+          local job_id selector recv
+          mapfile -d '' -t fields < <(jq -j '.[0] // {}
+            | (.payload // "" | fromjson? // {}) as $p
+            | [(.id // "" | tostring), ($p.selector // ""), ($p.receiver // "")]
+              + [($p.args // [])[] | tostring]
+            | map(. + "\u0000") | add' <<< "$claimed" 2>/dev/null)
+          job_id="${fields[0]}"
+          selector="${fields[1]}"
+          recv="${fields[2]}"
 
-          if [[ -n "$payload" ]]; then
-            selector=$(echo "$payload" | jq -r '.selector // empty' 2>/dev/null)
-            recv=$(echo "$payload" | jq -r '.receiver // empty' 2>/dev/null)
-            args=$(echo "$payload" | jq -r '.args // [] | .[]' 2>/dev/null)
-
-            if [[ -n "$selector" && -n "$recv" ]]; then
-              if @ "$recv" "$selector" $args 2>/dev/null; then
-                [[ -n "$job_id" ]] && honker_ack "[$job_id]" "$worker_id"
-              else
-                honker_sweep "$queue"
-              fi
-            elif [[ -n "$job_id" ]]; then
-              honker_ack "[$job_id]" "$worker_id"
+          if [[ -n "$selector" && -n "$recv" ]]; then
+            if @ "$recv" "$selector" "${fields[@]:3}" 2>/dev/null; then
+              [[ -n "$job_id" ]] && honker_ack "[$job_id]" "$worker_id"
+            else
+              honker_sweep "$queue"
             fi
           elif [[ -n "$job_id" ]]; then
             honker_ack "[$job_id]" "$worker_id"

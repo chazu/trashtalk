@@ -144,7 +144,25 @@ fi
 
 # ==========================================
 echo ""
-echo "7. Destroy Actor"
+echo "7. Dispatcher Keeps Arguments With Spaces"
+# ==========================================
+
+# The dispatcher sends to the actor itself; a setter records the argument.
+actor_d=$(@ Actor named: 'dispatch-spaces')
+@ "$actor_d" send: 'workerId:' with: 'spaced  worker id' >/dev/null
+@ "$actor_d" start
+ACTOR_PIDS+=("$(@ "$actor_d" dispatcherPid)")
+for _ in $(seq 100); do
+    [[ "$(@ "$actor_d" workerId)" == spaced* ]] && break
+    sleep 0.1
+done
+@ "$actor_d" stop
+assert_eq "dispatched argument keeps its spaces" "spaced  worker id" "$(@ "$actor_d" workerId)"
+assert_eq "dispatched message acknowledged" "0" "$(@ "$actor_d" pendingCount)"
+
+# ==========================================
+echo ""
+echo "8. Destroy Actor"
 # ==========================================
 
 @ "$actor" destroy
