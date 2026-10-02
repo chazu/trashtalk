@@ -117,7 +117,19 @@ else
   fail "read/write cycle works" "got '$result'"
 fi
 
+# Close stops every process open started, not just the keeper's shell.
+keeper=$(@ "$fifo2" keeperPid)
+started="$keeper $(pgrep -P "$keeper" | tr '\n' ' ')"
 @ "$fifo2" close
+sleep 0.2
+survivors=''
+for pid in $started; do kill -0 "$pid" 2>/dev/null && survivors+="$pid "; done
+if [[ -n "$keeper" && -z "$survivors" ]]; then
+  pass "close stops the keeper and its children"
+else
+  fail "close stops the keeper and its children" "keeper='$keeper' survivors='$survivors'"
+  kill $survivors 2>/dev/null
+fi
 @ "$fifo2" remove
 
 # =============================================================================
@@ -372,7 +384,6 @@ rm -f "$trackfile9"
 # =============================================================================
 rm -f "/tmp/test_fifo_$$" "/tmp/test_fifo2_$$" "/tmp/test_fifo3_$$" "/tmp/test_fifo4_$$" 2>/dev/null
 rm -f "/tmp/test_fifo5_$$" "/tmp/test_fifo6_$$" "/tmp/test_fifo7_$$" "/tmp/test_fifo8_$$" "/tmp/test_fifo9_$$" 2>/dev/null
-pkill -f "sleep 86400" 2>/dev/null
 
 # =============================================================================
 # Summary

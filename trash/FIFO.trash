@@ -39,9 +39,10 @@ FIFO subclass: Object
     pidfile="/tmp/fifo_keeper_${_INSTANCE}.pid"
 
     # Spawn a detached process that ignores SIGINT (Ctrl+C immune)
-    # The keeper opens the FIFO read-write and sleeps forever
-    # trap '' INT makes it ignore interrupt signals
-    /bin/bash -c 'trap "" INT; echo $$ > "$2"; exec 3<>"$1"; while true; do sleep 86400; done' _ "$p" "$pidfile" </dev/null >/dev/null 2>&1 &
+    # The keeper opens the FIFO read-write and becomes a long sleep, so the
+    # recorded pid is the process holding the FIFO and close leaves no orphan.
+    # trap '' INT makes it ignore interrupt signals, across the exec too
+    /bin/bash -c 'trap "" INT; echo $$ > "$2"; exec 3<>"$1"; exec sleep 2147483647' _ "$p" "$pidfile" </dev/null >/dev/null 2>&1 &
 
     sleep 0.1
     keeper_pid=$(cat "$pidfile" 2>/dev/null)
