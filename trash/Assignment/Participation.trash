@@ -110,7 +110,7 @@ Participation subclass: Object
     (same = 'false') ifTrue: [^ 'false'].
     same := @ Require contains: 'assignment.work' in: (roleData jsonAt: 'capabilities').
     (same = 'false') ifTrue: [^ 'false'].
-    same := @ Require contains: (rData objectAt: 'state') in: '["starting","running","recovering"]'.
+    same := @ Agent::Run isActiveState: (rData objectAt: 'state').
     (same = 'false') ifTrue: [^ 'false'].
     same := @ Require contains: (dData objectAt: 'state') in: '["pending","blocked"]'.
     (same = 'false') ifTrue: [^ 'false'].
@@ -126,7 +126,7 @@ Participation subclass: Object
       (previous notEmpty) ifTrue: [
         oldData := @ Store getInstance: previous.
         value := oldData objectAt: 'state'.
-        same := @ Require contains: value in: '["starting","running","recovering"]'.
+        same := @ Agent::Run isActiveState: value.
         (same = 'true') ifTrue: [^ 'false']
       ]
     ].

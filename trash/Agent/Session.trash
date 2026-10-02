@@ -79,7 +79,7 @@ Session subclass: Object
           @ identity save
         ].
         (to = 'closed') ifTrue: [
-          runs := @ Store idsOf: 'Agent::Run' matching: (#{session: session state: #('starting' 'running' 'recovering')} asJson).
+          runs := @ Agent::Run activeFor: session except: ''.
           @ Require equal: runs to: '[]'
         ].
         allowed := @ Require contains: to in: '["closed","terminated"]'.
@@ -300,7 +300,7 @@ Session subclass: Object
     path := args objectAt: 'workspace'.
     current := @ self currentWithinFor: identity workspace: path.
     (current notEmpty) ifTrue: [
-      runs := @ Store idsOf: 'Agent::Run' matching: (#{session: current state: #('starting' 'running' 'recovering')} asJson).
+      runs := @ Agent::Run activeFor: current except: ''.
       @ Require equal: runs to: '[]'.
       current := @ Store read: current class: 'Agent::Session'.
       @ current lifecycleState: 'closed'.

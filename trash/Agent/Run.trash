@@ -70,7 +70,7 @@ Run subclass: Object
     role := @ Store read: role class: 'Agent::Role'.
     allowed := @ role allowsWorkspace: workspace.
     @ Require equal: allowed to: 'true'.
-    active := @ Store idsOf: 'Agent::Run' matching: (#{session: session state: #('starting' 'running' 'recovering')} asJson).
+    active := @ self activeFor: session except: ''.
     @ Require equal: active to: '[]'.
     now := @ Time nowISO.
     run := @ Agent::Run new.
@@ -386,6 +386,13 @@ Run subclass: Object
     fi
   ]
 
+
+  # Whether a run state still holds its session: starting, running, recovering.
+  classMethod: isActiveState: state [
+    state caseOf: {
+      #('starting' 'running' 'recovering') -> [^ 'true']
+    } otherwise: [^ 'false']
+  ]
 
   classMethod: activeFor: session except: run [
     | fields ids remaining |

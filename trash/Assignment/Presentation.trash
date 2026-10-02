@@ -52,7 +52,7 @@ Presentation trait
     deliveryState := execution objectAt: 'deliveryState'.
     value := @ Require contains: deliveryState in: '["failed","uncertain"]'.
     (value = 'true') ifTrue: [^ 'needs review'].
-    active := @ Require contains: (execution objectAt: 'runState') in: '["starting","running","recovering"]'.
+    active := @ Agent::Run isActiveState: (execution objectAt: 'runState').
     (deliveryState = 'offered') ifTrue: [(active = 'false') ifTrue: [^ 'needs review'] ].
     unanswered := 'false'.
     questions arrayEach: [:question |
