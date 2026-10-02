@@ -220,7 +220,7 @@ Supported predicates: `fileExists`, `isFile`, `isDirectory`, `isFifo`, `isSymlin
 |-----|-------------|
 | `Counter subclass: Object` | Class metadata + function stubs |
 | `method: foo [body]` | `__Counter__foo() { body }` |
-| `method: at: x put: y [...]` | `__Counter__at_put() { local x="$1"; local y="$2"; ... }` |
+| `method: at: x put: y [...]` | `__Counter__at_put_() { local x="$1"; local y="$2"; ... }` (keyword selectors end in `_`) |
 | `| var1 var2 |` | `local var1 var2` |
 | `var := value` | `var="value"` (local) or `_ivar_set var "value"` (ivar) |
 | `^ ivar` | `echo "$(_ivar ivar)"; return` |

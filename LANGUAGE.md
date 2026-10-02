@@ -1063,11 +1063,11 @@ See [compiler capabilities](docs/COMPILER_CAPABILITIES.md) for the test map.
 ## Development Workflow
 
 ```bash
-@ Trash new MyClass               # Create new class skeleton and open in $EDITOR
-@ Trash edit Counter              # Edit existing class, auto-recompile on save
-@ Trash compileAndReload Counter  # Manual compile (safe - won't break on errors)
-@ Trash methodsFor Counter        # List methods
-@ Trash sourceFor Counter         # View embedded source
-@ Trash hashFor Counter           # View source hash
+@ Trash new: MyClass               # Create new class skeleton and open in $EDITOR
+@ Trash edit: Counter              # Edit existing class, auto-recompile on save
+@ Trash compileAndReload: Counter  # Manual compile (safe - won't break on errors)
+@ Trash methodsFor: Counter        # List methods
+@ Trash sourceFor: Counter         # View embedded source
+@ Trash hashFor: Counter           # View source hash
 @ $instance inspect               # Show instance details
 ```
