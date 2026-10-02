@@ -253,7 +253,11 @@ cmd_compile_many() (
             if $e != null and $e.source != $n.source then error("Protocol manifest identity shadowed: " + $n.metadata.identity) else true end)
           ' "$build_work/plan.json" >/dev/null || return
     fi
-    jq -e 'group_by(.metadata.identity) | all(.[]; length==1)' "$build_work/plan.json" >/dev/null || error 'Ambiguous declared identity'
+    local collisions
+    collisions=$(jq -r 'group_by(.metadata.identity) | map(select(length > 1) |
+      "\(.[0].metadata.identity) (\(map(.source) | sort | join(", ")))") | join("; ")' "$build_work/plan.json") ||
+        error 'Ambiguous declared identity'
+    [[ -z "$collisions" ]] || error "Ambiguous declared identity: $collisions"
     mkdir -p "$build_work/api"
     while IFS= read -r -d '' idx && IFS= read -r -d '' body; do
         printf '%s' "$body" > "$build_work/api/$idx"
@@ -265,7 +269,10 @@ cmd_compile_many() (
         "$build_work/plan.json" > "$build_work/hashed-plan.json"
     mv "$build_work/hashed-plan.json" "$build_work/plan.json"
     # Two selected sources must not silently overwrite the same artifact.
-    jq -e 'group_by(.output) | all(.[]; length==1)' "$build_work/plan.json" >/dev/null || error 'Duplicate build output'
+    collisions=$(jq -r 'group_by(.output) | map(select(length > 1) |
+      "\(.[0].output) (\(map(.source) | sort | join(", ")))") | join("; ")' "$build_work/plan.json") ||
+        error 'Duplicate build output'
+    [[ -z "$collisions" ]] || error "Duplicate build output: $collisions"
     max_level=$(jq '[.[]|select(.dirty)|.level] | max // -1' "$build_work/plan.json")
     if [[ "$max_level" == -1 ]]; then
         printf '  = %s artifacts unchanged\n' "$(jq length "$build_work/plan.json")"

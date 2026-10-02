@@ -30,6 +30,14 @@ printf 'Alpha subclass: Object\n  method: value [ ^ 2 ]\n' > "$TRASHTALK_DIR/tra
 build "$TRASHTALK_DIR/trash/Alpha.trash" >/dev/null
 source "$TRASHTALK_COMPILED_DIR/Alpha"
 [[ "$(__Alpha__value)" == 2 ]]
+# Two sources declaring one class in a single build name the class and both files.
+printf 'Gamma subclass: Object\n' | tee "$TRASHTALK_DIR/trash/Gamma.trash" > "$TRASHTALK_DIR/trash/user/Gamma.trash"
+if build "$TRASHTALK_DIR/trash/Gamma.trash" "$TRASHTALK_DIR/trash/user/Gamma.trash" > "$TMPDIR/ambiguous.log" 2>&1; then
+    echo 'FAIL: duplicate declared identity accepted'; exit 1
+fi
+grep -q "Gamma (.*trash/Gamma.trash.*trash/user/Gamma.trash)" "$TMPDIR/ambiguous.log" ||
+    { echo 'FAIL: duplicate identity error does not name the class and sources'; cat "$TMPDIR/ambiguous.log"; exit 1; }
+rm "$TRASHTALK_DIR/trash/Gamma.trash" "$TRASHTALK_DIR/trash/user/Gamma.trash"
 echo 'PASS: moved/deleted sources reconcile; live clashes fail without publication'
 
 # A full build removes generated artifacts no manifest entry owns once their
