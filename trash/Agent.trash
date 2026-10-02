@@ -1,5 +1,5 @@
 # Agent - authenticated Codex one-shot facade.
-# @@ uses persistent Gusgus sessions by default; @@ --one-shot uses this facade.
+# @@ always uses persistent Gusgus sessions; call `@ Agent ask:...` for one-shot.
 # Codex is the only one-shot backend; `@ Trash doctor` warns about any other
 # TRASHTALK_AGENT_BACKEND value, which still resolves to CodexAgent.
 # See docs/agent-operations.md for persistent sessions and live attachment.

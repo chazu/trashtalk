@@ -9,13 +9,13 @@
 #
 # Transformations applied in method bodies:
 #   | var1 var2 |     →  local var1 var2
-#   ^ expression      →  echo expression
+#   ^ expression      →  echo expression; return
 #   self              →  $_RECEIVER
-#   @ self method     →  @ $_RECEIVER method
-#   @ recv key: val   →  @ "$recv" key "val"
+#   @ self method     →  @ "$_RECEIVER" method
+#   @ recv key: val   →  @ "$recv" key: "$val"   (the keyword keeps its colon)
 #   var := expr       →  var=expr
 #
-# NEW (Phase 1): Expression parsing with instance variable inference
+# Expressions infer instance variables:
 #   value + step      →  $(( $(_ivar value) + $(_ivar step) ))
 #   newVal := value   →  newVal="$(_ivar value)"
 #   ^ newVal          →  echo "$newVal"; return

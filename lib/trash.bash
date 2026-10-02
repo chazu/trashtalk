@@ -479,9 +479,9 @@ export -f _reject_path_receiver
 # Context Stack System
 # ============================================
 # Lightweight in-memory stacks for context management.
-# Uses indexed arrays with depth counters for Bash 3.2 compatibility.
+# Indexed arrays with explicit depth counters.
 
-# Call stack for debugging/introspection (opt-in via TRASH_DEBUG)
+# Call stack for debugging/introspection (always maintained by send)
 declare -a _CALL_STACK=()
 _CALL_DEPTH=0
 
@@ -1954,7 +1954,7 @@ function send {
   # Keyword message parsing
   # ============================================
   # Handle Smalltalk keyword syntax: @ obj method: arg1 key2: arg2
-  # Converts to: selector=method_key2, args=(arg1, arg2)
+  # Converts to: selector=method_key2_, args=(arg1, arg2)
   local -a _ARGS=()
   _trash_parse_selector "$@"
   set -- "${_ARGS[@]}"
