@@ -37,8 +37,8 @@ Mise subclass: Tool
     argv := argv arrayPush: '--version'.
     result := @ self resultForArgv: argv command: 'version' failureOutcome: 'process_error'.
     stdout := @ self stdoutOf: result.
-    line := @ String firstLine: stdout.
-    ^ @ String before: ' ' in: line
+    line := stdout firstLine.
+    ^ line upTo: ' '
   ]
 
   # ---------------------------------------------------------------------------

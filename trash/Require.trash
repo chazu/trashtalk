@@ -8,17 +8,14 @@ Require subclass: Object
   ]
 
   classMethod: equal: actual to: expected [
-    | same |
-    same := @ String equals: actual to: expected.
-    (same = 'true') ifFalse: [^ @ self reject: 'Equality precondition rejected']
+    (actual = expected) ifFalse: [^ @ self reject: 'Equality precondition rejected']
   ]
 
   classMethod: contains: value in: values [
-    | found same |
+    | found |
     found := 'false'.
     values arrayEach: [:entry |
-      same := @ String equals: entry to: value.
-      (same = 'true') ifTrue: [found := 'true']
+      (entry = value) ifTrue: [found := 'true']
     ].
     ^ found
   ]
@@ -31,6 +28,6 @@ Require subclass: Object
 
   classMethod: text: value [
     | trimmed |
-    trimmed := @ String trim: value.
+    trimmed := value trimmed.
     (trimmed isEmpty) ifTrue: [^ @ self reject: 'Nonempty text is required']
   ]

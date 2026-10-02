@@ -388,13 +388,12 @@ Run subclass: Object
 
 
   classMethod: activeFor: session except: run [
-    | fields ids remaining same |
+    | fields ids remaining |
     fields := #{session: session state: #('starting' 'running' 'recovering')} asJson.
     ids := @ Store idsOf: 'Agent::Run' matching: fields.
     remaining := '[]'.
     ids arrayEach: [:id |
-      same := @ String equals: id to: run.
-      (same = 'false') ifTrue: [remaining := remaining arrayPush: id]
+      (id = run) ifFalse: [remaining := remaining arrayPush: id]
     ].
     ^ remaining
   ]

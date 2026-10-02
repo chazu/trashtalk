@@ -23,9 +23,9 @@ Codex subclass: Tool
     stdout := @ String jsonPath: 'stdout' from: capture.
     stdout isEmpty ifTrue: [
       stderr := @ String jsonPath: 'stderr' from: capture.
-      ^ @ String trim: stderr
+      ^ stderr trimmed
     ].
-    ^ @ String trim: stdout
+    ^ stdout trimmed
   ]
 
   classMethod: argvForWorkingDirectory: workingDirectory [
@@ -39,12 +39,11 @@ Codex subclass: Tool
   ]
 
   classMethod: run: input workingDirectory: workingDirectory [
-    | available authStatus chatgptAuth argv capture |
+    | available authStatus argv capture |
     available := @ self isInstalled.
     (available ~= 'true') ifTrue: [^ @ self missingToolResult].
     authStatus := @ self authStatus.
-    chatgptAuth := @ String contains: authStatus substring: 'ChatGPT'.
-    (chatgptAuth ~= 'true') ifTrue: [^ @ self authenticationResult: authStatus].
+    (authStatus includes: 'ChatGPT') ifFalse: [^ @ self authenticationResult: authStatus].
     argv := @ self argvForWorkingDirectory: workingDirectory.
     capture := @ self captureArgvJson: argv input: input progress: 'Waiting for Codex'.
     ^ @ self normalizeCaptured: capture
@@ -79,7 +78,7 @@ Codex subclass: Tool
     | outcome content normalized result |
     capture jsonUnpack: #('exit_code' 'stdout' 'stderr') into: [:exitCode :stdout :stderr |
       outcome := 'process_error'.
-      content := @ String trim: stdout.
+      content := stdout trimmed.
       (exitCode = '0') ifTrue: [
         outcome := 'success'.
         content isEmpty ifTrue: [outcome := 'invalid_output']

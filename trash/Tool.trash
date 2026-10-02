@@ -429,10 +429,9 @@ Tool subclass: Object
   # elements are appended one by one, or a plain string appended as one entry.
   # An empty string appends nothing.
   classMethod: argv: argv appendEach: values [
-    | isArray isJson |
+    | isJson |
     values isEmpty ifTrue: [^ argv].
-    isArray := @ String startsWith: values prefix: '['.
-    (isArray = 'true') ifTrue: [
+    (values startsWith: '[') ifTrue: [
       isJson := @ String isJson: values.
       (isJson = 'true') ifTrue: [
         values arrayEach: [:entry | argv := argv arrayPush: entry].

@@ -18,7 +18,7 @@ JsonOutput trait
   ]
 
   classMethod: jsonResultFrom: capture command: command [
-    | result stdout valid trimmed prefix shape matches outcome |
+    | result stdout valid trimmed prefix shape outcome |
     result := @ self resultFrom: capture command: command failureOutcome: 'command_error'.
     result := result objectAt: 'data' putJson: 'null'.
     stdout := capture jsonTextAt: 'stdout'.
@@ -33,12 +33,11 @@ JsonOutput trait
       ]
     ].
     (valid = 'true') ifTrue: [
-      trimmed := @ String trim: stdout.
+      trimmed := stdout trimmed.
       shape := @ self jsonShape.
       prefix := '{'.
       (shape = 'array') ifTrue: [prefix := '['].
-      matches := @ String startsWith: trimmed prefix: prefix.
-      (matches = 'true') ifTrue: [
+      (trimmed startsWith: prefix) ifTrue: [
         result := result objectAt: 'data' putJson: stdout.
         ^ @ self interpretJsonResult: result
       ]
