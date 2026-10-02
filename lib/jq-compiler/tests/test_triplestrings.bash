@@ -8,6 +8,14 @@ fi
 # Tests for '''...''' multi-line string syntax
 # ==============================================================================
 
+# Source shared test helper for standalone execution
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/helper.bash"
+
+ROOT="$(cd "$COMPILER_DIR/../.." && pwd)"
+scratch=$(mktemp -d "${TMPDIR:-/tmp}/trash-triplestrings.XXXXXX")
+trap 'rm -rf "$scratch"; print_test_summary' EXIT
+
 TOKENIZER="$COMPILER_DIR/tokenizer.bash"
 DRIVER="$COMPILER_DIR/driver.bash"
 
@@ -36,8 +44,8 @@ line two" "$result"
 
 # Test triple string with embedded single quotes
 # Write to file to avoid shell escaping issues
-echo "'''it's working'''" > /tmp/test_quote.txt
-result=$("$TOKENIZER" /tmp/test_quote.txt | jq -r '.[0].value')
+echo "'''it's working'''" > $scratch/test_quote.txt
+result=$("$TOKENIZER" $scratch/test_quote.txt | jq -r '.[0].value')
 run_test "triple string with single quote" "it's working" "$result"
 
 # Test empty triple string
@@ -61,7 +69,7 @@ run_test "triple string after regular" "TRIPLESTRING" "$result"
 echo -e "\n  Parser tests:"
 
 # Test triple string in assignment
-cat > /tmp/test_triple_parse.trash << 'EOF'
+cat > $scratch/test_triple_parse.trash << 'EOF'
 TestTriple subclass: Object
   method: test [
     | x |
@@ -70,21 +78,21 @@ world'''
   ]
 EOF
 
-result=$("$DRIVER" parse /tmp/test_triple_parse.trash 2>&1 | jq -r '.class.methods[0].body.tokens[] | select(.type == "TRIPLESTRING") | .type')
+result=$("$DRIVER" parse $scratch/test_triple_parse.trash 2>&1 | jq -r '.class.methods[0].body.tokens[] | select(.type == "TRIPLESTRING") | .type')
 run_test "parser sees TRIPLESTRING token" "TRIPLESTRING" "$result"
 
-result=$("$DRIVER" parse /tmp/test_triple_parse.trash 2>&1 | jq -r '.class.methods[0].body.tokens[] | select(.type == "TRIPLESTRING") | .value')
+result=$("$DRIVER" parse $scratch/test_triple_parse.trash 2>&1 | jq -r '.class.methods[0].body.tokens[] | select(.type == "TRIPLESTRING") | .value')
 run_test "parser preserves newline in value" "hello
 world" "$result"
 
 # Test triple string as instance var default
-cat > /tmp/test_triple_ivar.trash << 'EOF'
+cat > $scratch/test_triple_ivar.trash << 'EOF'
 TestTriple subclass: Object
   instanceVars: text:'''default
 value'''
 EOF
 
-result=$("$DRIVER" parse /tmp/test_triple_ivar.trash 2>&1 | jq -r '.class.instanceVars[0].default.type')
+result=$("$DRIVER" parse $scratch/test_triple_ivar.trash 2>&1 | jq -r '.class.instanceVars[0].default.type')
 run_test "instance var default type" "triplestring" "$result"
 
 # ------------------------------------------------------------------------------
@@ -93,64 +101,59 @@ run_test "instance var default type" "triplestring" "$result"
 
 echo -e "\n  Code generation tests:"
 
-# Test assignment to local variable
-cat > /tmp/test_triple_codegen.trash << 'EOF'
-TestTriple subclass: Object
-  method: test [
+# Generated Bash must keep the text literal in every position: newlines and
+# quotes survive, and `$` is never expanded.
+cat > $scratch/test_triple_codegen.trash << 'EOF'
+TestTripleCodegen subclass: Object
+  instanceVars: data:''
+
+  method: local [
     | text |
     text := '''line one
 line two
 line three'''
     ^ text
   ]
-EOF
-
-result=$("$DRIVER" compile /tmp/test_triple_codegen.trash 2>&1 | grep -o "text=\$'line one")
-run_test "codegen uses ANSI-C quoting" "text=\$'line one" "$result"
-
-# Count escaped newlines (looking for literal backslash-n in output)
-result=$("$DRIVER" compile /tmp/test_triple_codegen.trash 2>&1 | grep 'text=' | grep -o '\\n' | wc -l | tr -d ' ')
-run_test "codegen escapes newlines" "2" "$result"
-
-# Test assignment to instance variable
-cat > /tmp/test_triple_ivar_set.trash << 'EOF'
-TestTriple subclass: Object
-  instanceVars: data:''
 
   method: setData [
     data := '''multi
-line'''
+line $HOME'''
+    ^ data
   ]
-EOF
 
-result=$("$DRIVER" compile /tmp/test_triple_ivar_set.trash 2>&1 | grep "_ivar_set data" | grep -o "\$'multi")
-run_test "ivar assignment uses ANSI-C quoting" "\$'multi" "$result"
-
-# Test triple string in message argument
-cat > /tmp/test_triple_arg.trash << 'EOF'
-TestTriple subclass: Object
-  method: test [
-    @ self log: '''hello
-world'''
+  method: arg [
+    ^ @ self echo: '''hello
+world $(echo INJECTED)'''
   ]
-EOF
 
-result=$("$DRIVER" compile /tmp/test_triple_arg.trash 2>&1 | grep -o "\$'hello")
-run_test "message arg uses ANSI-C quoting" "\$'hello" "$result"
+  method: echo: x [ ^ x ]
 
-# Test triple string with special characters
-cat > /tmp/test_triple_special.trash << 'EOF'
-TestTriple subclass: Object
-  method: test [
+  method: special [
     | text |
     text := '''line with 'quotes' and $vars'''
     ^ text
   ]
 EOF
 
-# Check that single quotes are escaped with backslash in the output
-result=$("$DRIVER" compile /tmp/test_triple_special.trash 2>&1 | grep "text=" | grep -c "\\\\'quotes\\\\'")
-run_test "codegen escapes single quotes" "1" "$result"
+"$DRIVER" compile $scratch/test_triple_codegen.trash > "$TRASHDIR/.compiled/TestTripleCodegen"
+# A subshell keeps the runtime's own EXIT trap away from this file's summary.
+send_codegen() { (source "$ROOT/lib/trash.bash" && id=$(@ TestTripleCodegen new) && @ "$id" "$@"); }
+
+result=$(send_codegen local)
+run_test "local assignment keeps newlines" "line one
+line two
+line three" "$result"
+
+result=$(send_codegen setData)
+run_test "ivar assignment keeps newlines and \$" "multi
+line \$HOME" "$result"
+
+result=$(send_codegen arg)
+run_test "message arg is literal" "hello
+world \$(echo INJECTED)" "$result"
+
+result=$(send_codegen special)
+run_test "single quotes and \$ survive" "line with 'quotes' and \$vars" "$result"
 
 # ------------------------------------------------------------------------------
 # Integration Tests (Runtime)
@@ -159,7 +162,7 @@ run_test "codegen escapes single quotes" "1" "$result"
 echo -e "\n  Integration tests:"
 
 # Test actual runtime behavior
-cat > /tmp/test_triple_runtime.trash << 'EOF'
+cat > $scratch/test_triple_runtime.trash << 'EOF'
 TestTripleRuntime subclass: Object
   method: getPoem [
     | text |
@@ -169,15 +172,15 @@ violets are blue'''
   ]
 EOF
 
-"$DRIVER" compile /tmp/test_triple_runtime.trash > /tmp/TestTripleRuntime.bash 2>&1
-source /tmp/TestTripleRuntime.bash
+"$DRIVER" compile $scratch/test_triple_runtime.trash > $scratch/TestTripleRuntime.bash 2>&1
+source $scratch/TestTripleRuntime.bash
 result=$(__TestTripleRuntime__getPoem)
 expected="roses are red
 violets are blue"
 run_test "runtime produces correct multi-line output" "$expected" "$result"
 
 # Test with backslash
-cat > /tmp/test_triple_backslash.trash << 'EOF'
+cat > $scratch/test_triple_backslash.trash << 'EOF'
 TestBackslash subclass: Object
   method: getPath [
     | path |
@@ -186,12 +189,10 @@ TestBackslash subclass: Object
   ]
 EOF
 
-"$DRIVER" compile /tmp/test_triple_backslash.trash > /tmp/TestBackslash.bash 2>&1
-source /tmp/TestBackslash.bash
+"$DRIVER" compile $scratch/test_triple_backslash.trash > $scratch/TestBackslash.bash 2>&1
+source $scratch/TestBackslash.bash
 result=$(__TestBackslash__getPath)
 run_test "runtime handles backslashes" 'C:\Users\test' "$result"
 
-# Cleanup
-rm -f /tmp/test_triple*.trash /tmp/test_triple*.bash /tmp/TestTripleRuntime.bash /tmp/TestBackslash.bash /tmp/test_quote.txt
 
 echo ""
