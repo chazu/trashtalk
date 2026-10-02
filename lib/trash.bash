@@ -1936,7 +1936,11 @@ function send {
 
   # Validate we have both receiver and selector
   if [[ -z "$_RECEIVER" || -z "$_SELECTOR" ]]; then
-    echo "Error: send requires receiver and selector" >&2
+    if [[ -n "$_RECEIVER" ]]; then
+      echo "Error: No message to send to '$_RECEIVER'. Usage: @ <receiver> <selector> [args...]" >&2
+    else
+      echo "Error: No receiver or message. Usage: @ <receiver> <selector> [args...]" >&2
+    fi
     return 1
   fi
   local _CLASS=""
@@ -2309,6 +2313,10 @@ function _trash_dispatch {
   local ___want_value=${_trash_value_context:-0} _trash_value_context=0
   if [ $# == 1 ]; then
     is_a Object
+  fi
+  if (($# == 0)); then
+    echo "Error: No receiver or message. Usage: @ <receiver> <selector> [args...]" >&2
+    return 1
   fi
 
   _trash_log_enabled 4 && _trash_log 4 TRACE "Entrypoint: $*"

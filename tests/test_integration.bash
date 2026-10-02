@@ -178,6 +178,14 @@ result=$(@ ghost_1234abcd-0000-0000-0000-000000000000 foo 2>&1) || true
 [[ "$result" == *"class 'Ghost'"* && "$result" != *"not found"* ]] \
     && pass "Orphaned instance names its missing class" || fail "Orphaned instance error did not name its class: $result"
 
+echo "  Testing sends without a selector..."
+result=$(@ Counter 2>&1) || true
+[[ "$result" == *"No message to send to 'Counter'"* && "$result" == *"Usage: @ <receiver> <selector>"* ]] \
+    && pass "Missing selector shows usage" || fail "Missing selector did not show usage: $result"
+result=$(@ 2>&1) && fail "Bare @ succeeded" || true
+[[ "$result" == *"Usage: @ <receiver> <selector>"* && "$result" != *"bad array subscript"* ]] \
+    && pass "Bare @ shows usage" || fail "Bare @ did not show usage: $result"
+
 echo ""
 
 # ==========================================
