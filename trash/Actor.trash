@@ -22,37 +22,29 @@ Actor subclass: Object
     id=$(_generate_instance_id Actor)
     _create_instance Actor "$id"
     @ "$id" queueName: "actor.$1"
-    @ "$id" status: "idle"
     @ "$id" workerId: "actor_worker_$$_$RANDOM"
-    @ "$id" dispatcherPid: ""
     echo "$id"
   ]
 
   # Send a message (no arguments) to this actor's mailbox
-  rawMethod: send: selector [
-    local queue msg
-    queue=$(_ivar queueName)
-    msg=$(jq -n --arg sel "$1" --arg recv "$_RECEIVER" \
-      '{selector: $sel, receiver: $recv, args: []}')
-    honker_enqueue "$queue" "$msg"
+  method: send: selector [
+    | message |
+    message := #{selector: selector receiver: self args: #()} asJson.
+    ^ @ self sendRaw: message
   ]
 
   # Send a message with one argument
-  rawMethod: send: selector with: arg [
-    local queue msg
-    queue=$(_ivar queueName)
-    msg=$(jq -n --arg sel "$1" --arg recv "$_RECEIVER" --arg a "$2" \
-      '{selector: $sel, receiver: $recv, args: [$a]}')
-    honker_enqueue "$queue" "$msg"
+  method: send: selector with: arg [
+    | message |
+    message := #{selector: selector receiver: self args: #(arg)} asJson.
+    ^ @ self sendRaw: message
   ]
 
   # Send a message with two arguments
-  rawMethod: send: selector with: arg1 and: arg2 [
-    local queue msg
-    queue=$(_ivar queueName)
-    msg=$(jq -n --arg sel "$1" --arg recv "$_RECEIVER" --arg a "$2" --arg b "$3" \
-      '{selector: $sel, receiver: $recv, args: [$a, $b]}')
-    honker_enqueue "$queue" "$msg"
+  method: send: selector with: arg1 and: arg2 [
+    | message |
+    message := #{selector: selector receiver: self args: #(arg1 arg2)} asJson.
+    ^ @ self sendRaw: message
   ]
 
   # Send a raw JSON payload (for custom message formats)
