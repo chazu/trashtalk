@@ -734,13 +734,6 @@ export -f _test_reset _test_summary
 # Instance Variable Declaration
 # ============================================
 
-# Stores declared instance vars for current class being defined
-_CURRENT_CLASS_VARS=""
-
-# Associative array for instance variable defaults
-# Key: var_name, Value: default value (or empty for null)
-declare -A _CURRENT_CLASS_DEFAULTS
-
 # Qualified traits share the package artifact directory with classes; legacy
 # global traits remain under .compiled/traits. Keep lookup identical for sends
 # and development tools (method inspection and reload).
@@ -1010,9 +1003,6 @@ function _collect_inherited_vars {
 # Generates: getFoo/setFoo, getBar/setBar, getBaz/setBaz
 # Also generates accessors for inherited vars from parent classes
 function instance_vars {
-  _CURRENT_CLASS_VARS=""
-  _CURRENT_CLASS_DEFAULTS=()
-
   # Use $_CLASS if available (set by dispatcher context) for namespaced accessors
   local accessor_class="${_CLASS:-}"
 
@@ -1025,31 +1015,10 @@ function instance_vars {
     done
   fi
 
-  # Now process this class's declared vars
+  # Now process this class's declared vars (defaults live in compiled metadata)
   for spec in $*; do
-    local var default_val
-
-    # Check for default value syntax: var:default
-    if [[ "$spec" == *:* ]]; then
-      var="${spec%%:*}"
-      default_val="${spec#*:}"
-    else
-      var="$spec"
-      default_val=""
-    fi
-
-    # Add to var list (space-separated)
-    if [[ -z "$_CURRENT_CLASS_VARS" ]]; then
-      _CURRENT_CLASS_VARS="$var"
-    else
-      _CURRENT_CLASS_VARS="$_CURRENT_CLASS_VARS $var"
-    fi
-
-    # Store default value
-    _CURRENT_CLASS_DEFAULTS["$var"]="$default_val"
-
     # Generate accessor for this var (with class name for namespacing)
-    _generate_accessor "$var" "$accessor_class"
+    _generate_accessor "${spec%%:*}" "$accessor_class"
   done
 }
 
@@ -1169,8 +1138,7 @@ function _create_instance_legacy {
   # MyApp::Counter -> __MyApp__Counter, Counter -> __Counter
   local func_prefix="__${class_name//::/__}"
 
-  # Get instance vars from compiled class metadata (preferred)
-  # This avoids using stale global _CURRENT_CLASS_VARS from previous classes
+  # Get instance vars from compiled class metadata
   local class_vars=""
   local vars_var="${func_prefix}__instanceVars"
   if [[ -n "${!vars_var}" ]]; then
