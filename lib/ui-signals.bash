@@ -33,7 +33,7 @@ ui_binding_register() {
 ui_binding_evaluate() {
     ui_signal_path "$1" || return
     local block='' result='' name=$1 started=0
-    if [[ -n ${TRASHTALK_UI_PROFILE:-} ]];then started=${EPOCHREALTIME:-$((SECONDS*1000000))};started=${started/./};fi
+    [[ -z ${TRASHTALK_UI_PROFILE:-} ]] || ui_clock_us started
     [[ -f $TRASHTALK_UI_STATE/block-$name ]] || return 1
     IFS= read -r -d '' block < "$TRASHTALK_UI_STATE/block-$name" || true
     local TRASHTALK_UI_CAPTURE="$TRASHTALK_UI_STATE/capture-$name" TRASHTALK_UI_READONLY=1
@@ -70,12 +70,18 @@ ui_signal_invalidate() {
     [[ -z ${TRASHTALK_UI_READONLY:-} ]] || return 1
     printf '%s\n' "$1" >> "$TRASHTALK_UI_STATE/dirty"
 }
+# Wall clock in microseconds into the named variable: EPOCHREALTIME without its
+# decimal point, or whole SECONDS when Bash lacks it. Builtins only.
+ui_clock_us() {
+    local __ui_now=${EPOCHREALTIME:-$((SECONDS*1000000))}
+    printf -v "$1" '%s' "${__ui_now/./}"
+}
 # Bounded phase summary shared by command substitutions. No clock reads or
 # writes when profiling is disabled; one fixed-size record per enabled phase.
 ui_profile_elapsed() {
     [[ -n ${TRASHTALK_UI_PROFILE:-} ]] || return 0
     local phase=$1 start=$2 now elapsed count=0 total=0 maximum=0
-    now=${EPOCHREALTIME:-$((SECONDS*1000000))};now=${now/./};elapsed=$((now-start));((elapsed>=0)) || elapsed=0
+    ui_clock_us now;elapsed=$((now-start));((elapsed>=0)) || elapsed=0
     [[ ! -f $TRASHTALK_UI_STATE/profile-$phase ]] || read -r count total maximum < "$TRASHTALK_UI_STATE/profile-$phase"
     ((elapsed<=maximum)) || maximum=$elapsed
     printf '%s %s %s\n' "$((count+1))" "$((total+elapsed))" "$maximum" > "$TRASHTALK_UI_STATE/profile-$phase"

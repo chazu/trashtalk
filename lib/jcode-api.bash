@@ -103,10 +103,24 @@ expect() {
     echo "Jcode API did not reply with $wanted" >&2
     return 1
 }
+# {session_id} fields for control requests; rebuilt only when native_ref changes.
+session_fields='' session_fields_ref=''
+ensure_session_fields() {
+    [[ -z "$session_fields" || "$session_fields_ref" != "$native_ref" ]] || return 0
+    session_fields=$(jq -cn --arg s "$native_ref" '{session_id:$s}')
+    session_fields_ref=$native_ref
+}
 attach() {
-    request attach_session "$(jq -cn --arg s "$native_ref" '{session_id:$s}')"
+    ensure_session_fields
+    request attach_session "$session_fields"
     expect attached
     [[ $(jq -r '.session.session_id' <<<"$frame") == "$native_ref" ]]
+}
+# Publish the completion receipt atomically and finish.
+complete() {
+    printf '%s\n' "$native_ref" > "$directory/completed.tmp"
+    mv "$directory/completed.tmp" "$directory/completed"
+    exit 0
 }
 request hello '{"min_version":1,"max_version":1,"client":"trashtalk/1"}'
 expect hello_ok
@@ -117,14 +131,11 @@ if [[ "$mode" == compact ]]; then
     attach
     [[ $(jq -r '.session.status' <<<"$frame") == idle ]] || { echo 'Native conversation is busy; try compaction when idle' >&2; exit 1; }
     printf '%s\n' "$native_ref" > "$directory/conversation"
-    before=$(_jcode_compaction_state "$directory/context-before.json")
-    after=$(_jcode_compaction_state "$JCODE_HOME/sessions/$native_ref.json")
-    if [[ "$after" != null && "$after" != "$before" ]]; then
-        printf '%s\n' "$native_ref" > "$directory/completed"
-        exit 0
-    fi
+    before=$(_jcode_context_value "$directory/context-before.json")
+    after=$(_jcode_context_value "$JCODE_HOME/sessions/$native_ref.json")
+    [[ "$after" == null || "$after" == "$before" ]] || complete
     touch "$directory/send-intent"
-    request compact "$(jq -cn --arg s "$native_ref" '{session_id:$s}')"
+    request compact "$session_fields"
     if ! expect compacted; then
         if [[ "$event" == error && "$reply" == "$request_id" ]]; then
             touch "$directory/request-rejected"
@@ -137,12 +148,8 @@ if [[ "$mode" == compact ]]; then
     [[ "$compact_limit" =~ ^[0-9]+$ && "$compact_limit" -gt 0 ]] || compact_limit=300
     compact_deadline=$((SECONDS + compact_limit))
     while :; do
-        after=$(_jcode_compaction_state "$JCODE_HOME/sessions/$native_ref.json")
-        if [[ "$after" != null && "$after" != "$before" ]]; then
-            printf '%s\n' "$native_ref" > "$directory/completed.tmp"
-            mv "$directory/completed.tmp" "$directory/completed"
-            exit 0
-        fi
+        after=$(_jcode_context_value "$JCODE_HOME/sessions/$native_ref.json")
+        [[ "$after" == null || "$after" == "$before" ]] || complete
         if (( SECONDS >= compact_deadline )); then
             echo 'Context compaction did not become durable before the timeout; inspect native logs before retrying' >&2
             exit 1
@@ -156,7 +163,7 @@ if [[ "$mode" == stop ]]; then
     native_ref=$(cat "$directory/conversation")
     [[ -n "$native_ref" ]]
     attach
-    request cancel "$(jq -cn --arg s "$native_ref" '{session_id:$s}')"
+    request cancel "$session_fields"
     expect ok
     # A cancel acknowledgment is insufficient. Ask the daemon for fresh state.
     idle=false
@@ -292,11 +299,7 @@ while :; do
         fi
         rc=0
         pump_input || rc=$?
-        if (( rc == 2 )); then
-            printf '%s\n' "$native_ref" > "$directory/completed.tmp"
-            mv "$directory/completed.tmp" "$directory/completed"
-            exit 0
-        fi
+        (( rc != 2 )) || complete
         (( rc == 0 )) || exit "$rc"
     fi
 done

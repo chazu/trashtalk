@@ -39,11 +39,11 @@ mapfile -d '' -t argv < <(jq -jer 'if type=="array" and length>0 and all(.[];typ
 jq_calls=$((jq_calls+1))
 invoke() {
     local started=0 elapsed=0 now=0
-    [[ -z ${TRASHTALK_UI_PROFILE:-} ]] || started=${EPOCHREALTIME:-$((SECONDS*1000000))};started=${started/./}
+    [[ -z ${TRASHTALK_UI_PROFILE:-} ]] || ui_clock_us started
     @ "$handler" "$@"
     local rc=$?
     if [[ -n ${TRASHTALK_UI_PROFILE:-} ]]; then
-        now=${EPOCHREALTIME:-$((SECONDS*1000000))};now=${now/./}; elapsed=$((now-started)); ((elapsed>=0)) || elapsed=0
+        ui_clock_us now; elapsed=$((now-started)); ((elapsed>=0)) || elapsed=0
         handler_receipts+=("{\"request_id\":$request,\"handler_us\":$elapsed}")
         ((${#handler_receipts[@]}<=32)) || handler_receipts=("${handler_receipts[@]:1}")
         handlers=$((handlers+1));handler_us=$((handler_us+elapsed));((elapsed<=max_us)) || max_us=$elapsed
@@ -74,7 +74,7 @@ declare -a receipt_ids=()
 highest=0 partial='' previous_context=$context
 send_result() {
     local result_context result_frame count=0 result_blob='' prepare_started=0
-    if [[ -n ${TRASHTALK_UI_PROFILE:-} ]];then prepare_started=${EPOCHREALTIME:-$((SECONDS*1000000))};prepare_started=${prepare_started/./};fi
+    [[ -z ${TRASHTALK_UI_PROFILE:-} ]] || ui_clock_us prepare_started
     IFS= read -r -N 2097153 result_blob < "$state/result" || true
     ((${#result_blob}<=2097152)) || return 1
     # Decode the entire response once; frames remain serialized JSONL. Context
