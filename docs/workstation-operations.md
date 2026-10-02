@@ -150,9 +150,9 @@ contract. `displayFor:` returns only the closed title/summary projection.
 
 The generic browser works through `@ Trash instanceRecordsFor: EventSubscription`
 and `Attention`. Declared properties appear as columns. Enter opens the existing
-instance inspector with actual declared values, including booleans, null
-coordinates and lifecycle state. `inspectionRecordFor:` exposes the same safe
-record data for noninteractive tests. No model stores raw event payload, command
+`UI::Inspector` with actual declared values, including booleans, null
+coordinates and lifecycle state. `@ UI::Inspector recordFor:` exposes the same
+safe record data for noninteractive tests. No model stores raw event payload, command
 output, or artifact contents. Future phases must not add those to generic views.
 
 ## Regression commands

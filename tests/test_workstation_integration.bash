@@ -59,14 +59,14 @@ for cls in Workstation::EventSubscription Workstation::Attention; do
  records=$(@ Trash instanceRecordsFor: "$cls")
  jq -e '(.display.columns|length)>5 and (.data|has("schemaDigest"))' <<<"$records" >/dev/null
  id=$(jq -r .id <<<"$records")
- inspector=$(@ Trash inspectionRecordFor: "$id")
+ inspector=$(@ UI::Inspector recordFor: "$id")
  jq -e '.data.id==.object_id and (.data|has("schemaDigest"))' <<<"$inspector" >/dev/null
  ! grep -Eq 'payload|stdout|stderr|artifactContents|secret' <<<"$records$inspector"
 done
 @ Trash instanceRecordsFor: Workstation::EventSubscription | jq -e '.display.columns|any(.name=="dispatchState" and .value=="paused")' >/dev/null
 @ "$a" acknowledge >/dev/null
 @ Trash instanceRecordsFor: Workstation::Attention | jq -e '.display.columns|any(.name=="state" and .value=="acknowledged")' >/dev/null
-@ Trash inspectionRecordFor: "$a" | jq -e '.data.state=="acknowledged" and .data.eventCount==0' >/dev/null
+@ UI::Inspector recordFor: "$a" | jq -e '.data.state=="acknowledged" and .data.eventCount==0' >/dev/null
 @ "$sub" display | jq -e '.enabled==true and .dispatchState=="paused"' >/dev/null
 @ "$a" display | jq -e '.state=="acknowledged"' >/dev/null
 echo 'PASS: atomic idempotent installation, optional doctor capabilities, browser columns and inspector values'
