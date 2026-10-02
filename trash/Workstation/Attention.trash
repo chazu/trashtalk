@@ -36,16 +36,15 @@ Attention subclass: Object
   ]
   # Routing references are optional metadata; when present they must resolve.
   classMethod: validateRoutingWithin: document [
+    @ self validateReference: 'delegatedSession' of: document class: 'Agent::Session'.
+    @ self validateReference: 'delegatedIdentity' of: document class: 'Agent::Identity'.
+    @ self validateReference: 'delegatedMessage' of: document class: 'Message'
+  ]
+  classMethod: validateReference: field of: document class: className [
     | value |
-    value := document jsonAt: 'delegatedSession' ifAbsent: '""'.
+    value := document jsonAt: field ifAbsent: '""'.
     value := value jsonTextAt: ''.
-    (value notEmpty) ifTrue: [@ Store read: value class: 'Agent::Session'].
-    value := document jsonAt: 'delegatedIdentity' ifAbsent: '""'.
-    value := value jsonTextAt: ''.
-    (value notEmpty) ifTrue: [@ Store read: value class: 'Agent::Identity'].
-    value := document jsonAt: 'delegatedMessage' ifAbsent: '""'.
-    value := value jsonTextAt: ''.
-    (value notEmpty) ifTrue: [@ Store read: value class: 'Message']
+    (value notEmpty) ifTrue: [@ Store read: value class: className]
   ]
   classMethod: createWithin: document [
     | id |

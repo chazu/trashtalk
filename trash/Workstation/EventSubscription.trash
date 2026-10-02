@@ -171,7 +171,7 @@ EventSubscription subclass: Object
   ]
   method: enabled [
     | data |
-    data := @ self asJson.
+    data := @ Store getInstance: self.
     ^ data jsonTextAt: 'enabled'
   ]
   # One human line for the operator; display is the JSON projection.
