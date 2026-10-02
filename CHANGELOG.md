@@ -26,6 +26,13 @@
 
 ### Changed
 
+- Object inspection has one entry point. `@ obj inspect`, `@ Trash
+  inspectObject:` and the instance browser open `UI::Inspector` for a human at
+  a terminal with `inui`, and print `describe`'s text otherwise. The UI
+  inspector edits scalar ivars: Enter opens a JSON editor and Apply stages an
+  `ObjectEditProposal`, which keeps its stale and schema checks. `describe`
+  shows declared state without runtime metadata.
+
 - Assignment execution is simpler (`docs/assignment-simplification.md`):
   - The worker resumes an unfinished specialist turn in the same conversation,
     up to `assignment.attempts` turns (default 4). After that the Assignment
@@ -40,11 +47,26 @@
 
 ### Removed
 
+- `Tools::Ininspect`, `Object inspectInteractive` (use `inspect`), and
+  `Trash inspectionRecordFor:` (use `UI::Inspector recordFor:`).
 - Assignment `continue:afterDelivery:key:`, `allowContinuations:reason:`, the
   continuation allowance, and coordinator recovery notifications. Use `retry`.
 - Remove the GitHub build-event importer and macOS polling service from Trashtalk.
 
 ### Fixed
+
+- Raw method bodies keep quoted strings and heredoc bodies verbatim; runs of
+  spaces were collapsed, which broke help columns, jq programs and templates.
+- `(x jsonHas: k) ifTrue:`/`ifFalse:` branch correctly; they compiled to an
+  arithmetic test that was always false.
+- `'a' , self , 'b'` no longer reads `$_RECEIVER` followed by literal text as
+  one variable name.
+- `@ Env get: 'name'` returns the variable rather than its own parameter.
+- `Http` sends header values and bodies to curl without `eval`; `Shell
+  execFull:` and `Http getFull:` use private temporary files.
+- Namespaced classes work with `Trash hashFor:`, `hierarchyFor:` and
+  `methodCategoriesOf:`.
+- `TestCase` no longer prints `nil` after every test.
 
 - Keep Jcode's recovery connection outside model-tool admission so a failed
   stop can be retried, and close its inherited worker lock before launching
