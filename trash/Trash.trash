@@ -265,21 +265,23 @@ Trash subclass: Object
     fi
   ]
 
+  # Space-separated "method:category" metadata from a class's compiled file.
+  # Fails, printing nothing, when the class has no compiled file.
+  rawMethod: methodCategoriesOf: class_name [
+    local compiled_file="$TRASHDIR/.compiled/$class_name"
+    [[ -f "$compiled_file" ]] || return 1
+    source "$compiled_file"
+    local cats_var="__${class_name}__methodCategories"
+    echo "${!cats_var:-}"
+  ]
+
   # Get methods in a specific category for a class
   rawMethod: methodsIn: class_name category: cat_name [
-    # Get compiled class metadata
-    local compiled_file="$TRASHDIR/.compiled/$class_name"
-    if [[ ! -f "$compiled_file" ]]; then
+    local cats
+    if ! cats=$(@ "$_RECEIVER" methodCategoriesOf: "$class_name"); then
       echo "Error: Class $class_name not found"
       return 1
     fi
-
-    # Source the class to get metadata
-    source "$compiled_file"
-
-    # Get method categories metadata
-    local cats_var="__${class_name}__methodCategories"
-    local cats="${!cats_var:-}"
 
     if [[ -z "$cats" ]]; then
       echo "No categorized methods for $class_name"
@@ -299,19 +301,11 @@ Trash subclass: Object
 
   # List all categories for a class
   rawMethod: categoriesFor: class_name [
-    # Get compiled class metadata
-    local compiled_file="$TRASHDIR/.compiled/$class_name"
-    if [[ ! -f "$compiled_file" ]]; then
+    local cats
+    if ! cats=$(@ "$_RECEIVER" methodCategoriesOf: "$class_name"); then
       echo "Error: Class $class_name not found"
       return 1
     fi
-
-    # Source the class to get metadata
-    source "$compiled_file"
-
-    # Get method categories metadata
-    local cats_var="__${class_name}__methodCategories"
-    local cats="${!cats_var:-}"
 
     if [[ -z "$cats" ]]; then
       echo "No categories for $class_name"
@@ -333,9 +327,8 @@ Trash subclass: Object
   # Show inheritance hierarchy for a class
   rawMethod: hierarchyFor: class_name [
     local compiled_file="$TRASHDIR/.compiled/$class_name"
-    local runtime_file="$TRASHDIR/$class_name"
 
-    if [[ -f "$compiled_file" || -f "$runtime_file" ]]; then
+    if [[ -f "$compiled_file" ]]; then
       echo "Inheritance hierarchy for $class_name:"
       @ "$_RECEIVER" _showHierarchy: "$class_name" depth: 0
     else
@@ -348,7 +341,6 @@ Trash subclass: Object
   rawMethod: _showHierarchy: class_name depth: depth [
     local indent="" i superclass super_var
     local compiled_file="$TRASHDIR/.compiled/$class_name"
-    local runtime_file="$TRASHDIR/$class_name"
 
     for ((i=0; i<depth; i++)); do
       indent="  $indent"
@@ -358,8 +350,6 @@ Trash subclass: Object
     # Source class to get metadata
     if [[ -f "$compiled_file" ]]; then
       source "$compiled_file"
-    elif [[ -f "$runtime_file" ]]; then
-      source "$runtime_file"
     else
       return 0
     fi
@@ -505,10 +495,8 @@ Trash subclass: Object
     echo "=== Trash System Statistics ==="
     echo "Objects: $(@ "$_RECEIVER" listObjects | wc -l)"
     echo "Traits: $(@ "$_RECEIVER" listTraits | wc -l)"
-    echo "KV entries: $(kvlist 2>/dev/null | wc -l)"
     echo "Active processes: $(@ Process listProcesses 2>/dev/null | wc -l)"
     echo "Memory usage: $(du -sh "$TRASHDIR" | cut -f1)"
-    echo "KV store size: $(du -sh "$KV_USER_DIR" 2>/dev/null | cut -f1 || echo "0B")"
   ]
 
   # Show help
@@ -798,7 +786,7 @@ EOF
   method: sourceFileFor: className [
     | root relative userSource classSource traitSource |
     root := @ Env get: 'TRASHDIR'.
-    relative := @ String replaceAll: '::' with: '/' in: className.
+    relative := className replaceAll: '::' with: '/'.
     userSource := root , '/user/' , relative , '.trash'.
     classSource := root , '/' , relative , '.trash'.
     traitSource := root , '/traits/' , relative , '.trash'.
@@ -1001,7 +989,7 @@ EOF
   method: pickRecords: records query: query title: title [
     | root available |
     root := @ Env get: 'TRASHDIR'.
-    root := @ String trimSuffix: '/trash' from: root.
+    root := root withoutSuffix: '/trash'.
     available := @ Tools::Inpick isInstalled.
     (available = 'true') ifTrue: [
       ^ @ Tools::Inpick selectRecords: records root: root query: query title: title
@@ -1086,35 +1074,34 @@ EOF
     ^ @ self editSource: sourceFile class: className line: line
   ]
 
-  method: browse [
-    | records result |
-    records := @ self symbolRecords.
-    result := @ self pickRecords: records query: '' title: 'Trashtalk symbols'.
+  method: browseRecords: records title: title [
+    | result |
+    result := @ self pickRecords: records query: '' title: title.
     ^ @ self openBrowserResult: result
+  ]
+
+  method: browse [
+    | records |
+    records := @ self symbolRecords.
+    ^ @ self browseRecords: records title: 'Trashtalk symbols'
   ]
 
   method: browseClass: className [
-    | records title result |
+    | records |
     records := @ self symbolRecordsForClass: className.
-    title := 'Browse: ' , className.
-    result := @ self pickRecords: records query: '' title: title.
-    ^ @ self openBrowserResult: result
+    ^ @ self browseRecords: records title: 'Browse: ' , className
   ]
 
   method: browseImplementorsOf: selector [
-    | records title result |
+    | records |
     records := @ self implementorsOf: selector.
-    title := 'Implementors: ' , selector.
-    result := @ self pickRecords: records query: '' title: title.
-    ^ @ self openBrowserResult: result
+    ^ @ self browseRecords: records title: 'Implementors: ' , selector
   ]
 
   method: browseSendersOf: selector [
-    | records title result |
+    | records |
     records := @ self sendersOf: selector.
-    title := 'Senders: ' , selector.
-    result := @ self pickRecords: records query: '' title: title.
-    ^ @ self openBrowserResult: result
+    ^ @ self browseRecords: records title: 'Senders: ' , selector
   ]
 
   # DSL-first edit/compile/check/reload/test workflow. Diagnostics are passed as

@@ -38,7 +38,7 @@ Cue subclass: Tool
     argv := argv arrayPush: 'version'.
     result := @ self resultForArgv: argv command: 'version' failureOutcome: 'process_error'.
     stdout := @ self stdoutOf: result.
-    ^ @ String firstLine: stdout
+    ^ stdout firstLine
   ]
 
   # ---------------------------------------------------------------------------

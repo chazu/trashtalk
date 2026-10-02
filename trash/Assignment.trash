@@ -223,7 +223,7 @@ Assignment subclass: Object
     (run isEmpty) ifTrue: [^ ''].
     run := @ Store read: run class: 'Agent::Run'.
     state := @ run state.
-    active := @ Require contains: state in: '["starting","running","recovering"]'.
+    active := @ Agent::Run isActiveState: state.
     (active = 'true') ifTrue: [^ run].
     ^ ''
   ]
@@ -266,7 +266,7 @@ Assignment subclass: Object
         (held notEmpty) ifTrue: [(held ~= run) ifTrue: [
           held := @ Store read: held class: 'Agent::Run'.
           state := @ held state.
-          active := @ Require contains: state in: '["starting","running","recovering"]'.
+          active := @ Agent::Run isActiveState: state.
           (active = 'true') ifTrue: [^ @ Require reject: 'Stop the Assignment run ' , held , ' before finishing it']
         ] ]
       ].
@@ -335,7 +335,7 @@ Assignment subclass: Object
     (run notEmpty) ifTrue: [
       run := @ Store read: run class: 'Agent::Run'.
       state := @ run state.
-      active := @ Require contains: state in: '["starting","running","recovering"]'.
+      active := @ Agent::Run isActiveState: state.
       (active = 'true') ifTrue: [^ @ Require reject: 'Stop the Assignment run ' , run , ' before retrying']
     ].
     questions := @ Agent::Queue unansweredForAssignment: self.

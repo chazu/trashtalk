@@ -272,11 +272,10 @@ Queue subclass: Object
   ]
 
   classMethod: publishManual: message [
-    | recipient session isSession |
+    | recipient session |
     recipient := @ message to.
     session := ''.
-    isSession := @ String startsWith: recipient prefix: 'session:'.
-    (isSession = 'true') ifTrue: [session := recipient withoutPrefix: 'session:'].
+    (recipient startsWith: 'session:') ifTrue: [session := recipient withoutPrefix: 'session:'].
     ^ @ self publish: message assignedTo: session
   ]
 
@@ -290,13 +289,13 @@ Queue subclass: Object
   ]
 
   classMethod: publish: message assignedTo: session [
-    | recipient isSession isAgent row |
+    | recipient isSession row |
     @ Store requireTransaction.
     @ message save.
     recipient := @ message to.
-    isSession := @ String startsWith: recipient prefix: 'session:'.
-    isAgent := @ String startsWith: recipient prefix: 'agent:'.
-    (isAgent = 'true') ifTrue: [isSession := 'true'].
+    isSession := 'false'.
+    (recipient startsWith: 'session:') ifTrue: [isSession := 'true'].
+    (recipient startsWith: 'agent:') ifTrue: [isSession := 'true'].
     (isSession = 'true') ifTrue: [
       row := #{message_id: message inbox: recipient session: session} asJson.
       @ Store insert: row into: 'agent_outbox'

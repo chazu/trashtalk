@@ -63,7 +63,7 @@ TestCase subclass: Object
   # ==========================================
 
   method: assert: haystack contains: needle [
-    (@ String contains: haystack substring: needle)
+    (haystack includes: needle)
       ifTrue: [@ self _pass]
       ifFalse: [@ self fail: 'Expected string to contain substring']
   ]

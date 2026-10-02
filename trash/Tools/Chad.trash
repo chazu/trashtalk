@@ -56,7 +56,7 @@ Chad subclass: Tool
 
   classMethod: invoke: prompt mode: mode continueLatest: continuing model: model inDirectory: directory dryRun: dryRun [
     | trimmed allowed available argv capture result detail |
-    trimmed := @ String trim: prompt.
+    trimmed := prompt trimmed.
     trimmed isEmpty ifTrue: [^ @ Require reject: 'A nonempty Chad prompt is required'].
     directory isEmpty ifTrue: [^ @ Require reject: 'A working directory is required'].
     allowed := @ Require contains: mode in: '["execute","plan"]'.

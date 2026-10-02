@@ -23,9 +23,9 @@ Codex subclass: Tool
     stdout := @ String jsonPath: 'stdout' from: capture.
     stdout isEmpty ifTrue: [
       stderr := @ String jsonPath: 'stderr' from: capture.
-      ^ @ String trim: stderr
+      ^ stderr trimmed
     ].
-    ^ @ String trim: stdout
+    ^ stdout trimmed
   ]
 
   classMethod: argvForWorkingDirectory: workingDirectory [
@@ -39,25 +39,23 @@ Codex subclass: Tool
   ]
 
   classMethod: run: input workingDirectory: workingDirectory [
-    | available authStatus chatgptAuth argv capture |
+    | available authStatus argv capture |
     available := @ self isInstalled.
     (available ~= 'true') ifTrue: [^ @ self missingToolResult].
     authStatus := @ self authStatus.
-    chatgptAuth := @ String contains: authStatus substring: 'ChatGPT'.
-    (chatgptAuth ~= 'true') ifTrue: [^ @ self authenticationResult: authStatus].
+    (authStatus includes: 'ChatGPT') ifFalse: [^ @ self authenticationResult: authStatus].
     argv := @ self argvForWorkingDirectory: workingDirectory.
     capture := @ self captureArgvJson: argv input: input progress: 'Waiting for Codex'.
     ^ @ self normalizeCaptured: capture
   ]
 
   classMethod: dryRun: input workingDirectory: workingDirectory [
-    | available argv detail dryResult result |
+    | available argv detail result |
     available := @ self isInstalled.
     (available ~= 'true') ifTrue: [^ @ self missingToolResult].
     argv := @ self argvForWorkingDirectory: workingDirectory.
     detail := #{argv: (argv jsonValue) stdin: input dry_run: true} asJson.
-    dryResult := detail.
-    result := #{schema_version: 1 backend: 'codex' outcome: 'success' exit_code: 0 stdout: '' stderr: '' result: (dryResult jsonValue)} asJson.
+    result := #{schema_version: 1 backend: 'codex' outcome: 'success' exit_code: 0 stdout: '' stderr: '' result: (detail jsonValue)} asJson.
     ^ result
   ]
 
@@ -79,7 +77,7 @@ Codex subclass: Tool
     | outcome content normalized result |
     capture jsonUnpack: #('exit_code' 'stdout' 'stderr') into: [:exitCode :stdout :stderr |
       outcome := 'process_error'.
-      content := @ String trim: stdout.
+      content := stdout trimmed.
       (exitCode = '0') ifTrue: [
         outcome := 'success'.
         content isEmpty ifTrue: [outcome := 'invalid_output']

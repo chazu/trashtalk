@@ -64,8 +64,8 @@ Dictionary subclass: Object
     | pairsArray key value unused |
     pairsArray := @ String splitToArray: pairs on: ' '.
     pairsArray arrayEach: [:pair |
-      key := @ String before: ':' in: pair.
-      value := @ String after: ':' in: pair.
+      key := pair upTo: ':'.
+      value := pair after: ':'.
       unused := @ self at: key put: value
     ].
     ^ self
