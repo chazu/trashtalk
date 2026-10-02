@@ -49,10 +49,6 @@ def succeed($v):
 def fail:
   .result = null;
 
-# Transform result if not null
-def mapResult(f):
-  if .result != null then .result |= f else . end;
-
 # Skip NEWLINE and COMMENT tokens
 def skipNewlines:
   if current.type == "NEWLINE" or current.type == "COMMENT" then advance | skipNewlines else . end;
@@ -165,67 +161,6 @@ def parseClassHeader:
     elif current.value == "trait" then
       advance |
       .result = {type: "class", name: $name, parent: null, parentPackage: null, isTrait: true, location: $location}
-    else
-      fail
-    end
-  else
-    fail
-  end;
-
-# Parse instance variable: name or name:default
-def parseVarSpec:
-  if current.type == "KEYWORD" then
-    # name:default pattern
-    current.value as $kw |
-    advance | skipNewlines |
-    if current.type == "NUMBER" then
-      .result = {name: ($kw | rtrimstr(":")), default: {type: "number", value: current.value}} |
-      advance
-    elif current.type == "STRING" then
-      .result = {name: ($kw | rtrimstr(":")), default: {type: "string", value: (current.value | ltrimstr("'") | rtrimstr("'"))}} |
-      advance
-    elif current.type == "TRIPLESTRING" then
-      .result = {name: ($kw | rtrimstr(":")), default: {type: "triplestring", value: current.value}} |
-      advance
-    else
-      # Keyword without value - treat as error or plain var
-      fail
-    end
-  elif current.type == "IDENTIFIER" then
-    .result = {name: current.value, default: null} | advance
-  else
-    fail
-  end;
-
-# Parse: instanceVars: var1 var2:0
-def parseInstanceVars:
-  if current.value == "instanceVars:" then
-    advance | skipNewlines |
-    # Collect variables until we hit something that's not a var
-    .result = [] |
-    until(
-      .result == null or
-      (current.type != "KEYWORD" and current.type != "IDENTIFIER") or
-      current.value == "method:" or current.value == "classMethod:" or
-      current.value == "rawMethod:" or current.value == "rawClassMethod:" or
-      current.value == "testMethod:" or current.value == "rawTestMethod:" or
-      current.value == "include:" or current.value == "requires:" or
-      current.value == "instanceVars:";
-
-      parseVarSpec |
-      if .result != null then
-        . as $state |
-        $state.result as $var |
-        $state | skipNewlines | .result = ($state | .result = .result) |
-        # Store accumulated vars
-        (.result // []) + [$var] | . as $vars |
-        $state | skipNewlines | .result = $vars
-      else
-        .
-      end
-    ) |
-    if .result != null and (.result | length) > 0 then
-      .result = {type: "instanceVars", vars: .result}
     else
       fail
     end

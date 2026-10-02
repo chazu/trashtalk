@@ -1128,41 +1128,6 @@ def expr_is_ivar($name; $ivars):
 def expr_is_cvar($name; $cvars):
   ($cvars // []) | any(. == $name);
 
-# Generate code for arithmetic context (no wrapper)
-# Must be defined before expr_gen since they're mutually recursive
-def expr_gen_arith($locals; $ivars; $cvars):
-  if . == null then "0"
-  elif .type == "number" then .value
-  elif .type == "identifier" then
-    if expr_is_local(.name; $locals) then "$\(.name)"
-    elif expr_is_ivar(.name; $ivars) then "$(_ivar \(.name))"
-    elif expr_is_cvar(.name; $cvars) then "$(_cvar \(.name))"
-    else "$\(.name)"
-    end
-  elif .type == "variable" then .value
-  elif .type == "subshell" then .value
-  elif .type == "arithmetic" then (.value | gsub("^\\$\\(\\(|\\)\\)$"; ""))
-  elif .type == "binary" then
-    "(\(.left | expr_gen_arith($locals; $ivars; $cvars)) \(.op) \(.right | expr_gen_arith($locals; $ivars; $cvars)))"
-  elif .type == "unary" and .op == "-" then
-    "(-\(.operand | expr_gen_arith($locals; $ivars; $cvars)))"
-  elif .type == "string_op" and .op == "size" and .subject.type == "identifier" then
-    if expr_is_local(.subject.name; $locals) then "${#\(.subject.name)}"
-    elif expr_is_ivar(.subject.name; $ivars) then "$(__s=\"$(_ivar \(.subject.name))\"; printf '%s' \"${#__s}\")"
-    elif expr_is_cvar(.subject.name; $cvars) then "$(__s=\"$(_cvar \(.subject.name))\"; printf '%s' \"${#__s}\")"
-    else "${#\(.subject.name)}"
-    end
-  else
-    # For non-arithmetic types, fall through to main generator
-    if .type == "self" then "\"$_RECEIVER\""
-    elif .type == "subshell" then
-      # Replace self with "$_RECEIVER" in subshell content
-      .value | gsub("@ self\\b"; "@ \"$_RECEIVER\"")
-    elif .type == "variable" then .value
-    else "0"
-    end
-  end;
-
 # ------------------------------------------------------------------------------
 # Statement value discipline
 # ------------------------------------------------------------------------------
