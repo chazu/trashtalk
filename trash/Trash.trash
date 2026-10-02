@@ -909,21 +909,24 @@ EOF
   # introduced.
   rawMethod: astRecords [
     pragma: direct
-    local -a sources
-    mapfile -d '' -t sources < <(find "$TRASHDIR" -type f -name '*.trash' \
-      -not -path "$TRASHDIR/.compiled/*" -print0)
-    [[ ${#sources[@]} -gt 0 ]] || return 0
-    "$SCRIPT_DIR/jq-compiler/driver.bash" 'parse-many' "${sources[@]}"
+    @ "$_RECEIVER" compilerCommand: 'parse-many' overSourcesShowing: ''
   ]
 
   # Source discovery and compiler invocation are an OS boundary. The compiler
   # owns content/query invalidation for the derived public symbol records.
   rawMethod: symbolRecords [
+    @ "$_RECEIVER" compilerCommand: 'symbols-many' overSourcesShowing: 'Indexing symbols'
+  ]
+
+  # Run one driver command over every .trash source outside .compiled/. An
+  # empty label runs without a progress indicator.
+  rawMethod: compilerCommand: command overSourcesShowing: label [
+    pragma: direct
     local -a sources
     mapfile -d '' -t sources < <(find "$TRASHDIR" -type f -name '*.trash' \
       -not -path "$TRASHDIR/.compiled/*" -print0)
     [[ ${#sources[@]} -gt 0 ]] || return 0
-    _trash_with_progress 'Indexing symbols' "$SCRIPT_DIR/jq-compiler/driver.bash" 'symbols-many' "${sources[@]}"
+    _trash_with_progress "$label" "$SCRIPT_DIR/jq-compiler/driver.bash" "$command" "${sources[@]}"
   ]
 
   rawMethod: symbolRecordsForSource: sourceFile [
