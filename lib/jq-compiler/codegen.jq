@@ -1285,6 +1285,21 @@ def expr_gen($locals; $ivars; $cvars):
     elif .type == "message_send" or .type == "cascade" then "$(\(expr_gen($locals; $ivars; $cvars)))"
     else expr_gen($locals; $ivars; $cvars)
     end;
+  # One quoted Bash word for a JSON primitive's receiver or argument.
+  def arg_code:
+    if .type == "string" or .type == "symbol" then .value | @sh
+    elif .type == "message_send" then "\"$(\(expr_gen($locals; $ivars; $cvars)))\""
+    else "\"\(expr_gen($locals; $ivars; $cvars))\"" end;
+  # A message argument: expansions, concatenations, and triple-quoted text are
+  # double-quoted so they stay one word.
+  def send_arg_code:
+    . as $arg | expr_gen($locals; $ivars; $cvars) |
+    if test("^\\$") or ($arg.type == "binary" and $arg.op == ",") or $arg.type == "triplestring" then "\"\(.)\"" else . end;
+  # JSON primitives generated as one `$(...)` whose exit status assignments and
+  # returns keep, so malformed typed input fails the method.
+  def json_value_primitive:
+    .type == "json_primitive" and
+    (.operation | IN("asJson", "jsonValue", "jsonAt", "jsonTextAt", "jsonHas", "jsonAtDefault", "arrayCollect", "arraySelect", "objectCollect", "objectSelect"));
   # Condition code for control flow, boolean returns, and boolean values.
   # Helper function to generate a condition with appropriate wrapper
   # Returns {code: "...", needs_wrapper: bool} where needs_wrapper indicates if (( )) is needed
@@ -1473,8 +1488,7 @@ def expr_gen($locals; $ivars; $cvars):
       # selector "at_put" with args [idx, val] -> "at: idx put: val"
       (.selector | split("_")) as $keywords |
       # Quote args that are variable expansions (start with $)
-      ([(.args // [])[] | . as $arg | expr_gen($locals; $ivars; $cvars) |
-        if test("^\\$") or ($arg.type == "binary" and $arg.op == ",") or $arg.type == "triplestring" then "\"\(.)\"" else . end]) as $arg_codes |
+      ([(.args // [])[] | send_arg_code]) as $arg_codes |
       ([$keywords, $arg_codes] | transpose | map("\(.[0]): \(.[1])") | join(" "))
     else
       # Unary method: just the selector
@@ -1489,15 +1503,13 @@ def expr_gen($locals; $ivars; $cvars):
     (.receiver | expr_gen($locals; $ivars; $cvars)) as $recv |
     (.messages | map(
       (if ((.args // []) | length) > 0 then
-        " " + ([(.args // [])[] | . as $arg | expr_gen($locals; $ivars; $cvars) |
-          if test("^\\$") or ($arg.type == "binary" and $arg.op == ",") or $arg.type == "triplestring" then "\"\(.)\"" else . end] | join(" "))
+        " " + ([(.args // [])[] | send_arg_code] | join(" "))
       else ""
       end) as $args |
       "@ \($recv) \(.selector // "")\($args)"
     ) | join("; ")) as $cascade_code |
     if $discard then "{ \($cascade_code); } >/dev/null" else $cascade_code end
-  elif .type == "assignment" and .value.type == "json_primitive" and
-       (.value.operation | IN("asJson", "jsonValue", "jsonAt", "jsonTextAt", "jsonHas", "jsonAtDefault", "arrayCollect", "arraySelect", "objectCollect", "objectSelect")) then
+  elif .type == "assignment" and (.value | json_value_primitive) then
     (.value | expr_gen($locals; $ivars; $cvars)) as $code |
     if expr_is_ivar(.target; $ivars) and (expr_is_local(.target; $locals) | not) then
       "local __json_value__; __json_value__=\"\($code)\" || return; _ivar_set \(.target) \"$__json_value__\""
@@ -1572,8 +1584,7 @@ def expr_gen($locals; $ivars; $cvars):
     end
   elif .type == "return" then
     if .value == null then "return"
-    elif .value.type == "json_primitive" and
-         (.value.operation | IN("asJson", "jsonValue", "jsonAt", "jsonTextAt", "jsonHas", "jsonAtDefault", "arrayCollect", "arraySelect", "objectCollect", "objectSelect")) then
+    elif .value | json_value_primitive then
       # Emit the serializer directly so malformed typed input retains its status.
       (.value | expr_gen($locals; $ivars; $cvars)) as $code |
       "\($code[2:-1]); return"
@@ -1915,10 +1926,6 @@ def expr_gen($locals; $ivars; $cvars):
     json_plan(.receiver; .operation == "jsonValue"; 0) as $plan |
     "$(jq -cn \($plan.args | join(" ")) \($plan.filter | @sh))"
   elif .type == "json_traversal" then
-    def arg_code:
-      if .type == "string" or .type == "symbol" then .value | @sh
-      elif .type == "message_send" then "\"$(\(expr_gen($locals; $ivars; $cvars)))\""
-      else "\"\(expr_gen($locals; $ivars; $cvars))\"" end;
     (.receiver | arg_code) as $receiver |
     (.block.params // []) as $params |
     if any($params[]; startswith("__tj_") or startswith("__json_")) then error("reserved JSON binding name") else . end |
@@ -1952,10 +1959,6 @@ def expr_gen($locals; $ivars; $cvars):
     end
   elif .type == "json_primitive" and
        (.operation | IN("jsonAt", "jsonTextAt", "jsonHas", "jsonAtDefault", "arrayCollect", "arraySelect", "objectCollect", "objectSelect")) then
-    def arg_code:
-      if .type == "string" or .type == "symbol" then .value | @sh
-      elif .type == "message_send" then "\"$(\(expr_gen($locals; $ivars; $cvars)))\""
-      else "\"\(expr_gen($locals; $ivars; $cvars))\"" end;
     (.receiver | arg_code) as $receiver | (.args | map(arg_code)) as $args |
     if (.operation | startswith("array") or startswith("object")) then
       (if (.operation | startswith("array")) then "array" else "object" end) as $kind |
