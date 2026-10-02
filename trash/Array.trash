@@ -8,12 +8,17 @@ Array subclass: Object
   # Usage: arr := @ Array fromLines: "a\nb\nc"
   # Returns array containing ["a", "b", "c"]
   classMethod: fromLines: text [
-    | arr jsonArray |
-    arr := @ Array new.
-    # Split on newline and convert to JSON array
+    | jsonArray |
     jsonArray := @ String splitToArray: text on: '
 '.
-    @ arr setItems: jsonArray.
+    ^ @ Array fromJson: jsonArray
+  ]
+
+  # Create array from a JSON array string
+  classMethod: fromJson: json [
+    | arr |
+    arr := @ Array new.
+    @ arr setItems: json.
     ^ arr
   ]
 
@@ -82,19 +87,15 @@ Array subclass: Object
   ]
 
   method: collect: aBlock [
-    | newItems newArray |
+    | newItems |
     newItems := items arrayCollect: aBlock.
-    newArray := @ Array new.
-    @ newArray setItems: newItems.
-    ^ newArray
+    ^ @ Array fromJson: newItems
   ]
 
   method: select: aBlock [
-    | newItems newArray |
+    | newItems |
     newItems := items arraySelect: aBlock.
-    newArray := @ Array new.
-    @ newArray setItems: newItems.
-    ^ newArray
+    ^ @ Array fromJson: newItems
   ]
 
   method: detect: aBlock [

@@ -87,19 +87,15 @@ Dictionary subclass: Object
   ]
 
   method: collect: aBlock [
-    | newItems newDict |
+    | newItems |
     newItems := items objectCollect: aBlock.
-    newDict := @ Dictionary new.
-    @ newDict setItems: newItems.
-    ^ newDict
+    ^ @ Dictionary fromJson: newItems
   ]
 
   method: select: aBlock [
-    | newItems newDict |
+    | newItems |
     newItems := items objectSelect: aBlock.
-    newDict := @ Dictionary new.
-    @ newDict setItems: newItems.
-    ^ newDict
+    ^ @ Dictionary fromJson: newItems
   ]
 
   # Merge another dictionary into this one (modifies self)
