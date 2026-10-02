@@ -2050,21 +2050,7 @@ def expr_gen($locals; $ivars; $cvars):
   elif .type == "json_primitive" then
     # JSON primitive operations - generate jq pipelines
     (.receiver | expr_gen($locals; $ivars; $cvars)) as $recv |
-    # Determine how to pipe receiver to jq:
-    # - Variables ($...) need: echo "$var" |
-    # - Message sends (@...) need: $( @ ... ) | (no echo, wrap in subshell)
-    # - Already-evaluated subshells ($(...)) need: echo "$(...)"|
-    (if ($recv | test("^@")) then
-      # Message send - needs subshell wrapper, no echo
-      { "prefix": "$(", "recv": $recv, "suffix": ") |" }
-    elif ($recv | test("^\\$")) then
-      # Variable or subshell - needs echo with quotes
-      { "prefix": "$(echo \"", "recv": $recv, "suffix": "\" |" }
-    else
-      # Literal or other - use echo
-      { "prefix": "$(echo ", "recv": $recv, "suffix": " |" }
-    end) as $pipe_recv |
-    # For backward compat, also set quoted_recv
+    # Variables and subshells ($...) are echoed quoted; literals echo as-is
     (if ($recv | test("^\\$")) then "\"\($recv)\"" else $recv end) as $quoted_recv |
     # Helper: generate proper jq pipe - handles message sends vs variables/literals
     # Message sends (@...) are executed directly, others need echo
