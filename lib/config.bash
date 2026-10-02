@@ -109,6 +109,13 @@ _trash_config_declared() {
     [[ -n $1 && -n ${_TRASH_CONFIG_TYPE[$1]+set} ]]
 }
 
+# Throws ConfigurationError unless the key is declared.
+_trash_config_require() {
+    _trash_config_declared "$1" && return 0
+    _throw ConfigurationError "Unknown configuration key: $1 (see: @ Config list)"
+    return 1
+}
+
 # Usage: _trash_config_valid key value. Sets _tc_error when invalid.
 _trash_config_valid() {
     local type=${_TRASH_CONFIG_TYPE[$1]} choice
@@ -132,10 +139,7 @@ _trash_config_valid() {
 # errors, and invalid values.
 _trash_config_resolve() {
     local key=$1 var
-    if ! _trash_config_declared "$key"; then
-        _throw ConfigurationError "Unknown configuration key: $key (see: @ Config list)"
-        return 1
-    fi
+    _trash_config_require "$key" || return 1
     var=${_TRASH_CONFIG_ENV[$key]}
     _tc_env_name=$var
     if [[ -n ${!var:-} ]]; then
@@ -287,10 +291,7 @@ _trash_config_warn_shadow() {
 
 trash_config_put() {
     local key=$1 value=$2
-    if ! _trash_config_declared "$key"; then
-        _throw ConfigurationError "Unknown configuration key: $key (see: @ Config list)"
-        return 1
-    fi
+    _trash_config_require "$key" || return 1
     if ! _trash_config_valid "$key" "$value"; then
         _throw ConfigurationError "$key $_tc_error"
         return 1
@@ -304,10 +305,7 @@ trash_config_put() {
 }
 
 trash_config_reset() {
-    if ! _trash_config_declared "$1"; then
-        _throw ConfigurationError "Unknown configuration key: $1 (see: @ Config list)"
-        return 1
-    fi
+    _trash_config_require "$1" || return 1
     _trash_config_rewrite "$1" '' reset || return 1
     _trash_config_warn_shadow "$1"
 }
