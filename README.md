@@ -31,7 +31,9 @@ source lib/trash.bash
 ```
 
 Add `source ~/.trashtalk/lib/trash.bash` to your Bash startup file. If installed
-elsewhere, set `TRASHTALK_DIR` to that checkout before sourcing the runtime.
+elsewhere, set `TRASHTALK_DIR` to that checkout, `TRASHDIR` to its `trash`
+directory, and `SQLITE_JSON_DB` to its `instances.db` before sourcing the
+runtime; each defaults to a path under `~/.trashtalk` independently.
 `@ Trash doctor` checks dependencies and optional integrations; with the Maki
 profile selected, it can also install a missing Maki executable.
 
