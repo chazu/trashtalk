@@ -21,6 +21,10 @@ assert not any(os.environ.get(k) for k in (
     'TRASHTALK_RUN_TOKEN', 'OPENAI_API_KEY', 'CODEX_API_KEY', 'OPENROUTER_API_KEY'))
 if sys.argv[-3:] == ['server', 'stop', '--force']:
     sys.exit(0)
+if sys.argv[-2:] == ['model', 'list']:
+    (home / 'fixture-catalog-ready').write_text('refreshed')
+    print('fixture-model')
+    sys.exit(0)
 assert sys.argv[-2:] == ['api-bridge', '--stdio']
 assert '--tools' in sys.argv
 # A real bridge may start a resident daemon. It must not pass the caller's
@@ -127,8 +131,9 @@ for line in sys.stdin:
         if kind == 'create_session':
             assert not state.exists(), 'must reuse the native session'
             state.write_text('idle')
-            (home / 'sessions').mkdir(exist_ok=True)
-            (home / 'sessions' / (native + '.json')).write_text(json.dumps({'id': native, 'working_dir': os.getcwd(), 'messages': [{'role': 'user', 'content': 'retained history'}]}))
+            if mode != 'refuse-model':
+                (home / 'sessions').mkdir(exist_ok=True)
+                (home / 'sessions' / (native + '.json')).write_text(json.dumps({'id': native, 'working_dir': os.getcwd(), 'messages': [{'role': 'user', 'content': 'retained history'}]}))
         else:
             assert req['session_id'] == native
         session = dict(session_id=native, status=state.read_text(), working_dir=os.getcwd())
@@ -159,8 +164,13 @@ for line in sys.stdin:
             threading.Thread(target=apply_compaction, daemon=True).start()
             emit('compacted', rid, session_id=native, message='Compaction scheduled')
     elif kind in ('set_model', 'set_reasoning_effort'):
-
-        emit('ok', rid)
+        if kind == 'set_model' and (mode == 'refuse-model' or
+                (mode == 'require-catalog' and not (home / 'fixture-catalog-ready').exists())):
+            if not (home / 'sessions' / (native + '.json')).exists():
+                state.unlink()  # An unsaved session does not survive daemon exit.
+            emit('error', rid, code='invalid_request', message='Unsupported OpenAI model fixture-model')
+        else:
+            emit('ok', rid)
     elif kind == 'send_message':
         assert state.read_text() == 'idle', 'overlapping prompt'
         assert 'FIRST_SECRET' not in req['content'] and 'SECOND_SECRET' not in req['content']

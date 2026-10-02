@@ -73,6 +73,16 @@ message followed by `turn_done` for the same session. An acknowledgment, process
 exit, or daemon liveness alone cannot prove completion. A lost adapter after send
 leaves the run recovering and the session paused; no automatic prompt replay.
 
+Native creation can return a session ID before any history is persisted. The
+driver publishes that reference to the logical session only when persisted
+history exists or send intent requires retaining it for recovery. A model
+configuration rejection before either boundary leaves the logical session
+available for retry and returns the provider diagnostic to the composer.
+Before starting a model run, the adapter refreshes Jcode's account model catalog
+with the private home's OAuth credentials. This lets newly released models be
+selected even when Jcode's compiled fallback list predates them. Stop and
+compaction do not depend on catalog discovery.
+
 `@ "$run" stop` targets an exact run under the worker lock. It pauses its session,
 revokes the token, and asks its driver to stop. For Jcode, the adapter is stopped
 first to fence late sends, then a separate client cancels the recorded native
