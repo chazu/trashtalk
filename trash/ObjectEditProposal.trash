@@ -1,6 +1,6 @@
-# ObjectEditProposal - Validate and apply one human-authored ininspect leaf edit.
+# ObjectEditProposal - Validate and apply one human-authored inspector leaf edit.
 #
-# Innards only presents state and returns a proposal. This class owns the
+# UI::Inspector only presents state and stages a proposal. This class owns the
 # optimistic concurrency check and the Runtime mutation.
 ObjectEditProposal subclass: Object
 
@@ -37,7 +37,7 @@ ObjectEditProposal subclass: Object
          ([$result.proposal.path[] |
             select((type != "string") and
                    (type != "number" or floor != . or . < 0))] | length) != 0
-      then invalid("Expected a closed ininspect proposal result")
+      then invalid("Expected a closed inspector proposal result")
       elif $result.object_id != $expected_object or $result.class_name != $expected_class
       then invalid("Inspection proposal target does not match the requested object")
       elif $result.base_data != $current_view

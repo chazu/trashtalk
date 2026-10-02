@@ -289,12 +289,12 @@ Traits are reusable method collections. Define a trait:
 ```smalltalk
 Debuggable trait
 
-  method: inspect [
-    @ Console print: "Instance: $_RECEIVER"
+  method: debug: message [
+    @ Console error: 'DEBUG (' , self , '): ' , message
   ]
 
-  method: log: message [
-    echo "[$(date)] $message"
+  method: trace: methodName [
+    @ self debug: 'Calling ' , methodName
   ]
 ```
 
@@ -1096,5 +1096,5 @@ See [compiler capabilities](docs/COMPILER_CAPABILITIES.md) for the test map.
 @ Trash methodsFor: Counter        # List methods
 @ Trash sourceFor: Counter         # View embedded source
 @ Trash hashFor: Counter           # View source hash
-@ $instance inspect               # Show instance details
+@ $instance inspect               # UI inspector at a terminal; text otherwise
 ```

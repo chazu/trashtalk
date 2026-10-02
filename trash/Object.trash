@@ -45,13 +45,19 @@ Object subclass: nil
     @ Runtime delete: "$_INSTANCE"
   ]
 
-  # Return a detailed inspection of this object
-  # Shows class name, instance ID, and all instance variables with values
-  rawMethod: inspect [
+  # Inspect this object. A human at a terminal gets the UI inspector, which
+  # can also stage validated ivar edits; other callers get describe's text.
+  method: inspect [
+    ^ @ UI::Inspector openObject: self
+  ]
+
+  # Class name, instance ID, and every instance variable, one per line. Like
+  # the UI inspector, it shows declared state without runtime metadata.
+  rawMethod: describe [
     local data class instance
     class="$_CLASS"
     instance="$_INSTANCE"
-    data=$(@ Runtime dataFor: "$_RECEIVER")
+    data=$(@ String jsonInstanceView: "$(@ Runtime dataFor: "$_RECEIVER")")
 
     echo "a $class"
     echo "  id: $instance"
@@ -59,13 +65,6 @@ Object subclass: nil
     if [[ -n "$data" && "$data" != "{}" ]]; then
       echo "$data" | jq -r 'to_entries | .[] | "  \(.key): \(.value)"'
     fi
-  ]
-
-  # Open the Innards tree inspector. Unlike inspect, this is explicitly
-  # interactive; any leaf edit is returned as a proposal and validated by
-  # Trashtalk before object state changes.
-  method: inspectInteractive [
-    ^ @ Trash inspectObject: self
   ]
 
   # Return this object's data as JSON

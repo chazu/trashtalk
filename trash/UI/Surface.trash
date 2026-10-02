@@ -9,6 +9,18 @@ Surface subclass: Object
     ^ @ self openArgv: argv handler: handler context: context
   ]
 
+  # A surface needs a human at the controlling terminal and Innards inui.
+  classMethod: isAvailable [
+    | installed |
+    installed := @ Tools::Inui isInstalled.
+    (installed ~= 'true') ifTrue: [^ 'false'].
+    ^ @ self isInteractive
+  ]
+
+  rawClassMethod: isInteractive [
+    _trash_interactive_terminal && echo true || echo false
+  ]
+
   # Process/pipe ownership is the OS boundary. The application remains a DSL
   # handler using frameFor:, handleFrame:context:, and pollFor:.
   rawClassMethod: openArgv: argv handler: handler context: context [

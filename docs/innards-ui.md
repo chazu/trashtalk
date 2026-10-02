@@ -22,7 +22,7 @@ source lib/trash.bash
 `UI::Events` is a **synthetic live event inspector** and performance workload:
 10,000 initial events, sixteen new events per idle poll, selection/details,
 debounced filtering, and a small plot. Its events are not agent transcripts or
-production telemetry. Existing `inagent` and `ininspect` flows remain available.
+production telemetry. `@ obj inspect` opens `UI::Inspector` on a live object.
 Applications connect their own bulk sources through the handler contract below.
 
 Tab/Shift-Tab move focus; arrows, Home/End and PageUp/PageDown navigate lists and

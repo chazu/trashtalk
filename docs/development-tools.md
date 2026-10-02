@@ -60,19 +60,25 @@ same edit/compile/test loop described above.
 
 ## Inspecting objects
 
-With `ininspect` on `PATH`, any persisted object can open as a navigable inline
-tree. Containers expand in place and `e` on a scalar edits it as a JSON value:
+`inspect` is the one way to look at an object. With Innards `inui` on `PATH`
+and a human at the terminal, it opens the `UI::Inspector` surface; every other
+caller (scripts, agents, missing `inui`) gets the textual `describe` output.
 
 ```bash
 counter=$(@ Counter new)
-@ "$counter" inspectInteractive
+@ "$counter" inspect                   # UI inspector, or describe's text
+@ Trash inspectObject: "$counter"      # the same entry point by object id
+@ Trash browseInstancesOf: Counter     # pick an instance, then inspect it
+@ "$counter" describe                  # always the textual form
 ```
 
-Innards only returns an edit proposal. Trashtalk checks that the object and its
-selected value have not changed, rejects unknown or command-bearing fields,
-and then applies the typed value through `Runtime`. Runtime metadata is not
-offered as editable state. Plain `@ "$counter" inspect` remains the textual
-fallback and never requires Innards.
+Enter drills into containers; Back/Forward and Alt-Left/Alt-Right move along
+the inspection stack. Enter on a scalar instance variable opens a one-line
+editor holding its JSON value; Enter or Apply submits it. The inspector only
+stages an edit proposal. `ObjectEditProposal` checks that the object and the
+selected value have not changed since they were shown, then applies the typed
+value through `Runtime`; a stale or invalid edit is refused in the status line.
+Runtime metadata is not offered as editable state.
 
 ## Readline shortcuts
 

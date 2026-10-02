@@ -109,11 +109,10 @@ assert_contains "trace:args: outputs args" "item" "$trace_output"
 
 # ------------------------------------------------------------------------------
 echo ""
-echo "--- 4. Trait Method: inspect ---"
+echo "--- 4. Object inspect fallback ---"
 # ------------------------------------------------------------------------------
 
-# Note: Object has its own inspect that may override Debuggable's
-# Test that inspect works and returns useful info
+# Object owns inspect; without a terminal it falls back to describe's text.
 inspect_output=$(@ "$arr" inspect 2>&1)
 assert_not_empty "inspect returns output" "$inspect_output"
 # Should contain the instance ID or class info

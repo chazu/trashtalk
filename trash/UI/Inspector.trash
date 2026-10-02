@@ -1,19 +1,71 @@
 package: UI
 
+# UI::Inspector - Navigable view of one JSON snapshot. A live object's scalar
+# ivars can be edited; each edit is an ObjectEditProposal, committed only if
+# the object is unchanged since it was presented.
 Inspector subclass: Object
   classMethod: openRecord: record title: title [
+    ^ @ self open: record title: title editable: false
+  ]
+
+  # The single entry point for inspecting an object. Without a human at the
+  # terminal, or without inui, the object describes itself as text instead.
+  classMethod: openObject: objectId [
+    | record available |
+    record := @ self recordFor: objectId.
+    record isEmpty ifTrue: [@ StateError signal: 'Object does not exist: ' , objectId].
+    available := @ UI::Surface isAvailable.
+    (available ~= 'true') ifTrue: [^ @ objectId describe].
+    ^ @ self open: record title: 'Object inspector' editable: true
+  ]
+
+  classMethod: recordFor: objectId [
+    | className rawData data |
+    className := @ Runtime classFor: objectId.
+    className isEmpty ifTrue: [^ ''].
+    rawData := @ Runtime dataFor: objectId.
+    data := @ String jsonInstanceView: rawData.
+    ^ #{schema_version: 1 object_id: objectId class_name: className data: (data jsonValue)} asJson
+  ]
+
+  classMethod: open: record title: title editable: editable [
     | context |
-    context := #{record: (record jsonValue) title: title paths: #(#()) active: 0 revision: 0} asJson.
+    context := #{record: (record jsonValue) title: title paths: #(#()) active: 0 revision: 0
+                 editable: (editable jsonValue)} asJson.
     ^ @ UI::Surface open: self context: context
   ]
 
-  # The snapshot is supplied explicitly. No reflective getters run in paint.
-  rawClassMethod: frameFor: context [
-    jq -cn --arg mode init --argjson context "$1" --argjson frame null -f "${TRASHTALK_DIR:-$HOME/.trashtalk}/lib/ui-inspector.jq"
+  classMethod: frameFor: context [
+    ^ @ self project: 'init' context: context frame: 'null' extra: 'null'
   ]
-  rawClassMethod: handleFrame: frame context: context [
-    jq -cn --arg mode handle --argjson context "$2" --argjson frame "$1" -f "${TRASHTALK_DIR:-$HOME/.trashtalk}/lib/ui-inspector.jq"
+
+  classMethod: handleFrame: frame context: context [
+    | action |
+    action := frame jsonAt: 'action' ifAbsent: 'null'.
+    (action = '"apply"') ifTrue: [^ @ self applyEdit: frame context: context].
+    ^ @ self project: 'handle' context: context frame: frame extra: 'null'
   ]
+
+  # The projection stages the draft; ObjectEditProposal owns the stale check
+  # and the mutation. The pane then shows the record as now stored.
+  classMethod: applyEdit: frame context: context [
+    | staged proposal objectId result record extra |
+    staged := @ self project: 'propose' context: context frame: frame extra: 'null'.
+    (staged jsonHas: 'proposal') ifFalse: [^ staged].
+    proposal := staged jsonAt: 'proposal'.
+    objectId := proposal jsonTextAt: 'object_id'.
+    result := @ ObjectEditProposal apply: proposal to: objectId.
+    record := @ self recordFor: objectId.
+    record isEmpty ifTrue: [record := 'null'].
+    extra := #{result: (result jsonValue) record: (record jsonValue)} asJson.
+    ^ @ self project: 'settle' context: context frame: frame extra: extra
+  ]
+
   classMethod: pollFor: context [
     ^ '{"frames":[]}'
+  ]
+
+  # The snapshot is supplied explicitly. No reflective getters run in paint.
+  rawClassMethod: project: mode context: context frame: frame extra: extra [
+    jq -cn --arg mode "$1" --argjson context "$2" --argjson frame "$3" --argjson extra "$4" -f "${TRASHTALK_DIR:-$HOME/.trashtalk}/lib/ui-inspector.jq"
   ]

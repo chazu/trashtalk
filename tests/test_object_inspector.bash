@@ -9,60 +9,32 @@ set -uo pipefail
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TEST_TMP=$(mktemp -d)
 FAKE_BIN="$TEST_TMP/bin"
-CAPTURE_INPUT="$TEST_TMP/inspection-input.json"
-CAPTURE_ARGV="$TEST_TMP/inspection-argv.txt"
+UI_LOG="$TEST_TMP/ui.jsonl"
 
 cleanup() {
     [[ -n "${counter:-}" ]] && @ "$counter" delete >/dev/null 2>&1 || true
     rm -rf "$TEST_TMP"
 }
 
+# A scripted surface: records every frame it receives and replays the intents
+# in $UI_SCRIPT, one per handler response, as the real inui would send them.
 mkdir -p "$FAKE_BIN"
-
-cat > "$FAKE_BIN/ininspect" <<'FAKE'
-#!/usr/bin/env bash
-set -uo pipefail
-printf '%s\n' "$@" > "$CAPTURE_ARGV"
-input=$(cat)
-printf '%s\n' "$input" > "$CAPTURE_INPUT"
-object_id=$(printf '%s' "$input" | jq -r '.object_id')
-class_name=$(printf '%s' "$input" | jq -r '.class_name')
-base_data=$(printf '%s' "$input" | jq -c '.data')
-
-case "${INSPECT_SCENARIO:-viewed}" in
-    viewed)
-        jq -cn --arg object_id "$object_id" --arg class_name "$class_name" \
-            '{schema_version:1,outcome:"viewed",object_id:$object_id,class_name:$class_name,base_data:null,proposal:null}'
-        ;;
-    proposed)
-        old_value=$(printf '%s' "$base_data" | jq -c '.value')
-        jq -cn --arg object_id "$object_id" --arg class_name "$class_name" \
-            --argjson base_data "$base_data" --argjson old_value "$old_value" \
-            '{schema_version:1,outcome:"proposed",object_id:$object_id,class_name:$class_name,
-              base_data:$base_data,proposal:{path:["value"],old_value:$old_value,new_value:7}}'
-        ;;
-    stale)
-        jq -cn --arg object_id "$object_id" --arg class_name "$class_name" \
-            '{schema_version:1,outcome:"proposed",object_id:$object_id,class_name:$class_name,
-              base_data:{value:999},proposal:{path:["value"],old_value:999,new_value:7}}'
-        ;;
-    command)
-        jq -cn --arg object_id "$object_id" --arg class_name "$class_name" \
-            --argjson base_data "$base_data" \
-            '{schema_version:1,outcome:"proposed",object_id:$object_id,class_name:$class_name,
-              base_data:$base_data,proposal:{path:["value"],old_value:0,new_value:7,command:"echo owned"}}'
-        ;;
-    old-mismatch)
-        jq -cn --arg object_id "$object_id" --arg class_name "$class_name" \
-            --argjson base_data "$base_data" \
-            '{schema_version:1,outcome:"proposed",object_id:$object_id,class_name:$class_name,
-              base_data:$base_data,proposal:{path:["value"],old_value:999,new_value:7}}'
-        ;;
-esac
+cat > "$FAKE_BIN/inui" <<'FAKE'
+#!/usr/bin/env python3
+import json, os, sys
+log = open(os.environ['UI_LOG'], 'a')
+def receive():
+    line = sys.stdin.readline()
+    log.write(line); log.flush()
+    return json.loads(line)
+receive()
+for request_id, intent in enumerate(json.loads(os.environ.get('UI_SCRIPT', '[]')), 1):
+    print(json.dumps(dict(schema_version=1, view='inspector', request_id=request_id, intent='action', **intent)), flush=True)
+    while receive().get('type') != 'ack': pass
 FAKE
-chmod +x "$FAKE_BIN/ininspect"
+chmod +x "$FAKE_BIN/inui"
 
-export CAPTURE_INPUT CAPTURE_ARGV
+export UI_LOG
 export PATH="$FAKE_BIN:$PATH"
 export SQLITE_JSON_DB="$TEST_TMP/instances.db"
 source "$PROJECT_DIR/lib/trash.bash" 2>/dev/null
@@ -87,48 +59,71 @@ assert_eq() {
 assert_true() {
     local name="$1"
     shift
-    if "$@" >/dev/null; then pass "$name"; else fail "$name"; fi
+    if "$@" >/dev/null 2>&1; then pass "$name"; else fail "$name"; fi
 }
 
 echo "=== Object Inspector Tests ==="
 
 counter=$(@ Counter create)
 
-export INSPECT_SCENARIO=viewed
-viewed=$(@ Trash inspectObject: "$counter")
-assert_eq "view-only inspection returns structured outcome" "viewed" \
-    "$(printf '%s' "$viewed" | jq -r '.outcome')"
-assert_eq "view-only inspection does not change state" "0" "$(@ "$counter" getValue)"
-assert_true "wrapper passes result-json" grep -qx -- '--result-json' "$CAPTURE_ARGV"
-assert_true "wrapper passes an object title" grep -qx -- 'Object inspector' "$CAPTURE_ARGV"
-assert_true "inspection input carries declared typed ivar data" jq -e \
-    --arg id "$counter" '.schema_version == 1 and .object_id == $id and .class_name == "Counter" and .data == {value:0,step:1}' \
-    "$CAPTURE_INPUT"
+# Without a human at a terminal every entry point describes the object as text.
+described=$(@ "$counter" inspect < /dev/null)
+assert_eq "non-interactive inspect prints the textual description" \
+    "a Counter|  id: $counter|  value: 0|  step: 1" "$(printf '%s' "$described" | paste -sd'|' -)"
+assert_eq "Trash inspectObject: shares the inspect entry point" "$described" "$(@ Trash inspectObject: "$counter" < /dev/null)"
+assert_fails() {
+    local name="$1"
+    shift
+    if "$@" >/dev/null 2>&1; then fail "$name"; else pass "$name"; fi
+}
+assert_fails "a missing object is an error" @ UI::Inspector openObject: counter_missing
 
-export INSPECT_SCENARIO=proposed
-applied=$(@ "$counter" inspectInteractive)
-assert_eq "interactive object convenience applies an explicit proposal" "applied" \
-    "$(printf '%s' "$applied" | jq -r '.outcome')"
-assert_eq "accepted inspector proposal preserves numeric type" "7" "$(@ "$counter" getValue)"
+# Handler contract: drill to a leaf, stage an edit, and commit it.
+record=$(@ UI::Inspector recordFor: "$counter")
+context=$(jq -cn --argjson record "$record" '{record:$record,title:"Object inspector",paths:[[]],active:0,revision:0,editable:true}')
+handle() { @ UI::Inspector handleFrame: "$1" context: "$context"; }
+frame() { jq -cn --argjson id "$1" --arg widget "$2" --arg action "$3" --argjson value "$4" \
+    '{schema_version:1,view:"inspector",request_id:$id,intent:"action",widget:$widget,action:$action,value:$value}'; }
 
-@ "$counter" setValue: 0 >/dev/null
-export INSPECT_SCENARIO=stale
-stale=$(@ Trash inspectObject: "$counter")
-assert_eq "stale inspector proposal is rejected" "stale" \
-    "$(printf '%s' "$stale" | jq -r '.outcome')"
-assert_eq "stale proposal cannot change object state" "0" "$(@ "$counter" getValue)"
+result=$(handle "$(frame 1 'pane-[]' drill '{"key":"data"}')")
+context=$(jq -c .context <<< "$result")
+result=$(handle "$(frame 2 'pane-["data"]' drill '{"key":"value"}')")
+context=$(jq -c .context <<< "$result")
+assert_true "Enter on a scalar ivar opens its editor" jq -e \
+    '.context.edit.path == ["data","value"] and (.frames[0].root.children[1].children[0] | .kind == "input" and .props.value == "0")' <<< "$result"
 
-export INSPECT_SCENARIO=command
-invalid=$(@ Trash inspectObject: "$counter")
-assert_eq "inspector result schema rejects command fields" "invalid" \
-    "$(printf '%s' "$invalid" | jq -r '.outcome')"
-assert_eq "invalid proposal cannot change object state" "0" "$(@ "$counter" getValue)"
+readonly_context=$(jq -c '.editable = false | .edit = null' <<< "$context")
+assert_fails "records opened read-only never offer an editor" \
+    @ UI::Inspector handleFrame: "$(frame 3 'pane-["data"]' drill '{"key":"value"}')" context: "$readonly_context"
 
-export INSPECT_SCENARIO=old-mismatch
-invalid=$(@ Trash inspectObject: "$counter")
-assert_eq "proposal old value must match its base path" "invalid" \
-    "$(printf '%s' "$invalid" | jq -r '.outcome')"
-assert_eq "old-value mismatch cannot change object state" "0" "$(@ "$counter" getValue)"
+result=$(handle "$(frame 4 apply apply '"seven x"')")
+assert_true "a draft that is not JSON is rejected without a commit" jq -e \
+    '.frames[1].ok == false and (.frames[1].message | test("JSON"))' <<< "$result"
+assert_eq "rejected draft leaves state unchanged" "0" "$(@ "$counter" getValue)"
+
+result=$(handle "$(frame 5 'edit-["data","value"]' apply '"7"')")
+assert_true "an applied edit is acknowledged and closes the editor" jq -e \
+    '.frames[1].ok == true and .context.edit == null and .context.record.data.value == 7' <<< "$result"
+assert_eq "applied edit preserves the numeric type" "7" "$(@ "$counter" getValue)"
+
+# The editor still holds the snapshot that showed value=0; meanwhile it changed.
+@ "$counter" setValue: 3 >/dev/null
+result=$(handle "$(frame 6 apply apply '"9"')")
+assert_true "a concurrent change makes the edit stale and refreshes the pane" jq -e \
+    '.frames[1].ok == false and (.frames[1].message | test("changed")) and .context.record.data.value == 3' <<< "$result"
+assert_eq "stale edit cannot change object state" "3" "$(@ "$counter" getValue)"
+
+# The real session bridge, with a terminal present, drives the same handler.
+_trash_interactive_terminal() { true; }
+export UI_SCRIPT='[{"widget":"pane-[]","action":"drill","value":{"key":"data"}},
+  {"widget":"pane-[\"data\"]","action":"drill","value":{"key":"step"}},
+  {"widget":"edit-[\"data\",\"step\"]","action":"apply","value":"5"}]'
+: > "$UI_LOG"
+@ "$counter" inspect
+assert_true "interactive inspect opens the object inspector surface" jq -se \
+    --arg id "$counter" '.[0].view == "inspector" and .[0].collections[0].rows[1].fields.text == ("object_id: " + ($id|tojson))' "$UI_LOG"
+assert_true "surface edit is acknowledged" jq -se '.[-1].type == "ack" and .[-1].ok == true' "$UI_LOG"
+assert_eq "surface edit commits through the proposal" "5" "$(@ "$counter" getStep)"
 
 echo ""
 echo "Passed: $PASSED, Failed: $FAILED"

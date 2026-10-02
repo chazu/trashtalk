@@ -91,10 +91,10 @@ Trash subclass: Object
     else
       _d_warn "inpick and fzf not found; install Innards or fzf for interactive browsing"
     fi
-    if command -v ininspect >/dev/null 2>&1; then
-      _d_ok "Innards object inspector found (ininspect)"
+    if command -v inui >/dev/null 2>&1; then
+      _d_ok "Innards UI toolkit found (inui); inspect opens the object inspector"
     else
-      _d_warn "ininspect not found; objects retain textual inspect output"
+      _d_warn "inui not found; inspect prints a textual object description"
     fi
 
     # Check the configured session harness; provider login stays interactive.
@@ -523,6 +523,8 @@ Trash subclass: Object
     printf "$row" "@ <Class> find: '<predicate>'" 'Find with predicate'
     printf "$row" '@ <Class> count' 'Count instances of class'
     printf "$row" '@ Store listClasses' 'List classes with instances'
+    printf "$row" '@ <instance> inspect' 'Open the object inspector (text without a terminal)'
+    printf "$row" '@ <instance> describe' 'Print class, id and instance variables'
     echo ""
     echo "=== Source Introspection ==="
     printf "$row" '@ Trash sourceFor: <class>' 'Get source code from .trash file'
@@ -1016,41 +1018,12 @@ EOF
     ^ @ self pickRecords: records query: '' title: title
   ]
 
-  method: inspectionRecordFor: objectId [
-    | className rawData data record |
-    className := @ Runtime classFor: objectId.
-    className isEmpty ifTrue: [^ ''].
-    rawData := @ Runtime dataFor: objectId.
-    data := @ String jsonInstanceView: rawData.
-    record := #{schema_version: 1 object_id: objectId class_name: className data: (data jsonValue)} asJson.
-    ^ record
-  ]
-
   method: inspectObject: objectId [
-    | available record className title result valid outcome |
-    available := @ Tools::Ininspect isInstalled.
-    (available ~= 'true') ifTrue: [^ @ objectId inspect].
-    record := @ self inspectionRecordFor: objectId.
-    record isEmpty ifTrue: [
-      ^ @ ObjectEditProposal result: 'invalid' phase: 'lookup' message: 'Object does not exist' object: objectId data: ''
-    ].
-    className := @ String jsonPath: 'class_name' from: record.
-    title := 'Object inspector'.
-    result := @ Tools::Ininspect inspectRecord: record title: title.
-    valid := @ String isJson: result.
-    (valid ~= 'true') ifTrue: [
-      ^ @ ObjectEditProposal result: 'invalid' phase: 'result' message: 'ininspect did not return valid JSON' object: objectId data: ''
-    ].
-    outcome := @ String jsonPath: 'outcome' from: result.
-    (outcome = 'proposed') ifTrue: [^ @ ObjectEditProposal apply: result to: objectId].
-    (outcome = 'viewed') ifTrue: [^ result].
-    (outcome = 'cancelled') ifTrue: [^ result].
-    ^ @ ObjectEditProposal result: 'invalid' phase: 'result' message: 'ininspect returned an unknown outcome' object: objectId data: ''
+    ^ @ UI::Inspector openObject: objectId
   ]
 
-  # Enter from the instance table means inspect: ininspect presents the
-  # declared values as navigable fields and can return an explicit edit
-  # proposal. It does not merely print the picker record's JSON.
+  # Enter from the instance table opens the object inspector on the selected
+  # instance rather than printing the picker record's JSON.
   method: browseInstancesOf: className [
     | selection outcome objectId |
     selection := @ self selectInstanceOf: className.

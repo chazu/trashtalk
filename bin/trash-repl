@@ -12,6 +12,7 @@ Usage: trash-repl              start the REPL
 Inside the REPL:
   Counter new               create an instance
   $counter increment        send a message to an instance
+  $counter inspect          open the object inspector
   Trash listObjects         list known classes
   help                      show in-REPL examples
   exit | quit | q           leave the REPL
@@ -59,6 +60,7 @@ while { if $repl_interactive; then read -erp "@ " cmd; else read -r cmd; fi; }; 
         echo "Examples:"
         echo "  Counter new              - Create a counter"
         echo "  \$counter increment      - Call method on instance"
+        echo "  \$counter inspect        - Open the object inspector"
         echo "  Trash listObjects        - List all classes"
         echo "  Trash help               - Full system help"
         echo ""

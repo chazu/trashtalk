@@ -3,19 +3,20 @@
 # the controlling terminal; stdout/stderr and child status remain untouched.
 # Wrap only external/read-only work: the active renderer owns a subshell.
 
+# Capture boundaries redirect fd 0/1/2 before calling us. Interaction is
+# determined by the caller's mode and controlling TTY, not those data fds.
+_trash_interactive_terminal() {
+    [[ $- == *i* || "${TRASHTALK_INTERACTIVE:-0}" == 1 ]] && { true >/dev/tty; } 2>/dev/null
+}
+
 _trash_with_progress() {
     local label="$1"; shift
     local enabled=0
     case "${TRASHTALK_PROGRESS:-auto}" in
-        1|on) enabled=1 ;;
-        auto)
-            if [[ $- == *i* || "${TRASHTALK_INTERACTIVE:-0}" == 1 ]]; then enabled=1; fi
-            ;;
+        1|on) { true >/dev/tty; } 2>/dev/null && enabled=1 ;;
+        auto) _trash_interactive_terminal && enabled=1 ;;
     esac
-    # Capture boundaries redirect fd 0/1/2 before calling us. Interaction is
-    # determined by the caller's mode and controlling TTY, not those data fds.
-    if [[ "$enabled" == 1 && -n "$label" && -z "${_TRASH_PROGRESS_ACTIVE:-}" ]] &&
-       { true >/dev/tty; } 2>/dev/null; then
+    if [[ "$enabled" == 1 && -n "$label" && -z "${_TRASH_PROGRESS_ACTIVE:-}" ]]; then
         _trash_progress_run "$label" "$@"
     else
         "$@"

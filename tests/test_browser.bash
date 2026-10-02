@@ -91,15 +91,13 @@ jq -cn --argjson selection "$selection" \
 FAKE
 chmod +x "$FAKE_BIN/inpick"
 
-cat > "$FAKE_BIN/ininspect" <<'FAKE'
+# The instance browser opens the UI inspector; record its initial frame.
+cat > "$FAKE_BIN/inui" <<'FAKE'
 #!/usr/bin/env bash
-set -uo pipefail
-input=$(cat)
-printf '%s\n' "$input" > "$CAPTURE_INSPECTION_INPUT"
-jq -cn --arg object_id "$(printf '%s' "$input" | jq -r '.object_id')" \
-  '{schema_version:1,outcome:"viewed",object_id:$object_id,proposal:null}'
+IFS= read -r frame
+printf '%s\n' "$frame" > "$CAPTURE_INSPECTION_INPUT"
 FAKE
-chmod +x "$FAKE_BIN/ininspect"
+chmod +x "$FAKE_BIN/inui"
 
 cat > "$FAKE_BIN/inmacs" <<'FAKE'
 #!/usr/bin/env bash
@@ -230,11 +228,12 @@ instance_selection=$(@ Trash selectInstanceOf: Counter)
 assert_eq "instance picker returns selected object to API callers" "$counter" \
     "$(printf '%s' "$instance_selection" | jq -r '.selection.object_id')"
 
-instance_result=$(@ Trash browseInstancesOf: Counter)
-assert_eq "instance browser opens the selected object inspector" "viewed" \
-    "$(printf '%s' "$instance_result" | jq -r '.outcome')"
-assert_jq "instance browser passes declared values to the inspector" "$CAPTURE_INSPECTION_INPUT" \
-    ".object_id == \"$counter\" and .class_name == \"Counter\" and .data == {value:0,step:1}"
+_trash_interactive_terminal() { true; }
+@ Trash browseInstancesOf: Counter
+assert_jq "instance browser opens the selected object inspector" "$CAPTURE_INSPECTION_INPUT" \
+    ".view == \"inspector\" and (.collections[0].rows | map(.fields.text)) == [\"schema_version: 1\", \"object_id: \\\"$counter\\\"\", \"class_name: \\\"Counter\\\"\", \"data: {\\\"value\\\":0,\\\"step\\\":1}\"]"
+unset -f _trash_interactive_terminal
+source "$PROJECT_DIR/lib/trash-progress.bash"
 
 # Multiple Store IDs span lines. Keep current unsaved state in the browser,
 # while retrieving the persisted candidates as a batch.
