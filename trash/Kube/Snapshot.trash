@@ -17,34 +17,27 @@ Snapshot subclass: Object
   instanceVars: label cluster takenAt resourceIds
 
   # Fetch all resources of the given space-separated kinds from a cluster,
-  # save each resource, and collect their IDs into this snapshot.
-  rawClassMethod: take: label of: kinds onCluster: ctx [
-    local _Cluster="Kube::Cluster"
-    local id snap cluster_obj kind
-    id=$(@ Runtime generateId: "$_CLASS")
-    @ Runtime create: "$_CLASS" id: "$id"
-    @ "$id" setLabel:       "$label"
-    @ "$id" setCluster:     "$ctx"
-    @ "$id" setTakenAt:     "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    @ "$id" setResourceIds: '[]'
-
-    cluster_obj=$(@ "$_Cluster" named: "$ctx")
-
-    for kind in $kinds; do
-      local resources size i
-      resources=$(@ "$cluster_obj" fetch: "$kind")
-      size=$(@ "$resources" size)
-      i=0
-      while (( i < size )); do
-        local resource
-        resource=$(@ "$resources" at: "$i")
-        @ "$resource" save
-        @ "$id" _addResourceId: "$resource"
-        (( i++ ))
-      done
-    done
-
-    echo "$id"
+  # save each resource, and collect their IDs into a new snapshot.
+  classMethod: take: label of: kinds onCluster: ctx [
+    | id now clusterObj kindList ids resources items |
+    id := @ self new.
+    now := @ Time nowISO.
+    clusterObj := @ Kube::Cluster named: ctx.
+    kindList := @ String splitToArray: kinds on: ' '.
+    ids := '[]'.
+    kindList arrayEach: [:kind |
+      resources := @ clusterObj fetch: kind.
+      items := @ resources getItems.
+      items arrayEach: [:resource |
+        @ resource save.
+        ids := ids arrayPush: resource
+      ]
+    ].
+    @ id setLabel: label.
+    @ id setCluster: ctx.
+    @ id setTakenAt: now.
+    @ id setResourceIds: ids.
+    ^ id
   ]
 
   # Most recent saved snapshot with the given label on the given cluster.
@@ -57,26 +50,19 @@ Snapshot subclass: Object
     ^ @ Store findByClass: 'Kube::Snapshot' matching: (#{label: label cluster: ctx} asJson) orderBy: "json_extract(data, '$.takenAt') DESC" limit: ''
   ]
 
-  # Append a resource instance ID to the resourceIds array.
-  method: _addResourceId: resourceId [
-    resourceIds := resourceIds arrayPush: resourceId
-  ]
-
   # Return resource IDs as newline-separated list.
   rawMethod: resourceIds [
     _ivar resourceIds | jq -r '.[]'
   ]
 
   # Return resource IDs for a specific kind.
-  rawMethod: resourcesOfKind: kind [
-    local ids id data k
-    ids=$(_ivar resourceIds)
-    while IFS= read -r id; do
-      [[ -z "$id" ]] && continue
-      data=$(@ Store getInstance: "$id")
-      k=$(echo "$data" | jq -r '.kind // ""')
-      [[ "$k" == "$kind" ]] && echo "$id"
-    done < <(echo "$ids" | jq -r '.[]')
+  method: resourcesOfKind: kind [
+    pragma: stream
+    | data |
+    resourceIds arrayEach: [:rid |
+      data := @ Store getInstance: rid.
+      ((data objectAt: 'kind') = kind) ifTrue: [@ Console print: rid]
+    ]
   ]
 
   # Count of resources in this snapshot.
@@ -86,15 +72,13 @@ Snapshot subclass: Object
 
   # Return a JSON object mapping identity strings to resource IDs.
   # Used by Kube::Diff to align resources across two snapshots.
-  rawMethod: identityMap [
-    local ids id data identity map
-    ids=$(_ivar resourceIds)
-    map='{}'
-    while IFS= read -r id; do
-      [[ -z "$id" ]] && continue
-      data=$(@ Store getInstance: "$id")
-      identity=$(echo "$data" | jq -r '.identity // ""')
-      [[ -n "$identity" ]] && map=$(echo "$map" | jq --arg k "$identity" --arg v "$id" '. + {($k): $v}')
-    done < <(echo "$ids" | jq -r '.[]')
-    echo "$map"
+  method: identityMap [
+    | map data identity |
+    map := '{}'.
+    resourceIds arrayEach: [:rid |
+      data := @ Store getInstance: rid.
+      identity := data objectAt: 'identity'.
+      (identity notEmpty) ifTrue: [map := map objectAt: identity put: rid]
+    ].
+    ^ map
   ]

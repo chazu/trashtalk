@@ -25,9 +25,10 @@ Routing subclass: Object
 
   # Resolution order mirrors the plan: policy, target, workspace, lineage,
   # current session, role authorization, then budget. No check throws, so an
-  # ineligible candidate never aborts the surrounding transaction.
+  # ineligible candidate never aborts the surrounding transaction. data is a
+  # documentOf: projection, so its optional routing fields are always present.
   classMethod: admitWithin: data [
-    | attention human subscription sub owner mode target reason detail identity handle exists class workspace execution depth limit originIdentity delegated revision resolved session sessionState role allowed caps found policy budget count open next status state first last required |
+    | attention human subscription sub owner mode target reason detail identity handle exists class workspace execution depth limit originIdentity delegated revision resolved session sessionState refusal count next status state first last |
     @ Store requireTransaction.
     attention := data jsonTextAt: 'id'.
     human := @ Agent::Focus human.
@@ -38,12 +39,10 @@ Routing subclass: Object
     mode := @ Workstation::EventSubscription delegationModeOf: sub.
     limit := @ Workstation::EventSubscription lineageLimitOf: sub.
     target := sub jsonTextAt: 'targetIdentity'.
-    workspace := data jsonAt: 'workspace' ifAbsent: '""'.
-    workspace := workspace jsonTextAt: ''.
-    depth := data jsonAt: 'lineageDepth' ifAbsent: '0'.
-    revision := data jsonAt: 'delegationRevision' ifAbsent: '0'.
-    delegated := data jsonAt: 'delegatedMessage' ifAbsent: '""'.
-    delegated := delegated jsonTextAt: ''.
+    workspace := data jsonTextAt: 'workspace'.
+    depth := data jsonAt: 'lineageDepth'.
+    revision := data jsonAt: 'delegationRevision'.
+    delegated := data jsonTextAt: 'delegatedMessage'.
     reason := ''. detail := ''. handle := ''. execution := ''. session := ''. sessionState := ''. originIdentity := ''.
     (owner = human) ifFalse: [reason := 'owner-mismatch'. detail := 'The subscription belongs to another owner'].
     (reason isEmpty) ifTrue: [((sub jsonTextAt: 'enabled') = 'true') ifFalse: [reason := 'subscription-disabled'. detail := 'Enable the subscription before routing'] ].
@@ -69,8 +68,7 @@ Routing subclass: Object
       (delegated notEmpty) ifTrue: [
         reason := 'delegated'.
         detail := 'Delegation ' , revision , ' is published; focus the conversation or redelegate'.
-        session := data jsonAt: 'delegatedSession' ifAbsent: '""'.
-        session := session jsonTextAt: ''.
+        session := data jsonTextAt: 'delegatedSession'.
         sessionState := @ self lifecycleOf: session
       ]
     ].
@@ -92,34 +90,9 @@ Routing subclass: Object
     ].
     (reason isEmpty) ifTrue: [
       session := @ Store read: session class: 'Agent::Session'.
-      role := @ session role.
-      role := @ Store read: role class: 'Agent::Role'.
-      allowed := @ role allowsWorkspace: execution.
-      (allowed = 'true') ifFalse: [reason := 'workspace-unauthorized'. detail := 'The session role does not allow this workspace'].
-      (reason isEmpty) ifTrue: [
-        caps := @ role capabilities.
-        caps := @ self policy: caps default: '[]'.
-        required := @ self requiredCapability.
-        found := @ Require contains: required in: caps.
-        (found = 'true') ifFalse: [reason := 'capability-missing'. detail := 'The session role lacks ' , required]
-      ].
-      (reason isEmpty) ifTrue: [
-        policy := @ role recipientPolicy.
-        policy := @ self policy: policy default: '[]'.
-        ((policy arrayLength) > 0) ifTrue: [
-          found := @ Require contains: human in: policy.
-          (found = 'true') ifFalse: [reason := 'recipient-denied'. detail := 'The session role does not accept messages from this owner']
-        ]
-      ].
-      (reason isEmpty) ifTrue: [
-        budget := @ role messageBudget.
-        budget := @ self policy: budget default: '{}'.
-        count := budget jsonAt: 'count' ifAbsent: '0'.
-        (count > 0) ifTrue: [
-          open := @ Store idsOf: 'Agent::Delivery' matching: (#{session: session state: #('pending' 'offered' 'blocked')} asJson).
-          ((open arrayLength) < count) ifFalse: [reason := 'budget-exhausted'. detail := 'The session already holds ' , (open arrayLength) , ' unsettled deliveries']
-        ]
-      ]
+      refusal := @ self roleRefusalWithin: session workspace: execution sender: human.
+      reason := refusal jsonTextAt: 'reason'.
+      detail := refusal jsonTextAt: 'detail'
     ].
     status := 'ineligible'.
     (reason isEmpty) ifTrue: [status := 'eligible'].
@@ -140,14 +113,44 @@ Routing subclass: Object
       session: session sessionState: sessionState nextAction: next} asJson
   ]
 
+  # Role authorization for the resolved session, in order: workspace,
+  # capability, recipient policy, then message budget. Answers the first
+  # refusal as {reason, detail}; both are empty when the role admits delivery.
+  classMethod: roleRefusalWithin: session workspace: path sender: human [
+    | role allowed caps required found policy budget count open |
+    role := @ session role.
+    role := @ Store read: role class: 'Agent::Role'.
+    allowed := @ role allowsWorkspace: path.
+    (allowed = 'true') ifFalse: [^ #{reason: 'workspace-unauthorized' detail: 'The session role does not allow this workspace'} asJson].
+    caps := @ role capabilities.
+    caps := @ self policy: caps default: '[]'.
+    required := @ self requiredCapability.
+    found := @ Require contains: required in: caps.
+    (found = 'true') ifFalse: [^ #{reason: 'capability-missing' detail: ('The session role lacks ' , required)} asJson].
+    policy := @ role recipientPolicy.
+    policy := @ self policy: policy default: '[]'.
+    ((policy arrayLength) > 0) ifTrue: [
+      found := @ Require contains: human in: policy.
+      (found = 'true') ifFalse: [^ #{reason: 'recipient-denied' detail: 'The session role does not accept messages from this owner'} asJson]
+    ].
+    budget := @ role messageBudget.
+    budget := @ self policy: budget default: '{}'.
+    count := budget jsonAt: 'count' ifAbsent: '0'.
+    (count > 0) ifTrue: [
+      open := @ Store idsOf: 'Agent::Delivery' matching: (#{session: session state: #('pending' 'offered' 'blocked')} asJson).
+      open := open arrayLength.
+      (open < count) ifFalse: [^ #{reason: 'budget-exhausted' detail: ('The session already holds ' , open , ' unsettled deliveries')} asJson]
+    ].
+    ^ #{reason: '' detail: ''} asJson
+  ]
+
   # Delivery, run, and message links for the published delegation revision.
   classMethod: linksWithin: data [
-    | attention revision message delivery exists deliveryState run runState state next note |
+    | attention revision message delivery exists deliveryState run runState state note |
     attention := data jsonTextAt: 'id'.
-    revision := data jsonAt: 'delegationRevision' ifAbsent: '0'.
-    message := data jsonAt: 'delegatedMessage' ifAbsent: '""'.
-    message := message jsonTextAt: ''.
-    note := data jsonAt: 'routingNote' ifAbsent: '""'.
+    revision := data jsonAt: 'delegationRevision'.
+    message := data jsonTextAt: 'delegatedMessage'.
+    note := data jsonAt: 'routingNote'.
     delivery := ''. deliveryState := ''. run := ''. runState := ''.
     (message notEmpty) ifTrue: [
       delivery := 'agentdelivery_' , attention , '_delegation_' , revision.
@@ -253,15 +256,14 @@ Routing subclass: Object
     @ Store read: id class: 'Workstation::Attention'.
     current := @ Workstation::Schema documentOf: id.
     @ Require equal: (current jsonTextAt: 'subscription') to: (candidate jsonTextAt: 'subscription').
-    existing := current jsonAt: 'delegatedMessage' ifAbsent: '""'.
-    existing := existing jsonTextAt: ''.
+    existing := current jsonTextAt: 'delegatedMessage'.
     (existing = (candidate jsonTextAt: 'delegatedMessage')) ifTrue: [^ existing].
     (existing notEmpty) ifTrue: [^ @ Require reject: 'Attention is already delegated; redelegate explicitly'].
     admission := @ self admitWithin: current.
     @ Require equal: (admission jsonTextAt: 'status') to: 'eligible'.
     @ Require equal: (admission jsonTextAt: 'session') to: (candidate jsonTextAt: 'delegatedSession').
     @ Require equal: (admission jsonTextAt: 'targetIdentity') to: (candidate jsonTextAt: 'delegatedIdentity').
-    revision := current jsonAt: 'delegationRevision' ifAbsent: '0'.
+    revision := current jsonAt: 'delegationRevision'.
     expected := revision + 1.
     @ Require equal: (candidate jsonTextAt: 'delegationRevision') to: expected.
     ^ @ self publishWithin: id admission: admission
@@ -276,8 +278,7 @@ Routing subclass: Object
     data := @ Workstation::Schema documentOf: attention.
     state := data jsonTextAt: 'state'.
     (state = 'open') ifFalse: [^ ''].
-    delegated := data jsonAt: 'delegatedMessage' ifAbsent: '""'.
-    delegated := delegated jsonTextAt: ''.
+    delegated := data jsonTextAt: 'delegatedMessage'.
     (delegated notEmpty) ifTrue: [^ ''].
     reason := ''.
     ((subscription jsonTextAt: 'dispatchState') = 'enabled') ifFalse: [reason := 'dispatch-paused'].
@@ -326,10 +327,9 @@ Routing subclass: Object
     sub := @ Store read: (data jsonTextAt: 'subscription') class: 'Workstation::EventSubscription'.
     owner := @ sub owner.
     @ Require equal: owner to: human.
-    delegated := data jsonAt: 'delegatedMessage' ifAbsent: '""'.
-    delegated := delegated jsonTextAt: ''.
+    delegated := data jsonTextAt: 'delegatedMessage'.
     (delegated isEmpty) ifTrue: [^ @ Require reject: 'Attention is not delegated'].
-    revision := data jsonAt: 'delegationRevision' ifAbsent: '0'.
+    revision := data jsonAt: 'delegationRevision'.
     delivery := 'agentdelivery_' , attention , '_delegation_' , revision.
     exists := @ Store exists: delivery.
     (exists = 'true') ifTrue: [

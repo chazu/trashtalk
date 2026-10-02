@@ -28,13 +28,14 @@ Categorizer subclass: Object
   ]
 
   classMethod: interpret: answers [
-    | category confidence certain review |
+    | category choice confidence certain review |
     category := answers jsonAt: 'category'.
+    choice := category jsonTextAt: 'choice'.
     confidence := category jsonAt: 'confidence'.
     certain := (@ Decision::Answer probability: confidence atLeast: '0.8') ifFailed: [:error | @ error signal].
     review := 'true'.
     (certain = 'true') ifTrue: [review := 'false'].
-    ((category jsonTextAt: 'choice') = 'other') ifTrue: [review := 'true'].
-    ^ #{suggestedCategory: (category jsonTextAt: 'choice') reviewNeeded: (review jsonValue)
+    (choice = 'other') ifTrue: [review := 'true'].
+    ^ #{suggestedCategory: choice reviewNeeded: (review jsonValue)
         confidence: (confidence jsonValue) probabilities: ((category jsonAt: 'probabilities') jsonValue)} asJson.
   ]
