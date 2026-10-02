@@ -161,12 +161,18 @@ Inbox subclass: Object
     ^ @ self oldestWhere: " AND json_extract(data, '$.status') = 'unread'"
   ]
 
-  method: unreadCount [
-    | ids count |
-    ids := @ self unread.
+  # Number of ids in a newline-separated id list (empty lines skipped).
+  method: countIds: ids [
+    | count |
     count := 0.
     ids linesDo: [:id | count := count + 1].
     ^ count
+  ]
+
+  method: unreadCount [
+    | ids |
+    ids := @ self unread.
+    ^ @ self countIds: ids
   ]
 
   method: questions [
@@ -186,11 +192,9 @@ Inbox subclass: Object
 
   # All visible messages, including read messages, without a page limit.
   method: count [
-    | ids count |
+    | ids |
     ids := @ self messages: -1.
-    count := 0.
-    ids linesDo: [:id | count := count + 1].
-    ^ count
+    ^ @ self countIds: ids
   ]
 
   # Every message in a thread, across inboxes, oldest first
@@ -207,8 +211,7 @@ Inbox subclass: Object
     pragma: stream
     | ids count header line |
     ids := @ self unread.
-    count := 0.
-    ids linesDo: [:id | count := count + 1].
+    count := @ self countIds: ids.
     (count = 0) ifTrue: [
       header := 'Inbox ' , name , ': no unread messages'.
       @ Console print: header.

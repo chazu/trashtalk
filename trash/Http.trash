@@ -205,7 +205,9 @@ Http subclass: Object
     body=$(cat "$tmp" 2>/dev/null)
     rm -f "$tmp"
 
-    jo body="$body" status="$status"
+    # --arg keeps the body a string (jo reads '@file' and types numbers)
+    jq -cn --arg body "$body" --arg status "$status" \
+      '{body: $body, status: ($status | tonumber? // $status)}'
   ]
 
   # GET with timing info as JSON
