@@ -41,7 +41,7 @@ close. Install it with `cargo install --path . --bin inbrowser --locked --force`
 from the Innards checkout.
 
 ```bash
-@ Trash browse                         # choose any symbol and open its source
+@ Trash browse                         # read-only inbrowser over every class
 @ Trash browseClass: Counter           # browse one class and open a selection
 @ Trash pickMethod: Counter            # return a structured method selection
 @ Trash browseImplementorsOf: 'at:put:'
