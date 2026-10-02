@@ -118,7 +118,7 @@ Attention subclass: Object
   ]
 
   # Phase 2 routing. The dry run mutates nothing; delegation publishes through
-  # WorkstationRouting; focus attaches to the recorded session only.
+  # Workstation::Routing; focus attaches to the recorded session only.
   method: routingStatus [ ^ @ Workstation::Routing statusFor: self ]
   method: delegate [ ^ @ Workstation::Routing delegate: self ]
   method: redelegate: reason [ ^ @ Workstation::Routing redelegate: self reason: reason ]
@@ -152,7 +152,7 @@ Attention subclass: Object
     bundle := #{event: (event jsonValue) subscription: (subscription jsonValue) candidate: (candidate jsonValue)} asJson.
     ^ @ self acceptPrepared: bundle
   ]
-  # Dynamic exact-document capability, following WorkstationSchema.transact:.
+  # Dynamic exact-document capability, following Workstation::Schema transact:.
   # Revalidate at this public entry so direct callers cannot forge preparation.
   rawClassMethod: acceptPrepared: bundle [
     local event subscription candidate group digest
