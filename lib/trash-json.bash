@@ -128,8 +128,7 @@ _trash_assign_fields() {
     [[ -n "$_receiver_instance" ]] || return 1
     _ensure_class_sourced "$_receiver_class" || return
     _trash_json_decode pairs "$fields" fields || return
-    [[ ${#_BEFORE_ADVICE[@]} == 0 && ${#_AFTER_ADVICE[@]} == 0 &&
-       $_ENSURE_DEPTH == 0 && $_HANDLER_DEPTH == 0 && -z ${TRASH_PROFILE:-} ]] || fast=false
+    _trash_plain_frame || fast=false
     for ((i=0;i<${#pairs[@]};i+=2)); do
         key=${pairs[i]} value=${pairs[i+1]}
         # The ordinary setter's JSON-stream coercion remains the authority for

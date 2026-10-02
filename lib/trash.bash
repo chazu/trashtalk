@@ -2090,10 +2090,15 @@ _trash_invalidate_value_methods() {
   unset "__${1//::/__}__valueMethods"
 }
 
+# True when nothing observes individual sends: no advice, no ensure or
+# handler frame, no profiler. Shortcuts that skip public sends require it.
+_trash_plain_frame() {
+  [[ ${#_BEFORE_ADVICE[@]} == 0 && ${#_AFTER_ADVICE[@]} == 0 &&
+     $_ENSURE_DEPTH == 0 && $_HANDLER_DEPTH == 0 && -z ${TRASH_PROFILE:-} ]]
+}
+
 _trash_value_eligible() {
-  [[ ${TRASHTALK_VALUE_SEND:-0} == 1 &&
-     ${#_BEFORE_ADVICE[@]} == 0 && ${#_AFTER_ADVICE[@]} == 0 &&
-     $_ENSURE_DEPTH == 0 && $_HANDLER_DEPTH == 0 && -z ${TRASH_PROFILE:-} ]] || return 1
+  [[ ${TRASHTALK_VALUE_SEND:-0} == 1 ]] && _trash_plain_frame || return 1
   [[ $- != *T* && $- != *E* && $- != *x* && $- != *v* ]] || return 1
   local _SELECTOR="${2:-}"
   shift 2 || return 1
