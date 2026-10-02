@@ -131,7 +131,7 @@ _profile_log() {
 
   local direction="$1" class="$2" selector="$3" route="$4"
   local elapsed_ms="${5:-}" result_len="${6:-}"
-  local timestamp indent output_fd
+  local timestamp indent
 
   # Check depth filter
   if [[ -n "${TRASH_PROFILE_DEPTH:-}" ]] && (( _CALL_DEPTH > TRASH_PROFILE_DEPTH )); then
@@ -2171,14 +2171,10 @@ function _trash_dispatch {
   _ensure_class_sourced "$___class"
 
   # Skip subshell capture for methods that need to affect the parent shell
-  # - repl: needs direct terminal I/O
-  # - reloadClass/compileAndReload: need source/unset to affect parent
-  # - edit/new: need tty for editor and call compileAndReload
-  # - value/valueWith:/valueWith:and:/do: need to modify caller variables (blocks)
-  # - startWriter:/startReader:/stopWriter/stopReader: spawn background processes
+  # (terminal I/O, sourcing classes, setting caller variables, background
+  # processes). Such methods declare "pragma: direct"; its marker is checked
+  # below and bypasses subshell capture.
   local ___selector="${2:-}"
-  # Note: Methods needing direct execution should use "pragma: direct" in their class definition.
-  # The pragma: direct marker is checked below and bypasses subshell capture.
 
   # Check for pragma: direct marker on the method
   # Marker format: __ClassName__[class__]selector__direct=1
@@ -2216,15 +2212,11 @@ function _trash_dispatch {
     ___normalized="${___normalized//:/_}"
     [[ "$___full_selector" == *: ]] && ___normalized="${___normalized}_"
 
-    # Determine if this is a class method call (receiver is class name) or instance call
-    local ___method_type=""
-    if [[ "$___receiver" =~ ^[a-z] && "$___receiver" == *_* ]]; then
-      # Instance method: marker is __ClassName__selector__direct
-      ___method_type=""
-    else
-      # Class method: marker is __ClassName__class__selector__direct
-      ___method_type="class__"
-    fi
+    # Determine if this is a class method call (receiver is class name) or instance call.
+    # Class method marker: __ClassName__class__selector__direct
+    # Instance method marker: __ClassName__selector__direct
+    local ___method_type="class__"
+    [[ "$___receiver" =~ ^[a-z] && "$___receiver" == *_* ]] && ___method_type=""
 
     local ___direct_marker="${___func_prefix}__${___method_type}${___normalized}__direct"
     if [[ -n "${!___direct_marker:-}" ]]; then
