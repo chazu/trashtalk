@@ -96,8 +96,7 @@ When done, report:
 
 ## Repo-specific notes
 - Build/test: `make` then `make verify`. Use `TRASH_TEST_TIMEOUT=300`.
-  `test_bytecode_blocks.bash` already fails; it's not a regression.
-- Dispatch is dynamic via `@`. A method `foo:bar:` compiles to `__Class__foo_bar`
+- Dispatch is dynamic via `@`. A method `foo:bar:` compiles to `__Class__foo_bar_`
   and is invoked by selector string. Before calling anything unused, grep for
   the selector (`foo:`), the compiled name, and `bin/trash-send` usage.
 - Never edit `trash/.compiled/*`. Edit `.trash` sources and rebuild.
