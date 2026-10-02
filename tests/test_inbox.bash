@@ -164,6 +164,10 @@ thread=$(@ $inbox thread: $q)
 assert_eq "thread has two messages" "2" "$(line_count "$thread")"
 assert_eq "thread is oldest first" "$q" "$(printf '%s\n' "$thread" | head -1)"
 assert_eq "thread ends with reply" "$reply" "$(printf '%s\n' "$thread" | tail -1)"
+# Thread ids are arbitrary text: a quote must not break the query.
+@ "$reply" thread: "it's mine" >/dev/null; @ "$reply" save >/dev/null
+assert_eq "thread with a quote finds its message" "$reply" "$(@ $inbox thread: "it's mine")"
+@ "$reply" thread: "$q" >/dev/null; @ "$reply" save >/dev/null
 
 # ==========================================
 echo ""

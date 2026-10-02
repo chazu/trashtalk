@@ -199,9 +199,7 @@ Inbox subclass: Object
 
   # Every message in a thread, across inboxes, oldest first
   method: thread: threadId [
-    | where |
-    where := "json_extract(data, '$.thread') = '" , threadId , "'".
-    ^ @ Store findByClass: 'Message' where: where orderBy: "json_extract(data, '$.sentAt') ASC, rowid ASC" limit: 1000
+    ^ @ Store findByClass: 'Message' matching: (#{thread: threadId} asJson) orderBy: "json_extract(data, '$.sentAt') ASC, rowid ASC" limit: 1000
   ]
 
   # ------------------------------------------------------------------
