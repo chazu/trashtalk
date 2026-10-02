@@ -2430,6 +2430,10 @@ def generateRequires:
 def transformRawMethodBody:
   # Reconstruct explicit raw Bash bodies from tokens.
   def tokensToString:
+    # Every normalization below matches on a space. Literal text keeps its
+    # spaces as U+0001 until normalization is done, so quoted strings and
+    # heredoc bodies come through verbatim.
+    def protect_spaces: gsub(" "; "\u0001");
     # Token conversion phase
     reduce .[] as $tok ("";
       if $tok.type == "NAMESPACE_SEP" then
@@ -2463,8 +2467,8 @@ def transformRawMethodBody:
         elif $tok.type == "ARITH_CMD" then $tok.value
         # Values with trailing space
         elif $tok.type == "VARIABLE" then $tok.value + " "
-        elif $tok.type == "DSTRING" then $tok.value + " "
-        elif $tok.type == "STRING" then $tok.value + " "
+        elif $tok.type == "DSTRING" then ($tok.value | protect_spaces) + " "
+        elif $tok.type == "STRING" then ($tok.value | protect_spaces) + " "
         elif $tok.type == "TRIPLESTRING" then "$'\($tok.value | gsub("\\\\"; "\\\\") | gsub("'"; "\\'") | gsub("\n"; "\\n"))' "
         elif $tok.type == "NUMBER" then $tok.value + " "
         elif $tok.type == "KEYWORD" then $tok.value + " "
@@ -2477,7 +2481,7 @@ def transformRawMethodBody:
         elif $tok.type == "GT" then " >"
         elif $tok.type == "LT" then " <"
         elif $tok.type == "HEREDOC" then "<<"
-        elif $tok.type == "HEREDOC_BLOCK" then $tok.value + "\n"
+        elif $tok.type == "HEREDOC_BLOCK" then ($tok.value | protect_spaces) + "\n"
         elif $tok.type == "HERESTRING" then "<<< "
         elif $tok.type == "MATCH" then " =~ "
         elif $tok.type == "EQ" then " == "
@@ -2532,7 +2536,8 @@ def transformRawMethodBody:
       gsub("(?<a>[a-zA-Z0-9_]) =(?<c>[\"'$])"; "\(.a)=\(.c)") |  # Fix assignments: var ="val" → var="val"
       gsub("(?<a>[a-zA-Z0-9_])= (?<c>true|false|yes|no)(?<d>[ \n;)$])"; "\(.a)=\(.c)\(.d)") |  # Fix bool: var= true → var=true
       gsub("(?<a>[a-zA-Z0-9_]) = (?<c>true|false|yes|no)(?<d>[ \n;)$])"; "\(.a)=\(.c)\(.d)") |  # Fix bool: var = true → var=true
-      gsub("(?<a>[a-zA-Z0-9_]) = (?<c>[a-zA-Z])"; "\(.a)= \(.c)")   # Keep space for env var assignments: IFS= read
+      gsub("(?<a>[a-zA-Z0-9_]) = (?<c>[a-zA-Z])"; "\(.a)= \(.c)") |  # Keep space for env var assignments: IFS= read
+      gsub("\u0001"; " ")
 
     ;
 
