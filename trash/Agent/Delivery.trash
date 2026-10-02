@@ -124,12 +124,18 @@ Delivery subclass: Object
     ^ d
   ]
 
+  # The deterministic id of an attention delegation revision. Routing reads
+  # deliveries back by this id, so replay and redelegation find the same record.
+  classMethod: idForAttention: attention revision: revision [
+    ^ 'agentdelivery_' , attention , '_delegation_' , revision
+  ]
+
   # Workstation delegation: automatic dispatch to one resolved session, with a
   # deterministic id per (attention, delegation revision) so replay is inert.
   classMethod: forAttention: attention message: message session: session revision: revision [
     | id d ids key now workspace role roleRevision policy |
     @ Store requireTransaction.
-    id := 'agentdelivery_' , attention , '_delegation_' , revision.
+    id := @ self idForAttention: attention revision: revision.
     d := @ Store create: 'Agent::Delivery' id: id.
     ids := '[]'.
     ids := ids arrayPush: message.

@@ -150,7 +150,7 @@ Routing subclass: Object
     note := data jsonAt: 'routingNote' ifAbsent: '""'.
     delivery := ''. deliveryState := ''. run := ''. runState := ''.
     (message notEmpty) ifTrue: [
-      delivery := 'agentdelivery_' , attention , '_delegation_' , revision.
+      delivery := @ Agent::Delivery idForAttention: attention revision: revision.
       exists := @ Store exists: delivery.
       (exists = 'true') ifTrue: [
         state := @ Store getInstance: delivery.
@@ -330,7 +330,7 @@ Routing subclass: Object
     delegated := delegated jsonTextAt: ''.
     (delegated isEmpty) ifTrue: [^ @ Require reject: 'Attention is not delegated'].
     revision := data jsonAt: 'delegationRevision' ifAbsent: '0'.
-    delivery := 'agentdelivery_' , attention , '_delegation_' , revision.
+    delivery := @ Agent::Delivery idForAttention: attention revision: revision.
     exists := @ Store exists: delivery.
     (exists = 'true') ifTrue: [
       @ Store read: delivery class: 'Agent::Delivery'.
