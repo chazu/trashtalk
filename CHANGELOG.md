@@ -4,6 +4,15 @@
 
 ### Added
 
+- `decider` decision target: Decider, the System 1 typed-decision model on a
+  homelab BC-250, over the tailnet (`Decider::Client`, `decider.url`,
+  `decider.model`, `decider.textLimit`). `Decision::Target requireReady:`
+  probes its health before a batch. Gmail stages fit bodies to its 2,048-token
+  context and halve them on a context overflow, marking them truncated. Busy
+  (HTTP 409) answers are retried three times with backoff. `decider` is now
+  the default `decision.target`; set it to `jev` for OpenRouter. See
+  `docs/typed-decisions.md`.
+
 - `Config` reads declared settings from the environment, then
   `~/.config/trashtalk/config` (a flat TOML file), then defaults. `list`,
   `template`, `at:put:`, and `reset:` manage the file in place; `Trash doctor`
@@ -61,6 +70,8 @@
 
 ### Removed
 
+- The CLM decision targets (`clm-local`, `clm-bc250`, `clm-prefer-bc250`),
+  `CLM::Client`, and the `clm.*` settings. Decider replaces them.
 - `Tools::Ininspect`, `Object inspectInteractive` (use `inspect`), and
   `Trash inspectionRecordFor:` (use `UI::Inspector recordFor:`).
 - Assignment `continue:afterDelivery:key:`, `allowContinuations:reason:`, the

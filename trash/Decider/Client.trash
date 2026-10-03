@@ -1,0 +1,38 @@
+package: Decider
+
+# Decider: a small typed-decision (System 1) model on a BC-250, published on
+# the tailnet. It is not always on; a send never wakes or starts it.
+Client subclass: Object
+  classMethod: decide: state questions: questions [
+    | target |
+    target := @ Decision::Target named: 'decider'.
+    ^ @ self decide: state questions: questions using: target
+  ]
+
+  # One inference slot and sub-second answers: a short deadline keeps a stuck
+  # board from stalling a workflow. Busy responses are retried by Decision::HTTP.
+  classMethod: decide: state questions: questions using: target [
+    | url model |
+    url := (target jsonTextAt: 'url') , '/v1/systemone'.
+    model := target jsonTextAt: 'model'.
+    ^ @ Decision::Request decide: state questions: questions model: model endpoint: url credential: '' required: 'false' timeout: '15'
+  ]
+
+  classMethod: ready: target [
+    | url health |
+    url := (target jsonTextAt: 'url') , '/health'.
+    health := (@ Decision::HTTP send: 'GET' to: url body: '' credential: '' required: 'false' timeout: 3) ifFailed: [^ 'false'].
+    ^ @ self health: health supports: (target jsonTextAt: 'model')
+  ]
+
+  # Readiness means a loaded model with the selected ID, not a live process.
+  rawClassMethod: health: health supports: model [
+    jq -c --arg model "$2" '.ready == true and .model == $model' <<< "$1"
+  ]
+
+  # A failure receipt for input beyond the 2,048-token context. Decider uses
+  # HTTP 400 for every invalid request; only this message distinguishes it.
+  rawClassMethod: overflowed: receipt [
+    jq -c '.outcome == "http_error" and .status == 400 and
+      ((.body | fromjson? | .error) // "" | test("context capacity"))' <<< "$1" 2>/dev/null || echo false
+  ]

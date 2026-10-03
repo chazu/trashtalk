@@ -1,6 +1,7 @@
 package: Decision
 
 # Resolve once and pass the temporary JSON value through a whole workflow.
+# A target never switches providers after selection.
 Target subclass: Object
   classMethod: selected [
     | name |
@@ -8,26 +9,45 @@ Target subclass: Object
     ^ @ self named: name
   ]
 
+  # textLimit, when present, is the message text an application may send.
   classMethod: named: name [
-    | url model credential target |
+    | url model limit |
     name caseOf: {
       'jev' -> [
         model := @ OpenRouter::Jev model ifFailed: [:e | @ e signal].
         ^ #{name: name provider: 'jev' model: model} asJson
       ].
-      'clm-local' -> [url := @ Config at: 'clm.baseUrl' ifFailed: [:e | @ e signal]. credential := 'CLM_API_KEY'].
-      'clm-bc250' -> [url := @ Config at: 'clm.bc250Url' ifFailed: [:e | @ e signal]. credential := 'CLM_BC250_API_KEY'].
-      'clm-prefer-bc250' -> [
-        target := @ self named: 'clm-bc250'.
-        ((@ CLM::Client ready: target) = 'true') ifTrue: [^ target].
-        target := @ self named: 'clm-local'.
-        ((@ CLM::Client ready: target) = 'true') ifTrue: [^ target].
-        @ DecisionError signal: 'Neither CLM endpoint is ready'
+      'decider' -> [
+        url := @ Config at: 'decider.url' ifFailed: [:e | @ e signal].
+        url := url withoutSuffix: '/'.
+        model := @ Config at: 'decider.model' ifFailed: [:e | @ e signal].
+        limit := @ Config at: 'decider.textLimit' ifFailed: [:e | @ e signal].
+        ^ #{name: name provider: 'decider' url: url model: model textLimit: (limit jsonValue)} asJson
       ]
     } otherwise: [@ DecisionError signal: 'Unknown decision target'].
-    url := url withoutSuffix: '/'.
-    model := @ Config at: 'clm.model' ifFailed: [:e | @ e signal].
-    ^ #{name: name provider: 'clm' url: url model: model credential: credential} asJson
+  ]
+
+  # Probe before a batch so an unavailable service fails once, up front.
+  classMethod: requireReady: target [
+    | provider url |
+    provider := target jsonTextAt: 'provider'.
+    (provider = 'decider') ifFalse: [^ target].
+    ((@ Decider::Client ready: target) = 'true') ifTrue: [^ target].
+    url := target jsonTextAt: 'url'.
+    @ DecisionUnavailableError signal: 'Decider is not ready at ' , url
+  ]
+
+  # After a context overflow, the same target with half the text limit. Fails
+  # for any other error or below 500 characters; the caller reports the original.
+  classMethod: shrink: target after: error [
+    | receipt limit |
+    ((error upTo: ':') = 'DecisionRequestError') ifFalse: [@ DecisionError signal: 'Not a decision request failure'].
+    receipt := error withoutPrefix: 'DecisionRequestError: '.
+    ((@ Decider::Client overflowed: receipt) = 'true') ifFalse: [@ DecisionError signal: 'Not a context overflow'].
+    limit := (target jsonAt: 'textLimit') / 2.
+    (limit < 500) ifTrue: [@ DecisionError signal: 'Text limit cannot shrink further'].
+    ^ #{name: (target jsonTextAt: 'name') provider: (target jsonTextAt: 'provider') url: (target jsonTextAt: 'url')
+        model: (target jsonTextAt: 'model') textLimit: (limit jsonValue)} asJson
   ]
 
   classMethod: decide: state questions: questions using: target [
@@ -35,6 +55,6 @@ Target subclass: Object
     provider := target jsonTextAt: 'provider'.
     provider caseOf: {
       'jev' -> [^ @ OpenRouter::Jev decide: state questions: questions].
-      'clm' -> [^ @ CLM::Client decide: state questions: questions using: target]
+      'decider' -> [^ @ Decider::Client decide: state questions: questions using: target]
     } otherwise: [@ DecisionError signal: 'Unknown decision provider']
   ]

@@ -6,7 +6,7 @@ implemented contracts from designs and historical evidence.
 
 ## Current guides
 
-- [Typed decisions: Jev and CLM](typed-decisions.md): shared stages and local/BC-250 targets.
+- [Typed decisions: Jev and Decider](typed-decisions.md): shared stages, the Decider System 1 target, and Jev.
 
 | Topic | Reference |
 | --- | --- |

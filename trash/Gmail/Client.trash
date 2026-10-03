@@ -42,6 +42,21 @@ Client subclass: Tool
     ^ 'false'
   ]
 
+  # A small-context target (Decider) bounds the body further; the shortened
+  # message is marked truncated, so partial-content review gates still apply.
+  classMethod: fit: message to: target [
+    | limit |
+    limit := target jsonAt: 'textLimit' ifAbsent: 'null'.
+    (limit = 'null') ifTrue: [^ message].
+    ^ @ self bound: message chars: limit
+  ]
+
+  rawClassMethod: bound: message chars: limit [
+    jq -ce --argjson limit "$2" '
+      if ($limit | type) != "number" or $limit < 1 then error("Text limit must be a positive number")
+      elif (.body | length) > $limit then .body = .body[:$limit] | .truncated = true else . end' <<< "$1"
+  ]
+
   classMethod: requireLimit: limit [
     ^ @ Require member: limit of: '["1","2","3","4","5","6","7","8","9","10"]'
   ]

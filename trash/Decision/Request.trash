@@ -2,17 +2,21 @@ package: Decision
 
 Request subclass: Object
   classMethod: decide: state questions: questions model: model endpoint: endpoint credential: credential required: required [
+    ^ @ self decide: state questions: questions model: model endpoint: endpoint credential: credential required: required timeout: '90'
+  ]
+
+  classMethod: decide: state questions: questions model: model endpoint: endpoint credential: credential required: required timeout: seconds [
     | request |
     request := #{model: model state: state questions: (questions jsonValue)} asJson.
     (@ self validate: request) ifFailed: [:error | @ error signal].
-    ^ @ self send: request endpoint: endpoint credential: credential required: required
+    ^ @ self send: request endpoint: endpoint credential: credential required: required timeout: seconds
   ]
 
   # Bash status/stdout boundary: preserve the receipt and register it for
   # explicit rethrow by higher-level decision workflows.
-  rawClassMethod: send: request endpoint: endpoint credential: credential required: required [
+  rawClassMethod: send: request endpoint: endpoint credential: credential required: required timeout: seconds [
     local response
-    response=$(@ Decision::HTTP send: POST to: "$2" body: "$1" credential: "$3" required: "$4" timeout: 90) || {
+    response=$(@ Decision::HTTP send: POST to: "$2" body: "$1" credential: "$3" required: "$4" timeout: "$5") || {
       if [[ -n "$response" ]]; then @ Decision::Request reject: "$response"; fi
       return 1;
     }

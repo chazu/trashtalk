@@ -10,9 +10,10 @@ Review subclass: Object
 
   classMethod: assess: message using: target [
     | category context attention review |
-    category := (@ Gmail::Categorizer decide: message using: target) ifFailed: [:error | ^ @ Decision::Request failure: error].
+    message := (@ Gmail::Client fit: message to: target) ifFailed: [:error | ^ @ Decision::Request failure: error].
+    category := (@ Gmail::Categorizer decide: message using: target) ifFailed: [:error | ^ @ self assess: message shrinking: target after: error].
     context := #{email: (message jsonValue) categorization: ((category jsonAt: 'value') jsonValue)} asJson.
-    attention := (@ Gmail::Attention decide: context using: target) ifFailed: [:error | ^ @ Decision::Request failure: error].
+    attention := (@ Gmail::Attention decide: context using: target) ifFailed: [:error | ^ @ self assess: message shrinking: target after: error].
     review := category jsonAt: 'value.reviewNeeded'.
     ((attention jsonTextAt: 'value.suggestion') = 'review_uncertain') ifTrue: [review := 'true'].
     ((@ Gmail::Client isPartial: message) = 'true') ifTrue: [review := 'true'].
@@ -20,6 +21,13 @@ Review subclass: Object
         sender: (message jsonTextAt: 'from') bodySource: (message jsonTextAt: 'bodySource')
         truncated: ((message jsonAt: 'truncated') jsonValue)
         category: (category jsonValue) attention: (attention jsonValue)} asJson
+  ]
+
+  # A context overflow in either stage reruns both with a shorter body.
+  classMethod: assess: message shrinking: target after: error [
+    | smaller |
+    smaller := (@ Decision::Target shrink: target after: error) ifFailed: [:ignored | ^ @ Decision::Request failure: error].
+    ^ @ self assess: message using: smaller
   ]
 
   classMethod: assessMessage: messageId [
@@ -35,6 +43,7 @@ Review subclass: Object
     listing := (@ Gmail::Client search: query limit: limit) ifFailed: [:error | ^ @ Decision::Request failure: error].
     rows := listing jsonAt: 'messages' ifAbsent: '[]'.
     target := (@ Decision::Target selected) ifFailed: [:error | ^ @ Decision::Request failure: error].
+    target := (@ Decision::Target requireReady: target) ifFailed: [:error | ^ @ Decision::Request failure: error].
     rows jsonRows: #('id') into: [:id |
       message := (@ Gmail::Client message: id) ifFailed: [:error | ^ @ Decision::Request failure: error].
       assessment := (@ self assess: message using: target) ifFailed: [:error | ^ @ Decision::Request failure: error].

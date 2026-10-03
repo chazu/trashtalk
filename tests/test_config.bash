@@ -75,14 +75,14 @@ check "invalid value of another key is ignored by at:" \
 
 # Writes keep comments, order, and trailing comments; they replace duplicates.
 @ Config at: 'jcode.model' put: 'new-model'
-@ Config at: 'clm.model' put: 'clm-next'
+@ Config at: 'decider.model' put: 'decider-next'
 @ Config at: 'agent.controlWait' put: '60'
 expected='# personal settings
 jcode.model = "new-model"  # pinned
 agent.controlWait = 60
 
 gusgus.profile = "maki"
-clm.model = "clm-next"'
+decider.model = "decider-next"'
 check "put rewrites in place and appends new keys" "$(cat "$config")" "$expected"
 printf 'jcode.model = "second"\n' >> "$config"
 @ Config at: 'jcode.model' put: 'only'
@@ -120,11 +120,11 @@ sed 's/^# \([a-z][A-Za-z.]* = \)/\1/' "$TMPDIR/template" > "$TMPDIR/uncommented"
 check "uncommented template is valid" "$(TRASHTALK_CONFIG="$TMPDIR/uncommented" @ Config at: 'agent.controlWait')" '30'
 
 # Doctor findings.
-printf 'jcode.mdoel = "typo"\nagent.controlWait = "soon"\nclm.model = "a"\nclm.model = "b"\n' > "$TMPDIR/doctor-config"
+printf 'jcode.mdoel = "typo"\nagent.controlWait = "soon"\ndecider.model = "a"\ndecider.model = "b"\n' > "$TMPDIR/doctor-config"
 report=$(TRASHTALK_CONFIG="$TMPDIR/doctor-config" TRASHTALK_CODEX_MODEL=x TRASHTALK_MAKI_MODEL=$'a\nb' @ Config check)
 [[ $report == *$'warn\tUnknown config key jcode.mdoel'* ]] && test_pass "check flags unknown keys" || test_fail "check flags unknown keys"
 [[ $report == *$'bad\tConfig agent.controlWait'* ]] && test_pass "check flags invalid values" || test_fail "check flags invalid values"
-[[ $report == *$'warn\tConfig key clm.model appears more than once'* ]] && test_pass "check flags duplicates" || test_fail "check flags duplicates"
+[[ $report == *$'warn\tConfig key decider.model appears more than once'* ]] && test_pass "check flags duplicates" || test_fail "check flags duplicates"
 [[ $report == *$'bad\tTRASHTALK_MAKI_MODEL is invalid'* ]] && test_pass "check flags invalid env" || test_fail "check flags invalid env"
 [[ $report != *TRASHTALK_CODEX_MODEL* ]] && test_pass "unshadowing env is not reported" || test_fail "unshadowing env is not reported"
 doctor=$(TRASHTALK_CONFIG="$TMPDIR/doctor-config" TRASHTALK_GUSGUS_PROFILE=shell TRASHTALK_AGENT_BACKEND=none \

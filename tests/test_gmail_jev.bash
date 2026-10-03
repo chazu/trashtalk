@@ -37,6 +37,10 @@ done
 cat "$request" >> "$GMAIL_TEST_DIR/requests.jsonl"
 printf '\n' >> "$GMAIL_TEST_DIR/requests.jsonl"
 if [[ ${GMAIL_TEST_CURL_FAIL:-0} == 1 ]]; then exit 28; fi
+# Decider rejects state beyond its context with this 400.
+if [[ -n ${GMAIL_TEST_CONTEXT:-} ]] && jq -e --argjson n "$GMAIL_TEST_CONTEXT" '.state | length > $n' "$request" >/dev/null; then
+  echo '{"error": "State exceeds trial context capacity"}' > "$output"; printf 400; exit
+fi
 if jq -e '.questions.category' "$request" >/dev/null; then
   jq -cn --argjson confidence "${GMAIL_TEST_CONFIDENCE:-0.92}" \
     '{id:"category-receipt",model:"fixture-jev",answers:{category:{type:"choice",choice:"personal",confidence:$confidence,probabilities:{personal:0.94,other:0.06}}},usage:{input_tokens:100}}' > "$output"
@@ -49,7 +53,8 @@ fi
 printf 200
 SH
 chmod +x "$scratch/bin/gws" "$scratch/bin/curl"
-export PATH="$scratch/bin:$PATH" OPENROUTER_API_KEY=fixture-secret
+# These checks pin the Jev target; the Decider cases at the end pass theirs.
+export PATH="$scratch/bin:$PATH" OPENROUTER_API_KEY=fixture-secret TRASHTALK_DECISION_TARGET=jev
 source "$root/lib/trash.bash"
 passed=0
 check() {
@@ -175,3 +180,31 @@ check 'preferences do not leak across calls' false "$(jq -s '.[1].state | contai
 fail_send @ Gmail::Junk assess: "$message" examples: 'not-json'
 check 'malformed preferences fail before a model request' 2 "$(jq -s length "$scratch/requests.jsonl")"
 printf 'PASS: %s total Gmail/Jev checks including junk\n' "$passed"
+
+# A Decider target bounds the body and retries a context overflow with less.
+decider=$(@ Decision::Target named: decider | jq -c '.textLimit = 10')
+: > "$scratch/requests.jsonl"
+result=$(@ Gmail::Junk assess: "$message" examples: '[]' using: "$decider")
+check 'a small-context target shortens the body' true "$(jq -s '.[0].state | contains("body: Can you co\n")' "$scratch/requests.jsonl")"
+check 'a shortened body is partial content' true "$(jq -r .partialContent <<< "$result")"
+check 'a shortened body cannot be likely junk' incomplete_content "$(jq -r .reason <<< "$result")"
+check 'the target is recorded' 10 "$(jq -r .execution.textLimit <<< "$result")"
+long_message=$(jq -c '.body = ("word " * 1000) | .truncated = false' <<< "$message")
+decider=$(@ Decision::Target named: decider)
+export GMAIL_TEST_CONTEXT=3000
+: > "$scratch/requests.jsonl"
+result=$(@ Gmail::Junk assess: "$long_message" examples: '[]' using: "$decider")
+check 'a context overflow is retried with half the body' 2000 "$(jq -r .execution.textLimit <<< "$result")"
+check 'one retry after one overflow' 2 "$(jq -s length "$scratch/requests.jsonl")"
+: > "$scratch/requests.jsonl"
+result=$(@ Gmail::Review assess: "$long_message" using: "$decider")
+check 'a review overflow reruns both stages' 3 "$(jq -s length "$scratch/requests.jsonl")"
+check 'both review stages use the shorter body' '[2000,2000]' "$(jq -c '[.category.execution.textLimit,.attention.execution.textLimit]' <<< "$result")"
+check 'a shortened review needs review' true "$(jq -r .reviewNeeded <<< "$result")"
+export GMAIL_TEST_CONTEXT=10
+: > "$scratch/requests.jsonl"
+fail_send @ Gmail::Junk assess: "$long_message" examples: '[]' using: "$decider"
+check 'shrinking stops at the floor' 4 "$(jq -s length "$scratch/requests.jsonl")"
+check 'the overflow receipt is reported' 400 "$(jq -r .status "$scratch/failed.out")"
+unset GMAIL_TEST_CONTEXT
+printf 'PASS: %s total Gmail checks including Decider\n' "$passed"

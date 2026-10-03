@@ -36,8 +36,9 @@ Junk subclass: Object
 
   classMethod: assess: message examples: examples using: target [
     | context decision suggestion probability partial reason |
+    message := (@ Gmail::Client fit: message to: target) ifFailed: [:error | ^ @ Decision::Request failure: error].
     context := #{email: (message jsonValue) preferenceExamples: (examples jsonValue)} asJson.
-    decision := (@ self decide: context using: target) ifFailed: [:error | ^ @ Decision::Request failure: error].
+    decision := (@ self decide: context using: target) ifFailed: [:error | ^ @ self assess: message examples: examples shrinking: target after: error].
     suggestion := decision jsonTextAt: 'value.suggestion'.
     probability := decision jsonAt: 'value.junkProbability'.
     partial := @ Gmail::Client isPartial: message.
@@ -52,6 +53,13 @@ Junk subclass: Object
         partialContent: (partial jsonValue) bodySource: (message jsonTextAt: 'bodySource')
         response: ((decision jsonAt: 'response') jsonValue)
         execution: ((decision jsonAt: 'execution') jsonValue)} asJson
+  ]
+
+  # A context overflow is retried with a shorter body; anything else fails.
+  classMethod: assess: message examples: examples shrinking: target after: error [
+    | smaller |
+    smaller := (@ Decision::Target shrink: target after: error) ifFailed: [:ignored | ^ @ Decision::Request failure: error].
+    ^ @ self assess: message examples: examples using: smaller
   ]
 
   classMethod: assessMessage: messageId [

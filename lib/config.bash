@@ -26,12 +26,14 @@ _trash_config_declare agent.controlWait TRASHTALK_CONTROL_WAIT integer 30 \
     'Seconds a stop or terminate waits behind a running agent tick'
 _trash_config_declare assignment.attempts TRASHTALK_ASSIGNMENT_ATTEMPTS integer 4 \
     'Turns an Assignment gets before it needs review; unfinished turns resume automatically'
-_trash_config_declare decision.target TRASHTALK_DECISION_TARGET 'enum:jev clm-local clm-bc250 clm-prefer-bc250' jev \
+_trash_config_declare decision.target TRASHTALK_DECISION_TARGET 'enum:jev decider' decider \
     'Where typed decisions run'
 _trash_config_declare jev.model TRASHTALK_JEV_MODEL string typesafe/jev-1.13 'OpenRouter model for Jev decisions'
-_trash_config_declare clm.baseUrl CLM_BASE_URL string http://127.0.0.1:8700 'Local CLM endpoint'
-_trash_config_declare clm.bc250Url CLM_BC250_URL string '' 'BC-250 CLM endpoint'
-_trash_config_declare clm.model CLM_MODEL string clm-latest 'CLM model name'
+_trash_config_declare decider.url TRASHTALK_DECIDER_URL string https://decider.tail7fd374.ts.net \
+    'Decider System 1 service (tailnet only)'
+_trash_config_declare decider.model TRASHTALK_DECIDER_MODEL string decider-2b-v11-Q4_K_M 'Decider model ID'
+_trash_config_declare decider.textLimit TRASHTALK_DECIDER_TEXT_LIMIT integer 4000 \
+    'Characters of message text an application sends to Decider (2,048-token context)'
 
 _TRASH_CONFIG_KEY_RE='^[[:space:]]*([A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)*)[[:space:]]*=[[:space:]]*(.*)$'
 _TRASH_CONFIG_QUOTED_RE='^"([^"\\]*)"[[:space:]]*(#.*)?$'

@@ -1,7 +1,9 @@
 # Gmail decisions with Jev
 
-The shared stages now also support local/BC-250 CLM: [typed decisions](typed-decisions.md).
-Set `TRASHTALK_DECISION_TARGET` explicitly; Jev remains the default.
+The shared stages also run on Decider, the tailnet System 1 model:
+[typed decisions](typed-decisions.md). Decider is the default target; set
+`TRASHTALK_DECISION_TARGET=jev` for the Jev runs described below. Decider has a 2,048-token context, so bodies are
+shortened further and marked truncated (see that page).
 
 ## Junk review experiment
 

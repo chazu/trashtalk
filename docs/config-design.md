@@ -114,11 +114,14 @@ so `at:` forks nothing: no jq and no sqlite. The file is re-read on each
 | `maki.model` | `TRASHTALK_MAKI_MODEL` | string | `openai/gpt-5.6-terra` | Model for Maki sessions |
 | `agent.controlWait` | `TRASHTALK_CONTROL_WAIT` | integer | `30` | Seconds to wait for a harness control reply |
 | `assignment.attempts` | `TRASHTALK_ASSIGNMENT_ATTEMPTS` | integer | `4` | Turns an Assignment gets before it needs review |
-| `decision.target` | `TRASHTALK_DECISION_TARGET` | one of `jev clm-local clm-bc250 clm-prefer-bc250` | `jev` | Where typed decisions run |
+| `decision.target` | `TRASHTALK_DECISION_TARGET` | one of `jev decider` | `decider` | Where typed decisions run |
 | `jev.model` | `TRASHTALK_JEV_MODEL` | string | `typesafe/jev-1.13` | OpenRouter model for Jev decisions (new) |
-| `clm.baseUrl` | `CLM_BASE_URL` | string | `http://127.0.0.1:8700` | Local CLM endpoint |
-| `clm.bc250Url` | `CLM_BC250_URL` | string | empty | BC-250 CLM endpoint |
-| `clm.model` | `CLM_MODEL` | string | `clm-latest` | CLM model name |
+| `decider.url` | `TRASHTALK_DECIDER_URL` | string | `https://decider.tail7fd374.ts.net` | Decider System 1 service |
+| `decider.model` | `TRASHTALK_DECIDER_MODEL` | string | `decider-2b-v11-Q4_K_M` | Decider model ID |
+| `decider.textLimit` | `TRASHTALK_DECIDER_TEXT_LIMIT` | integer | `4000` | Message text an application sends to Decider |
+
+The CLM keys (`clm.baseUrl`, `clm.bc250Url`, `clm.model`) were retired with
+the CLM targets; Decider replaced them.
 
 The declarations are kept central rather than spread across owning classes, so
 `list` and `doctor` work without loading every class. They are Bash
@@ -223,7 +226,7 @@ Later, if needed:
 
 - **Workspace layer:** a checked-in per-repository file between env and the
   user file, so a project can pin its Gusgus model. This needs a trust rule
-  first: a cloned repository must not be able to redirect `clm.baseUrl` or
+  first: a cloned repository must not be able to redirect `decider.url` or
   pick a harness without the user's consent.
 - **Table headers** (`[jcode]`) in the reader.
 

@@ -52,7 +52,7 @@ The adapter does basic shape checks; it is not a full API schema validator.
 Only the curl/file boundary is raw Bash. Credentials go into a mode-600
 curl config inside a private temporary directory, cleaned on return; they
 are absent from command arguments. The old `OpenRouter complete:` POC is
-removed. The provider now shares transport/schema checks with CLM; see [typed decisions](typed-decisions.md). It remains separate from Agent and makes no automatic retries.
+removed. The provider now shares transport/schema checks with Decider; see [typed decisions](typed-decisions.md). It remains separate from Agent and retries only a busy (HTTP 409) answer.
 
 ## Verification
 

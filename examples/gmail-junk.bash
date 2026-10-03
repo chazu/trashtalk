@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Read-only, bounded review sample. One Jev request per unique message.
+# Read-only, bounded review sample. One decision request per unique message,
+# using the selected target (TRASHTALK_DECISION_TARGET=jev or decider).
 set -euo pipefail
 if [[ $# -lt 1 || $# -gt 2 ]]; then
     printf 'Usage: bash examples/gmail-junk.bash EXPECTED_EMAIL [PREFERENCE_EXAMPLES_JSON]\n' >&2
@@ -13,6 +14,7 @@ if [[ $# == 2 ]]; then
 fi
 @ Gmail::Client requireAccount: "$1" >/dev/null
 target=$(@ Decision::Target selected)
+@ Decision::Target requireReady: "$target" >/dev/null
 declare -A seen=() conversations=() threads=()
 count=0
 # Gmail categories are sampling strata only; never passed to the model.
