@@ -179,15 +179,13 @@ assert_fails "an unknown name is still an error" @ UI::Inspector openObject: NoS
 # With a terminal, inspect opens the inspector read-only: Enter on a class
 # variable is refused rather than opening an editor.
 _trash_interactive_terminal() { true; }
-export UI_SCRIPT='[{"widget":"pane-[]","action":"drill","value":{"key":"data"}},
-  {"widget":"pane-[\"data\"]","action":"drill","value":{"key":"count"}}]'
+export UI_SCRIPT='[{"widget":"pane-[\"data\"]","action":"drill","value":{"key":"count"}}]'
 : > "$UI_LOG"
 @ TestRegistry inspect >/dev/null 2>&1
-assert_true "interactive class inspect opens the class inspector" jq -se \
-    '.[0].view == "inspector" and .[0].root.children[0].children[0].props.title == "Class inspector"
-     and (.[0].collections[0].rows | map(.fields.text) | index("class_name: \"TestRegistry\"") != null)' "$UI_LOG"
-assert_true "class state can be drilled into" jq -se \
-    '[.[] | select(.type == "init")][1].collections[1].rows | map(.fields.text) == ["count: 2","label: \"main hall\"","note: \"\""]' "$UI_LOG"
+assert_true "interactive class inspect opens at class state, titled with class and superclass" jq -se \
+    '.[0].view == "inspector" and .[0].root.children[0].children[0].props.title == "class TestRegistry, subclass of Object"' "$UI_LOG"
+assert_true "class state is listed" jq -se \
+    '.[0].collections[0].rows | map(.fields.text) == ["count: 2","label: \"main hall\"","note: \"\""]' "$UI_LOG"
 assert_true "class variables are not editable" jq -se \
     '[.[] | select(.type == "ack")][-1].ok == false' "$UI_LOG"
 assert_eq "inspection leaves class state unchanged" "2" "$(@ TestRegistry count)"

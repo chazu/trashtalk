@@ -115,13 +115,13 @@ assert_eq "stale edit cannot change object state" "3" "$(@ "$counter" getValue)"
 
 # The real session bridge, with a terminal present, drives the same handler.
 _trash_interactive_terminal() { true; }
-export UI_SCRIPT='[{"widget":"pane-[]","action":"drill","value":{"key":"data"}},
-  {"widget":"pane-[\"data\"]","action":"drill","value":{"key":"step"}},
+export UI_SCRIPT='[{"widget":"pane-[\"data\"]","action":"drill","value":{"key":"step"}},
   {"widget":"edit-[\"data\",\"step\"]","action":"apply","value":"5"}]'
 : > "$UI_LOG"
 @ "$counter" inspect
-assert_true "interactive inspect opens the object inspector surface" jq -se \
-    --arg id "$counter" '.[0].view == "inspector" and .[0].collections[0].rows[1].fields.text == ("object_id: " + ($id|tojson))' "$UI_LOG"
+assert_true "interactive inspect opens at the object's state, titled with its class and id" jq -se \
+    --arg id "$counter" '.[0].view == "inspector" and .[0].root.children[0].children[0].props.title == ("Counter " + $id)
+      and .[0].collections[0].id == "pane-[\"data\"]" and (.[0].collections[0].rows | map(.key)) == ["value","step"]' "$UI_LOG"
 assert_true "surface edit is acknowledged" jq -se '.[-1].type == "ack" and .[-1].ok == true' "$UI_LOG"
 assert_eq "surface edit commits through the proposal" "5" "$(@ "$counter" getStep)"
 

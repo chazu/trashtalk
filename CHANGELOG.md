@@ -28,6 +28,8 @@
   are resolved when it is shown (one Store query); Enter loads the referenced
   object onto the inspection stack, where it can be edited too. Dangling ids
   are marked `(missing object)`. `Runtime referencesIn:` exposes the lookup.
+  The inspector opens at an object's or class's state, titled with its class
+  and id (or superclass), instead of the record wrapper.
 
 - Classes can be inspected. `@ Registry inspect` and `@ Trash inspectObject:
   Registry` show the superclass and class instance variables (own and

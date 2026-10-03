@@ -72,7 +72,8 @@ counter=$(@ Counter new)
 @ "$counter" describe                  # always the textual form
 ```
 
-Enter drills into containers; Back/Forward and Alt-Left/Alt-Right move along
+The inspector opens at the object's instance variables, titled with its class
+and id. Enter drills into containers; Back/Forward and Alt-Left/Alt-Right move along
 the inspection stack. Enter on a scalar instance variable opens a one-line
 editor holding its JSON value; Enter or Apply submits it. The inspector only
 stages an edit proposal. `ObjectEditProposal` checks that the object and the
@@ -89,9 +90,9 @@ id-shaped value carrying a UUID or hash with no object behind it is marked
 `(missing object)` and stays editable text. `@ Runtime referencesIn: json`
 returns the same `{id: class}` map.
 
-Classes are inspected the same way. A class record shows the superclass and
-every class instance variable (inherited declarations first) with its current
-value; it is read-only.
+Classes are inspected the same way. The inspector opens at every class
+instance variable (inherited declarations first) with its current value,
+titled with the class and its superclass; it is read-only.
 
 ```bash
 @ Registry inspect                     # Class inspector, or describe's text

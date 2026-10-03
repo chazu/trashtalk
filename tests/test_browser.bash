@@ -231,7 +231,7 @@ assert_eq "instance picker returns selected object to API callers" "$counter" \
 _trash_interactive_terminal() { true; }
 @ Trash browseInstancesOf: Counter
 assert_jq "instance browser opens the selected object inspector" "$CAPTURE_INSPECTION_INPUT" \
-    ".view == \"inspector\" and (.collections[0].rows | map(.fields.text)) == [\"schema_version: 1\", \"object_id: \\\"$counter\\\"\", \"class_name: \\\"Counter\\\"\", \"data: {\\\"value\\\":0,\\\"step\\\":1}\"]"
+    ".view == \"inspector\" and .root.children[0].children[0].props.title == \"Counter $counter\" and (.collections[0].rows | map(.fields.text)) == [\"value: 0\", \"step: 1\"]"
 unset -f _trash_interactive_terminal
 source "$PROJECT_DIR/lib/trash-progress.bash"
 

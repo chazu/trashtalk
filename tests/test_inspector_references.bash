@@ -161,12 +161,11 @@ assert_true "a reference deleted since display is refused with a message" jq -e 
 
 # The real session bridge drives the same handler, including record loads.
 _trash_interactive_terminal() { true; }
-export UI_SCRIPT='[{"widget":"pane-[]","action":"drill","value":{"key":"data"}},
-  {"widget":"pane-[\"data\"]","action":"drill","value":{"key":"target"}}]'
+export UI_SCRIPT='[{"widget":"pane-[\"data\"]","action":"drill","value":{"key":"target"}}]'
 : > "$UI_LOG"
 @ "$outer" inspect >/dev/null 2>&1
 assert_true "the interactive inspector follows a link" jq -se --arg counter "$counter" \
-    '[.[] | select(.type == "ack")] | all(.ok) and length == 2' "$UI_LOG"
+    '[.[] | select(.type == "ack")] | all(.ok) and length == 1' "$UI_LOG"
 assert_true "the linked object's links are shown in the surface" jq -se --arg counter "$counter" \
     '[.[] | select(.type == "init")][-1].collections[-1].rows[0].fields.text == ("target: → Counter " + $counter)' "$UI_LOG"
 

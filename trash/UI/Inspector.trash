@@ -17,8 +17,20 @@ Inspector subclass: Object
     record isEmpty ifTrue: [@ StateError signal: 'Object does not exist: ' , objectId].
     available := @ UI::Surface isAvailable.
     (available ~= 'true') ifTrue: [^ @ objectId describe].
-    (record jsonHas: 'object_id') ifFalse: [^ @ self openRecord: record title: 'Class inspector'].
-    ^ @ self open: record title: 'Object inspector' editable: true
+    ^ @ self openState: record
+  ]
+
+  # Opens at the record's state, titled with whose state it is: the class and
+  # id of an object, or the class and its superclass.
+  classMethod: openState: record [
+    | className objectId superclass |
+    className := record jsonTextAt: 'class_name'.
+    (record jsonHas: 'object_id') ifTrue: [
+      objectId := record jsonTextAt: 'object_id'.
+      ^ @ self open: record title: className , ' ' , objectId editable: 'true' paths: '[["data"]]'
+    ].
+    superclass := record jsonTextAt: 'superclass'.
+    ^ @ self open: record title: 'class ' , className , ', subclass of ' , superclass editable: 'false' paths: '[["data"]]'
   ]
 
   # A live object's record, or a class's record when objectId names a class.
@@ -45,8 +57,12 @@ Inspector subclass: Object
   ]
 
   classMethod: open: record title: title editable: editable [
+    ^ @ self open: record title: title editable: editable paths: '[[]]'
+  ]
+
+  classMethod: open: record title: title editable: editable paths: paths [
     | context |
-    context := #{record: (record jsonValue) title: title paths: #(#()) active: 0 revision: 0
+    context := #{record: (record jsonValue) title: title paths: (paths jsonValue) active: 0 revision: 0
                  editable: (editable jsonValue)} asJson.
     ^ @ UI::Surface open: self context: context
   ]
