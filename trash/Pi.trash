@@ -1,0 +1,13 @@
+# Pi - Tool wrapper for the pi coding agent CLI.
+# Top-level name supports `@ Pi path` and `@ Pi version`. Installation and
+# provider login stay explicit (`pi` then /login); session execution belongs to
+# Agent::PiDriver.
+Pi subclass: Tool
+
+  classMethod: name [
+    ^ 'pi'
+  ]
+
+  classMethod: installGuidance [
+    ^ 'pi is not installed. Install it from https://pi.dev, then start pi and run /login'
+  ]

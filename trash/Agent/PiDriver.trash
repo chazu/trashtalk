@@ -1,0 +1,101 @@
+package: Agent
+
+# Agent::PiDriver - Session driver for the pi coding agent.
+# One detached `pi --mode json -p` process per delivery batch. The worker's
+# prompt arrives on stdin and pi streams JSONL events to stdout. Continuity is
+# pi's own session store: the first run reports its id in the opening `session`
+# event, and later runs pass it back with --session-id in the same workspace.
+#
+# Verified behavior (pi 0.99.2): `-p` reads the prompt from piped or redirected
+# stdin; a missing provider key exits 1 after the `session` event with the
+# diagnostic on stderr; a failed provider call ends the turn with an assistant
+# message whose stopReason is error and whose errorMessage explains it.
+# pi has no sandbox, so capabilities report sandbox:false.
+PiDriver subclass: Agent::Driver
+
+  classMethod: capabilities [
+    ^ '{"schema_version":1,"headless":true,"resume":true,"queued_input":true,"stop":true,"live_input":false,"sandbox":false}'
+  ]
+
+  # Empty means pi's own default model (settings.json defaultProvider/defaultModel).
+  classMethod: model [ ^ @ Config at: 'pi.model' ]
+
+  # pi.extensions = false adds --no-extensions, for runs that must not load the
+  # user's pi packages (some register their own delegation or memory tools).
+  classMethod: extensions [ ^ @ Config at: 'pi.extensions' ]
+
+  classMethod: argvFor: executable workspace: workspace model: model extensions: extensions ref: ref [
+    | argv |
+    argv := #('bash' '-c' 'cd "$1" && shift && exec "$@"' 'pi-driver' workspace executable
+      '--mode' 'json' '--print') asJson.
+    model notEmpty ifTrue: [
+      argv := argv arrayPush: '--model'.
+      argv := argv arrayPush: model
+    ].
+    (extensions = 'false') ifTrue: [
+      argv := argv arrayPush: '--no-extensions'
+    ].
+    ref notEmpty ifTrue: [
+      argv := argv arrayPush: '--session-id'.
+      argv := argv arrayPush: ref
+    ].
+    ^ argv
+  ]
+
+  # _throw carries runtime error state but does not write stderr; persist the
+  # diagnostic explicitly so detached worker failures remain inspectable.
+  rawClassMethod: reject: reason [
+    printf '%s\n' "$1" >&2
+    _throw 'DriverError' "$1"
+    return 1
+  ]
+
+  # OS boundary: locate pi and reuse Agent::Driver's launcher. Agent::Driver
+  # launchRef: has recorded the error log and captures stderr.
+  rawClassMethod: launchPreparedRef: ref promptFile: promptFile run: run token: token [
+    local ref="$1" prompt="$2" run="$3" token="$4" executable workspace model extensions argv
+    executable=$(@ Pi path)
+    [[ -n "$executable" ]] || { @ "$_RECEIVER" reject: "$(@ Pi installGuidance)"; return 1; }
+    model=$(@ "$_RECEIVER" model) || return 1
+    extensions=$(@ "$_RECEIVER" extensions) || return 1
+    workspace=$(@ "$run" executionWorkspace)
+    argv=$(@ "$_RECEIVER" argvFor: "$executable" workspace: "$workspace" model: "$model" extensions: "$extensions" ref: "$ref") || return 1
+    @ "$_RECEIVER" launchArgv: "$argv" promptFile: "$prompt" run: "$run" token: "$token" ref: "$ref"
+  ]
+
+  # The opening `session` event carries pi's session id; without it
+  # conversationRefFor: falls back to the reference recorded at resume time.
+  rawClassMethod: harnessConversationRefFor: run [
+    local log
+    log=$(@ "$1" outputLog)
+    [[ -f "$log" ]] || return 0
+    jq -r 'select(.type == "session") | .id // empty' "$log" 2>/dev/null | head -n 1
+  ]
+
+  # A turn is finished when agent_end arrives with no retry pending and the
+  # last assistant message did not stop on an error or abort. Exit zero alone
+  # is not success, and an earlier failure followed by a successful retry is.
+  rawClassMethod: resultSeenFor: run [
+    local log
+    log=$(@ "$1" outputLog)
+    if [[ -f "$log" ]] && jq -se '
+        ([.[] | select(.type == "agent_end")] | last) as $end
+        | ([.[] | select(.type == "message_end" and .message.role == "assistant")] | last) as $m
+        | $end != null and $end.willRetry != true
+          and ($m == null or (($m.message.stopReason // "stop") | IN("error", "aborted") | not))' "$log" >/dev/null 2>&1; then
+      echo true
+    else
+      echo false
+    fi
+  ]
+
+  # Provider failures arrive as the last assistant message, usually with exit
+  # zero; other failures (no key, bad model) are on stderr.
+  rawClassMethod: harnessErrorFor: run [
+    local log
+    log=$(@ "$1" outputLog)
+    [[ -f "$log" ]] || return 0
+    jq -sr '[.[] | select(.type == "message_end" and .message.role == "assistant")] | last
+        | select(. != null and (.message.stopReason | IN("error", "aborted")))
+        | .message.errorMessage // .message.stopReason' "$log" 2>/dev/null | tail -c 4096
+  ]

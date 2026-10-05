@@ -20,7 +20,7 @@ implemented contracts from designs and historical evidence.
 | Persistent agent use, messages, stop, and recovery | [Agent operations](agent-operations.md) |
 | Attach, backlog, composer, and detach | [Live session view](agent-session-view.md) |
 | User settings: file, env overrides, `Config` | [Configuration](config-design.md) |
-| Harness contracts | [Jcode](jcode-session-driver.md), [Maki](maki-session-driver.md) |
+| Harness contracts | [Jcode](jcode-session-driver.md), [Maki](maki-session-driver.md), [pi](pi-session-driver.md) |
 | Tracking failing commands, attention alerts, and delegating them to agents | [Workstation guide](workstation-guide.md) (user guide), [Workstation operations](workstation-operations.md) (operator detail) |
 | Durable work and specialist dispatch | [Agent delegation](agent-delegation-flow.md), [Manual assignments](assignments.md), [Coding assignment contract](agent-coding-assignment-contract.md), [Continuation and recovery](assignment-recovery.md), [Simplification design](assignment-simplification.md) |
 | Code and session search / CLI harness adapters | [Tool adapters](code-and-session-tools.md) |

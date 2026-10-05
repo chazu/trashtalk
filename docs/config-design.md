@@ -108,10 +108,12 @@ so `at:` forks nothing: no jq and no sqlite. The file is re-read on each
 
 | Key | Env override | Type | Default | Description |
 | --- | --- | --- | --- | --- |
-| `gusgus.profile` | `TRASHTALK_GUSGUS_PROFILE` | one of `jcode maki codex shell` | `jcode` | Harness for new Gusgus sessions |
+| `gusgus.profile` | `TRASHTALK_GUSGUS_PROFILE` | one of `jcode maki codex pi shell` | `jcode` | Harness for new Gusgus sessions |
 | `jcode.model` | `TRASHTALK_JCODE_MODEL` | string | `gpt-5.6-terra` | Model for Jcode sessions |
 | `codex.model` | `TRASHTALK_CODEX_MODEL` | string | `gpt-5.6-terra` | Model for Codex sessions |
 | `maki.model` | `TRASHTALK_MAKI_MODEL` | string | `openai/gpt-5.6-terra` | Model for Maki sessions |
+| `pi.model` | `TRASHTALK_PI_MODEL` | string | empty | Model for pi sessions (`provider/id`); empty uses pi's own default |
+| `pi.extensions` | `TRASHTALK_PI_EXTENSIONS` | boolean | `true` | Load the user's pi extensions and packages in pi sessions |
 | `agent.controlWait` | `TRASHTALK_CONTROL_WAIT` | integer | `30` | Seconds to wait for a harness control reply |
 | `assignment.attempts` | `TRASHTALK_ASSIGNMENT_ATTEMPTS` | integer | `4` | Turns an Assignment gets before it needs review |
 | `decision.target` | `TRASHTALK_DECISION_TARGET` | one of `jev decider` | `decider` | Where typed decisions run |

@@ -135,6 +135,14 @@ Trash subclass: Object
           printf 'bad\t%s\n' "Maki installation/check failed; retry with: @ Maki install"
         fi
         ;;
+      pi)
+        session_executable=$(@ Pi path)
+        if [[ -n "$session_executable" ]] && session_version=$("$session_executable" --version 2>&1); then
+          printf 'ok\t%s\n' "pi found ($session_executable); $session_version"
+        else
+          printf 'bad\t%s\n' "pi is missing or cannot run; $(@ Pi installGuidance)"
+        fi
+        ;;
     esac
   ]
 

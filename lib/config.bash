@@ -16,12 +16,16 @@ _trash_config_declare() {
 }
 
 # Enum values mirror Agent::Worker driverFor: and Decision::Target named:.
-_trash_config_declare gusgus.profile TRASHTALK_GUSGUS_PROFILE 'enum:jcode maki codex shell' jcode \
+_trash_config_declare gusgus.profile TRASHTALK_GUSGUS_PROFILE 'enum:jcode maki codex pi shell' jcode \
     'Harness for new Gusgus sessions'
 _trash_config_declare jcode.model TRASHTALK_JCODE_MODEL string gpt-5.6-terra 'Model for Jcode sessions'
 _trash_config_declare codex.model TRASHTALK_CODEX_MODEL string gpt-5.6-terra 'Model for Codex sessions'
 _trash_config_declare maki.model TRASHTALK_MAKI_MODEL string openai/gpt-5.6-terra \
     'Model for Maki sessions (an openai/ model)'
+_trash_config_declare pi.model TRASHTALK_PI_MODEL string '' \
+    'Model for pi sessions (provider/id); empty uses pi'"'"'s own default'
+_trash_config_declare pi.extensions TRASHTALK_PI_EXTENSIONS boolean true \
+    'Load the user'"'"'s pi extensions and packages in pi sessions'
 _trash_config_declare agent.controlWait TRASHTALK_CONTROL_WAIT integer 30 \
     'Seconds a stop or terminate waits behind a running agent tick'
 _trash_config_declare assignment.attempts TRASHTALK_ASSIGNMENT_ATTEMPTS integer 4 \

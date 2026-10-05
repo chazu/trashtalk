@@ -4,6 +4,12 @@
 
 ### Added
 
+- `pi` session harness: `gusgus.profile = "pi"` runs Gusgus, and the
+  Assignment specialists it delegates to, on the pi coding agent through
+  `Agent::PiDriver`. `pi.model` picks a model (empty keeps pi's own default)
+  and `pi.extensions = false` skips the user's pi packages. `Trash doctor`
+  checks the executable. See `docs/pi-session-driver.md`.
+
 - `decider` decision target: Decider, the System 1 typed-decision model on a
   homelab BC-250, over the tailnet (`Decider::Client`, `decider.url`,
   `decider.model`, `decider.textLimit`). `Decision::Target requireReady:`
