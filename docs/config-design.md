@@ -192,6 +192,11 @@ mkdir -p ~/.config/trashtalk
 
 Because secrets never go in this file, it is safe to commit.
 
+To version a machine's file in this repository instead, put it in
+`machines/<name>/trashtalk.config` and run `bin/trash-machine apply <name>`,
+which links it into place. The same directory can carry the settings of omlx,
+pi, and Hindsight; see `machines/README.md`.
+
 ### `.trashrc`
 
 `.trashrc` stays as it is, the place for shell setup: `PATH`, functions, and

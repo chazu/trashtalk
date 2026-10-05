@@ -4,6 +4,13 @@
 
 ### Added
 
+- `machines/<name>/` and `bin/trash-machine`: a machine's Gusgus config and the
+  settings of the tools around it (omlx, pi, Hindsight) live in the repo.
+  `trash-machine diff|apply NAME` links `trashtalk.config` and merges the JSON
+  fragments into the tool's own files with a backup, leaving keys and auth
+  untouched. `machines/omlx-pi` captures the local-model setup. See
+  `machines/README.md`.
+
 - `pi` session harness: `gusgus.profile = "pi"` runs Gusgus, and the
   Assignment specialists it delegates to, on the pi coding agent through
   `Agent::PiDriver`. `pi.model` picks a model (empty keeps pi's own default),

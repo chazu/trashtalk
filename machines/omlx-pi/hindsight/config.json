@@ -1,0 +1,7 @@
+{
+  "api_url": "http://localhost:8888",
+  "bankId": "poop",
+  "bankStrategy": "manual",
+  "bank_id": "poop",
+  "baseUrl": "http://localhost:8888"
+}

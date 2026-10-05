@@ -1,0 +1,22 @@
+--- a/extensions/client.ts
++++ b/extensions/client.ts
+@@ -36,7 +36,7 @@
+ 
+ export const ensureBank = async (client: any, bankId: string, config: { autoCreateBank: boolean; workspace: string }): Promise<void> => {
+   try {
+-    await client.getBankProfile(bankId);
++    await client.getBankConfig(bankId); // local patch: server 0.10 removed bank profile endpoints
+   } catch (error) {
+     if (!isNotFoundError(error) || !config.autoCreateBank) throw error;
+     await client.createBank(bankId, {
+--- a/extensions/tools.ts
++++ b/extensions/tools.ts
+@@ -197,7 +197,7 @@
+     async execute(_toolCallId: string) {
+       const handles = await ensureHandles();
+       const insights = await getBankInsights(handles.config.baseUrl, handles.config.apiKey, handles.bankId);
+-      const profile = insights.profile ?? await handles.client.getBankProfile(handles.bankId);
++      const profile = insights.profile ?? await handles.client.getBankConfig(handles.bankId).catch(() => null); // local patch: profile endpoints removed in server 0.10
+       const disposition = profile?.disposition
+         ? `skepticism=${profile.disposition.skepticism ?? "?"}, literalism=${profile.disposition.literalism ?? "?"}, empathy=${profile.disposition.empathy ?? "?"}`
+         : "none";

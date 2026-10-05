@@ -1,0 +1,33 @@
+{
+  "models": {
+    "Qwen2.5-Coder-3B-8bit": {
+      "is_pinned": true,
+      "ttl_seconds": 14400
+    },
+    "Qwen2.5-Coder-7B-8bit": {
+      "is_pinned": false,
+      "ttl_seconds": 600
+    },
+    "Qwen3-Embedding-0.6B-8bit": {
+      "is_pinned": true,
+      "ttl_seconds": 14400
+    },
+    "Qwen3-Embedding-4B-4bit-DWQ": {
+      "is_pinned": false,
+      "ttl_seconds": 300
+    },
+    "Qwen3.6-35B-A3B-4bit": {
+      "is_pinned": false,
+      "temperature": 1.0,
+      "thinking_budget_enabled": true,
+      "thinking_budget_tokens": 4096,
+      "top_k": 20,
+      "top_p": 0.95,
+      "ttl_seconds": 1800
+    },
+    "gemma-4-e4b-it-4bit": {
+      "is_pinned": false,
+      "ttl_seconds": 600
+    }
+  }
+}

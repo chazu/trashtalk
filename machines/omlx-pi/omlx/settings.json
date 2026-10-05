@@ -1,0 +1,14 @@
+{
+  "cache": {
+    "ssd_cache_max_size": "40GB"
+  },
+  "idle_timeout": {
+    "idle_timeout_seconds": 1800
+  },
+  "sampling": {
+    "max_tokens": 16384
+  },
+  "scheduler": {
+    "max_concurrent_requests": 1
+  }
+}

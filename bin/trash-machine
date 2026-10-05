@@ -1,0 +1,163 @@
+#!/usr/bin/env bash
+# trash-machine - diff or apply a per-machine setup from machines/<name>/.
+#
+#   trash-machine list
+#   trash-machine diff  NAME     show what apply would change; changes nothing
+#   trash-machine apply NAME     make this machine match NAME (backs up first)
+#
+# A machine directory may hold any of these; missing parts are skipped:
+#   trashtalk.config      linked to ~/.config/trashtalk/config
+#   omlx/*.json           merged into ~/.omlx/{settings,model_settings,model_profiles}.json
+#   pi/settings.json      merged into ~/.pi/agent/settings.json
+#   hindsight/config.json merged into ~/.hindsight/config.json
+#   patches/*.patch       applied to installed pi packages (see README)
+#
+# JSON parts are fragments: objects merge key by key, arrays are unioned, and
+# anything the fragment does not name is left alone (API keys, auth, model
+# downloads). Secrets never belong in a machine directory.
+
+set -euo pipefail
+
+root=$(cd "${BASH_SOURCE[0]%/*}/.." && pwd)
+stamp=$(date +%Y%m%d%H%M%S)
+cfg=${XDG_CONFIG_HOME:-$HOME/.config}/trashtalk/config
+changed=0
+
+die() { printf 'trash-machine: %s\n' "$*" >&2; exit 1; }
+
+usage() {
+    sed -n '2,/^$/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
+    exit 2
+}
+
+# Recursive merge: objects by key, arrays as a union (current order first).
+MERGE='def merge($b):
+    if type == "object" and ($b | type) == "object"
+    then reduce ($b | keys_unsorted[]) as $k (.; .[$k] = ((.[$k]) | merge($b[$k])))
+    elif type == "array" and ($b | type) == "array" then . + ($b - .)
+    else $b end;
+  . as $cur | $cur | merge($frag)'
+
+# merge_json LABEL FRAGMENT TARGET MODE [create]
+# MODE is diff or apply. Without "create" a missing target is skipped.
+merge_json() {
+    local label=$1 fragment=$2 target=$3 mode=$4 create=${5:-} merged tmp
+    [[ -f $fragment ]] || return 0
+    if [[ ! -f $target ]]; then
+        if [[ $create == create ]]; then
+            printf '  %-22s create %s\n' "$label" "$target"
+            if [[ $mode == apply ]]; then
+                mkdir -p "${target%/*}"
+                jq . "$fragment" > "$target"
+            fi
+            changed=1
+        else
+            printf '  %-22s skipped (%s not found)\n' "$label" "$target"
+        fi
+        return 0
+    fi
+    merged=$(jq --argjson frag "$(jq -c . "$fragment")" "$MERGE" "$target") \
+        || die "cannot merge $fragment into $target"
+    if diff -q <(jq -S . "$target") <(jq -S . <<<"$merged") >/dev/null; then
+        printf '  %-22s ok\n' "$label"
+        return 0
+    fi
+    changed=1
+    printf '  %-22s differs\n' "$label"
+    if [[ $mode == diff ]]; then
+        diff -u --label "current $target" --label "with $label" <(jq . "$target") <(jq . <<<"$merged") | sed 's/^/      /' || true
+        return 0
+    fi
+    cp -p "$target" "$target.bak-trashtalk-$stamp"
+    tmp=$(mktemp "$target.XXXXXX")
+    cp -p "$target" "$tmp"
+    jq . <<<"$merged" > "$tmp"
+    mv "$tmp" "$target"
+    printf '  %-22s updated (backup %s.bak-trashtalk-%s)\n' "" "${target##*/}" "$stamp"
+}
+
+link_config() {
+    local source=$1 mode=$2
+    [[ -f $source ]] || return 0
+    if [[ -L $cfg && $(readlink "$cfg") == "$source" ]]; then
+        printf '  %-22s ok (linked)\n' trashtalk.config
+        return 0
+    fi
+    changed=1
+    if [[ -e $cfg || -L $cfg ]]; then
+        if cmp -s "$cfg" "$source"; then
+            printf '  %-22s not linked (same content as %s)\n' trashtalk.config "$cfg"
+        else
+            printf '  %-22s differs from %s\n' trashtalk.config "$cfg"
+        fi
+        if [[ $mode == diff ]]; then
+            diff -u --label "current $cfg" --label "machine trashtalk.config" "$cfg" "$source" | sed 's/^/      /' || true
+            return 0
+        fi
+        mv "$cfg" "$cfg.bak-trashtalk-$stamp"
+        printf '  %-22s backed up to %s\n' "" "${cfg##*/}.bak-trashtalk-$stamp"
+    else
+        printf '  %-22s link %s\n' trashtalk.config "$cfg"
+        [[ $mode == diff ]] && return 0
+    fi
+    mkdir -p "${cfg%/*}"
+    ln -s "$source" "$cfg"
+}
+
+apply_patches() {
+    local dir=$1 mode=$2 patch ext name
+    ext=$HOME/.pi/agent/npm/node_modules/@walodayeet/hindsight-pi
+    for patch in "$dir"/patches/*.patch; do
+        [[ -f $patch ]] || continue
+        name=${patch##*/}
+        if [[ ! -d $ext ]]; then
+            printf '  %-22s skipped (hindsight-pi not installed)\n' "$name"
+        elif git -C "$ext" apply --check -R -p1 "$patch" >/dev/null 2>&1; then
+            printf '  %-22s ok (applied)\n' "$name"
+        elif git -C "$ext" apply --check -p1 "$patch" >/dev/null 2>&1; then
+            changed=1
+            printf '  %-22s not applied\n' "$name"
+            if [[ $mode == apply ]]; then git -C "$ext" apply -p1 "$patch"; fi
+        else
+            printf '  %-22s WARNING does not apply; the package version changed\n' "$name"
+        fi
+    done
+}
+
+check_notes() {
+    local dir=$1
+    if [[ -f $dir/pi/settings.json ]] && ! jq -e '.packages // [] | map(select(test("pi-omlx-picker"))) | length > 0' \
+        "$HOME/.pi/agent/settings.json" >/dev/null 2>&1; then
+        printf '  note: install the omlx provider with: pi install npm:pi-omlx-picker\n'
+    fi
+    if [[ -f $dir/hindsight/docker-compose.yml ]]; then
+        printf '  note: Hindsight server is not touched; see %s/README.md\n' "${dir#"$root"/}"
+    fi
+}
+
+run() {
+    local mode=$1 name=$2 dir=$root/machines/$2
+    [[ -d $dir ]] || die "no machine '$name' (try: trash-machine list)"
+    printf '%s %s\n' "$mode" "$name"
+    link_config "$dir/trashtalk.config" "$mode"
+    merge_json omlx/settings.json "$dir/omlx/settings.json" "$HOME/.omlx/settings.json" "$mode"
+    merge_json omlx/model_settings "$dir/omlx/model_settings.json" "$HOME/.omlx/model_settings.json" "$mode"
+    merge_json omlx/model_profiles "$dir/omlx/model_profiles.json" "$HOME/.omlx/model_profiles.json" "$mode"
+    merge_json pi/settings.json "$dir/pi/settings.json" "$HOME/.pi/agent/settings.json" "$mode" create
+    merge_json hindsight/config.json "$dir/hindsight/config.json" "$HOME/.hindsight/config.json" "$mode" create
+    apply_patches "$dir" "$mode"
+    check_notes "$dir"
+    if [[ $changed == 0 ]]; then
+        echo "up to date"
+    elif [[ $mode == diff ]]; then
+        echo "run: trash-machine apply $name"
+    elif [[ -d $HOME/.omlx ]]; then
+        echo "done; restart oMLX to pick up omlx settings, and start a fresh Gusgus session (@ Gusgus fresh: \"\$PWD\")"
+    fi
+}
+
+case ${1:-} in
+    list) for d in "$root"/machines/*/; do [[ -d $d ]] && basename "$d"; done ;;
+    diff | apply) [[ -n ${2:-} ]] || usage; run "$1" "$2" ;;
+    *) usage ;;
+esac

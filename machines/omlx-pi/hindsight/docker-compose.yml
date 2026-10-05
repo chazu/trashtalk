@@ -1,0 +1,42 @@
+# Hindsight memory server for Gusgus on pi. Not applied by `trash-machine`;
+# see machines/omlx-pi/README.md. `name` and the external volume match the
+# original ~/docker-compose.yml (project "chaz"), so `up -d` with this file adopts
+# the running container and its data instead of creating a second copy.
+name: chaz
+
+services:
+  hindsight:
+    image: ghcr.io/vectorize-io/hindsight:latest
+    container_name: hindsight
+    restart: unless-stopped
+    shm_size: '1gb'
+    network_mode: "host"
+    volumes:
+      - hindsight-data:/home/hindsight/.pg0
+    environment:
+      # Fact extraction and consolidation run on the same omlx model Gusgus uses.
+      # The key is a placeholder; omlx accepted it from localhost.
+      - HINDSIGHT_API_LLM_PROVIDER=openai
+      - HINDSIGHT_API_LLM_API_KEY=fgsfds
+      - HINDSIGHT_API_LLM_BASE_URL=http://localhost:8000/v1
+      - HINDSIGHT_API_LLM_MODEL=Qwen3.6-35B-A3B-4bit
+      # Soft json_object mode makes Qwen3.6 on omlx echo the schema back; strict
+      # json_schema is grammar-enforced.
+      - HINDSIGHT_API_LLM_STRICT_SCHEMA_CONSOLIDATION=true
+
+      - HINDSIGHT_API_DATABASE_URL=pg0:///home/hindsight/.pg0/hindsight
+
+      # Ports: API 8888, Control Plane UI 9999. Clients (hindsight-pi) use 8888.
+      - HINDSIGHT_API_PORT=8888
+      - HINDSIGHT_CP_PORT=9999
+
+      - HINDSIGHT_API_EMBEDDINGS_PROVIDER=local
+      - HINDSIGHT_API_EMBEDDINGS_LOCAL_MODEL=BAAI/bge-small-en-v1.5
+      - HINDSIGHT_API_RERANKER_PROVIDER=local
+      - HINDSIGHT_API_RERANKER_LOCAL_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2
+      - HINDSIGHT_API_WORKER_ID=hindsight-local
+
+volumes:
+  hindsight-data:
+    external: true
+    name: chaz_hindsight-data
