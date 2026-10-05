@@ -31,6 +31,8 @@ implemented contracts from designs and historical evidence.
 
 ## Designs, research, and partial implementations
 
+- [Pronounceable object handles](proquint-object-handles-design.md): proposed three-word proquint handles with canonical IDs, collision checks, and transaction-safe reservations.
+
 - [jq replacement research](jq-replacement-research.md): jaq-first compiler-only evaluation and qj risk assessment.
 - [Protocol fortification plan](protocol-fortification-plan.md): implemented build validation, shared structural checks, and ordinary-send equivalence guard.
 - [Jev via OpenRouter](system-1-model-routing.md): working Decisions API proof of concept with typed questions and a runnable Trashtalk example.
