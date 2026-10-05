@@ -9,6 +9,11 @@ mapfile -t settings < <(jq -er '.executable,.home,.runtime,.workspace,.model,.re
 [[ ${#settings[@]} == 6 ]] || exit 2
 executable=${settings[0]} native_ref=${settings[5]}
 real_bash=$(jq -er .bash "$config")
+# openai is the subscription login. Any other provider is a named profile in
+# the managed home's config.toml, which Jcode selects only through `auto`.
+provider=$(jq -r '.provider // "openai"' "$config")
+provider_flag=$provider
+[[ "$provider" != openai ]] && provider_flag=auto
 export JCODE_HOME=${settings[1]} JCODE_RUNTIME_DIR=${settings[2]}
 export JCODE_SOCKET="$JCODE_RUNTIME_DIR/jcode.sock" JCODE_API_SOCKET="$JCODE_RUNTIME_DIR/jcode-api.sock"
 export JCODE_WAKE_MODE=external
@@ -21,14 +26,14 @@ cd "${settings[3]}"
 # Discover with the same private OAuth credentials before starting the bridge;
 # do not pass --model here, since that would validate before discovery again.
 # Recovery and compaction must not depend on a catalog network request.
-if [[ "$mode" == run ]]; then
+if [[ "$mode" == run && "$provider" == openai ]]; then
     "$executable" --no-update --quiet --no-selfdev --provider openai model list > "$directory/model-catalog.txt"
 fi
 # Control calls also run outside detached jobs. Their bridge must not inherit
 # ignored TERM from a supervisor, or cleanup's kill/wait can hang indefinitely.
 # Control transport is not a model tool: it must bypass tool admission so a
 # previous stop gate cannot block recovery, or register the bridge for killing.
-coproc BRIDGE { exec "$real_bash" "${BASH_SOURCE[0]%/*}/exec-interruptible.bash" "$executable" --no-update --quiet --no-selfdev --provider openai \
+coproc BRIDGE { exec "$real_bash" "${BASH_SOURCE[0]%/*}/exec-interruptible.bash" "$executable" --no-update --quiet --no-selfdev --provider "$provider_flag" \
     --model "${settings[4]}" --tools bash,read,write,edit,glob,grep,ls,apply_patch \
     api-bridge --stdio; }
 bridge_pid=$BRIDGE_PID
@@ -221,8 +226,11 @@ fi
 [[ "$attached_workspace" == "${settings[3]}" ]] || { echo 'Jcode attachment has the wrong execution directory; refusing model input' >&2; exit 1; }
 request set_model "$(jq -cn --arg s "$native_ref" --arg m "${settings[4]}" '{session_id:$s,model:$m}')"
 expect ok
-request set_reasoning_effort "$(jq -cn --arg s "$native_ref" '{session_id:$s,effort:"medium"}')"
-expect ok
+# A local OpenAI-compatible profile rejects the request: it has no effort control.
+if [[ "$provider" == openai ]]; then
+    request set_reasoning_effort "$(jq -cn --arg s "$native_ref" '{session_id:$s,effort:"medium"}')"
+    expect ok
+fi
 mkdir -p "$directory/inputs"
 touch "$directory/send-intent"
 fields=$(jq -cn --arg s "$native_ref" --rawfile content "$directory/prompt.txt" '{session_id:$s,content:$content}')

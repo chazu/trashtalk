@@ -115,6 +115,33 @@ Jcode is the default for new Gusgus sessions following live qualification.
 Existing sessions retain their captured profile; `TRASHTALK_GUSGUS_PROFILE`
 can explicitly select Maki or another supported profile for new sessions.
 
+## Local OpenAI-compatible providers
+
+By default Jcode uses the OpenAI subscription login. Setting `jcode.provider` to
+another name runs it against a local OpenAI-compatible server instead, for
+example Ollama, LM Studio, or oMLX:
+
+```toml
+jcode.provider = "omlx"
+jcode.baseUrl = "http://127.0.0.1:8000/v1"
+jcode.model = "Qwen3.6-35B-A3B-4bit"
+jcode.contextWindow = 65536     # optional
+```
+
+The name is a plain profile name. The server's API key goes in
+`~/.config/jcode/provider-<name>.env` as `JCODE_PROVIDER_<NAME>_API_KEY=...`
+(mode 600). It stays outside Trashtalk's config file.
+
+Jcode accepts a named profile only from `config.toml`, selected with
+`--provider auto`. The driver therefore writes a minimal `config.toml` into each
+session's managed home (provider, base URL, model, context window) and symlinks
+the key file into that home's `config/jcode/` directory, where Jcode looks for
+it. The user's own `~/.jcode/config.toml` is still excluded. For a local
+provider the driver does not require OpenAI credentials, skips the OpenAI model
+catalog refresh, and does not send `set_reasoning_effort`, which these profiles
+reject. A missing `jcode.baseUrl`, `jcode.model`, or key file stops the launch
+with a diagnostic in the run's stderr log.
+
 ## Validation
 
 The stateful API fixture exercises queued inbox reads, scoped replies, native

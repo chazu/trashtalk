@@ -27,6 +27,7 @@ if sys.argv[-2:] == ['model', 'list']:
     sys.exit(0)
 assert sys.argv[-2:] == ['api-bridge', '--stdio']
 assert '--tools' in sys.argv
+(home / 'fixture-bridge-argv').write_text('\n'.join(sys.argv[1:]) + '\n')
 # A real bridge may start a resident daemon. It must not pass the caller's
 # worker lock to that daemon, including recovery launched under stopRun:.
 database = os.environ.get('SQLITE_JSON_DB')

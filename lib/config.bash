@@ -19,6 +19,12 @@ _trash_config_declare() {
 _trash_config_declare gusgus.profile TRASHTALK_GUSGUS_PROFILE 'enum:jcode maki codex pi shell' jcode \
     'Harness for new Gusgus sessions'
 _trash_config_declare jcode.model TRASHTALK_JCODE_MODEL string gpt-5.6-terra 'Model for Jcode sessions'
+_trash_config_declare jcode.provider TRASHTALK_JCODE_PROVIDER string openai \
+    'Provider for Jcode sessions: openai (subscription login) or the name of a local OpenAI-compatible endpoint'
+_trash_config_declare jcode.baseUrl TRASHTALK_JCODE_BASE_URL string '' \
+    'OpenAI-compatible base URL, required when jcode.provider is not openai'
+_trash_config_declare jcode.contextWindow TRASHTALK_JCODE_CONTEXT_WINDOW integer 65536 \
+    'Context window in tokens for a local Jcode provider'
 _trash_config_declare codex.model TRASHTALK_CODEX_MODEL string gpt-5.6-terra 'Model for Codex sessions'
 _trash_config_declare maki.model TRASHTALK_MAKI_MODEL string openai/gpt-5.6-terra \
     'Model for Maki sessions (an openai/ model)'

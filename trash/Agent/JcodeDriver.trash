@@ -32,12 +32,42 @@ JcodeDriver subclass: Agent::Driver
   ]
 
   classMethod: model [ ^ @ Config at: 'jcode.model' ]
+  classMethod: provider [ ^ @ Config at: 'jcode.provider' ]
+
+  # Filesystem boundary for a local OpenAI-compatible provider. Jcode takes a
+  # named profile only from config.toml, selected with --provider auto, and
+  # reads its key from an env file in its app config directory. The managed home
+  # gets a generated config and a symlink to the user's key file, so no ambient
+  # tool or search settings leak in and the key is never copied.
+  rawClassMethod: prepareLocalProvider: provider home: home model: model [
+    local provider="$1" home="$2" model="$3" pattern='^[A-Za-z][A-Za-z0-9_-]*$' base window key_file
+    [[ "$provider" =~ $pattern ]] || { echo "jcode.provider must be openai or a plain profile name, not '$provider'" >&2; return 1; }
+    base=$(@ Config at: 'jcode.baseUrl')
+    [[ -n "$base" ]] || { echo "jcode.baseUrl is required for local Jcode provider $provider" >&2; return 1; }
+    [[ -n "$model" ]] || { echo "jcode.model is required for local Jcode provider $provider" >&2; return 1; }
+    window=$(@ Config at: 'jcode.contextWindow')
+    key_file="${XDG_CONFIG_HOME:-$HOME/.config}/jcode/provider-$provider.env"
+    [[ -f "$key_file" ]] || {
+      echo "Jcode provider $provider needs its API key in $key_file (JCODE_PROVIDER_${provider^^}_API_KEY=...)" >&2
+      return 1
+    }
+    mkdir -p "$home/config/jcode" || return 1
+    ln -sfn "$key_file" "$home/config/jcode/provider-$provider.env" || return 1
+    jq -rn --arg p "$provider" --arg base "$base" --arg model "$model" --argjson window "$window" \
+      --arg env "JCODE_PROVIDER_$(printf '%s' "$provider" | tr '[:lower:]-' '[:upper:]_')_API_KEY" '
+      "[provider]\ndefault_provider = \($p | tojson)\ndefault_model = \($model | tojson)\n\n"
+      + "[providers.\($p)]\ntype = \"openai-compatible\"\nbase_url = \($base | tojson)\n"
+      + "auth = \"bearer\"\napi_key_env = \($env | tojson)\nenv_file = \("provider-\($p).env" | tojson)\n"
+      + "default_model = \($model | tojson)\nrequires_api_key = true\n\n"
+      + "[[providers.\($p).models]]\nid = \($model | tojson)\ncontext_window = \($window)\n"' > "$home/config.toml.tmp" \
+      && mv "$home/config.toml.tmp" "$home/config.toml"
+  ]
 
   # Filesystem/CLI boundary. Private homes exclude ambient Jcode config and
   # share only OAuth files (symlinks preserve credential refresh). Runtime paths
   # are short for macOS Unix socket limits and persisted with the session home.
   rawClassMethod: prepare: run ref: ref [
-    local run="$1" ref="$2" directory session home runtime source_auth codex_auth executable workspace model bash_path
+    local run="$1" ref="$2" directory session home runtime source_auth codex_auth executable workspace model bash_path provider
     executable=$(@ Jcode path)
     [[ -n "$executable" ]] || { echo 'Jcode is missing; see https://jcode.sh' >&2; return 1; }
     directory=$(@ Agent::Driver runDirFor: "$run")
@@ -46,7 +76,8 @@ JcodeDriver subclass: Agent::Driver
     home="${directory%/*}/hosts/$session/jcode"
     source_auth="${JCODE_HOME:-$HOME/.jcode}/openai-auth.json"
     codex_auth="${CODEX_HOME:-$HOME/.codex}/auth.json"
-    [[ -f "$source_auth" || -f "$codex_auth" ]] || {
+    provider=$(@ Agent::JcodeDriver provider) || return 1
+    [[ "$provider" != openai ]] || [[ -f "$source_auth" || -f "$codex_auth" ]] || {
       echo 'Jcode requires OpenAI subscription authentication; run @ Jcode login' >&2
       return 1
     }
@@ -72,9 +103,14 @@ JcodeDriver subclass: Agent::Driver
       echo 'Jcode private runtime directory is missing or has changed ownership' >&2; return 1;
     }
     model=$(@ Agent::JcodeDriver model) || return 1
+    if [[ "$provider" != openai ]]; then
+      @ Agent::JcodeDriver prepareLocalProvider: "$provider" home: "$home" model: "$model" || return 1
+    else
+      rm -f "$home/config.toml"
+    fi
     jq -cn --arg executable "$executable" --arg home "$home" --arg runtime "$runtime" \
-      --arg workspace "$workspace" --arg model "$model" --arg ref "$ref" --arg bash "$bash_path" \
-      '{executable:$executable,home:$home,runtime:$runtime,workspace:$workspace,model:$model,ref:$ref,bash:$bash}' > "$directory/jcode.json"
+      --arg workspace "$workspace" --arg model "$model" --arg ref "$ref" --arg bash "$bash_path" --arg provider "$provider" \
+      '{executable:$executable,home:$home,runtime:$runtime,workspace:$workspace,model:$model,ref:$ref,bash:$bash,provider:$provider}' > "$directory/jcode.json"
   ]
 
   # Agent::Driver launchRef: has created the run directory and captures stderr.

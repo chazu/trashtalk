@@ -6,10 +6,16 @@
 
 - `pi` session harness: `gusgus.profile = "pi"` runs Gusgus, and the
   Assignment specialists it delegates to, on the pi coding agent through
-  `Agent::PiDriver`. `pi.model` picks a model (empty keeps pi's own default)
+  `Agent::PiDriver`. `pi.model` picks a model (empty keeps pi's own default),
   `pi.excludeTools` disables pi tools (the pi-background-tasks subagent tools by
   default), and `pi.extensionPaths` loads only the named extensions. `Trash doctor`
   checks the executable. See `docs/pi-session-driver.md`.
+
+- `jcode.provider`, `jcode.baseUrl`, and `jcode.contextWindow` run Jcode sessions
+  on a local OpenAI-compatible server (Ollama, LM Studio, oMLX) instead of the
+  OpenAI subscription login. The driver generates a per-session `config.toml`
+  and links the user's `provider-<name>.env` key file. See
+  `docs/jcode-session-driver.md`.
 
 - `decider` decision target: Decider, the System 1 typed-decision model on a
   homelab BC-250, over the tailnet (`Decider::Client`, `decider.url`,
