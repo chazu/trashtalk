@@ -7,8 +7,12 @@ Require subclass: Object
     return 1
   ]
 
-  classMethod: equal: actual to: expected [
-    (actual = expected) ifFalse: [^ @ self reject: 'Equality precondition rejected']
+  classMethod: equal: actual to: expected [     """Check that actual equals expected; include values on failure."""
+    (actual = expected) ifFalse: [
+      | msg |
+      msg := 'Equality precondition rejected: ' , actual , ' ~= ' , expected.
+      ^ @ self reject: msg
+    ]
   ]
 
   classMethod: contains: value in: values [

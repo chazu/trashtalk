@@ -2078,6 +2078,8 @@ def expr_gen($locals; $ivars; $cvars):
     elif $bind.bound then
       "$(__s=\($subject | word_code); printf '%s' \"\($code)\")"
     else $code end
+  elif .type == "locals" then
+    "local \((.names // []) | join(" "))"
   else
     "# unknown: \(.type)"
   end;
@@ -2136,6 +2138,9 @@ def expr_gen_stmts($locals; $ivars; $cvars):
     elif $stmt.type == "locals" then
       .lines += ["  local \(($stmt.names // []) | join(" "))"] |
       .locals += ($stmt.names // [])
+    elif $stmt.type == "dstring" then
+      # Standalone DSTRING (e.g. triple-quoted docstring) is silently discarded
+      .lines += []
     elif $stmt.type == "assignment" and $stmt.value.type == "json_primitive" and
          ($stmt.value.operation | IN("asJson", "jsonValue", "jsonAt", "jsonTextAt", "jsonHas", "jsonAtDefault", "arrayCollect", "arraySelect", "objectCollect", "objectSelect")) then
       .lines += ["  \($stmt | expr_gen($current_locals; $ivars; $cvars))"]
