@@ -113,7 +113,8 @@ so `at:` forks nothing: no jq and no sqlite. The file is re-read on each
 | `codex.model` | `TRASHTALK_CODEX_MODEL` | string | `gpt-5.6-terra` | Model for Codex sessions |
 | `maki.model` | `TRASHTALK_MAKI_MODEL` | string | `openai/gpt-5.6-terra` | Model for Maki sessions |
 | `pi.model` | `TRASHTALK_PI_MODEL` | string | empty | Model for pi sessions (`provider/id`); empty uses pi's own default |
-| `pi.extensions` | `TRASHTALK_PI_EXTENSIONS` | boolean | `true` | Load the user's pi extensions and packages in pi sessions |
+| `pi.excludeTools` | `TRASHTALK_PI_EXCLUDE_TOOLS` | string | `bg_delegate,bg_result,bg_run,bg_run_pi_attested,bg_status,bg_logs,bg_kill` | Comma-separated pi tools to disable |
+| `pi.extensionPaths` | `TRASHTALK_PI_EXTENSION_PATHS` | string | empty | Comma-separated pi extension files to load instead of discovering all |
 | `agent.controlWait` | `TRASHTALK_CONTROL_WAIT` | integer | `30` | Seconds to wait for a harness control reply |
 | `assignment.attempts` | `TRASHTALK_ASSIGNMENT_ATTEMPTS` | integer | `4` | Turns an Assignment gets before it needs review |
 | `decision.target` | `TRASHTALK_DECISION_TARGET` | one of `jev decider` | `decider` | Where typed decisions run |

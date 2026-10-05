@@ -20,26 +20,23 @@ PiDriver subclass: Agent::Driver
   # Empty means pi's own default model (settings.json defaultProvider/defaultModel).
   classMethod: model [ ^ @ Config at: 'pi.model' ]
 
-  # pi.extensions = false adds --no-extensions, for runs that must not load the
-  # user's pi packages (some register their own delegation or memory tools).
-  classMethod: extensions [ ^ @ Config at: 'pi.extensions' ]
+  # Comma-separated tool names for --exclude-tools. The default disables the
+  # pi-background-tasks tools, whose subagents would bypass Assignment.
+  classMethod: excludeTools [ ^ @ Config at: 'pi.excludeTools' ]
 
-  classMethod: argvFor: executable workspace: workspace model: model extensions: extensions ref: ref [
-    | argv |
-    argv := #('bash' '-c' 'cd "$1" && shift && exec "$@"' 'pi-driver' workspace executable
-      '--mode' 'json' '--print') asJson.
-    model notEmpty ifTrue: [
-      argv := argv arrayPush: '--model'.
-      argv := argv arrayPush: model
-    ].
-    (extensions = 'false') ifTrue: [
-      argv := argv arrayPush: '--no-extensions'
-    ].
-    ref notEmpty ifTrue: [
-      argv := argv arrayPush: '--session-id'.
-      argv := argv arrayPush: ref
-    ].
-    ^ argv
+  # Comma-separated extension files. Non-empty turns off discovery
+  # (--no-extensions) and loads only these with -e; empty discovers all.
+  classMethod: extensionPaths [ ^ @ Config at: 'pi.extensionPaths' ]
+
+  # JSON construction boundary: the comma lists become repeated flags.
+  rawClassMethod: argvFor: executable workspace: workspace model: model exclude: exclude paths: paths ref: ref [
+    jq -cn --arg exe "$1" --arg ws "$2" --arg model "$3" --arg exclude "$4" --arg paths "$5" --arg ref "$6" '
+      ($paths | split(",") | map(gsub("^\\s+|\\s+$"; "") | select(length > 0))) as $ext
+      | ["bash", "-c", "cd \"$1\" && shift && exec \"$@\"", "pi-driver", $ws, $exe, "--mode", "json", "--print"]
+        + (if $model != "" then ["--model", $model] else [] end)
+        + (if $exclude != "" then ["--exclude-tools", $exclude] else [] end)
+        + (if ($ext | length) > 0 then ["--no-extensions"] + ($ext | map("-e", .)) else [] end)
+        + (if $ref != "" then ["--session-id", $ref] else [] end)'
   ]
 
   # _throw carries runtime error state but does not write stderr; persist the
@@ -53,13 +50,14 @@ PiDriver subclass: Agent::Driver
   # OS boundary: locate pi and reuse Agent::Driver's launcher. Agent::Driver
   # launchRef: has recorded the error log and captures stderr.
   rawClassMethod: launchPreparedRef: ref promptFile: promptFile run: run token: token [
-    local ref="$1" prompt="$2" run="$3" token="$4" executable workspace model extensions argv
+    local ref="$1" prompt="$2" run="$3" token="$4" executable workspace model exclude paths argv
     executable=$(@ Pi path)
     [[ -n "$executable" ]] || { @ "$_RECEIVER" reject: "$(@ Pi installGuidance)"; return 1; }
     model=$(@ "$_RECEIVER" model) || return 1
-    extensions=$(@ "$_RECEIVER" extensions) || return 1
+    exclude=$(@ "$_RECEIVER" excludeTools) || return 1
+    paths=$(@ "$_RECEIVER" extensionPaths) || return 1
     workspace=$(@ "$run" executionWorkspace)
-    argv=$(@ "$_RECEIVER" argvFor: "$executable" workspace: "$workspace" model: "$model" extensions: "$extensions" ref: "$ref") || return 1
+    argv=$(@ "$_RECEIVER" argvFor: "$executable" workspace: "$workspace" model: "$model" exclude: "$exclude" paths: "$paths" ref: "$ref") || return 1
     @ "$_RECEIVER" launchArgv: "$argv" promptFile: "$prompt" run: "$run" token: "$token" ref: "$ref"
   ]
 

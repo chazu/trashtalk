@@ -11,7 +11,7 @@ trap 'rm -rf "$tmp"' EXIT
 export SQLITE_JSON_DB="$tmp/state.db" TRASHTALK_RUN_DIR="$tmp/runs"
 export TRASHTALK_NO_AUTOTICK=1 TRASHTALK_USER=pi-tester
 export TRASHTALK_GUSGUS_PROFILE=pi
-unset TRASHTALK_PI_MODEL TRASHTALK_PI_EXTENSIONS
+unset TRASHTALK_PI_MODEL TRASHTALK_PI_EXCLUDE_TOOLS TRASHTALK_PI_EXTENSION_PATHS
 export PI_TEST_LOG="$tmp/log"
 mkdir "$tmp/bin" "$PI_TEST_LOG" "$tmp/workspace with spaces"
 cat > "$tmp/bin/pi" <<'PI'
@@ -75,7 +75,8 @@ check 'new session snapshots pi profile' pi "$(field "$session" backendProfile)"
 check 'workspace argv is preserved' "$(cd "$tmp/workspace with spaces" && pwd -P)" "$(cat "$PI_TEST_LOG/$run.cwd")"
 contains 'json print mode' $'--mode\njson\n--print' "$(cat "$PI_TEST_LOG/$run.argv")"
 check 'unset model leaves pi default' 0 "$(grep -c -- --model "$PI_TEST_LOG/$run.argv")"
-check 'extensions load by default' 0 "$(grep -c -- --no-extensions "$PI_TEST_LOG/$run.argv")"
+contains 'background tools are excluded by default' $'--exclude-tools\nbg_delegate,bg_result,bg_run,bg_run_pi_attested,bg_status,bg_logs,bg_kill' "$(cat "$PI_TEST_LOG/$run.argv")"
+check 'extensions are discovered by default' 0 "$(grep -c -- --no-extensions "$PI_TEST_LOG/$run.argv")"
 check 'fresh run starts a new pi session' 0 "$(grep -c -- --session-id "$PI_TEST_LOG/$run.argv")"
 check 'session remembers pi reference' pi-fixture-session "$(field "$session" lastConversationRef)"
 inbox=$(@ Inbox named: pi-tester)
@@ -83,14 +84,18 @@ reply=$(@ "$inbox" unread)
 check 'pi answer reaches inbox' 'Pi fixture reply' "$(@ "$reply" body)"
 check 'answer stays in thread' "$msg" "$(@ "$reply" replyTo)"
 msg2=$(@ "$reply" reply: again)
-export TRASHTALK_PI_MODEL=omlx/fixture TRASHTALK_PI_EXTENSIONS=false
+export TRASHTALK_PI_MODEL=omlx/fixture TRASHTALK_PI_EXCLUDE_TOOLS=custom_tool TRASHTALK_PI_EXTENSION_PATHS='/a b/one.ts, /two.js'
 run2=$(@ Agent::Worker tickSession: "$session")
 settle
 check 'resumed pi run completes' succeeded "$(field "$run2" state)"
 contains 'resume passes exact pi session id' $'--session-id\npi-fixture-session' "$(cat "$PI_TEST_LOG/$run2.argv")"
 contains 'configured model reaches pi' $'--model\nomlx/fixture' "$(cat "$PI_TEST_LOG/$run2.argv")"
-contains 'extensions can be disabled' '--no-extensions' "$(cat "$PI_TEST_LOG/$run2.argv")"
-unset TRASHTALK_PI_MODEL TRASHTALK_PI_EXTENSIONS
+contains 'excluded tools are configurable' $'--exclude-tools\ncustom_tool' "$(cat "$PI_TEST_LOG/$run2.argv")"
+contains 'extension paths switch to an allowlist' $'--no-extensions\n-e\n/a b/one.ts\n-e\n/two.js' "$(cat "$PI_TEST_LOG/$run2.argv")"
+unset TRASHTALK_PI_MODEL TRASHTALK_PI_EXCLUDE_TOOLS TRASHTALK_PI_EXTENSION_PATHS
+export TRASHTALK_PI_EXCLUDE_TOOLS=
+check 'empty exclusion list omits the flag' 0 "$(@ Agent::PiDriver argvFor: /bin/pi workspace: /w model: '' exclude: '' paths: '' ref: '' | grep -c exclude-tools)"
+unset TRASHTALK_PI_EXCLUDE_TOOLS
 check 'every delivery processed' 0 "$(_db_sql "SELECT count(*) FROM instances WHERE class='Agent::Delivery' AND json_extract(data,'$.state')!='processed';")"
 export PI_TEST_MODE=error
 @ Inbox send: fail to: "session:$session" from: pi-tester >/dev/null

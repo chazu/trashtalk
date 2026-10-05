@@ -24,8 +24,10 @@ _trash_config_declare maki.model TRASHTALK_MAKI_MODEL string openai/gpt-5.6-terr
     'Model for Maki sessions (an openai/ model)'
 _trash_config_declare pi.model TRASHTALK_PI_MODEL string '' \
     'Model for pi sessions (provider/id); empty uses pi'"'"'s own default'
-_trash_config_declare pi.extensions TRASHTALK_PI_EXTENSIONS boolean true \
-    'Load the user'"'"'s pi extensions and packages in pi sessions'
+_trash_config_declare pi.excludeTools TRASHTALK_PI_EXCLUDE_TOOLS string 'bg_delegate,bg_result,bg_run,bg_run_pi_attested,bg_status,bg_logs,bg_kill' \
+    'Comma-separated pi tools to disable (the pi-background-tasks subagent tools by default)'
+_trash_config_declare pi.extensionPaths TRASHTALK_PI_EXTENSION_PATHS string '' \
+    'Comma-separated pi extension files to load instead of discovering all; empty discovers all'
 _trash_config_declare agent.controlWait TRASHTALK_CONTROL_WAIT integer 30 \
     'Seconds a stop or terminate waits behind a running agent tick'
 _trash_config_declare assignment.attempts TRASHTALK_ASSIGNMENT_ATTEMPTS integer 4 \

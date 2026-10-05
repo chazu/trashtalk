@@ -7,7 +7,8 @@
 - `pi` session harness: `gusgus.profile = "pi"` runs Gusgus, and the
   Assignment specialists it delegates to, on the pi coding agent through
   `Agent::PiDriver`. `pi.model` picks a model (empty keeps pi's own default)
-  and `pi.extensions = false` skips the user's pi packages. `Trash doctor`
+  `pi.excludeTools` disables pi tools (the pi-background-tasks subagent tools by
+  default), and `pi.extensionPaths` loads only the named extensions. `Trash doctor`
   checks the executable. See `docs/pi-session-driver.md`.
 
 - `decider` decision target: Decider, the System 1 typed-decision model on a

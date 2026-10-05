@@ -9,7 +9,8 @@ Written against pi 0.99.2.
 # ~/.config/trashtalk/config
 gusgus.profile = "pi"
 pi.model = "omlx/Qwen3.6-35B-A3B-4bit"   # optional; empty uses pi's own default
-pi.extensions = true                      # false adds --no-extensions
+# pi.excludeTools defaults to the pi-background-tasks tools (bg_delegate, bg_run, ...)
+# pi.extensionPaths = "/path/to/ext.ts,/path/to/other.js"   # load only these
 ```
 
 or `TRASHTALK_GUSGUS_PROFILE=pi`. Gusgus supplies the profile, and delegated
@@ -29,7 +30,8 @@ One detached process per delivery batch:
 
 ```
 bash -c 'cd "$1" && shift && exec "$@"' pi-driver <workspace> pi \
-  --mode json --print [--model M] [--no-extensions] [--session-id REF]
+  --mode json --print [--model M] [--exclude-tools T,...] \
+  [--no-extensions -e PATH ...] [--session-id REF]
 ```
 
 The worker's prompt is the process's stdin. Pi streams JSONL events to stdout;
@@ -50,9 +52,23 @@ sends INT, then TERM, to the recorded process like the other drivers.
 ## Extensions
 
 Pi loads the user's packages by default, which is what makes a provider
-supplied by an extension work. Some packages register their own delegation or
-memory tools that overlap with Trashtalk's Assignment flow; set
-`pi.extensions = false` for runs that must not see them. That also disables
-providers those packages supply.
+supplied by an extension work. Some packages register tools that overlap with
+Trashtalk's Assignment flow. Two settings control that:
+
+- `pi.excludeTools` (comma-separated, passed as `--exclude-tools`) disables
+  individual tools. It defaults to every `pi-background-tasks` tool:
+  `bg_delegate,bg_result,bg_run,bg_run_pi_attested,bg_status,bg_logs,bg_kill`.
+  Subagents started through them would run outside Assignment's lifecycle,
+  stop and review controls. Set it to an empty string to allow them.
+- `pi.extensionPaths` (comma-separated files) switches to an allowlist: the
+  driver adds `--no-extensions` and one `-e` per path, so packages installed
+  later cannot add tools. Include any extension that supplies your provider,
+  e.g. `~/.pi/agent/npm/node_modules/pi-omlx-picker/index.ts`.
+
+Verified against pi 0.99.2 by asking the model to list its tools: the default
+shows `bg_delegate` and the other `bg_*` tools, `--exclude-tools` removes the
+named ones, and `--no-extensions -e <picker>` leaves only `read, bash, edit,
+write` with the omlx provider still working. Exclusion names are exact, so a
+newer version of the package that adds tools needs them added to the list.
 
 Tests: `tests/test_pi_driver.bash` uses a fixture `pi` on `PATH`.
