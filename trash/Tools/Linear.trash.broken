@@ -1,0 +1,695 @@
+# Linear - Wrapper for the linear-cli GraphQL client
+# Provides typed DSL methods for Linear's core resources: issues,
+# projects, cycles, teams, labels, documents, and more.
+package: Tools
+
+Linear subclass: Tool
+
+  classMethod: name [ ^ 'linear' ]
+
+  classMethod: installCommand [
+    ^ 'brew install linear-cli'
+  ]
+
+  # Auth, help, version, and init don't require credentials.
+  classMethod: installGuidance [
+    ^ 'Linear CLI (linear) is required. Install it with: brew install linear-cli'
+  ]
+
+  # -----------------------------------------------------------------------
+  # Authentication
+  # -----------------------------------------------------------------------
+
+  classMethod: authStatus [
+    ^ @ self resultForArgv: #('auth' 'status') command: 'auth_status' failureOutcome: 'auth_error'
+  ]
+
+  classMethod: authLogin [
+    | result |
+    result := @ self resultForArgv: #('auth' 'login') command: 'auth_login' failureOutcome: 'auth_error'.
+    (result jsonTextAt: 'outcome' = 'success') ifTrue: [ ^ 'true' ].
+    ^ 'false'
+  ]
+
+  classMethod: authLogout [
+    ^ @ self resultForArgv: #('auth' 'logout') command: 'auth_logout' failureOutcome: 'auth_error'
+  ]
+
+  # -----------------------------------------------------------------------
+  # Initialization
+  # -----------------------------------------------------------------------
+
+  classMethod: initTeam: teamKey [
+    | argv |
+    teamKey isEmpty ifTrue: [
+      ^ #{schema_version: 1 tool: 'linear' command: 'init_team' outcome: 'missing_arg'
+          exit_code: 1 stdout: '' stderr: 'team key is required for init'} asJson.
+    ].
+    argv := #('init' '--team' teamKey) asJson.
+    ^ @ self resultForArgv: argv command: 'init' failureOutcome: 'init_error'
+  ]
+
+  # -----------------------------------------------------------------------
+  # Issue resources (aliases: i)
+  # -----------------------------------------------------------------------
+
+  classMethod: issuesList: filterJson [
+    | argv |
+    argv := #('i' 'list') asJson.
+    filterJson notEmpty ifTrue: [
+      argv := @ self argv: argv appendEach: (filterJson jsonValue).
+    ].
+    ^ @ self resultForArgv: argv command: 'issues_list' failureOutcome: 'issue_error'
+  ]
+
+  classMethod: issuesGet: issueId [
+    | argv |
+    (issueId isEmpty) ifTrue: [
+      ^ #{schema_version: 1 tool: 'linear' command: 'issues_get' outcome: 'missing_arg'
+          exit_code: 1 stdout: '' stderr: 'issueId is required'} asJson.
+    ].
+    argv := #('i' 'get' issueId) asJson.
+    ^ @ self resultForArgv: argv command: 'issues_get' failureOutcome: 'issue_error'
+  ]
+
+  classMethod: issuesCreate: titleJson [
+    | argv title state priority projectId assigneeId description labelIds |
+    (titleJson isEmpty) ifTrue: [
+      ^ #{schema_version: 1 tool: 'linear' command: 'issues_create' outcome: 'missing_arg'
+          exit_code: 1 stdout: '' stderr: 'issue title is required'} asJson.
+    ].
+    title := titleJson jsonValue at: 'title' ifAbsent: [''].
+    (title isEmpty) ifTrue: [
+      ^ #{schema_version: 1 tool: 'linear' command: 'issues_create' outcome: 'missing_arg'
+          exit_code: 1 stdout: '' stderr: 'issue title is required'} asJson.
+    ].
+    argv := #('i' 'create' title) asJson.
+    argv := @ self argv: argv option: '--team' value: (titleJson jsonValue at: 'team' ifAbsent: ['']).
+    argv := @ self argv: argv option: '--state' value: (titleJson jsonValue at: 'state' ifAbsent: ['']).
+    argv := @ self argv: argv option: '--priority' value: (titleJson jsonValue at: 'priority' ifAbsent: ['']).
+    argv := @ self argv: argv option: '--project' value: (titleJson jsonValue at: 'projectId' ifAbsent: ['']).
+    argv := @ self argv: argv option: '--assignee' value: (titleJson jsonValue at: 'assigneeId' ifAbsent: ['']).
+    argv := @ self argv: argv option: '--description' value: (titleJson jsonValue at: 'description' ifAbsent: ['']).
+    labelIds := titleJson jsonValue at: 'labelIds' ifAbsent: #[].
+    (labelIds anySatisfy: [:lid | lid notEmpty]) ifTrue: [
+      labelIds arrayEach: [:lid | (lid notEmpty) ifTrue: [
+        argv := argv arrayPush: '--label-id'; arrayPush: lid.
+      ]].
+    ].
+    ^ @ self resultForArgv: argv command: 'issues_create' failureOutcome: 'issue_error'
+  ]
+
+  classMethod: issuesUpdate: issueId: updateJson [
+    | argv |
+    (issueId isEmpty) ifTrue: [
+      ^ #{schema_version: 1 tool: 'linear' command: 'issues_update' outcome: 'missing_arg'
+          exit_code: 1 stdout: '' stderr: 'issueId is required'} asJson.
+    ].
+    argv := #('i' 'update' issueId) asJson.
+    updateJson jsonValue arrayEach: [:pair |
+      | key val |
+      key := pair at: 'key' ifAbsent: [nil].
+      val := pair at: 'value' ifAbsent: [''].
+      (key notNil and: [val notEmpty]) ifTrue: [
+        key = 'title' ifTrue: [argv := argv arrayPush: '--title'; arrayPush: val].
+        key = 'state' ifTrue: [argv := argv arrayPush: '--state'; arrayPush: val].
+        key = 'priority' ifTrue: [argv := argv arrayPush: '--priority'; arrayPush: val].
+        key = 'team' ifTrue: [argv := argv arrayPush: '--team'; arrayPush: val].
+        key = 'projectId' ifTrue: [argv := argv arrayPush: '--project'; arrayPush: val].
+        key = 'assigneeId' ifTrue: [argv := argv arrayPush: '--assignee'; arrayPush: val].
+        key = 'labelIds' ifTrue: [
+          val jsonValue arrayEach: [:lid | argv := argv arrayPush: '--label-id'; arrayPush: lid].
+        ].
+        key = 'description' ifTrue: [argv := argv arrayPush: '--description'; arrayPush: val].
+      ].
+    ].
+    ^ @ self resultForArgv: argv command: 'issues_update' failureOutcome: 'issue_error'
+  ]
+
+  classMethod: issuesComment: issueId: body [
+    | argv |
+    (issueId isEmpty) ifTrue: [^ #{schema_version: 1 tool: 'linear' command: 'issues_comment' outcome: 'missing_arg' exit_code: 1 stdout: '' stderr: 'issueId required'} asJson].
+    (body isEmpty) ifTrue: [^ #{schema_version: 1 tool: 'linear' command: 'issues_comment' outcome: 'missing_arg' exit_code: 1 stdout: '' stderr: 'body required'} asJson].
+    argv := #('i' 'comment' issueId '--body' body) asJson.
+    ^ @ self resultForArgv: argv command: 'issues_comment' failureOutcome: 'issue_error'
+  ]
+
+  classMethod: issuesComments: issueId [
+    | argv |
+    (issueId isEmpty) ifTrue: [
+      ^ #{schema_version: 1 tool: 'linear' command: 'issues_comments' outcome: 'missing_arg'
+          exit_code: 1 stdout: '' stderr: 'issueId is required'} asJson.
+    ].
+    argv := #('i' 'comments' issueId) asJson.
+    ^ @ self resultForArgv: argv command: 'issues_comments' failureOutcome: 'issue_error'
+  ]
+
+  classMethod: issuesReply: commentId: body [
+    | argv |
+    (commentId isEmpty) ifTrue: [^ #{schema_version: 1 tool: 'linear' command: 'issues_reply' outcome: 'missing_arg' exit_code: 1 stdout: '' stderr: 'commentId required'} asJson].
+    (body isEmpty) ifTrue: [^ #{schema_version: 1 tool: 'linear' command: 'issues_reply' outcome: 'missing_arg' exit_code: 1 stdout: '' stderr: 'body required'} asJson].
+    argv := #('i' 'reply' commentId '--body' body) asJson.
+    ^ @ self resultForArgv: argv command: 'issues_reply' failureOutcome: 'issue_error'
+  ]
+
+  classMethod: issuesReact: issueId: emoji [
+    | argv |
+    (issueId isEmpty) ifTrue: [^ #{schema_version: 1 tool: 'linear' command: 'issues_react' outcome: 'missing_arg' exit_code: 1 stdout: '' stderr: 'issueId required'} asJson].
+    (emoji isEmpty) ifTrue: [^ #{schema_version: 1 tool: 'linear' command: 'issues_react' outcome: 'missing_arg' exit_code: 1 stdout: '' stderr: 'emoji required'} asJson].
+    argv := #('i' 'react' issueId emoji) asJson.
+    ^ @ self resultForArgv: argv command: 'issues_react' failureOutcome: 'issue_error'
+  ]
+
+  classMethod: issuesDependencies: issueId [
+    | argv |
+    (issueId isEmpty) ifTrue: [
+      ^ #{schema_version: 1 tool: 'linear' command: 'issues_dependencies' outcome: 'missing_arg'
+          exit_code: 1 stdout: '' stderr: 'issueId is required'} asJson.
+    ].
+    argv := #('i' 'dependencies' issueId) asJson.
+    ^ @ self resultForArgv: argv command: 'issues_dependencies' failureOutcome: 'issue_error'
+  ]
+
+  classMethod: issuesBlockedBy: issueId [
+    | argv |
+    (issueId isEmpty) ifTrue: [
+      ^ #{schema_version: 1 tool: 'linear' command: 'issues_blocked_by' outcome: 'missing_arg'
+          exit_code: 1 stdout: '' stderr: 'issueId is required'} asJson.
+    ].
+    argv := #('i' 'blocked-by' issueId) asJson.
+    ^ @ self resultForArgv: argv command: 'issues_blocked_by' failureOutcome: 'issue_error'
+  ]
+
+  classMethod: issuesBlocking: issueId [
+    | argv |
+    (issueId isEmpty) ifTrue: [
+      ^ #{schema_version: 1 tool: 'linear' command: 'issues_blocking' outcome: 'missing_arg'
+          exit_code: 1 stdout: '' stderr: 'issueId is required'} asJson.
+    ].
+    argv := #('i' 'blocking' issueId) asJson.
+    ^ @ self resultForArgv: argv command: 'issues_blocking' failureOutcome: 'issue_error'
+  ]
+
+  classMethod: issuesSlug: issueId [
+    | argv |
+    (issueId isEmpty) ifTrue: [
+      ^ #{schema_version: 1 tool: 'linear' command: 'issues_slug' outcome: 'missing_arg'
+          exit_code: 1 stdout: '' stderr: 'issueId is required'} asJson.
+    ].
+    argv := #('i' 'slug' issueId) asJson.
+    ^ @ self resultForArgv: argv command: 'issues_slug' failureOutcome: 'issue_error'
+  ]
+
+  classMethod: issuesExport: issueIds [
+    | argv |
+    (issueIds isEmpty) ifTrue: [
+      ^ #{schema_version: 1 tool: 'linear' command: 'issues_export' outcome: 'missing_arg'
+          exit_code: 1 stdout: '' stderr: 'issueIds are required'} asJson.
+    ].
+    argv := #('i' 'export') asJson.
+    issueIds jsonValue arrayEach: [:id | argv := argv arrayPush: id].
+    ^ @ self resultForArgv: argv command: 'issues_export' failureOutcome: 'issue_error'
+  ]
+
+  # -----------------------------------------------------------------------
+  # Project resources (aliases: p)
+  # -----------------------------------------------------------------------
+
+  classMethod: projectsList: mine [
+    | argv |
+    mine = 'true' ifTrue: [ argv := #('p' 'list' '--mine') asJson ].
+    mine = 'false' ifTrue: [ argv := #('p' 'list') asJson ].
+    ^ @ self resultForArgv: argv command: 'projects_list' failureOutcome: 'project_error'
+  ]
+
+  classMethod: projectsGet: projectId [
+    | argv |
+    (projectId isEmpty) ifTrue: [
+      ^ #{schema_version: 1 tool: 'linear' command: 'projects_get' outcome: 'missing_arg'
+          exit_code: 1 stdout: '' stderr: 'projectId is required'} asJson.
+    ].
+    argv := #('p' 'get' projectId) asJson.
+    ^ @ self resultForArgv: argv command: 'projects_get' failureOutcome: 'project_error'
+  ]
+
+  classMethod: projectsCreate: dataJson [
+    | argv name |
+    dataJson isEmpty ifTrue: [
+      ^ #{schema_version: 1 tool: 'linear' command: 'projects_create' outcome: 'missing_arg'
+          exit_code: 1 stdout: '' stderr: 'project data is required'} asJson.
+    ].
+    name := dataJson jsonValue at: 'name' ifAbsent: [''].
+    (name isEmpty) ifTrue: [
+      ^ #{schema_version: 1 tool: 'linear' command: 'projects_create' outcome: 'missing_arg'
+          exit_code: 1 stdout: '' stderr: 'project name is required'} asJson.
+    ].
+    argv := #('p' 'create' name) asJson.
+    argv := @ self argv: argv option: '--team' value: (dataJson jsonValue at: 'team' ifAbsent: ['']).
+    argv := @ self argv: argv option: '--state' value: (dataJson jsonValue at: 'state' ifAbsent: ['']).
+    argv := @ self argv: argv option: '--label' value: (dataJson jsonValue at: 'label' ifAbsent: ['']).
+    argv := @ self argv: argv option: '--lead' value: (dataJson jsonValue at: 'lead' ifAbsent: ['']).
+    argv := @ self argv: argv option: '--description' value: (dataJson jsonValue at: 'description' ifAbsent: ['']).
+    ^ @ self resultForArgv: argv command: 'projects_create' failureOutcome: 'project_error'
+  ]
+
+  classMethod: projectsUpdate: projectId: updateJson [
+    | argv |
+    (projectId isEmpty) ifTrue: [
+      ^ #{schema_version: 1 tool: 'linear' command: 'projects_update' outcome: 'missing_arg'
+          exit_code: 1 stdout: '' stderr: 'projectId is required'} asJson.
+    ].
+    argv := #('p' 'update' projectId) asJson.
+    updateJson jsonValue arrayEach: [:pair |
+      | key val |
+      key := pair at: 'key' ifAbsent: [nil].
+      val := pair at: 'value' ifAbsent: [''].
+      (key notNil and: [val notEmpty]) ifTrue: [
+        key = 'name' ifTrue: [argv := argv arrayPush: '--name'; arrayPush: val].
+        key = 'team' ifTrue: [argv := argv arrayPush: '--team'; arrayPush: val].
+        key = 'state' ifTrue: [argv := argv arrayPush: '--state'; arrayPush: val].
+        key = 'label' ifTrue: [argv := argv arrayPush: '--label'; arrayPush: val].
+        key = 'lead' ifTrue: [argv := argv arrayPush: '--lead'; arrayPush: val].
+        key = 'description' ifTrue: [argv := argv arrayPush: '--description'; arrayPush: val].
+      ].
+    ].
+    ^ @ self resultForArgv: argv command: 'projects_update' failureOutcome: 'project_error'
+  ]
+
+  # -----------------------------------------------------------------------
+  # Cycle resources (aliases: c)
+  # -----------------------------------------------------------------------
+
+  classMethod: cyclesList: filterJson [
+    | argv |
+    argv := #('c' 'list') asJson.
+    filterJson notEmpty ifTrue: [
+      argv := @ self argv: argv appendEach: (filterJson jsonValue).
+    ].
+    ^ @ self resultForArgv: argv command: 'cycles_list' failureOutcome: 'cycle_error'
+  ]
+
+  classMethod: cyclesGet: cycleId [
+    | argv |
+    (cycleId isEmpty) ifTrue: [
+      ^ #{schema_version: 1 tool: 'linear' command: 'cycles_get' outcome: 'missing_arg'
+          exit_code: 1 stdout: '' stderr: 'cycleId is required'} asJson.
+    ].
+    argv := #('c' 'get' cycleId) asJson.
+    ^ @ self resultForArgv: argv command: 'cycles_get' failureOutcome: 'cycle_error'
+  ]
+
+  classMethod: cyclesAnalyze: cycleId [
+    | argv |
+    (cycleId isEmpty) ifTrue: [
+      ^ #{schema_version: 1 tool: 'linear' command: 'cycles_analyze' outcome: 'missing_arg'
+          exit_code: 1 stdout: '' stderr: 'cycleId is required'} asJson.
+    ].
+    argv := #('c' 'analyze' cycleId) asJson.
+    ^ @ self resultForArgv: argv command: 'cycles_analyze' failureOutcome: 'cycle_error'
+  ]
+
+  # -----------------------------------------------------------------------
+  # Team resources (aliases: t)
+  # -----------------------------------------------------------------------
+
+  classMethod: teamsList [
+    ^ @ self resultForArgv: #('t' 'list') command: 'teams_list' failureOutcome: 'team_error'
+  ]
+
+  classMethod: teamsGet: teamId [
+    | argv |
+    (teamId isEmpty) ifTrue: [
+      ^ #{schema_version: 1 tool: 'linear' command: 'teams_get' outcome: 'missing_arg'
+          exit_code: 1 stdout: '' stderr: 'teamId is required'} asJson.
+    ].
+    argv := #('t' 'get' teamId) asJson.
+    ^ @ self resultForArgv: argv command: 'teams_get' failureOutcome: 'team_error'
+  ]
+
+  classMethod: teamsLabels: teamId [
+    | argv |
+    (teamId isEmpty) ifTrue: [
+      ^ #{schema_version: 1 tool: 'linear' command: 'teams_labels' outcome: 'missing_arg'
+          exit_code: 1 stdout: '' stderr: 'teamId is required'} asJson.
+    ].
+    argv := #('t' 'labels' teamId) asJson.
+    ^ @ self resultForArgv: argv command: 'teams_labels' failureOutcome: 'team_error'
+  ]
+
+  classMethod: teamsStates: teamId [
+    | argv |
+    (teamId isEmpty) ifTrue: [
+      ^ #{schema_version: 1 tool: 'linear' command: 'teams_states' outcome: 'missing_arg'
+          exit_code: 1 stdout: '' stderr: 'teamId is required'} asJson.
+    ].
+    argv := #('t' 'states' teamId) asJson.
+    ^ @ self resultForArgv: argv command: 'teams_states' failureOutcome: 'team_error'
+  ]
+
+  # -----------------------------------------------------------------------
+  # Label resources
+  # -----------------------------------------------------------------------
+
+  classMethod: labelsList: teamKey [
+    | argv |
+    (teamKey isEmpty) ifTrue: [
+      ^ #{schema_version: 1 tool: 'linear' command: 'labels_list' outcome: 'missing_arg'
+          exit_code: 1 stdout: '' stderr: 'team key is required'} asJson.
+    ].
+    argv := #('labels' 'list' '--team' teamKey) asJson.
+    ^ @ self resultForArgv: argv command: 'labels_list' failureOutcome: 'label_error'
+  ]
+
+  # Simple create: name + team (color and description are optional).
+  classMethod: labelsCreate: name team: teamKey [
+    | argv |
+    (name isEmpty) ifTrue: [
+      ^ #{schema_version: 1 tool: 'linear' command: 'labels_create' outcome: 'missing_arg'
+          exit_code: 1 stdout: '' stderr: 'label name is required'} asJson.
+    ].
+    (teamKey isEmpty) ifTrue: [
+      ^ #{schema_version: 1 tool: 'linear' command: 'labels_create' outcome: 'missing_arg'
+          exit_code: 1 stdout: '' stderr: 'team key is required'} asJson.
+    ].
+    argv := #('labels' 'create' name '--team' teamKey) asJson.
+    ^ @ self resultForArgv: argv command: 'labels_create' failureOutcome: 'label_error'
+  ]
+
+  # Create with optional color.
+  classMethod: labelsCreate: name team: teamKey color: color [
+    | argv |
+    (name isEmpty) ifTrue: [
+      ^ #{schema_version: 1 tool: 'linear' command: 'labels_create' outcome: 'missing_arg'
+          exit_code: 1 stdout: '' stderr: 'label name is required'} asJson.
+    ].
+    (teamKey isEmpty) ifTrue: [
+      ^ #{schema_version: 1 tool: 'linear' command: 'labels_create' outcome: 'missing_arg'
+          exit_code: 1 stdout: '' stderr: 'team key is required'} asJson.
+    ].
+    argv := #('labels' 'create' name '--team' teamKey) asJson.
+    argv := @ self argv: argv option: '--color' value: color.
+    ^ @ self resultForArgv: argv command: 'labels_create' failureOutcome: 'label_error'
+  ]
+
+  # Create with optional color and description.
+  classMethod: labelsCreate: name team: teamKey color: color description: descriptionVal [
+    | argv |
+    (name isEmpty) ifTrue: [
+      ^ #{schema_version: 1 tool: 'linear' command: 'labels_create' outcome: 'missing_arg'
+          exit_code: 1 stdout: '' stderr: 'label name is required'} asJson.
+    ].
+    (teamKey isEmpty) ifTrue: [
+      ^ #{schema_version: 1 tool: 'linear' command: 'labels_create' outcome: 'missing_arg'
+          exit_code: 1 stdout: '' stderr: 'team key is required'} asJson.
+    ].
+    argv := #('labels' 'create' name '--team' teamKey) asJson.
+    argv := @ self argv: argv option: '--color' value: color.
+    argv := @ self argv: argv option: '--description' value: descriptionVal.
+    ^ @ self resultForArgv: argv command: 'labels_create' failureOutcome: 'label_error'
+  ]
+
+  classMethod: labelsUpdate: labelId: updateJson [
+    | argv |
+    (labelId isEmpty) ifTrue: [
+      ^ #{schema_version: 1 tool: 'linear' command: 'labels_update' outcome: 'missing_arg'
+          exit_code: 1 stdout: '' stderr: 'labelId is required'} asJson.
+    ].
+    argv := #('labels' 'update' labelId) asJson.
+    updateJson jsonValue arrayEach: [:pair |
+      | key val |
+      key := pair at: 'key' ifAbsent: [nil].
+      val := pair at: 'value' ifAbsent: [''].
+      (key notNil and: [val notEmpty]) ifTrue: [
+        key = 'name' ifTrue: [argv := argv arrayPush: '--name'; arrayPush: val].
+        key = 'color' ifTrue: [argv := argv arrayPush: '--color'; arrayPush: val].
+        key = 'description' ifTrue: [argv := argv arrayPush: '--description'; arrayPush: val].
+      ].
+    ].
+    ^ @ self resultForArgv: argv command: 'labels_update' failureOutcome: 'label_error'
+  ]
+
+  classMethod: labelsDelete: labelId [
+    | argv |
+    (labelId isEmpty) ifTrue: [
+      ^ #{schema_version: 1 tool: 'linear' command: 'labels_delete' outcome: 'missing_arg'
+          exit_code: 1 stdout: '' stderr: 'labelId is required'} asJson.
+    ].
+    argv := #('labels' 'delete' labelId) asJson.
+    ^ @ self resultForArgv: argv command: 'labels_delete' failureOutcome: 'label_error'
+  ]
+
+  # -----------------------------------------------------------------------
+  # User resources (aliases: u)
+  # -----------------------------------------------------------------------
+
+  classMethod: usersList: teamKey [
+    | argv |
+    teamKey notEmpty ifTrue: [ argv := #('u' 'list' '--team' teamKey) asJson ].
+    teamKey isEmpty ifTrue: [ argv := #('u' 'list') asJson ].
+    ^ @ self resultForArgv: argv command: 'users_list' failureOutcome: 'user_error'
+  ]
+
+  classMethod: usersGet: userId [
+    | argv |
+    (userId isEmpty) ifTrue: [
+      ^ #{schema_version: 1 tool: 'linear' command: 'users_get' outcome: 'missing_arg'
+          exit_code: 1 stdout: '' stderr: 'userId is required'} asJson.
+    ].
+    argv := #('u' 'get' userId) asJson.
+    ^ @ self resultForArgv: argv command: 'users_get' failureOutcome: 'user_error'
+  ]
+
+  classMethod: usersMe [
+    ^ @ self resultForArgv: #('u' 'me') command: 'users_me' failureOutcome: 'user_error'
+  ]
+
+  # -----------------------------------------------------------------------
+  # Search
+  # -----------------------------------------------------------------------
+
+  classMethod: search: query filterJson [
+    | argv |
+    (query isEmpty) ifTrue: [
+      ^ #{schema_version: 1 tool: 'linear' command: 'search' outcome: 'missing_arg'
+          exit_code: 1 stdout: '' stderr: 'search query is required'} asJson.
+    ].
+    argv := #('search' query) asJson.
+    filterJson notEmpty ifTrue: [
+      argv := @ self argv: argv appendEach: (filterJson jsonValue).
+    ].
+    ^ @ self resultForArgv: argv command: 'search' failureOutcome: 'search_error'
+  ]
+
+  # -----------------------------------------------------------------------
+  # Notifications
+  # -----------------------------------------------------------------------
+
+  classMethod: notificationsList: filterJson [
+    | argv |
+    argv := #('notifications' 'list') asJson.
+    filterJson notEmpty ifTrue: [
+      argv := @ self argv: argv appendEach: (filterJson jsonValue).
+    ].
+    ^ @ self resultForArgv: argv command: 'notifications_list' failureOutcome: 'notification_error'
+  ]
+
+  classMethod: notificationsMarkRead: notificationId [
+    | argv |
+    (notificationId isEmpty) ifTrue: [
+      ^ #{schema_version: 1 tool: 'linear' command: 'notifications_read' outcome: 'missing_arg'
+          exit_code: 1 stdout: '' stderr: 'notificationId is required'} asJson.
+    ].
+    argv := #('notifications' 'read' notificationId) asJson.
+    ^ @ self resultForArgv: argv command: 'notifications_read' failureOutcome: 'notification_error'
+  ]
+
+  # -----------------------------------------------------------------------
+  # Attachment resources (aliases: att)
+  # -----------------------------------------------------------------------
+
+  classMethod: attachmentsList: resourceId [
+    | argv |
+    (resourceId isEmpty) ifTrue: [
+      ^ #{schema_version: 1 tool: 'linear' command: 'attachments_list' outcome: 'missing_arg'
+          exit_code: 1 stdout: '' stderr: 'resourceId is required'} asJson.
+    ].
+    argv := #('att' 'list' resourceId) asJson.
+    ^ @ self resultForArgv: argv command: 'attachments_list' failureOutcome: 'attachment_error'
+  ]
+
+  classMethod: attachmentsCreate: resourceId: dataJson [
+    | argv url file title subtitle |
+    (resourceId isEmpty) ifTrue: [
+      ^ #{schema_version: 1 tool: 'linear' command: 'attachments_create' outcome: 'missing_arg'
+          exit_code: 1 stdout: '' stderr: 'resourceId is required'} asJson.
+    ].
+    dataJson isEmpty ifTrue: [
+      ^ #{schema_version: 1 tool: 'linear' command: 'attachments_create' outcome: 'missing_arg'
+          exit_code: 1 stdout: '' stderr: 'attachment data is required'} asJson.
+    ].
+    url := dataJson jsonValue at: 'url' ifAbsent: [''].
+    file := dataJson jsonValue at: 'file' ifAbsent: [''].
+    title := dataJson jsonValue at: 'title' ifAbsent: [''].
+    subtitle := dataJson jsonValue at: 'subtitle' ifAbsent: [''].
+    argv := #('att' 'create' resourceId) asJson.
+    argv := @ self argv: argv option: '--url' value: url.
+    argv := @ self argv: argv option: '--file' value: file.
+    argv := @ self argv: argv option: '--title' value: title.
+    argv := @ self argv: argv option: '--subtitle' value: subtitle.
+    ^ @ self resultForArgv: argv command: 'attachments_create' failureOutcome: 'attachment_error'
+  ]
+
+  classMethod: attachmentsUpdate: attachmentId: updateJson [
+    | argv title subtitle |
+    (attachmentId isEmpty) ifTrue: [
+      ^ #{schema_version: 1 tool: 'linear' command: 'attachments_update' outcome: 'missing_arg'
+          exit_code: 1 stdout: '' stderr: 'attachmentId is required'} asJson.
+    ].
+    argv := #('att' 'update' attachmentId) asJson.
+    title := updateJson jsonValue at: 'title' ifAbsent: [''].
+    subtitle := updateJson jsonValue at: 'subtitle' ifAbsent: [''].
+    argv := @ self argv: argv option: '--title' value: title.
+    argv := @ self argv: argv option: '--subtitle' value: subtitle.
+    ^ @ self resultForArgv: argv command: 'attachments_update' failureOutcome: 'attachment_error'
+  ]
+
+  classMethod: attachmentsDelete: attachmentId [
+    | argv |
+    (attachmentId isEmpty) ifTrue: [
+      ^ #{schema_version: 1 tool: 'linear' command: 'attachments_delete' outcome: 'missing_arg'
+          exit_code: 1 stdout: '' stderr: 'attachmentId is required'} asJson.
+    ].
+    argv := #('att' 'delete' attachmentId) asJson.
+    ^ @ self resultForArgv: argv command: 'attachments_delete' failureOutcome: 'attachment_error'
+  ]
+
+  # -----------------------------------------------------------------------
+  # Document resources (aliases: docs)
+  # -----------------------------------------------------------------------
+
+  classMethod: documentsList: filterJson [
+    | argv |
+    argv := #('docs' 'list') asJson.
+    filterJson notEmpty ifTrue: [
+      argv := @ self argv: argv appendEach: (filterJson jsonValue).
+    ].
+    ^ @ self resultForArgv: argv command: 'documents_list' failureOutcome: 'document_error'
+  ]
+
+  classMethod: documentsGet: documentId [
+    | argv |
+    (documentId isEmpty) ifTrue: [
+      ^ #{schema_version: 1 tool: 'linear' command: 'documents_get' outcome: 'missing_arg'
+          exit_code: 1 stdout: '' stderr: 'documentId/slug/URL is required'} asJson.
+    ].
+    argv := #('docs' 'get' documentId) asJson.
+    ^ @ self resultForArgv: argv command: 'documents_get' failureOutcome: 'document_error'
+  ]
+
+  classMethod: documentsGet: documentId issue: issueId [
+    | argv |
+    (documentId isEmpty) ifTrue: [
+      ^ #{schema_version: 1 tool: 'linear' command: 'documents_get' outcome: 'missing_arg'
+          exit_code: 1 stdout: '' stderr: 'documentId/slug/URL is required'} asJson.
+    ].
+    (issueId isEmpty) ifTrue: [
+      argv := #('docs' 'get' documentId) asJson.
+    ] ifFalse: [
+      argv := #('docs' 'get' documentId '--issue' issueId) asJson.
+    ].
+    ^ @ self resultForArgv: argv command: 'documents_get' failureOutcome: 'document_error'
+  ]
+
+  classMethod: documentsCreate: title: titleVal project: projectId [
+    | argv |
+    (titleVal isEmpty) ifTrue: [
+      ^ #{schema_version: 1 tool: 'linear' command: 'documents_create' outcome: 'missing_arg'
+          exit_code: 1 stdout: '' stderr: 'title is required'} asJson.
+    ].
+    (projectId isEmpty) ifTrue: [
+      ^ #{schema_version: 1 tool: 'linear' command: 'documents_create' outcome: 'missing_arg'
+          exit_code: 1 stdout: '' stderr: 'project ID is required'} asJson.
+    ].
+    argv := #('docs' 'create' '--title' titleVal '--project' projectId) asJson.
+    ^ @ self resultForArgv: argv command: 'documents_create' failureOutcome: 'document_error'
+  ]
+
+  classMethod: documentsCreate: title: titleVal team: teamKey [
+    | argv |
+    (titleVal isEmpty) ifTrue: [
+      ^ #{schema_version: 1 tool: 'linear' command: 'documents_create' outcome: 'missing_arg'
+          exit_code: 1 stdout: '' stderr: 'title is required'} asJson.
+    ].
+    (teamKey isEmpty) ifTrue: [
+      ^ #{schema_version: 1 tool: 'linear' command: 'documents_create' outcome: 'missing_arg'
+          exit_code: 1 stdout: '' stderr: 'team is required'} asJson.
+    ].
+    argv := #('docs' 'create' '--title' titleVal '--team' teamKey) asJson.
+    ^ @ self resultForArgv: argv command: 'documents_create' failureOutcome: 'document_error'
+  ]
+
+  classMethod: documentsUpdate: documentId: updateJson [
+    | argv title content parentId |
+    (documentId isEmpty) ifTrue: [
+      ^ #{schema_version: 1 tool: 'linear' command: 'documents_update' outcome: 'missing_arg'
+          exit_code: 1 stdout: '' stderr: 'documentId is required'} asJson.
+    ].
+    argv := #('docs' 'update' documentId) asJson.
+    title := updateJson jsonValue at: 'title' ifAbsent: [''].
+    content := updateJson jsonValue at: 'content' ifAbsent: [''].
+    parentId := updateJson jsonValue at: 'parentId' ifAbsent: [''].
+    argv := @ self argv: argv option: '--title' value: title.
+    argv := @ self argv: argv option: '--content' value: content.
+    argv := @ self argv: argv option: '--parent' value: parentId.
+    ^ @ self resultForArgv: argv command: 'documents_update' failureOutcome: 'document_error'
+  ]
+
+  classMethod: documentsDelete: documentId [
+    | argv |
+    (documentId isEmpty) ifTrue: [
+      ^ #{schema_version: 1 tool: 'linear' command: 'documents_delete' outcome: 'missing_arg'
+          exit_code: 1 stdout: '' stderr: 'documentId is required'} asJson.
+    ].
+    argv := #('docs' 'delete' documentId) asJson.
+    ^ @ self resultForArgv: argv command: 'documents_delete' failureOutcome: 'document_error'
+  ]
+
+  # -----------------------------------------------------------------------
+  # Export / analysis / misc
+  # -----------------------------------------------------------------------
+
+  classMethod: tasksExport: issueIds [
+    | argv |
+    (issueIds isEmpty) ifTrue: [
+      ^ #{schema_version: 1 tool: 'linear' command: 'tasks_export' outcome: 'missing_arg'
+          exit_code: 1 stdout: '' stderr: 'issueIds are required'} asJson.
+    ].
+    argv := #('tasks' 'export') asJson.
+    issueIds jsonValue arrayEach: [:id | argv := argv arrayPush: id].
+    ^ @ self resultForArgv: argv command: 'tasks_export' failureOutcome: 'tasks_error'
+  ]
+
+  classMethod: deps: issueId [
+    | argv |
+    (issueId isEmpty) ifTrue: [
+      ^ #{schema_version: 1 tool: 'linear' command: 'deps' outcome: 'missing_arg'
+          exit_code: 1 stdout: '' stderr: 'issueId is required'} asJson.
+    ].
+    argv := #('deps' issueId) asJson.
+    ^ @ self resultForArgv: argv command: 'deps' failureOutcome: 'deps_error'
+  ]
+
+  classMethod: skillsList [
+    ^ @ self resultForArgv: #('skills' 'list') command: 'skills_list' failureOutcome: 'skills_error'
+  ]
+
+  classMethod: skillsInstall: all [
+    | argv |
+    all = 'true' ifTrue: [ argv := #('skills' 'install' '--all') asJson ].
+    all = 'false' ifTrue: [ argv := #('skills' 'install') asJson ].
+    ^ @ self resultForArgv: argv command: 'skills_install' failureOutcome: 'skills_error'
+  ]
+
+  classMethod: onboard [
+    ^ @ self resultForArgv: #('onboard') command: 'onboard' failureOutcome: 'onboard_error'
+  ]
