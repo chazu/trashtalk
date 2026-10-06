@@ -117,13 +117,21 @@ Trash subclass: Object
 
   # Check the configured session harness; provider login stays interactive.
   rawMethod: doctorHarness [
-    local session_profile session_executable session_version
+    local session_profile session_executable session_version session_login
     session_profile=$(@ Gusgus profile)
     case "$session_profile" in
       jcode)
         session_executable=$(@ Jcode path)
         if [[ -n "$session_executable" ]] && session_version=$("$session_executable" --version 2>&1); then
           printf 'ok\t%s\n' "Jcode found ($session_executable); $session_version"
+          if [[ "$(@ Agent::JcodeDriver provider)" == openai ]]; then
+            session_login=$(@ Jcode loginState)
+            case "$session_login" in
+              available) printf 'ok\t%s\n' "Jcode OpenAI login is valid" ;;
+              '') printf 'warn\t%s\n' "Jcode OpenAI login state unavailable; check with: jcode auth status" ;;
+              *) printf 'bad\t%s\n' "Jcode OpenAI login is $session_login; Gusgus runs fail until: @ Jcode login" ;;
+            esac
+          fi
         else
           printf 'bad\t%s\n' "Jcode is missing or cannot run; $(@ Jcode installCommand)"
         fi

@@ -13,6 +13,10 @@ import time
 if sys.argv[1:] == ['--version']:
     print('jcode fixture')
     sys.exit(0)
+if sys.argv[-2:] == ['auth', 'status']:
+    state = os.environ.get('JCODE_TEST_AUTH_STATE', 'available')
+    print(f'openai\t{state}\tOAuth\tOAuth (account: `fixture`)')
+    sys.exit(0)
 
 home = Path(os.environ['JCODE_HOME'])
 assert os.environ['JCODE_WAKE_MODE'] == 'external'

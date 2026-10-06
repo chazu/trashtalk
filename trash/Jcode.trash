@@ -25,3 +25,16 @@ Jcode subclass: Tool
     [[ -n "$executable" ]] || { _throw 'ToolError' 'Jcode is not installed'; return 127; }
     "$executable" login openai
   ]
+
+  # Non-interactive OpenAI login state from `jcode auth status` (available,
+  # expired, ...), or nothing when it cannot be read. Jcode refreshes an expired
+  # token before reporting, so any other state needs a new login.
+  rawClassMethod: loginState [
+    local executable line tab
+    executable=$(@ Jcode path)
+    [[ -n "$executable" ]] || return 0
+    printf -v tab '\t'
+    line=$("$executable" --no-update --quiet auth status 2>/dev/null | grep -m1 "^openai$tab") || return 0
+    line=${line#openai$tab}
+    printf '%s\n' "${line%%$tab*}"
+  ]

@@ -151,7 +151,7 @@ run() {
         echo "up to date"
     elif [[ $mode == diff ]]; then
         echo "run: trash-machine apply $name"
-    elif [[ -d $HOME/.omlx ]]; then
+    elif [[ -d $dir/omlx && -d $HOME/.omlx ]]; then
         echo "done; restart oMLX to pick up omlx settings, and start a fresh Gusgus session (@ Gusgus fresh: \"\$PWD\")"
     fi
 }

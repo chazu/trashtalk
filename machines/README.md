@@ -40,4 +40,5 @@ bin/trash-machine apply laptop
 ```
 
 A machine that runs Gusgus on a hosted harness needs no omlx, pi, or Hindsight
-parts at all. Compare [omlx-pi](omlx-pi/README.md).
+parts at all. Compare [jcode-sol](jcode-sol/README.md) with
+[omlx-pi](omlx-pi/README.md).

@@ -54,6 +54,10 @@ check 'Gusgus defaults to Jcode' jcode "$(@ Gusgus profile)"
 doctor=$(@ Trash doctor 2>&1)
 check 'doctor checks the default Jcode harness' true "$([[ "$doctor" == *'Jcode found'* ]] && echo true || echo false)"
 check 'doctor does not install an unselected Maki harness' false "$([[ "$doctor" == *'Maki '* ]] && echo true || echo false)"
+check 'doctor reports a valid Jcode login' true "$([[ "$doctor" == *'Jcode OpenAI login is valid'* ]] && echo true || echo false)"
+doctor=$(JCODE_TEST_AUTH_STATE=expired @ Trash doctor 2>&1); status=$?
+check 'doctor fails on an expired Jcode login' 1 "$status"
+check 'doctor points an expired login at Jcode login' true "$([[ "$doctor" == *FAIL*'login is expired'*'@ Jcode login'* ]] && echo true || echo false)"
 session=$(@ Gusgus sessionFor: "$tmp/workspace with spaces")
 check 'new session snapshots Jcode by default' jcode "$(field "$session" backendProfile)"
 msg=$(@ Inbox send: FIRST_SECRET to: "session:$session" from: jcode-owner)

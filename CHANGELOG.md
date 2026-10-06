@@ -8,8 +8,12 @@
   settings of the tools around it (omlx, pi, Hindsight) live in the repo.
   `trash-machine diff|apply NAME` links `trashtalk.config` and merges the JSON
   fragments into the tool's own files with a backup, leaving keys and auth
-  untouched. `machines/omlx-pi` captures the local-model setup. See
+  untouched. `machines/omlx-pi` captures the local-model setup, and
+  `machines/jcode-sol` Gusgus on Jcode with `gpt-6.1-sol`. See
   `machines/README.md`.
+
+- `Trash doctor` checks the Jcode OpenAI login when Gusgus runs on Jcode with
+  the `openai` provider, and fails when it can no longer refresh.
 
 - `pi` session harness: `gusgus.profile = "pi"` runs Gusgus, and the
   Assignment specialists it delegates to, on the pi coding agent through
