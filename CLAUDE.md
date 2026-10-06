@@ -296,7 +296,10 @@ this keeps harnesses stoppable when a supervisor ignores those signals.
 See [LANGUAGE.md](LANGUAGE.md#limitations-and-regression-coverage) for current
 limitations and [compiler capabilities](docs/COMPILER_CAPABILITIES.md) for their
 regression coverage. Unary/keyword selector collisions, negative arguments, and
-qualified raw-method references are fixed; do not introduce their old workarounds.
+qualified raw-method references are fixed, as are parenthesized sends as keyword
+arguments and `_`-prefixed keyword selectors; do not introduce their old workarounds.
+`bin/trash-codegen-diff [REV] [--stat]` shows how a compiler change alters the
+generated Bash for every class.
 
 See [persistence](docs/persistence.md) for immediate initial persistence, cached
 mutations, explicit saves, and guarded Store transactions. Start with the

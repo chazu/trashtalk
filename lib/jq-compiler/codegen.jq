@@ -321,7 +321,7 @@ def expr_parse_expr(min_bp):
       .state |= expr_advance
     else .
     end |
-    { state: .state, selector: .selector, args: .args };
+    { state: .state, selector: .selector, args: .args, keywords: .keywords };
 
   # Helper: Parse message send inline (called when we see AT token)
   # Supports cascades: @ obj foo; bar; baz.
@@ -338,12 +338,12 @@ def expr_parse_expr(min_bp):
       parse_single_message |
       . as $first_msg |
       # Check for cascades (SEMI token)
-      { state: $first_msg.state, messages: [{ selector: $first_msg.selector, args: $first_msg.args }] } |
+      { state: $first_msg.state, messages: [$first_msg | { selector, args, keywords }] } |
       until((.state | expr_peek_type) != "SEMI";
         .state |= expr_advance |  # consume ;
         .state |= expr_skip_ws |
         (.state | parse_single_message) as $next_msg |
-        .messages += [{ selector: $next_msg.selector, args: $next_msg.args }] |
+        .messages += [$next_msg | { selector, args, keywords }] |
         .state = $next_msg.state |
         .state |= expr_skip_ws
       ) |
@@ -371,6 +371,7 @@ def expr_parse_expr(min_bp):
             type: "message_send",
             receiver: $recv,
             selector: .messages[0].selector,
+            keywords: .messages[0].keywords,
             args: .messages[0].args
           }
         }
@@ -1136,7 +1137,8 @@ def expr_mark_stmts($tail; $stream):
   [range(0; $n) as $i | .[$i] |
     ($tail and $i == $n - 1) as $is_tail |
     if .type == "message_send" or .type == "cascade" then
-      .discard = (($stream | not) and ($is_tail | not) and (expr_is_throw_send | not))
+      .discard = (($stream | not) and ($is_tail | not) and (expr_is_throw_send | not)) |
+      if .type == "cascade" then .keepAll = $stream else . end
     elif .type == "json_traversal" then
       .tail = $is_tail | .stream = $stream
     elif .type == "control_flow" then
@@ -1275,10 +1277,28 @@ def expr_gen($locals; $ivars; $cvars):
     elif .type == "message_send" then "\"$(\(expr_gen($locals; $ivars; $cvars)))\""
     else "\"\(expr_gen($locals; $ivars; $cvars))\"" end;
   # A message argument: expansions, concatenations, and triple-quoted text are
-  # double-quoted so they stay one word.
+  # double-quoted so they stay one word; a send passes its captured output.
   def send_arg_code:
-    . as $arg | expr_gen($locals; $ivars; $cvars) |
-    if test("^\\$") or ($arg.type == "binary" and $arg.op == ",") or $arg.type == "triplestring" then "\"\(.)\"" else . end;
+    . as $arg |
+    if .type == "message_send" or .type == "cascade" then word_code
+    else expr_gen($locals; $ivars; $cvars) |
+      if test("^\\$") or ($arg.type == "binary" and $arg.op == ",") or $arg.type == "triplestring" then "\"\(.)\"" else . end
+    end;
+  # A send's receiver: expansions are quoted so an id stays one word.
+  def receiver_code:
+    expr_gen($locals; $ivars; $cvars) | if test("^\\$") then "\"\(.)\"" else . end;
+  # One message's selector and arguments: "at: 'k' put: \"$v\"", or a unary
+  # selector. Keywords come from the parser, so `_load:` and `a_b:` survive.
+  def message_code:
+    if ((.args // []) | length) > 0 then
+      (.keywords // (.selector | split("_"))) as $keywords |
+      [$keywords, [.args[] | send_arg_code]] | transpose | map("\(.[0]): \(.[1])") | join(" ")
+    else .selector // "" end;
+  # `echo` of an expression's value as one word. Dstrings and self already
+  # carry their own double quotes; wrapping them again would unquote them.
+  def echo_code($scope):
+    if .type == "dstring" or .type == "self" then "echo \(expr_gen($scope; $ivars; $cvars))"
+    else "echo \"\(expr_gen($scope; $ivars; $cvars))\"" end;
   # JSON primitives generated as one `$(...)` whose exit status assignments and
   # returns keep, so malformed typed input fails the method.
   def json_value_primitive:
@@ -1466,36 +1486,21 @@ def expr_gen($locals; $ivars; $cvars):
     end
   elif .type == "message_send" then
     (.discard == true) as $discard |
-    (.receiver | expr_gen($locals; $ivars; $cvars)) as $recv |
-    # Quote receiver if it's a variable expansion (contains $)
-    (if ($recv | test("^\\$")) then "\"\($recv)\"" else $recv end) as $quoted_recv |
-    # Format selector with args - keyword methods need colons for dispatcher
-    (if ((.args // []) | length) > 0 then
-      # Keyword method: interleave keywords and args
-      # selector "at_put" with args [idx, val] -> "at: idx put: val"
-      (.selector | split("_")) as $keywords |
-      # Quote args that are variable expansions (start with $)
-      ([(.args // [])[] | send_arg_code]) as $arg_codes |
-      ([$keywords, $arg_codes] | transpose | map("\(.[0]): \(.[1])") | join(" "))
-    else
-      # Unary method: just the selector
-      .selector // ""
-    end) as $msg |
-    (if .valueCapture then "_trash_value_send" else "@" end) + " \($quoted_recv) \($msg)" +
+    (.receiver | receiver_code) as $quoted_recv |
+    (if .valueCapture then "_trash_value_send" else "@" end) + " \($quoted_recv) \(message_code)" +
     (if $discard then " >/dev/null" else "" end)
   elif .type == "cascade" then
-    # Cascade: send multiple messages to same receiver
-    # In expression context, we capture receiver and return last result
-    (.discard == true) as $discard |
-    (.receiver | expr_gen($locals; $ivars; $cvars)) as $recv |
-    (.messages | map(
-      (if ((.args // []) | length) > 0 then
-        " " + ([(.args // [])[] | send_arg_code] | join(" "))
-      else ""
-      end) as $args |
-      "@ \($recv) \(.selector // "")\($args)"
-    ) | join("; ")) as $cascade_code |
-    if $discard then "{ \($cascade_code); } >/dev/null" else $cascade_code end
+    # Cascade: every message goes to the same receiver and, as in Smalltalk,
+    # the value is the last message's. Earlier output is discarded unless the
+    # statement keeps all output (pragma: stream).
+    (.receiver | receiver_code) as $recv |
+    (.keepAll == true) as $keep_all |
+    (.messages | length) as $n |
+    ([.messages | to_entries[] |
+      "@ \($recv) \(.value | message_code)" +
+      (if .key < $n - 1 and ($keep_all | not) then " >/dev/null" else "" end)
+    ] | join("; ")) as $cascade_code |
+    if .discard == true then "{ \($cascade_code); } >/dev/null" else $cascade_code end
   elif .type == "assignment" and (.value | json_value_primitive) then
     (.value | expr_gen($locals; $ivars; $cvars)) as $code |
     if expr_is_ivar(.target; $ivars) and (expr_is_local(.target; $locals) | not) then
@@ -1570,7 +1575,7 @@ def expr_gen($locals; $ivars; $cvars):
       if (.value | is_comparison) then "\(.value | comparison_value); return"
       else
         # Unknown binary op - fall through to expr_gen
-        "echo \"\(.value | expr_gen($locals; $ivars; $cvars))\"; return"
+        "\(.value | echo_code($locals)); return"
       end
     elif .value.type == "message_send" or .value.type == "cascade" then
       # Message sends output directly, no echo wrapper needed
@@ -1589,7 +1594,7 @@ def expr_gen($locals; $ivars; $cvars):
       (.value.subject | expr_gen($locals; $ivars; $cvars)) as $subj |
       (.value.arg | word_code) as $arg |
       "\(test_expr_code($subj; .value.test; $arg)) && echo \"true\" || echo \"false\"; return"
-    else "echo \"\(.value | expr_gen($locals; $ivars; $cvars))\"; return"
+    else "\(.value | echo_code($locals)); return"
     end
   elif .type == "passthrough" then
     .token.value
@@ -1607,7 +1612,7 @@ def expr_gen($locals; $ivars; $cvars):
         if $stmt.type == "return" or $stmt.type == "message_send" or $stmt.type == "cascade" then
           $stmt | expr_gen($declared_locals; $ivars; $cvars)
         else
-          "echo \"\($stmt | expr_gen($declared_locals; $ivars; $cvars))\""
+          ($stmt | echo_code($declared_locals))
         end
       else
         ([($parsed.body[:-1])[] | expr_gen($declared_locals; $ivars; $cvars)] | join("; ")) as $init_code |
@@ -1615,7 +1620,7 @@ def expr_gen($locals; $ivars; $cvars):
         (if $last_stmt.type == "return" or $last_stmt.type == "message_send" or $last_stmt.type == "cascade" or $last_stmt.type == "locals" or $last_stmt.type == "assignment" then
           $last_stmt | expr_gen($declared_locals; $ivars; $cvars)
         else
-          "echo \"\($last_stmt | expr_gen($declared_locals; $ivars; $cvars))\""
+          ($last_stmt | echo_code($declared_locals))
         end) as $last_code |
         if $init_code == "" then $last_code else "\($init_code); \($last_code)" end
       end
@@ -1648,7 +1653,7 @@ def expr_gen($locals; $ivars; $cvars):
           $stmt | expr_gen($block_locals; $ivars; $cvars)
         else
           # Value expression - wrap in echo
-          "echo \"\($stmt | expr_gen($block_locals; $ivars; $cvars))\""
+          ($stmt | echo_code($block_locals))
         end
       else
         # Multiple statements - all but last are normal, last gets echo wrapper if value
@@ -1657,7 +1662,7 @@ def expr_gen($locals; $ivars; $cvars):
         (if $last_stmt.type == "return" or $last_stmt.type == "message_send" or $last_stmt.type == "cascade" or $last_stmt.type == "locals" or $last_stmt.type == "assignment" then
           $last_stmt | expr_gen($block_locals; $ivars; $cvars)
         else
-          "echo \"\($last_stmt | expr_gen($block_locals; $ivars; $cvars))\""
+          ($last_stmt | echo_code($block_locals))
         end) as $last_code |
         if $init_code == "" then $last_code else "\($init_code); \($last_code)" end
       end
@@ -1695,7 +1700,7 @@ def expr_gen($locals; $ivars; $cvars):
           body_code($stmts; $bound)
         else
           (if $last.type == "string" or $last.type == "symbol" then "echo \"\($last.value | shell_double_literal)\""
-           else "echo \"\($last | expr_gen($bound; $ivars; $cvars))\"" end) as $echo |
+           else $last | echo_code($bound) end) as $echo |
           ([body_code($stmts[:-1]; $bound), $echo] | map(select(. != "")) | join("; "))
         end)
       end;
@@ -2221,20 +2226,8 @@ def expr_gen_stmts($locals; $ivars; $cvars):
     elif $stmt.type == "return" then
       # Delegate to expr_gen which has proper comparison handling for returns
       .lines += ["  \($stmt | expr_gen($current_locals; $ivars; $cvars))"]
-    elif $stmt.type == "message_send" then
+    elif $stmt.type == "message_send" or $stmt.type == "cascade" then
       .lines += ["  \($stmt | expr_gen($current_locals; $ivars; $cvars))"]
-    elif $stmt.type == "cascade" then
-      # Generate each message on its own line, all to same receiver
-      ($stmt.receiver | expr_gen($current_locals; $ivars; $cvars)) as $recv |
-      .lines += [
-        $stmt.messages[] |
-        (if ((.args // []) | length) > 0 then
-          " " + ([(.args // [])[] | . as $arg | expr_gen($current_locals; $ivars; $cvars) |
-            if test("^\\$") or ($arg.type == "binary" and $arg.op == ",") or $arg.type == "triplestring" then "\"\(.)\"" else . end] | join(" "))
-        else ""
-        end) as $args |
-        "  @ \($recv) \(.selector // "")\($args)\(if $stmt.discard == true then " >/dev/null" else "" end)"
-      ]
     else
       ($stmt | expr_gen($current_locals; $ivars; $cvars)) as $code |
       if $code != "" then

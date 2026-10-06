@@ -122,7 +122,9 @@ check 'a pending retry is not a result' false "$(@ Agent::PiDriver resultSeenFor
 # A missing executable records a diagnostic without launching.
 mapfile -t started < <(@ Agent::Run startFor: "$session" profile: pi)
 missing=${started[0]}
-PATH=/usr/bin:/bin @ Agent::PiDriver launch: "$PI_TEST_LOG/$run.input" run: "$missing" token: "${started[1]}" >/dev/null 2>&1; status=$?
+# Hide only directories holding pi; jq and the other runtime tools stay found.
+no_pi_path=$(IFS=:; for dir in $PATH; do [[ -x "$dir/pi" ]] || printf '%s:' "$dir"; done)
+PATH=${no_pi_path%:} @ Agent::PiDriver launch: "$PI_TEST_LOG/$run.input" run: "$missing" token: "${started[1]}" >/dev/null 2>&1; status=$?
 check 'missing pi prevents launch' 1 "$status"
 check 'launch failure stays before launch' starting "$(field "$missing" state)"
 contains 'missing pi gives install guidance' 'pi is not installed' "$(@ Agent::PiDriver errorFor: "$missing")"

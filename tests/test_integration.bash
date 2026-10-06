@@ -167,6 +167,17 @@ echo "  Testing non-existent class error..."
 result=$(@ NonExistentClass foo 2>&1) || true
 [[ "$result" == *"Unknown class"* ]] && pass "Non-existent class reports error" || fail "Non-existent class did not report error: $result"
 
+echo "  Testing misspelled selector suggestions..."
+suggest_counter=$(@ Counter new)
+result=$(@ "$suggest_counter" stpe: 3 2>&1) && fail "Misspelled selector succeeded" || true
+[[ "$result" == *"Method 'stpe:' not found"*"Did you mean: step:, step?"* ]] \
+    && pass "Misspelled keyword selector suggests the closest selectors" || fail "No keyword suggestion: $result"
+result=$(@ Counter nwe 2>&1) || true
+[[ "$result" == *"Did you mean: new?"* ]] && pass "Misspelled class selector suggests new" || fail "No class suggestion: $result"
+result=$(@ "$suggest_counter" zzzzzz 2>&1) || true
+[[ "$result" == *"Method 'zzzzzz' not found"* && "$result" != *"Did you mean"* ]] \
+    && pass "A selector with no close match has no suggestion" || fail "Unexpected suggestion: $result"
+
 echo "  Testing missing instance error..."
 result=$(@ counter_1234ABCD-0000-0000-0000-000000000000 foo 2>&1) || true
 [[ "$result" == *"Instance 'counter_1234ABCD-0000-0000-0000-000000000000' not found"* && "$result" != *"invalid variable name"* ]] \

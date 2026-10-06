@@ -70,3 +70,17 @@ Expression parser tests load definitions from the production generator; codegen
 journeys compile real `.trash` source and exercise public message sends. Test
 fixtures belong in a per-run scratch directory. Do not embed a second compiler
 in tests or treat printed failure text as a failing process status.
+
+## Reviewing generated output
+
+`bin/trash-codegen-diff` compiles every class twice in throwaway checkouts, once
+with the compiler at a revision (default `HEAD`) and once with the working tree's,
+and diffs the generated Bash. The installed `trash/.compiled` is untouched. Use
+it to confirm that a compiler change alters only the classes it should:
+
+```bash
+bin/trash-codegen-diff --stat        # changed lines per class
+bin/trash-codegen-diff main~3        # full diff against an older compiler
+```
+
+It exits 0 when the output is identical and 1 when it differs.

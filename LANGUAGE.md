@@ -337,9 +337,13 @@ Send multiple messages to the same receiver with `;`:
 
 ```smalltalk
 @ self reset; increment; increment.   # Three messages to self
+@ dict at: 'a' put: 1; at: 'b' put: 2; size
 ```
 
 Each cascaded message is compiled to a separate `@` call with the same receiver.
+As in Smalltalk, the cascade's value is its last message's output; earlier
+messages are effects, so their output is discarded unless the method has
+`pragma: stream`.
 
 ### Statement Values
 
@@ -1067,18 +1071,16 @@ task=$(@ Task titled "Write docs")
 - **Code outside a method** (a statement after the class body) is a compile
   error; it would never run. Put setup in a class method.
 - **`caseOf:` keys** are literals only; **`linesDo:`** skips empty lines.
-- **A parenthesized send as a keyword argument** is spliced in unevaluated,
-  without an error: `@ x put: (@ self key) value: v` sends the inner words as
-  arguments. Bind the inner send to a local first. Parenthesized intrinsics such
-  as `(s upTo: ':')` are fine.
-- **Keyword selectors beginning with `_`** (`@ self _load: x from: y`)
-  miscompile at the send site. Name keyword helpers without a leading underscore.
 - **`@ Console print: ''`** prints nothing, not an empty line.
 - **Arithmetic:** Bash arithmetic operates on integers; JSON numbers do not add
   floating point arithmetic to DSL expressions.
 
 Unary `skip` and keyword `skip:` are distinct selectors; negative arguments and
-qualified names such as `@ Pkg::Class method` in raw bodies are supported.
+qualified names such as `@ Pkg::Class method` in raw bodies are supported. A
+parenthesized send passed as a keyword argument (`@ x put: (@ self key) value: v`)
+is evaluated and passed as one argument; keywords keep their spelling
+(`@ self _load: x from: y`); keyword cascades, returned double-quoted text, and
+`^ self` stay single words. `test_send_arguments.bash` executes these.
 `test_known_issues.bash`, `test_namespaces.bash`, and `test_expr_codegen.bash`
 exercise these formerly broken cases through the production compiler.
 Raw bodies keep the spelling and spacing they were written with (hyphenated

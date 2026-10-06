@@ -50,11 +50,11 @@ source='TestCascade subclass: Object
     @ obj setValue: 10; getValue
   ]'
 result=$(compile_method "$source" "test")
-# Check that both messages appear (with or without semicolons between)
-if [[ "$result" == *'setValue'* ]] && [[ "$result" == *'getValue'* ]]; then
+# Keyword messages keep their colons; only the last message's output is kept
+if [[ "$result" == *'@ "$obj" setValue: 10 >/dev/null; @ "$obj" getValue'* ]]; then
   pass "Cascade with keyword argument"
 else
-  fail "Cascade with keyword argument" 'Both setValue and getValue present' "$result"
+  fail "Cascade with keyword argument" '@ "$obj" setValue: 10 >/dev/null; @ "$obj" getValue' "$result"
 fi
 
 # Test 4: Cascade with variable receiver
@@ -81,7 +81,7 @@ source='TestCascade subclass: Object
   ]'
 result=$(compile_method "$source" "test")
 # All three calls should use obj as receiver (either $obj or "$obj")
-count=$(echo "$result" | grep -cE '@ (\$obj|"\$obj")' || true)
+count=$(echo "$result" | grep -oF '@ "$obj"' | wc -l | tr -d ' ')
 if [[ $count -ge 3 ]]; then
   pass "All cascade messages use same receiver"
 else
@@ -98,10 +98,10 @@ source='TestCascade subclass: Object
   ]'
 result=$(compile_method "$source" "test")
 # Check both variables appear in @ calls
-if [[ "$result" == *'@ $a'* ]] && [[ "$result" == *'@ $b'* ]]; then
+if [[ "$result" == *'@ "$a" foo >/dev/null; @ "$a" bar'* ]] && [[ "$result" == *'@ "$b" baz >/dev/null; @ "$b" qux'* ]]; then
   pass "Multiple cascades in same method"
 else
-  fail "Multiple cascades in same method" 'Both @ $a and @ $b present' "$result"
+  fail "Multiple cascades in same method" 'Both quoted @ "$a" and @ "$b" cascades' "$result"
 fi
 
 # Test 7: Cascade with multiple keyword arguments
@@ -112,11 +112,11 @@ source='TestCascade subclass: Object
     @ dict at: '\''key1'\'' put: '\''val1'\''; at: '\''key2'\'' put: '\''val2'\''
   ]'
 result=$(compile_method "$source" "test")
-# Check that at: put: appears (keyword methods get compiled)
-if [[ "$result" == *'at'* ]] && [[ "$result" == *'put'* ]]; then
+# Each message interleaves its own keywords and arguments
+if [[ "$result" == *"@ \"\$dict\" at: 'key1' put: 'val1' >/dev/null; @ \"\$dict\" at: 'key2' put: 'val2'"* ]]; then
   pass "Cascade with multi-keyword messages"
 else
-  fail "Cascade with multi-keyword messages" 'at and put present' "$result"
+  fail "Cascade with multi-keyword messages" "@ \"\$dict\" at: 'key1' put: 'val1' >/dev/null; @ \"\$dict\" at: 'key2' put: 'val2'" "$result"
 fi
 
 # Test 8: Single message (no cascade) still works

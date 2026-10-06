@@ -12,7 +12,7 @@ in `trash/.compiled/`; edit source and rebuild with `make bash`.
 | Supported surface | Regression coverage in `lib/jq-compiler/tests/` |
 | --- | --- |
 | Classes, inheritance, inherited fields, class variables, accessors | `test_codegen`, `test_inherited_ivars`, `test_class_instance_vars` |
-| Unary/keyword messages, distinct unary and keyword selectors, negative arguments | `test_known_issues`, `test_expr_codegen` |
+| Unary/keyword messages, distinct unary and keyword selectors, negative arguments, evaluated send arguments | `test_known_issues`, `test_expr_codegen`, `test_send_arguments` |
 | Locals, assignment, arithmetic precedence, return, string concatenation, triple-quoted text | `test_expr_parser`, `test_expr_runtime`, `test_string_concat`, `test_method_semantics`, `test_triplestrings` |
 | Conditions, predicates, loops, boolean operators, exceptions, nil checks, string comparison | `test_control_flow`, `test_predicates`, `test_boolean_ops`, `test_exceptions`, `test_negation`, `test_nil_handling`, `test_string_compare`, `test_standalone_predicates`, `test_expression_behavior`, `test_to_do` |
 | Blocks, captures, block parameters, supported inline early returns | `test_blocks`, `test_block_params`, `test_block_early_return` |

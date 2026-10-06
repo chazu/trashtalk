@@ -95,8 +95,10 @@ outer=$(@ TestRefHolder new)
 @ "$inner" other: "$MISSING_ID" >/dev/null
 @ "$outer" target: "$inner" >/dev/null
 
+# Key order follows the random ids, so compare the objects with sorted keys.
 assert_eq "references resolve to classes; an absent id-shaped value is null; plain text is ignored" \
-    "{\"$counter\":\"Counter\",\"$MISSING_ID\":null}" "$(@ Runtime referencesIn: "{\"a\":\"$counter\",\"b\":[\"$MISSING_ID\",\"plain_snake_value\"],\"c\":3}")"
+    "$(jq -cS . <<< "{\"$counter\":\"Counter\",\"$MISSING_ID\":null}")" \
+    "$(@ Runtime referencesIn: "{\"a\":\"$counter\",\"b\":[\"$MISSING_ID\",\"plain_snake_value\"],\"c\":3}" | jq -cS .)"
 assert_eq "state without references has none" '{}' "$(@ Runtime referencesIn: '{"a":"x","b":[1,2]}')"
 
 record=$(@ UI::Inspector recordFor: "$outer")

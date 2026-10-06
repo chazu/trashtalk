@@ -1809,8 +1809,52 @@ method_missing() {
   done
 
   # Method not found anywhere
-  echo "Error: Method '$_SELECTOR' not found in $original_receiver or its superclasses" >&2
+  local shown=$_SELECTOR
+  [[ $shown == *_ ]] && shown=${shown//_/:}
+  echo "Error: Method '$shown' not found in $original_receiver or its superclasses$(_trash_selector_suggestions "${_CLASS:-}" "$_SELECTOR")" >&2
   return 1
+}
+
+# ". Did you mean: a:b:, c?" naming up to three of the class's selectors
+# closest to a mangled selector (at_put_), or nothing when none is close.
+# Closeness is edit distance with transpositions, scaled to the selector's
+# length; a keyword selector also matches others sharing its first keyword.
+_trash_selector_suggestions() {
+  local class=$1 selector=$2 names
+  [[ -n $class ]] || return 0
+  names=$(_trash_method_names "$class" 2>/dev/null) || return 0
+  [[ -n $names ]] || return 0
+  awk -v want="$selector" '
+    function dist(a, b,   i, j, la, lb, cost, d, best) {
+      la = length(a); lb = length(b)
+      for (i = 0; i <= la; i++) d[i, 0] = i
+      for (j = 0; j <= lb; j++) d[0, j] = j
+      for (i = 1; i <= la; i++)
+        for (j = 1; j <= lb; j++) {
+          cost = substr(a, i, 1) != substr(b, j, 1)
+          best = d[i-1, j] + 1
+          if (d[i, j-1] + 1 < best) best = d[i, j-1] + 1
+          if (d[i-1, j-1] + cost < best) best = d[i-1, j-1] + cost
+          if (i > 1 && j > 1 && substr(a, i, 1) == substr(b, j-1, 1) && substr(a, i-1, 1) == substr(b, j, 1) && d[i-2, j-2] + 1 < best)
+            best = d[i-2, j-2] + 1
+          d[i, j] = best
+        }
+      return d[la, lb]
+    }
+    function shown(s) { if (s ~ /_$/) gsub(/_/, ":", s); return s }
+    BEGIN {
+      limit = int(length(want) / 3) + 1; if (limit > 3) limit = 3
+      first = want; sub(/_.*/, "", first)
+    }
+    {
+      name = $0; sub(/^class__/, "", name)
+      if (name == "" || name ~ /^_/ || name == want || (name in seen)) next
+      seen[name] = 1
+      d = dist(tolower(want), tolower(name))
+      lead = name; sub(/_.*/, "", lead)
+      if (d <= limit || (want ~ /_$/ && name ~ /_$/ && lead == first)) print d "\t" shown(name)
+    }' <<< "$names" | sort -t $'\t' -k1,1n -k2,2 | head -3 |
+    awk -F '\t' '{ out = out (NR > 1 ? ", " : "") $2 } END { if (NR) printf ". Did you mean: %s?", out }'
 }
 
 # Track which compiled classes have been sourced to avoid re-sourcing
