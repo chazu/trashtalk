@@ -5,7 +5,7 @@ package: Decision
 Target subclass: Object
   classMethod: selected [
     | name |
-    name := @ Config at: 'decision.target' ifFailed: [:e | @ e signal].
+    name := @ Decision::TargetSettings target ifFailed: [:e | @ e signal].
     ^ @ self named: name
   ]
 
@@ -18,10 +18,10 @@ Target subclass: Object
         ^ #{name: name provider: 'jev' model: model} asJson
       ].
       'decider' -> [
-        url := @ Config at: 'decider.url' ifFailed: [:e | @ e signal].
+        url := @ Decision::DeciderSettings url ifFailed: [:e | @ e signal].
         url := url withoutSuffix: '/'.
-        model := @ Config at: 'decider.model' ifFailed: [:e | @ e signal].
-        limit := @ Config at: 'decider.textLimit' ifFailed: [:e | @ e signal].
+        model := @ Decision::DeciderSettings model ifFailed: [:e | @ e signal].
+        limit := @ Decision::DeciderSettings textLimit ifFailed: [:e | @ e signal].
         ^ #{name: name provider: 'decider' url: url model: model textLimit: (limit jsonValue)} asJson
       ]
     } otherwise: [@ DecisionError signal: 'Unknown decision target'].

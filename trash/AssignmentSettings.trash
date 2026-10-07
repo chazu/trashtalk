@@ -1,0 +1,5 @@
+# AssignmentSettings - settings for durable Assignments.
+AssignmentSettings subclass: Settings
+  prefix: assignment
+  setting: attempts type: integer default: 4
+    doc: 'Turns an Assignment gets before it needs review; unfinished turns resume automatically'

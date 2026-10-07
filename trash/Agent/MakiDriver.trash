@@ -13,7 +13,7 @@ MakiDriver subclass: Agent::Driver
     ^ '["-u","CODEX_API_KEY","-u","OPENAI_API_KEY","-u","OPENROUTER_API_KEY"]'
   ]
 
-  classMethod: model [ ^ @ Config at: 'maki.model' ]
+  classMethod: model [ ^ @ Agent::MakiSettings model ]
 
   classMethod: argvFor: executable workspace: workspace config: config model: model ref: ref [
     | argv |

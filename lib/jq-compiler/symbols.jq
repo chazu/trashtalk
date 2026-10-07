@@ -26,7 +26,7 @@ def resolved_parent:
   if $p == null or $p == "" then ""
   elif ($p | contains("::")) then $p
   elif .parentPackage then .parentPackage + "::" + $p
-  elif (["Object", "Tool", "TestCase", "Protocol"] | index($p)) then $p
+  elif (["Object", "Tool", "TestCase", "Protocol", "Settings", "Preferences"] | index($p)) then $p
   elif .package then .package + "::" + $p else $p end;
 
 (.path // $path) as $source_path |

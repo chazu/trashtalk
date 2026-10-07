@@ -42,7 +42,7 @@ check "Worker control wait from file" "$(@ Agent::Worker controlWait)" '45'
 check "Worker keeps its fallback for invalid env" "$(TRASHTALK_CONTROL_WAIT=abc @ Agent::Worker controlWait)" '30'
 check "list reports sources" \
     "$(TRASHTALK_CODEX_MODEL=x @ Config list | awk '$1 == "jcode.model" || $1 == "codex.model" || $1 == "maki.model" {print $1, $NF}' | tr '\n' ';')" \
-    'jcode.model file;codex.model TRASHTALK_CODEX_MODEL;maki.model default;'
+    'codex.model TRASHTALK_CODEX_MODEL;jcode.model file;maki.model default;'
 
 # Failures name the problem.
 if @ Config at: 'jcode.modle' >/dev/null 2>&1; then test_fail "undeclared key fails"; else test_pass "undeclared key fails"; fi
@@ -73,51 +73,20 @@ fi
 check "invalid value of another key is ignored by at:" \
     "$(TRASHTALK_CONFIG="$TMPDIR/bad-config" @ Config at: 'jcode.model')" 'gpt-5.6-terra'
 
-# Writes keep comments, order, and trailing comments; they replace duplicates.
-@ Config at: 'jcode.model' put: 'new-model'
-@ Config at: 'decider.model' put: 'decider-next'
-@ Config at: 'agent.controlWait' put: '60'
-expected='# personal settings
-jcode.model = "new-model"  # pinned
-agent.controlWait = 60
-
-gusgus.profile = "maki"
-decider.model = "decider-next"'
-check "put rewrites in place and appends new keys" "$(cat "$config")" "$expected"
-printf 'jcode.model = "second"\n' >> "$config"
-@ Config at: 'jcode.model' put: 'only'
-check "put collapses duplicates" "$(grep -c '^jcode.model' "$config")" '1'
-check "put value is read back" "$(@ Config at: 'jcode.model')" 'only'
-if @ Config at: 'gusgus.profile' put: 'bogus' 2>/dev/null; then test_fail "put validates"; else test_pass "put validates"; fi
-if @ Config at: 'jcode.model' put: 'a"b' 2>/dev/null; then test_fail "put rejects quotes"; else test_pass "put rejects quotes"; fi
-check "failed puts leave the file unchanged" "$(@ Config at: 'gusgus.profile')" 'maki'
-warning=$(TRASHTALK_JCODE_MODEL=env @ Config at: 'jcode.model' put: 'shadowed' 2>&1)
-[[ $warning == *TRASHTALK_JCODE_MODEL*overrides* ]] && test_pass "put warns about env shadowing" ||
-    test_fail "put warns about env shadowing: $warning"
-@ Config reset: 'jcode.model'
-check "reset restores the default" "$(@ Config at: 'jcode.model')" 'gpt-5.6-terra'
-check "reset keeps other lines" "$(grep -c '' "$config")" '5'
-
-# Writes go through a dotfiles symlink instead of replacing it.
-mkdir -p "$TMPDIR/dotfiles"
-printf '# tracked\n' > "$TMPDIR/dotfiles/config"
-ln -s "$TMPDIR/dotfiles/config" "$TMPDIR/linked-config"
-TRASHTALK_CONFIG="$TMPDIR/linked-config" @ Config at: 'maki.model' put: 'openai/linked'
-[[ -L "$TMPDIR/linked-config" ]] && test_pass "symlink survives a write" || test_fail "symlink survives a write"
-check "symlink target receives the write" "$(tail -n 1 "$TMPDIR/dotfiles/config")" 'maki.model = "openai/linked"'
+# The legacy file is read-only: writes go to a Preferences class
+# (tests/test_settings.bash), never into the file.
+before=$(cat "$config")
+if @ Config at: 'jcode.model' put: 'new-model' 2>/dev/null; then test_fail "put needs a preferences class"; else test_pass "put needs a preferences class"; fi
+check "a refused put leaves the file unchanged" "$(cat "$config")" "$before"
+error=$(TRASHTALK_SKIP_USER_CONFIG= @ Config at: 'jcode.model' put: 'x' 2>&1 >/dev/null)
+[[ $error == *"Config import: 'YourName'"* ]] && test_pass "put suggests importing the file" ||
+    test_fail "put suggests importing the file: $error"
 
 # The default user file is skipped under TRASHTALK_SKIP_USER_CONFIG.
 unset TRASHTALK_CONFIG
 export XDG_CONFIG_HOME="$TMPDIR/config-home"
 check "skip flag ignores the default file" "$(@ Config at: 'gusgus.profile')" 'jcode'
-if @ Config at: 'jcode.model' put: 'x' 2>/dev/null; then test_fail "put refuses when skipped"; else test_pass "put refuses when skipped"; fi
 check "default file is read when not skipped" "$(TRASHTALK_SKIP_USER_CONFIG= @ Config at: 'gusgus.profile')" 'maki'
-
-# A template is a valid config that changes nothing.
-@ Config template > "$TMPDIR/template"
-check "template parses to defaults" "$(TRASHTALK_CONFIG="$TMPDIR/template" @ Config list)" "$(@ Config list)"
-sed 's/^# \([a-z][A-Za-z.]* = \)/\1/' "$TMPDIR/template" > "$TMPDIR/uncommented"
-check "uncommented template is valid" "$(TRASHTALK_CONFIG="$TMPDIR/uncommented" @ Config at: 'agent.controlWait')" '30'
 
 # Doctor findings.
 printf 'jcode.mdoel = "typo"\nagent.controlWait = "soon"\ndecider.model = "a"\ndecider.model = "b"\n' > "$TMPDIR/doctor-config"

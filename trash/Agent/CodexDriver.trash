@@ -20,7 +20,7 @@ CodexDriver subclass: Agent::Driver
     ^ '["-u","CODEX_API_KEY","-u","OPENAI_API_KEY"]'
   ]
 
-  classMethod: model [ ^ @ Config at: 'codex.model' ]
+  classMethod: model [ ^ @ Agent::CodexSettings model ]
 
   classMethod: codexPath [
     | path |

@@ -301,7 +301,7 @@ _resolved_parent() {
       if $p == null or $p == "" then ""
       elif ($p | contains("::")) then $p
       elif .parentPackage then .parentPackage + "::" + $p
-      elif (["Object","Tool","TestCase","Protocol"] | index($p)) then $p
+      elif (["Object","Tool","TestCase","Protocol","Settings","Preferences"] | index($p)) then $p
       elif .package then .package + "::" + $p else $p end'
 }
 
@@ -341,7 +341,7 @@ _parse_single_file() {
         # through and re-parse, overwriting the bad entry below.
         if jq -e --arg strict "${TRASHTALK_STRICT:-}" \
             'type == "object" and ($strict == "" or ((.warnings // []) | length) == 0) and
-             ((.warnings // []) | any(.type == "unknown_token") | not)' "$cache_file" >/dev/null 2>&1; then
+             ((.warnings // []) | any(.type == "unknown_token" or .type == "settings_error") | not)' "$cache_file" >/dev/null 2>&1; then
             cat "$cache_file"
             return 0
         fi
@@ -375,11 +375,13 @@ _parse_single_file() {
 
     # Code outside a method (for example a send after the class body) would be
     # dropped without ever running, so it is always an error.
-    if echo "$ast" | jq -e '(.warnings // []) | any(.type == "unknown_token")' >/dev/null 2>&1; then
+    # A malformed setting or preference would silently change configuration, so
+    # it is an error too.
+    if echo "$ast" | jq -e '(.warnings // []) | any(.type == "unknown_token" or .type == "settings_error")' >/dev/null 2>&1; then
         echo -e "${RED}Parse errors in ${source_file}:${NC}" >&2
         show_errors_with_context "$source_file" \
-            "$(echo "$ast" | jq '[.warnings[] | select(.type == "unknown_token")
-              | .message = "Code outside a method never runs; move it into a method"]')" "$RED"
+            "$(echo "$ast" | jq '[.warnings[] | select(.type == "unknown_token" or .type == "settings_error")
+              | if .type == "unknown_token" then .message = "Code outside a method never runs; move it into a method" else . end]')" "$RED"
         exit 1
     fi
 

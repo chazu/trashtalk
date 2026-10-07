@@ -1,0 +1,7 @@
+package: OpenRouter
+
+# OpenRouter::JevSettings - settings read by OpenRouter::Jev.
+JevSettings subclass: Settings
+  prefix: jev
+  setting: model type: string default: 'typesafe/jev-1.13'
+    doc: 'OpenRouter model for Jev decisions'

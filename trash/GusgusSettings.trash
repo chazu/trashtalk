@@ -1,0 +1,6 @@
+# GusgusSettings - settings for the persistent assistant behind @@.
+# The profile choices mirror Agent::Worker driverFor:.
+GusgusSettings subclass: Settings
+  prefix: gusgus
+  setting: profile type: #(jcode maki codex pi shell) default: 'jcode'
+    doc: 'Harness for new Gusgus sessions'

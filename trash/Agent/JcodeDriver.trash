@@ -31,8 +31,8 @@ JcodeDriver subclass: Agent::Driver
     printf '%s' "$1" | bash "${TRASHTALK_DIR:-$HOME/.trashtalk}/lib/jcode-input.bash" send "$(@ Agent::Driver runDirFor: "$2")"
   ]
 
-  classMethod: model [ ^ @ Config at: 'jcode.model' ]
-  classMethod: provider [ ^ @ Config at: 'jcode.provider' ]
+  classMethod: model [ ^ @ Agent::JcodeSettings model ]
+  classMethod: provider [ ^ @ Agent::JcodeSettings provider ]
 
   # Filesystem boundary for a local OpenAI-compatible provider. Jcode takes a
   # named profile only from config.toml, selected with --provider auto, and
@@ -42,10 +42,10 @@ JcodeDriver subclass: Agent::Driver
   rawClassMethod: prepareLocalProvider: provider home: home model: model [
     local provider="$1" home="$2" model="$3" pattern='^[A-Za-z][A-Za-z0-9_-]*$' base window key_file
     [[ "$provider" =~ $pattern ]] || { echo "jcode.provider must be openai or a plain profile name, not '$provider'" >&2; return 1; }
-    base=$(@ Config at: 'jcode.baseUrl')
+    base=$(@ Agent::JcodeSettings baseUrl)
     [[ -n "$base" ]] || { echo "jcode.baseUrl is required for local Jcode provider $provider" >&2; return 1; }
     [[ -n "$model" ]] || { echo "jcode.model is required for local Jcode provider $provider" >&2; return 1; }
-    window=$(@ Config at: 'jcode.contextWindow')
+    window=$(@ Agent::JcodeSettings contextWindow)
     key_file="${XDG_CONFIG_HOME:-$HOME/.config}/jcode/provider-$provider.env"
     [[ -f "$key_file" ]] || {
       echo "Jcode provider $provider needs its API key in $key_file (JCODE_PROVIDER_${provider^^}_API_KEY=...)" >&2

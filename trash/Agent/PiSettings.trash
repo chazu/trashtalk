@@ -1,0 +1,11 @@
+package: Agent
+
+# Agent::PiSettings - settings read by Agent::PiDriver.
+PiSettings subclass: Settings
+  prefix: pi
+  setting: model type: string default: ''
+    doc: "Model for pi sessions (provider/id); empty uses pi's own default"
+  setting: excludeTools type: string default: 'bg_delegate,bg_result,bg_run,bg_run_pi_attested,bg_status,bg_logs,bg_kill'
+    doc: 'Comma-separated pi tools to disable (the pi-background-tasks subagent tools by default)'
+  setting: extensionPaths type: string default: ''
+    doc: 'Comma-separated pi extension files to load instead of discovering all; empty discovers all'

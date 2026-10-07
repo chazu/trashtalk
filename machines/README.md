@@ -1,9 +1,11 @@
 # Machine setups
 
 Settings that differ between machines live in `machines/<name>/`, so a machine's
-setup is versioned instead of living only in dotfiles under `$HOME`. Trashtalk's
-own settings are described in [docs/config-design.md](../docs/config-design.md);
-this directory adds the settings of the tools around it (omlx, pi, Hindsight).
+setup is versioned instead of living only in dotfiles under `$HOME`. This
+directory holds the settings of the tools around Trashtalk (omlx, pi,
+Hindsight). Trashtalk's own settings are per user: put a machine's values in a
+`host:` subclass of your preferences class (see the [README](../README.md#configure)
+and [docs/settings-design.md](../docs/settings-design.md)).
 
 ```bash
 bin/trash-machine list
@@ -16,7 +18,7 @@ that only picks a Gusgus harness needs just `trashtalk.config`.
 
 | Part | Applied as |
 | --- | --- |
-| `trashtalk.config` | Symlinked to `~/.config/trashtalk/config`. A different existing file is moved to `config.bak-trashtalk-<time>`. `@ Config at:put:` writes through the link, so edits land in this file. |
+| `trashtalk.config` | Legacy, being retired: symlinked to `~/.config/trashtalk/config`, which is still read after your preferences. A different existing file is moved to `config.bak-trashtalk-<time>`. Move its values into a `host:` preferences class with `@ Config import: 'Name'`. |
 | `omlx/settings.json`, `model_settings.json`, `model_profiles.json` | Merged into `~/.omlx/`. Skipped when omlx is not installed. |
 | `pi/settings.json` | Merged into `~/.pi/agent/settings.json`, created if absent. |
 | `hindsight/config.json` | Merged into `~/.hindsight/config.json`, created if absent. |
@@ -34,9 +36,9 @@ nothing.
 Copy the closest directory, or start empty:
 
 ```bash
-mkdir machines/laptop
-@ Config template > machines/laptop/trashtalk.config   # edit gusgus.profile and friends
+mkdir machines/laptop                                  # omlx, pi, Hindsight parts
 bin/trash-machine apply laptop
+@ Trash newPreferencesClass: 'Laptop' subclassing: 'Chaz'   # Trashtalk settings: add host: laptop
 ```
 
 A machine that runs Gusgus on a hosted harness needs no omlx, pi, or Hindsight

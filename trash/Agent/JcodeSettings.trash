@@ -1,0 +1,13 @@
+package: Agent
+
+# Agent::JcodeSettings - settings read by Agent::JcodeDriver.
+JcodeSettings subclass: Settings
+  prefix: jcode
+  setting: model type: string default: 'gpt-5.6-terra'
+    doc: 'Model for Jcode sessions'
+  setting: provider type: string default: 'openai'
+    doc: 'Provider for Jcode sessions: openai (subscription login) or the name of a local OpenAI-compatible endpoint'
+  setting: baseUrl type: string default: ''
+    doc: 'OpenAI-compatible base URL, required when jcode.provider is not openai'
+  setting: contextWindow type: integer default: 65536
+    doc: 'Context window in tokens for a local Jcode provider'

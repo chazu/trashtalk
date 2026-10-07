@@ -19,7 +19,7 @@ implemented contracts from designs and historical evidence.
 | Files and subprocesses | [File](FILE.md), [Process](PROCESS.md), [Future class](FUTURE.md) |
 | Persistent agent use, messages, stop, and recovery | [Agent operations](agent-operations.md) |
 | Attach, backlog, composer, and detach | [Live session view](agent-session-view.md) |
-| User settings: file, env overrides, `Config` | [Configuration](config-design.md) |
+| User settings: `Settings` groups, `Preferences` classes, env overrides, `Config` | [Settings and preferences](settings-design.md), [legacy config file](config-design.md) |
 | Per-machine setups: Gusgus harness plus omlx, pi, and Hindsight settings | [Machine setups](../machines/README.md), [omlx-pi](../machines/omlx-pi/README.md) |
 | Harness contracts | [Jcode](jcode-session-driver.md), [Maki](maki-session-driver.md), [pi](pi-session-driver.md) |
 | Tracking failing commands, attention alerts, and delegating them to agents | [Workstation guide](workstation-guide.md) (user guide), [Workstation operations](workstation-operations.md) (operator detail) |

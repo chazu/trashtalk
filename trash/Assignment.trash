@@ -302,7 +302,7 @@ Assignment subclass: Object
   # Turns an Assignment gets before it needs review (assignment.attempts).
   classMethod: attemptLimit [
     | value |
-    value := @ Config at: 'assignment.attempts' ifFailed: [^ 4].
+    value := @ AssignmentSettings attempts ifFailed: [^ 4].
     (value matches: '^[1-9][0-9]{0,2}$') ifTrue: [^ value].
     ^ 4
   ]

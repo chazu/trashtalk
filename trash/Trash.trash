@@ -534,7 +534,8 @@ Trash subclass: Object
     printf "$row" '@ Trash listTraits' 'List all traits'
     printf "$row" '@ Trash methodsFor: <class>' 'Show methods for class'
     printf "$row" '@ Trash hierarchyFor: <class>' 'Show inheritance hierarchy'
-    printf "$row" '@ Trash new: <class>' 'Create class skeleton and edit'
+    printf "$row" '@ Trash newUserClass: <class>' 'Create an empty user class and edit'
+    printf "$row" '@ Trash newPreferencesClass: <class> subclassing: <super>' 'Create user preferences and edit'
     printf "$row" '@ Trash edit: <class>' 'Edit class and recompile on save'
     printf "$row" '@ Trash reload' 'Reload all object stubs'
     printf "$row" '@ Trash reloadClass: <class>' 'Hot reload a single class'
@@ -763,52 +764,24 @@ Trash subclass: Object
     fi
   ]
 
-  # Create a new class with minimal skeleton and open in editor
-  # New classes are created in the user directory (trash/user/)
-  rawMethod: new: class_name [
-    pragma: direct
-    local user_file="$TRASHDIR/user/${class_name}.trash"
-    local system_file="$TRASHDIR/${class_name}.trash"
-    local trait_file="$TRASHDIR/traits/${class_name}.trash"
+  # Write a header-only class to trash/user/ and compile it. Answers the
+  # source path; fails when the name is taken anywhere.
+  classPrimitive: createUserClass: name calls: trash_user_class_create
 
-    # Check if class already exists anywhere
-    if [[ -f "$user_file" ]]; then
-      echo "Class $class_name already exists in user/. Use '@ Trash edit: $class_name' to edit."
-      return 1
-    fi
-    if [[ -f "$system_file" ]]; then
-      echo "Class $class_name already exists as a system class. Use '@ Trash edit: $class_name' to edit."
-      return 1
-    fi
-    if [[ -f "$trait_file" ]]; then
-      echo "A trait named $class_name already exists. Use '@ Trash edit: $class_name' to edit."
-      return 1
-    fi
-
-    # Ensure user directory exists
-    mkdir -p "$TRASHDIR/user"
-
-    # Create minimal skeleton with heredoc
-    cat > "$user_file" <<EOF
-${class_name} subclass: Object
-  instanceVars:
-
-  method: example [
-    ^ 'Hello from ${class_name}'
+  # Create an empty user class and open it in the editor.
+  method: newUserClass: name [
+    @ self createUserClass: name.
+    ^ @ self edit: name
   ]
 
-  rawTestMethod: testExample [
-    local instance result
-    instance=\$(@ ${class_name} new)
-    result=\$(@ "\$instance" example)
-    _assert_eq "\$result" 'Hello from ${class_name}' 'example returns greeting'
-  ]
-EOF
+  # Write a preferences class to trash/user/ with every setting commented out,
+  # and compile it. The superclass is Preferences or another preferences class.
+  classPrimitive: createPreferencesClass: name subclassing: superclass calls: trash_preferences_create
 
-    echo "Created $user_file"
-
-    # Open in editor (edit: handles compile on save)
-    @ "$_RECEIVER" edit: "$class_name"
+  # Create a preferences class and open it in the editor.
+  method: newPreferencesClass: name subclassing: superclass [
+    @ self createPreferencesClass: name subclassing: superclass.
+    ^ @ self edit: name
   ]
 
   # Resolve a class or trait to its editable source using public DSL helpers.

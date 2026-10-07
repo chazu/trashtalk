@@ -69,7 +69,8 @@ Greeting subclass: Object
   ]
 ```
 
-Save it as `trash/user/Greeting.trash`, run `make single CLASS=Greeting`, then
+Save it as `trash/user/Greeting.trash` (or start one with
+`@ Trash newUserClass: 'Greeting'`), run `make single CLASS=Greeting`, then
 send `@ Greeting for: Ada`. Prefer `method:` and `classMethod:` for domain
 logic. Keep `rawMethod:` and primitives at Bash, filesystem, process, and
 serialization boundaries. A method's stdout is its value; use `pragma: stream`
@@ -77,31 +78,95 @@ when several statements intentionally print output.
 
 ## Configure
 
-Settings such as Gusgus's harness and each harness's model live in
-`~/.config/trashtalk/config` (or `$XDG_CONFIG_HOME/trashtalk/config`), a flat
-TOML file you can keep in a dotfiles repository:
+Each subsystem declares its settings in a `Settings` group, such as
+`Agent::JcodeSettings` or `GusgusSettings`. You set your values in a
+`Preferences` class of your own in `trash/user/`, which Git ignores, so your
+settings never land in this repository.
 
-```toml
-gusgus.profile = "jcode"
-jcode.model = "gpt-5.6-terra"
-agent.controlWait = 30
-```
+See what can be configured:
 
 ```bash
-@ Config list                    # every setting, its value, and its source
-mkdir -p ~/.config/trashtalk     # start a commented file listing every default
-@ Config template > ~/.config/trashtalk/config
-@ Config at: 'jcode.model' put: 'gpt-5.6-terra'   # edit the file from the REPL
-@ Config reset: 'jcode.model'    # remove the line so the default applies
+@ Settings groups                  # every group and its prefix
+@ Agent::JcodeSettings describe    # its settings, current values, and docs
+@ Config list                      # every setting, its value, and its source
 ```
 
+Create your preferences class. It opens in your editor with every setting
+listed and commented out; uncomment a line to set it:
+
+```bash
+@ Trash newPreferencesClass: 'Chaz' subclassing: 'Preferences'
+```
+
+```smalltalk
+Chaz subclass: Preferences
+  Agent::JcodeSettings model: 'gpt-5.6-terra'
+  GusgusSettings profile: 'pi'
+  Agent::WorkerSettings controlWait: 45
+```
+
+Each line is a group, a setting, and a literal value: `'text'`, an integer, or
+`true`/`false`. `make` checks every line against the group's declaration, so a
+misspelled setting or a wrong-typed value fails the build. After editing the
+file by hand, run `make single CLASS=Chaz`.
+
+Set values from the REPL instead of the editor. Each write edits the source
+file, keeps its comments, and recompiles it:
+
+```bash
+@ Agent::JcodeSettings model: 'gpt-5.6-terra'    # or @ Config at: 'jcode.model' put: ...
+@ Agent::JcodeSettings reset: 'model'            # remove the line; the default applies
+```
+
+To keep your preferences in a dotfiles repository, keep the file there and
+symlink the file (not the directory) into `trash/user/`. Writes go through the
+link.
+
+For a machine that needs different values, add a subclass that names the
+machine with `host:`. It overrides what it sets and inherits the rest:
+
+```bash
+@ Trash newPreferencesClass: 'Sol' subclassing: 'Chaz'
+```
+
+```smalltalk
+Sol subclass: Chaz
+  host: sol
+  Agent::JcodeSettings provider: 'local'
+```
+
+The active class is the one named by `TRASHTALK_PREFERENCES`, else the one
+whose `host:` matches this machine's short host name, else your only direct
+subclass of `Preferences`. `@ Preferences all` marks the active class. On a
+machine with a `host:` class, a REPL write lands in that class; write a shared
+value with `@ Config at: 'jcode.model' put: '...' in: 'Chaz'`.
+
 Each setting's environment variable, such as `TRASHTALK_JCODE_MODEL`, overrides
-the file, which overrides the default. `@ Config template` names every variable.
-`at:put:` keeps the file's comments and order and writes through a symlink.
+your preferences, which override the default; `describe` names each variable.
 Settings are read when a harness starts, so restart a session to apply a change.
-`@ Trash doctor` reports unknown keys, invalid values, and overriding variables.
-Keep API keys in the environment, not in this file. See the
-[configuration design](docs/config-design.md) for the format.
+`@ Trash doctor` reports invalid values, overriding variables, and preferences
+edited since they were compiled. Keep API keys in the environment, not in
+preferences.
+
+If you used the older `~/.config/trashtalk/config` file, it is still read, after
+your preferences. Move it into a preferences class with
+`@ Config import: 'Chaz'`, then delete the file.
+
+To make your own classes configurable, declare a group next to them:
+
+```smalltalk
+package: MyApp
+
+MyAppSettings subclass: Settings
+  prefix: myApp
+  setting: retries type: integer default: 3
+    doc: 'Times to retry a failed fetch'
+  setting: mode type: #(fast careful) default: 'fast'
+    doc: 'How hard to try'
+```
+
+and read it with `@ MyApp::MyAppSettings retries`. See the
+[settings design](docs/settings-design.md).
 
 ## Work on the code
 

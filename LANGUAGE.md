@@ -282,6 +282,47 @@ Only graph-built, receipt-verified artifacts can be checked; checking never
 sources a class or grants authority to invoke it. Ordinary sends are unchanged.
 See [protocol fortification](docs/protocol-fortification-plan.md).
 
+### Settings Groups and Preferences
+
+A direct subclass of `Settings` declares the settings of one subsystem. The
+compiler gives it a class-side getter and setter per setting:
+
+```smalltalk
+package: MyApp
+
+MyAppSettings subclass: Settings
+  prefix: myApp
+  setting: retries type: integer default: 3
+    doc: 'Times to retry a failed fetch'
+  setting: mode type: #(fast careful) default: 'fast'
+    doc: 'How hard to try'
+    env: MYAPP_MODE
+```
+
+`@ MyApp::MyAppSettings retries` reads `myApp.retries` from its environment
+variable (`TRASHTALK_MYAPP_RETRIES` unless `env:` names another), then the
+active preferences class, then the default. The keywords of a `setting:` come
+in the order shown; types are `string`, `integer`, `boolean`, or a literal
+array of choices. `@ MyApp::MyAppSettings describe` lists them.
+
+A user's values live in a subclass of `Preferences` in `trash/user/`, one
+literal send per line. A subclass overrides what it sets and inherits the
+rest; `host: name` makes it the active class on that machine:
+
+```smalltalk
+Me subclass: Preferences
+  MyApp::MyAppSettings retries: 5
+
+Laptop subclass: Me
+  host: laptop
+  MyApp::MyAppSettings mode: 'careful'
+```
+
+Each class is its own file. The build rejects an unknown group or setting, a
+value of the wrong type, a key set twice, and anything in a preferences class
+besides preference lines and `host:`. See the
+[settings design](docs/settings-design.md).
+
 ## Traits
 
 Traits are reusable method collections. Define a trait:
@@ -1095,7 +1136,8 @@ See [compiler capabilities](docs/COMPILER_CAPABILITIES.md) for the test map.
 ## Development Workflow
 
 ```bash
-@ Trash new: MyClass               # Create new class skeleton and open in $EDITOR
+@ Trash newUserClass: 'MyClass'    # Create an empty class in trash/user/ and open it in $EDITOR
+@ Trash newPreferencesClass: 'Me' subclassing: 'Preferences'   # Your settings; see Settings Groups above
 @ Trash edit: Counter              # Edit existing class, auto-recompile on save
 @ Trash compileAndReload: Counter  # Manual compile (safe - won't break on errors)
 @ Trash methodsFor: Counter        # List methods

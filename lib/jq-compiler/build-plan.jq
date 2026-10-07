@@ -1,6 +1,30 @@
 # Plan one content-validated dependency graph. No cache content is executable.
 include "protocols";
-def dependencies($m): [$m.resolved_parent, $m.traits[]?, $m.implementedProtocols[]?] | map(select(. != "")) | unique;
+# Validate a preferences class against the groups it names; answer its values.
+def preferences_values($m; $done; $lookup):
+  if $m.package != null then settings_error($m; null; "a preferences class lives in trash/user and takes no package:")
+  elif $m.shape.methods + $m.shape.instanceVars + $m.shape.classInstanceVars > 0 or ($m.traits|length) > 0
+    or ($m.implementedProtocols|length) > 0 or ($m.requirements|length) > 0 then
+    settings_error($m; $m.preferences[0].location; "a preferences class holds only preference lines and host:")
+  else
+    (reduce $m.preferences[] as $p ([];
+      ($done[($lookup[$p.group]|tostring)].metadata) as $g |
+      if $g == null or $g.resolved_parent != "Settings" then settings_error($m; $p.location; $p.group + " is not a settings group")
+      else
+        ([$g.settingsDeclarations[] | select(.name == $p.selector)][0]) as $s |
+        if $s == null then settings_error($m; $p.location; $p.group + " declares no setting " + $p.selector)
+        elif (settings_accepts($s.type; $p.value) | not) then
+          settings_error($m; $p.location; $g.settingsPrefix + "." + $p.selector + " must be " + ($s.type | settings_describe_type))
+        elif any(.[]; .key == $g.settingsPrefix + "." + $p.selector) then
+          settings_error($m; $p.location; $g.settingsPrefix + "." + $p.selector + " is set twice")
+        else . + [{key:($g.settingsPrefix + "." + $p.selector), value:$p.value.value, line:$p.location.line}] end
+      end)) as $values |
+    {identity:$m.identity, parent:(if $m.resolved_parent == "Preferences" then "" else $m.resolved_parent end),
+     host:$m.preferenceHost, values:$values}
+  end;
+# A preferences class depends on the settings groups it sets, so editing a group
+# revalidates every preferences class that names it.
+def dependencies($m): [$m.resolved_parent, $m.traits[]?, $m.implementedProtocols[]?, $m.preferences[]?.group] | map(select(. != "")) | unique;
 . as $nodes |
 (reduce ($nodes | sort_by(.priority))[] as $node ({};
   if has($node.key) then . else .[$node.key]=$node.index end)) as $lookup |
@@ -19,6 +43,8 @@ def visit($i; $stack):
         (if ($nodes[$i].metadata.implementedProtocols|index($dep)) then
           "; nonlocal protocols require a fully qualified identity" +
           ([$nodes[] | select(.key|endswith("::"+($dep|split("::")|last))) | .key] | if length>0 then ": " + join(", ") else "" end)
+        elif ([$nodes[$i].metadata.preferences[]?.group]|index($dep)) then
+          "; no settings group has that name (a group in a package is written with its qualified name)"
         else "" end)) end)
     | .seen[$id]=true | .order += [$i]
   end;
@@ -52,7 +78,14 @@ else
         (if ($check.conflicts|length)>0 then "; conflicting direct traits: " + ($check.conflicts|join(", ")) else "" end)
       else empty end] | join("\n")) as $failures |
     if $failures != "" then protocol_error($m; $failures) else . end |
-    .[($i|tostring)] = ($node + {dependencies:$inputs, surface:$surface,
+    ($m | settings_semantics) as $m |
+    ($done[($lookup[$m.resolved_parent]|tostring)]) as $parentNode |
+    (($m.resolved_parent == "Preferences") or ($parentNode.preferences != null)) as $isPreferences |
+    (if $isPreferences then preferences_values($m; $done; $lookup)
+     elif ($m.preferences|length) > 0 or $m.preferenceHost != null then
+       settings_error($m; $m.preferences[0].location; "preference lines and host: belong in a subclass of Preferences")
+     else null end) as $preferences |
+    .[($i|tostring)] = ($node + {dependencies:$inputs, surface:$surface, preferences:$preferences,
       dirty:(($valid|not) or any($deps[]; $done[.].dirty)),
       level:([0, ($deps[] | $done[.].level+1)] | max)}))
   | [.[]] | sort_by(.level,.index)

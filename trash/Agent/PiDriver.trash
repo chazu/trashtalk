@@ -18,15 +18,15 @@ PiDriver subclass: Agent::Driver
   ]
 
   # Empty means pi's own default model (settings.json defaultProvider/defaultModel).
-  classMethod: model [ ^ @ Config at: 'pi.model' ]
+  classMethod: model [ ^ @ Agent::PiSettings model ]
 
   # Comma-separated tool names for --exclude-tools. The default disables the
   # pi-background-tasks tools, whose subagents would bypass Assignment.
-  classMethod: excludeTools [ ^ @ Config at: 'pi.excludeTools' ]
+  classMethod: excludeTools [ ^ @ Agent::PiSettings excludeTools ]
 
   # Comma-separated extension files. Non-empty turns off discovery
   # (--no-extensions) and loads only these with -e; empty discovers all.
-  classMethod: extensionPaths [ ^ @ Config at: 'pi.extensionPaths' ]
+  classMethod: extensionPaths [ ^ @ Agent::PiSettings extensionPaths ]
 
   # JSON construction boundary: the comma lists become repeated flags.
   rawClassMethod: argvFor: executable workspace: workspace model: model exclude: exclude paths: paths ref: ref [

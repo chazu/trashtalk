@@ -26,6 +26,16 @@ prepare_checkout() {
         done
         ((${#caches[@]} == 0)) || cp -- "${caches[@]}" "$target/trash/.compiled/$cache_kind/"
     done
+    # trash/user/ is not copied, so neither are the preferences compiled from it.
+    local settings="$target/trash/.compiled/.settings"
+    if [[ -f "$settings-manifest.json" ]]; then
+        jq '.preferences = []' "$settings-manifest.json" > "$settings-manifest.json.tmp" &&
+            mv "$settings-manifest.json.tmp" "$settings-manifest.json"
+    fi
+    if [[ -f "$settings.bash" ]]; then
+        grep -v '^_trash_prefs_' "$settings.bash" > "$settings.bash.tmp" || true
+        mv "$settings.bash.tmp" "$settings.bash"
+    fi
 }
 
 # Duplicate a prepared checkout. APFS and reflink-capable filesystems clone the
@@ -67,7 +77,7 @@ rm -f "$work/repo/trash/.compiled/.protocol-manifest.json"
 export TRASHTALK_TEST_ISOLATED=1 TRASHTALK_SKIP_USER_CONFIG=1 LC_ALL=C
 export TRASHTALK_DIR="$work/repo" TRASHDIR="$work/repo/trash"
 export SQLITE_JSON_DB="$work/instances.db" TMPDIR="$work/tmp"
-unset TRASH_SESSION_ID TRASH_PROFILE TRASH_PROFILE_FILE TRASHTALK_CONFIG
+unset TRASH_SESSION_ID TRASH_PROFILE TRASH_PROFILE_FILE TRASHTALK_CONFIG TRASHTALK_PREFERENCES
 cd "$work/repo"
 test_bash_args=()
 [[ "${TRASH_TEST_TRACE:-0}" != 1 ]] || test_bash_args+=(-x)

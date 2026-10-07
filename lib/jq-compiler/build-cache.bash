@@ -63,7 +63,7 @@ _build_plan() {
 }
 
 cmd_build_metadata() {
-    _parse_single_file "$1" | jq -c -L "$SCRIPT_DIR" 'include "protocols"; protocol_metadata | protocol_semantics' > "$2"
+    _parse_single_file "$1" | jq -c -L "$SCRIPT_DIR" 'include "protocols"; protocol_metadata | protocol_semantics | settings_semantics' > "$2"
 }
 
 # Cache entries are keyed by content hash and compiler fingerprint, so every
@@ -198,9 +198,45 @@ _build_collisions() {
     [[ -z "$collisions" ]] || error "$2: $collisions"
 }
 
+# Derive the settings index and the runtime table from the published manifest,
+# so both cover every class, not only the ones this build compiled. A prefix or
+# host claimed twice fails the build.
+_build_publish_settings() {
+    local manifest="$TRASHTALK_COMPILED_DIR/.protocol-manifest.json"
+    local index="$TRASHTALK_COMPILED_DIR/.settings-manifest.json" table="$TRASHTALK_COMPILED_DIR/.settings.bash" tmp
+    local previous='{"groups":[],"preferences":[]}' source
+    [[ -f "$manifest" ]] || return 0
+    # Keep earlier entries the manifest no longer describes while their source
+    # exists, so a manifest rebuilt from a partial build loses nothing.
+    if [[ -f "$index" ]]; then
+        previous=$(<"$index")
+        while IFS= read -r source; do
+            [[ ! -f "$source" ]] || printf '%s\n' "$source"
+        done < <(jq -r '.groups[].source, .preferences[].source' "$index") > "$build_work/settings-live"
+    else
+        : > "$build_work/settings-live"
+    fi
+    tmp=$(mktemp "$index.XXXXXX")
+    if ! jq -L "$SCRIPT_DIR" --argjson previous "$previous" --rawfile live "$build_work/settings-live" \
+        'include "protocols"; settings_index($previous; $live | split("\n"))' "$manifest" > "$tmp"; then
+        rm -f "$tmp"; return 1
+    fi
+    if [[ -f "$index" ]] && cmp -s "$tmp" "$index" && [[ -f "$table" ]]; then
+        rm -f "$tmp"; return 0
+    fi
+    mv -f "$tmp" "$index"
+    tmp=$(mktemp "$table.XXXXXX")
+    # The first line identifies this content; lib/config.bash reloads when it changes.
+    { printf '# Trashtalk settings %s - generated from .settings-manifest.json, do not edit\n' \
+        "$(shasum -a 256 "$index" | cut -d' ' -f1)"
+      jq -r -L "$SCRIPT_DIR" 'include "protocols"; settings_table' "$index"; } > "$tmp" || { rm -f "$tmp"; return 1; }
+    mv -f "$tmp" "$table"
+}
+
 # Publish the manifest, then remove orphaned artifacts and stale cache entries.
 _build_finish() {
     _build_publish_manifest || return
+    _build_publish_settings || return
     _build_prune_orphans
     _build_prune_caches
 }
@@ -348,8 +384,9 @@ _build_publish_manifest() {
     # Merge against the latest publication, including other completed builds.
     _build_manifest_snapshot || return
     tmp=$(mktemp "$manifest.XXXXXX")
-    jq --slurpfile previous "$build_work/previous-manifest.json" \
+    jq -L "$SCRIPT_DIR" --slurpfile previous "$build_work/previous-manifest.json" \
        --slurpfile receipts "$build_work/final-receipts.json" '
+      include "protocols";
       reduce .[] as $n ($previous[0]; .schema=1 |
         if .entries[$n.metadata.identity] != null and .entries[$n.metadata.identity].source != $n.source then
           error("Protocol manifest identity shadowed: " + $n.key)
@@ -357,6 +394,8 @@ _build_publish_manifest() {
         .entries[$n.metadata.identity]={identity:$n.metadata.identity,source:$n.source,artifact:$n.output,receipt:$n.receipt,
           kind:$n.metadata.kind,package:$n.metadata.package,imports:$n.metadata.imports,
           api_hash:$n.api_hash,surface:$n.surface,requirements:$n.metadata.requirements,
+          settings:(if $n.metadata.resolved_parent == "Settings" then ($n.metadata|settings_spec) else null end),
+          preferences:$n.preferences,
           receipt_data:([$receipts[0][]|select(.source==$n.source)][0])})
       ' "$build_work/plan.json" > "$tmp" || { rm -f "$tmp"; return 1; }
     : > "$build_work/retired-artifacts.nul"

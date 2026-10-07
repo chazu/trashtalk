@@ -1,6 +1,8 @@
-# Config - declared user settings. A value comes from its environment variable,
-# then the user config file, then its declared default. Keys and the file
-# reader live in lib/config.bash; see docs/config-design.md.
+# Config - declared user settings by key. Settings are declared in Settings
+# groups next to the classes that read them, and set in a Preferences class.
+# A value comes from its environment variable, then the active preferences
+# class, then the legacy config file, then its declared default. See
+# docs/settings-design.md.
 #
 # Usage:
 #   model := @ Config at: 'jcode.model'
@@ -12,19 +14,32 @@ Config subclass: Object
   # unknown key, a config file syntax error, or an invalid value.
   classPrimitive: at: key calls: trash_config_at
 
-  # Write the value into the user config file, keeping its comments and order.
+  # Write the value into the active preferences class and recompile it.
   classPrimitive: at: key put: value calls: trash_config_put
 
-  # Remove the key from the user config file so its default applies.
+  # Write the value into the named preferences class, such as a superclass
+  # shared by every machine.
+  classPrimitive: at: key put: value in: preferencesClass calls: trash_config_put
+
+  # Remove the key from the active preferences class so its default applies.
   classPrimitive: reset: key calls: trash_config_reset
 
-  # Every key with its effective value and source (env, file, default).
+  # Remove the key from the named preferences class.
+  classPrimitive: reset: key in: preferencesClass calls: trash_config_reset
+
+  # Every key with its effective value and source (env, preferences, file, default).
   classPrimitive: list calls: trash_config_list
 
-  # A commented config file listing every key at its default.
-  classPrimitive: template calls: trash_config_template
+  # Every compiled preferences class; the active one is marked with "*".
+  classPrimitive: preferences calls: trash_config_preferences
 
-  # The user config file's path, whether or not it exists.
+  # Write a preferences class in trash/user/ holding the legacy config file's values.
+  classPrimitive: import: name calls: trash_config_import
+
+  # The same, as a subclass of an existing preferences class.
+  classPrimitive: import: name subclassing: superclass calls: trash_config_import
+
+  # The legacy config file's path, whether or not it exists.
   classPrimitive: path calls: trash_config_path
 
   # Doctor findings, one "ok|warn|bad<TAB>message" line each.

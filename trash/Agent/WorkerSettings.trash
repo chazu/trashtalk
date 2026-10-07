@@ -1,0 +1,8 @@
+package: Agent
+
+# Agent::WorkerSettings - settings read by Agent::Worker.
+WorkerSettings subclass: Settings
+  prefix: agent
+  setting: controlWait type: integer default: 30
+    doc: 'Seconds a stop or terminate waits behind a running agent tick'
+    env: TRASHTALK_CONTROL_WAIT

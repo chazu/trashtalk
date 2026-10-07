@@ -2,7 +2,7 @@
 package: OpenRouter
 
 Jev subclass: Object
-  classMethod: model [ ^ @ Config at: 'jev.model' ]
+  classMethod: model [ ^ @ OpenRouter::JevSettings model ]
 
   classMethod: decide: state questions: questions [
     | model |

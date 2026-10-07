@@ -77,7 +77,7 @@ def isSyncPoint:
 # Synchronization points for error recovery
 # Skips tokens until we find a class-level keyword to resume parsing
 def synchronize:
-  until(atEnd or isSyncPoint; advance);
+  until(atEnd or isSyncPoint or current.value == "setting:" or current.value == "prefix:" or current.value == "host:"; advance);
 
 # Match token type
 def token($t):
@@ -395,6 +395,130 @@ def parseAdvice:
     fail
   end;
 
+# ------------------------------------------------------------------------------
+# Settings groups and preferences (docs/settings-design.md)
+# ------------------------------------------------------------------------------
+
+# A settings literal: 'text', "text", an integer, or true/false. The value is
+# kept as written; validation against a declared type happens at build time.
+def parseSettingLiteral:
+  if current.type == "STRING" then
+    .result = {kind: "string", value: (current.value | .[1:-1])} | advance
+  elif current.type == "DSTRING" then
+    .result = {kind: "string", value: (current.value | .[1:-1])} | advance
+  elif current.type == "NUMBER" then
+    .result = {kind: "integer", value: current.value} | advance
+  elif current.type == "IDENTIFIER" and (current.value == "true" or current.value == "false") then
+    .result = {kind: "boolean", value: current.value} | advance
+  else fail end;
+
+# Parse: prefix: name, or host: name. Returns {name, location}.
+def parseSettingsName($keyword):
+  if current.value == $keyword then
+    {line: current.line, col: current.col} as $location |
+    advance | skipNewlines |
+    if current.type == "IDENTIFIER" then
+      .result = {name: current.value, location: $location} | advance
+    elif current.type == "STRING" or current.type == "DSTRING" then
+      .result = {name: (current.value | .[1:-1]), location: $location} | advance
+    else fail end
+  else fail end;
+
+# Parse a setting type: string, integer, boolean, or #(choice ...).
+def parseSettingType:
+  if current.type == "IDENTIFIER" then
+    .result = {name: current.value} | advance
+  elif current.type == "HASH_LPAREN" then
+    advance |
+    {choices: [], state: .} |
+    until(((.state | current.type) as $t | $t != "IDENTIFIER" and $t != "STRING" and $t != "NEWLINE");
+      if (.state | current.type) == "NEWLINE" then .state |= advance
+      else .choices += [(.state | current.value | ltrimstr("'") | rtrimstr("'"))] | .state |= advance end) |
+    .choices as $choices |
+    .state |
+    if current.type == "RPAREN" then .result = {name: "enum", choices: $choices} | advance else fail end
+  else fail end;
+
+# Parse: setting: name type: T default: V doc: 'text' [env: NAME]
+# The keywords come in this order; env: is optional and may start a new line.
+def parseSetting:
+  if current.value == "setting:" then
+    {line: current.line, col: current.col} as $location |
+    advance | skipNewlines |
+    if current.type != "IDENTIFIER" then fail else
+      current.value as $name | advance | skipNewlines |
+      if current.value != "type:" then fail else
+        advance | skipNewlines | parseSettingType |
+        if .result == null then . else
+          .result as $type | skipNewlines |
+          if current.value != "default:" then fail else
+            advance | skipNewlines | parseSettingLiteral |
+            if .result == null then . else
+              .result as $default | skipNewlines |
+              if current.value != "doc:" then fail else
+                advance | skipNewlines |
+                if current.type == "STRING" or current.type == "DSTRING" then
+                  (current.value | .[1:-1]) as $doc |
+                  advance | skipNewlines |
+                  {name: $name, type: $type, default: $default, doc: $doc, env: null, location: $location} as $setting |
+                  if current.value == "env:" then
+                    advance | skipNewlines |
+                    if current.type == "IDENTIFIER" then
+                      .result = ($setting + {env: current.value}) | advance
+                    else fail end
+                  else
+                    .result = $setting
+                  end
+                else fail end
+              end
+            end
+          end
+        end
+      end
+    end
+  else fail end;
+
+# Does the line start like a preference, `Group sel:` or `Pkg::Group sel:`?
+# Anything else in a class body stays an unknown token.
+def looksLikePreference:
+  current.type == "IDENTIFIER" and
+  (.tokens[.pos + 1].type as $next |
+   if $next == "NAMESPACE_SEP" then .tokens[.pos + 2].type == "IDENTIFIER" and .tokens[.pos + 3].type == "KEYWORD"
+   else $next == "KEYWORD" end);
+
+# Parse a preference line: Group setting: literal, alone on its line.
+def parsePreference:
+  {line: current.line, col: current.col} as $location |
+  parseClassRef |
+  if .result == null then . else
+    .result as $ref |
+    if current.type == "KEYWORD" and (current.value | test("^[a-z][A-Za-z0-9]*:$")) then
+      (current.value | rtrimstr(":")) as $selector |
+      advance | parseSettingLiteral |
+      if .result == null then . else
+        .result as $value |
+        if atEnd or current.type == "NEWLINE" or current.type == "COMMENT" then
+          .result = {group: formatClassRef($ref), groupPackage: $ref.package,
+                     selector: $selector, value: $value, location: $location}
+        else fail end
+      end
+    else fail end
+  end;
+
+# One class-side getter and setter per declared setting. Both are primitives
+# over lib/config.bash, so a read forks nothing.
+def settingsAccessors:
+  if (.settings | length) > 0 and .settingsPrefix != null then
+    .settingsPrefix.name as $prefix |
+    .methods += [.settings[] | "\($prefix).\(.name)" as $key |
+      {type: "method", kind: "class", raw: true, selector: .name, keywords: [], args: [],
+       body: {type: "block", tokens: []}, pragmas: [], primitive: "trash_config_at",
+       primitiveArgs: [$key], category: "settings", location: .location},
+      {type: "method", kind: "class", raw: true, selector: "\(.name)_", keywords: [.name], args: ["value"],
+       body: {type: "block", tokens: []}, pragmas: [], primitive: "trash_settings_put",
+       primitiveArgs: [$key], category: "settings", location: .location}]
+  else . end;
+
 # Parse: pragma: pragmaName (class-level pragma)
 def parseClassPragma:
   if current.value == "pragma:" then
@@ -594,11 +718,44 @@ def parsePrimitive:
 
 # Parse class body elements
 def parseClassBody:
-  {instanceVars: [], classInstanceVars: [], traits: [], requires: [], methodRequirements: [], requirementDeclarations: [], implementedProtocols: [], methods: [], aliases: [], advice: [], classPragmas: [], errors: [], currentCategory: null, state: .} |
+  {instanceVars: [], classInstanceVars: [], traits: [], requires: [], methodRequirements: [], requirementDeclarations: [], implementedProtocols: [], methods: [], aliases: [], advice: [], classPragmas: [], settingsPrefix: null, settings: [], preferences: [], preferenceHost: null, errors: [], currentCategory: null, state: .} |
   until((.state | atEnd);
     .state |= skipNewlines |
     if (.state | atEnd) then
       .
+    elif (.state | current.value) == "prefix:" or (.state | current.value) == "host:" then
+      (.state | current.value) as $keyword |
+      (if $keyword == "prefix:" then "settingsPrefix" else "preferenceHost" end) as $field |
+      (.state | parseSettingsName($keyword)) as $r |
+      if $r.result == null then
+        .errors += [{type: "settings_error", message: "Expected `\($keyword) name`", token: (.state | current), context: "settings"}] |
+        .state |= (advance | synchronize)
+      elif .[$field] != null then
+        .errors += [{type: "settings_error", message: "\($keyword) is declared more than once", token: (.state | current), context: "settings"}] |
+        .state = $r
+      else
+        .[$field] = $r.result | .state = $r
+      end
+    elif (.state | current.value) == "setting:" then
+      (.state | parseSetting) as $r |
+      if $r.result != null then
+        .settings += [$r.result] | .state = $r
+      else
+        .errors += [{type: "settings_error",
+          message: "Expected `setting: name type: T default: value doc: 'text'` with optional `env: NAME`",
+          token: (.state | current), context: "settings"}] |
+        .state |= (advance | synchronize)
+      end
+    elif (.state | looksLikePreference) then
+      (.state | parsePreference) as $r |
+      if $r.result != null then
+        .preferences += [$r.result] | .state = $r
+      else
+        .errors += [{type: "settings_error",
+          message: "Expected a preference `Group setting: value` with a literal value, alone on its line",
+          token: (.state | current), context: "preferences"}] |
+        .state |= (advance | until(atEnd or current.type == "NEWLINE"; advance))
+      end
     elif (.state | current.value) == "category:" then
       # Parse category directive: category: "name" or category: 'name'
       .state |= advance |
@@ -786,7 +943,7 @@ def parseClassBody:
       end)
     end
   ) |
-  {
+  ({
     instanceVars: .instanceVars,
     classInstanceVars: .classInstanceVars,
     traits: .traits,
@@ -797,8 +954,12 @@ def parseClassBody:
     methods: .methods,
     aliases: .aliases,
     advice: .advice,
-    classPragmas: .classPragmas
-  } as $body |
+    classPragmas: .classPragmas,
+    settingsPrefix: .settingsPrefix,
+    settings: .settings,
+    preferences: .preferences,
+    preferenceHost: .preferenceHost
+  } | settingsAccessors) as $body |
   .errors as $errors |
   .state | .errors = (.errors + $errors) | .result = $body;
 
@@ -867,7 +1028,7 @@ def parseClass:
         $class + {package: null, imports: []}
       end)
     else
-      ($header + {instanceVars: [], classInstanceVars: [], traits: [], requires: [], methodRequirements: [], requirementDeclarations: [], implementedProtocols: [], methods: [], aliases: [], advice: [], classPragmas: []}) as $class |
+      ($header + {instanceVars: [], classInstanceVars: [], traits: [], requires: [], methodRequirements: [], requirementDeclarations: [], implementedProtocols: [], methods: [], aliases: [], advice: [], classPragmas: [], settingsPrefix: null, settings: [], preferences: [], preferenceHost: null}) as $class |
       .result = (if $pkgDecl != null then
         $class + {package: $pkgDecl.package, imports: $pkgDecl.imports}
       else

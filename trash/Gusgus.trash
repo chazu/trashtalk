@@ -4,7 +4,7 @@ Gusgus subclass: Object
   include: Agent::Stable
 
   classMethod: owner [ ^ @ Agent::Focus localUser ]
-  classMethod: profile [ ^ @ Config at: 'gusgus.profile' ]
+  classMethod: profile [ ^ @ GusgusSettings profile ]
   classMethod: agentHandle [ ^ 'gusgus' ]
   classMethod: agentDisplayName [ ^ 'Gusgus' ]
   classMethod: sessionScope [ ^ 'identity' ]

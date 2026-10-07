@@ -1,0 +1,8 @@
+package: Decision
+
+# Decision::TargetSettings - where typed decisions run. The choices mirror
+# Decision::Target named:.
+TargetSettings subclass: Settings
+  prefix: decision
+  setting: target type: #(jev decider) default: 'decider'
+    doc: 'Where typed decisions run'

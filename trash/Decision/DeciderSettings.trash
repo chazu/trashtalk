@@ -1,0 +1,11 @@
+package: Decision
+
+# Decision::DeciderSettings - the Decider System 1 service.
+DeciderSettings subclass: Settings
+  prefix: decider
+  setting: url type: string default: 'https://decider.tail7fd374.ts.net'
+    doc: 'Decider System 1 service (tailnet only)'
+  setting: model type: string default: 'decider-2b-v11-Q4_K_M'
+    doc: 'Decider model ID'
+  setting: textLimit type: integer default: 4000
+    doc: 'Characters of message text an application sends to Decider (2,048-token context)'

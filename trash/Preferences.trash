@@ -1,0 +1,18 @@
+# Preferences - the base of every user preferences class. A subclass lives in
+# trash/user/, which Git ignores, and holds one literal send per line:
+#
+#   Chaz subclass: Preferences
+#     Agent::JcodeSettings model: 'gpt-5.6-terra'
+#     GusgusSettings profile: 'pi'
+#
+# A subclass of a preferences class overrides some values and inherits the
+# rest; `host: name` makes it the active class on that machine. Create one with
+# `@ Trash newPreferencesClass: 'Name' subclassing: 'Preferences'`. See
+# docs/settings-design.md.
+Preferences subclass: Object
+
+  # Every compiled preferences class; the active one is marked with "*".
+  classPrimitive: all calls: trash_config_preferences
+
+  # The active preferences class, or empty when none applies.
+  classPrimitive: active calls: trash_preferences_active

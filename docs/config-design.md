@@ -4,6 +4,12 @@
 `lib/config.bash`, and `tests/test_config.bash`.
 **Date:** 2026-09-30
 
+**Superseded in part, 2026-10-07:** [settings and preferences](settings-design.md)
+moved the declarations into Trashtalk `Settings` groups and user values into
+`Preferences` classes. The file described here is still read, after the active
+preferences, but writes, `at:put:`, and `template` no longer touch it. The
+format, environment overrides, and doctor checks below still apply to it.
+
 ## Problem
 
 User-facing settings are scattered `@ Env get: 'X' default: 'Y'` calls in the

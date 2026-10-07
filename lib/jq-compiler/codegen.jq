@@ -2311,7 +2311,7 @@ def generateMetadata:
   # Exception: core/global classes should never be qualified
   # These are base classes that exist at the global level, not in any package
   .parent as $parentName |
-  ["Object", "Tool", "TestCase", "Protocol"] as $globalClasses |
+  ["Object", "Tool", "TestCase", "Protocol", "Settings", "Preferences"] as $globalClasses |
   (if $parentName == null or $parentName == "" then ""
    elif ($parentName | contains("::")) then $parentName
    elif .parentPackage then "\(.parentPackage)::\($parentName)"
@@ -2602,7 +2602,9 @@ def generateMethod($funcPrefix; $ivars; $cvars):
   (((.pragmas // []) | index("stream")) != null) as $streamFlag |
   (if .primitive != null then
     # Declared primitive: forward the arguments positionally to one Bash function.
-    "  \(.primitive)" + ([range(0; (.args | length)) | " \"$\(. + 1)\""] | join(""))
+    # Generated setting accessors also pass their key first.
+    "  \(.primitive)" + ([(.primitiveArgs // [])[] | " " + @sh] | join("")) +
+      ([range(0; (.args | length)) | " \"$\(. + 1)\""] | join(""))
   elif $isRaw then
     # Raw method - use existing transformation
     .body | transformRawMethodBody

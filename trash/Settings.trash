@@ -1,0 +1,25 @@
+# Settings - the base of every settings group. A direct subclass declares the
+# settings of one subsystem with prefix: and setting: lines, and the compiler
+# gives it a class-side getter and setter per setting. Values come from the
+# setting's environment variable, then the active Preferences class, then the
+# declared default. See docs/settings-design.md.
+#
+# Usage:
+#   model := @ Agent::JcodeSettings model
+#   @ Agent::JcodeSettings model: 'gpt-5.6-terra'
+#   @ Agent::JcodeSettings describe
+#   @ Settings groups
+Settings subclass: Object
+
+  # Every settings group with its prefix and number of settings.
+  classPrimitive: groups calls: trash_settings_groups
+
+  # This group's settings: value and source, description, type, and default.
+  rawClassMethod: describe [
+    trash_settings_describe "$_RECEIVER"
+  ]
+
+  # Remove a setting from the active preferences class so its default applies.
+  rawClassMethod: reset: name [
+    trash_settings_reset "$_RECEIVER" "$name"
+  ]
