@@ -20,7 +20,7 @@ if [[ "$1" == --version ]]; then echo 'chad 0.0.0-fixture'; exit 0; fi
 id=${TRASHTALK_RUN_TOKEN%%:*}
 printf '%s\n' "$@" > "$CHAD_TEST_LOG/$id.argv"
 pwd > "$CHAD_TEST_LOG/$id.cwd"
-printf '%s|%s\n' "${CHAD_SESSION_DIR:-}" "${CHAD_NO_SEATBELT:-}" > "$CHAD_TEST_LOG/$id.env"
+printf '%s|%s|%s\n' "${CHAD_SESSION_DIR:-}" "${CHAD_NO_SEATBELT:-}" "${CHAD_AUTO_CONTINUE:-}" > "$CHAD_TEST_LOG/$id.env"
 prompt=${!#}
 printf '%s\n' "$prompt" > "$CHAD_TEST_LOG/$id.input"
 store="$CHAD_SESSION_DIR/fixturehash"
@@ -30,6 +30,16 @@ printf '{"messages":[]}\n' > "$store/$sid.json"
 printf '{"sessions":{}}\n' > "$store/index.json"
 case "${CHAD_TEST_MODE:-success}" in
     notdone) echo 'guard stop' >&2; exit 1 ;;
+    nochange|nochange_unsettled)
+        ts="$TRASHTALK_RUN_DIR/$id/trash-send"
+        if [[ "$CHAD_TEST_MODE" == nochange ]]; then
+            "$ts" Agent::Run result: 'Chad reply, no file change' >/dev/null || exit
+            for delivery in $(printf '%s\n' "$prompt" | sed -n 's/^--- delivery //p'); do
+                "$ts" Agent::Run settle: "$delivery" >/dev/null || exit
+            done
+        fi
+        echo '  [stopped: the model called done, but no change passed a check]' >&2
+        exit 1 ;;
     interrupted) exit 130 ;;
     wait) touch "$CHAD_TEST_LOG/$id.waiting"; while :; do sleep 1; done ;;
 esac
@@ -76,7 +86,7 @@ contains 'prompt follows the option terminator' $'--yolo\n--\n' "$(cat "$CHAD_TE
 check 'unset model leaves chad default' 0 "$(grep -c -- --model "$CHAD_TEST_LOG/$run.argv")"
 check 'unset think budget omits the flag' 0 "$(grep -c -- --think-budget "$CHAD_TEST_LOG/$run.argv")"
 check 'fresh run does not continue' 0 "$(grep -c -- --continue "$CHAD_TEST_LOG/$run.argv")"
-check 'store is per session and seatbelt is off' "$tmp/runs/chad-sessions/$session|1" "$(cat "$CHAD_TEST_LOG/$run.env")"
+check 'store is per session and seatbelt is off' "$tmp/runs/chad-sessions/$session|1|0" "$(cat "$CHAD_TEST_LOG/$run.env")"
 check 'store is private' 700 "$(stat -f %Lp "$tmp/runs/chad-sessions/$session" 2>/dev/null || stat -c %a "$tmp/runs/chad-sessions/$session")"
 ref=$(field "$session" lastConversationRef)
 contains 'session remembers the newest chad conversation' "-$run" "$ref"
@@ -93,7 +103,7 @@ contains 'resume continues the latest conversation' $'--yolo\n' "$(cat "$CHAD_TE
 check 'resume passes --continue' 1 "$(grep -c -- --continue "$CHAD_TEST_LOG/$run2.argv")"
 contains 'configured model reaches chad' $'--model\nmlx-community/fixture' "$(cat "$CHAD_TEST_LOG/$run2.argv")"
 contains 'think budget reaches chad' $'--think-budget\n256' "$(cat "$CHAD_TEST_LOG/$run2.argv")"
-check 'sandbox on leaves seatbelt enabled' "$tmp/runs/chad-sessions/$session|" "$(cat "$CHAD_TEST_LOG/$run2.env")"
+check 'sandbox on leaves seatbelt enabled' "$tmp/runs/chad-sessions/$session||0" "$(cat "$CHAD_TEST_LOG/$run2.env")"
 check 'both runs share one session store' 2 "$(ls "$tmp/runs/chad-sessions/$session"/fixturehash/2*.json | wc -l | tr -d ' ')"
 unset TRASHTALK_CHAD_MODEL TRASHTALK_CHAD_THINK_BUDGET TRASHTALK_CHAD_SANDBOX
 check 'a zero think budget is not passed' 0 "$(@ Agent::ChadDriver argvFor: /bin/chad workspace: /w store: /s model: '' think: 0 sandbox: off promptFile: /p ref: '' | grep -c think-budget)"
@@ -113,6 +123,27 @@ echo 130 > "$(field "$run3" exitFile)"
 contains 'exit 130 is named as an interrupt' 'interrupted' "$(@ Agent::ChadDriver errorFor: "$run3")"
 echo 0 > "$(field "$run3" exitFile)"
 check 'exit 0 is a result' true "$(@ Agent::ChadDriver resultSeenFor: "$run3")"
+
+# chad's no-empty-diff gate rejects a reply-only turn as "no change passed a
+# check". That is a result when the deliveries were settled, never when not.
+mkdir "$tmp/nochange-workspace"
+session=$(@ Gusgus fresh: "$tmp/nochange-workspace")
+export CHAD_TEST_MODE=nochange
+@ Inbox send: reply-only to: "session:$session" from: chad-tester >/dev/null
+run4=$(@ Agent::Worker tickSession: "$session")
+settle
+check 'reply-only turn rejected by the no-change gate is a result' true "$(@ Agent::ChadDriver resultSeenFor: "$run4")"
+check 'settled reply-only turn succeeds' succeeded "$(field "$run4" state)"
+export CHAD_TEST_MODE=nochange_unsettled
+session=$(@ Gusgus fresh: "$tmp/nochange-workspace")
+@ Inbox send: unanswered to: "session:$session" from: chad-tester >/dev/null
+run5=$(@ Agent::Worker tickSession: "$session")
+settle
+check 'no-change stop is still a result for the worker to judge' true "$(@ Agent::ChadDriver resultSeenFor: "$run5")"
+check 'unsettled no-change turn is not a success' true "$([[ "$(field "$run5" state)" != succeeded ]] && echo true)"
+echo 1 > "$(field "$run3" exitFile)"
+check 'a guard stop stays a failure' false "$(@ Agent::ChadDriver resultSeenFor: "$run3")"
+unset CHAD_TEST_MODE
 
 # A missing executable records a diagnostic without launching.
 mapfile -t started < <(@ Agent::Run startFor: "$session" profile: chad)

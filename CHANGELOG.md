@@ -4,6 +4,10 @@
 
 ### Fixed
 
+- chad sessions no longer fail or loop on reply-only turns. chad's no-empty-diff
+  gate rejected a settled reply (exit 1, then two relaunches that redid the work);
+  the driver now disables chad's auto-continue and counts that stop as a result,
+  leaving the verdict to delivery settlement.
 - Starting a fresh Gusgus conversation from the focus view now uses the
   configured `gusgus.profile`. It used to copy the replaced session's backend, so
   a conversation begun on jcode stayed on jcode after the setting changed to chad.

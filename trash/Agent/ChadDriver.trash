@@ -13,7 +13,13 @@ package: Agent
 # produced is the newest file in the store once the run has saved.
 #
 # Exit status (chad 2.4.0): 0 the task ended on its own, 1 a guard or budget
-# stopped it, 130 interrupted. Only 0 counts as a result.
+# stopped it, 130 interrupted. 0 counts as a result. So does exit 1 when chad's
+# no-empty-diff gate rejected the model's own claim of being finished: chad
+# reads every task as a code change, and a reply-only turn lands none. The
+# Worker still judges the deliveries, so unsettled work is not a success.
+# chad's headless auto-continue is off (CHAD_AUTO_CONTINUE=0): it relaunches
+# that rejected turn, redoing settled work, and the Worker resumes unfinished
+# turns itself.
 #
 # Verified against chad's source, not a live model run. chad's yolo-mode
 # Seatbelt confines bash writes to the workspace, /tmp and ~/.chad, which blocks
@@ -41,7 +47,7 @@ ChadDriver subclass: Agent::Driver
   rawClassMethod: argvFor: executable workspace: workspace store: store model: model think: think sandbox: sandbox promptFile: promptFile ref: ref [
     jq -cn --arg exe "$1" --arg ws "$2" --arg store "$3" --arg model "$4" --arg think "$5" \
       --arg sandbox "$6" --arg prompt "$7" --arg ref "$8" '
-      ["env", "CHAD_SESSION_DIR=" + $store]
+      ["env", "CHAD_SESSION_DIR=" + $store, "CHAD_AUTO_CONTINUE=0"]
         + (if $sandbox == "on" then [] else ["CHAD_NO_SEATBELT=1"] end)
         + ["bash", "-c",
            "cd \"$1\" && prompt=$(cat \"$2\") && [ -n \"$prompt\" ] || exit 2; shift 2; exec \"$@\" -- \"$prompt\"",
@@ -97,16 +103,34 @@ ChadDriver subclass: Agent::Driver
     [[ -z "$newest" ]] || { newest=${newest##*/}; printf '%s\n' "${newest%.json}"; }
   ]
 
-  # Only a clean exit means the task ended on its own; exit 1 is a guard or
-  # budget stop and 130 an interrupt.
+  # A clean exit means the task ended on its own. Exit 1 with chad's
+  # no-empty-diff marker means the model finished but chad wanted a code change;
+  # any other exit 1 is a real guard or budget stop, and 130 an interrupt.
   rawClassMethod: resultSeenFor: run [
-    local exit_file code
+    local exit_file code log
     exit_file=$(@ "$1" exitFile)
     if [[ -n "$exit_file" && -f "$exit_file" ]]; then
       code=$(tr -d '[:space:]' < "$exit_file")
       [[ "$code" == 0 ]] && { echo true; return; }
+      if [[ "$code" == 1 ]]; then
+        log=$(@ "$1" errorLog)
+        if [[ -n "$log" && -f "$log" ]] && grep -qF 'but no change passed a check]' "$log"; then
+          echo true; return
+        fi
+      fi
     fi
     echo false
+  ]
+
+  # The Worker requires exit 0 and a seen result. When chad's no-empty-diff gate
+  # stopped a reply-only turn (resultSeenFor:), report a clean exit and keep
+  # chad's real status beside it; delivery settlement still decides the run.
+  rawClassMethod: outcomeOf: run [
+    local outcome
+    outcome=$(@ "$_RECEIVER" processOutcomeOf: "$1") || return 1
+    jq -c 'if .exit_code == 1 and .result_seen == true
+           then . + {chad_exit_code: 1, chad_stop: "no-change gate", exit_code: 0, error: ""}
+           else . end' <<<"$outcome"
   ]
 
   # Name the exit statuses chad defines; anything else falls back to stderr.

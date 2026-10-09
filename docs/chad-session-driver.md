@@ -2,8 +2,9 @@
 
 `Agent::ChadDriver` runs agent sessions on the [chad](https://github.com/nathansutton/chad)
 local coding agent (`chad-code`, MLX inference on Apple Silicon). Written
-against chad 2.4.0 by reading its source; **not yet qualified with a live model
-run**. Opt-in: it is not a default.
+against chad 2.4.0 by reading its source. A live run with the default model
+(Qwen3.8-27B) answered a one-line message through `trash-send`; longer tasks,
+delegation and concurrent runs are **not yet qualified**. Opt-in: it is not a default.
 
 ## Selecting chad
 
@@ -29,7 +30,8 @@ executable and version. Install with `@ Tools::Chad installCommand`.
 One detached process per delivery batch:
 
 ```
-env CHAD_SESSION_DIR=<run base>/chad-sessions/<session> [CHAD_NO_SEATBELT=1] \
+env CHAD_SESSION_DIR=<run base>/chad-sessions/<session> CHAD_AUTO_CONTINUE=0 \
+  [CHAD_NO_SEATBELT=1] \
   bash -c 'cd <workspace> && exec chad --yolo [--model M] [--think-budget N] \
            [--continue] -- "$(cat prompt.txt)"'
 ```
@@ -44,9 +46,18 @@ env CHAD_SESSION_DIR=<run base>/chad-sessions/<session> [CHAD_NO_SEATBELT=1] \
   saved conversation in the session's store after the run. The reference is
   recorded for inspection; resume depends on the store, not the id.
 - **Result.** Exit 0 means the task ended on its own; exit 1 a guard or budget
-  stopped it; exit 130 an interrupt. Only 0 is a result, and failures name the
-  status and keep the stderr tail. As with every driver, exit status does not
-  settle a delivery: the agent does that through `trash-send`.
+  stopped it; exit 130 an interrupt. chad reads every task as a code change and
+  its no-empty-diff gate rejects a turn that lands none, which is every
+  reply-only Gusgus turn: it prints `[stopped: ... no change passed a check]` and
+  exits 1. The driver treats that marker as a result and reports exit 0 (chad's
+  real status is kept as `chad_exit_code`), so the Worker decides by delivery
+  settlement. Any other exit 1 and 130 fail the run with a named reason and the
+  stderr tail. As with every driver, exit status does not settle a delivery: the
+  agent does that through `trash-send`.
+- **Auto-continue.** The driver sets `CHAD_AUTO_CONTINUE=0`. chad's headless
+  default relaunches a rejected turn twice, and each relaunch redoes work that
+  is already settled (a live run kept re-verifying its reply for minutes). The
+  Worker resumes unfinished turns itself.
 - **Output.** stdout is chad's final answer and stderr the trace; both are kept
   in the run directory.
 
@@ -63,7 +74,10 @@ useful for runs that never need to reach Trashtalk. The driver reports
 
 ## Not verified
 
-- That the local model follows the delegation prompt and calls `trash-send`.
+- That the local model follows the delegation prompt (it did reply and settle
+  an ordinary delivery).
+- The no-change marker match (`but no change passed a check]`) is chad 2.4.0 text.
+  If a chad update changes it, reply-only turns fail again, visibly, as exit 1.
 - Several chad processes at once on one machine (each loads its own model).
 - Behavior across chad versions: `Tools::Chad` pins 2.0.3 for install while this
   was read from 2.4.0.
