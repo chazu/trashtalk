@@ -4,6 +4,12 @@
 
 ### Fixed
 
+- Direct Gusgus conversation input works on one-shot harnesses such as chad. The
+  `live_input` capability now gates only input to a run that is still working;
+  an idle send launches a run for any driver. chad's user text and reply are
+  projected into the run's conversation log, taking the reply from its saved
+  conversation when the no-change gate leaves only a `[stopped: ...]` notice on
+  stdout.
 - chad sessions no longer fail or loop on reply-only turns. chad's no-empty-diff
   gate rejected a settled reply (exit 1, then two relaunches that redid the work);
   the driver now disables chad's auto-continue and counts that stop as a result,

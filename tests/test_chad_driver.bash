@@ -41,6 +41,13 @@ case "${CHAD_TEST_MODE:-success}" in
         echo '  [stopped: the model called done, but no change passed a check]' >&2
         exit 1 ;;
     interrupted) exit 130 ;;
+    convo_gate)
+        sleep 1
+        printf '{"messages":[{"role":"user","content":"q"},{"role":"assistant","content":"(Thinking: plan)\\n</think>\\n\\nFixture answer"}]}\n' > "$store/$sid.json"
+        echo '  [stopped: the model said it was finished, but no change passed a check]' >&2
+        echo "[stopped: the turn ended without applying a verified change - say 'continue' to resume]"
+        exit 1 ;;
+    convo_clean) sleep 1; echo 'Clean stdout answer'; exit 0 ;;
     wait) touch "$CHAD_TEST_LOG/$id.waiting"; while :; do sleep 1; done ;;
 esac
 ts="$TRASHTALK_RUN_DIR/$id/trash-send"
@@ -143,6 +150,33 @@ check 'no-change stop is still a result for the worker to judge' true "$(@ Agent
 check 'unsettled no-change turn is not a success' true "$([[ "$(field "$run5" state)" != succeeded ]] && echo true)"
 echo 1 > "$(field "$run3" exitFile)"
 check 'a guard stop stays a failure' false "$(@ Agent::ChadDriver resultSeenFor: "$run3")"
+unset CHAD_TEST_MODE
+
+# Direct conversation input launches without a live-input driver and projects
+# both sides into the run's conversation log. The no-change gate leaves only a
+# stop notice on stdout, so that answer comes from chad's saved conversation.
+mkdir "$tmp/convo-workspace"
+session=$(@ Gusgus fresh: "$tmp/convo-workspace")
+export CHAD_TEST_MODE=convo_gate
+check 'idle conversation input is acknowledged' 'Input sent directly to the session' "$(@ "$session" input: 'hello chad' 2>&1)"
+convo=$(@ "$session" activeRun)
+convo_dir="$TRASHTALK_RUN_DIR/$convo"
+for i in {1..100}; do [[ -f "$convo_dir/exit" ]] && break; sleep .1; done
+check 'conversation run is a conversation' conversation "$(field "$convo" purpose)"
+@ Agent::Worker reconcileRun: "$convo" >/dev/null
+@ Agent::ChadDriver outcomeOf: "$convo" >/dev/null
+check 'conversation run succeeds' succeeded "$(field "$convo" state)"
+check 'user text is projected' 'hello chad' "$(jq -rs '[.[]|select(.kind=="user")][0].text' "$convo_dir/conversation.jsonl")"
+check 'gate stop projects the saved answer' 'Fixture answer' "$(jq -rs '[.[]|select(.kind=="assistant_delta")][0].text' "$convo_dir/conversation.jsonl")"
+check 'answer is projected once' 1 "$(jq -s '[.[]|select(.kind=="assistant_delta")]|length' "$convo_dir/conversation.jsonl")"
+session=$(@ Gusgus fresh: "$tmp/convo-workspace")
+export CHAD_TEST_MODE=convo_clean
+@ "$session" input: 'again' >/dev/null 2>&1
+convo=$(@ "$session" activeRun)
+convo_dir="$TRASHTALK_RUN_DIR/$convo"
+for i in {1..100}; do [[ -f "$convo_dir/exit" ]] && break; sleep .1; done
+@ Agent::Worker reconcileRun: "$convo" >/dev/null
+check 'clean exit projects stdout' 'Clean stdout answer' "$(jq -rs '[.[]|select(.kind=="assistant_delta")][0].text' "$convo_dir/conversation.jsonl")"
 unset CHAD_TEST_MODE
 
 # A missing executable records a diagnostic without launching.

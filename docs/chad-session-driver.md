@@ -83,3 +83,13 @@ useful for runs that never need to reach Trashtalk. The driver reports
   was read from 2.4.0.
 
 Tests: `tests/test_chad_driver.bash` uses a fixture `chad` on `PATH`.
+
+## Direct conversation
+
+Gusgus conversation input launches one chad run per send (`live_input` is false,
+so a send while a run is working is refused until it finishes or is stopped).
+The driver appends the user's text to the run's `conversation.jsonl` at launch
+and the reply when the outcome is reconciled. The reply is chad's stdout on a
+clean exit. A reply-only turn ends at chad's no-change gate with only a
+`[stopped: ...]` notice on stdout, so the driver reads the last assistant
+message from the newest saved conversation instead, after its `</think>`.

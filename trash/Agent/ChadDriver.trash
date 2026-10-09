@@ -79,15 +79,22 @@ ChadDriver subclass: Agent::Driver
   # OS boundary: locate chad and reuse Agent::Driver's launcher. Agent::Driver
   # launchRef: has recorded the error log and captures stderr.
   rawClassMethod: launchPreparedRef: ref promptFile: promptFile run: run token: token [
-    local ref="$1" prompt="$2" run="$3" token="$4" executable workspace store model think sandbox argv
+    local ref="$1" prompt="$2" run="$3" token="$4" executable workspace store model think sandbox argv directory
     executable=$(@ Tools::Chad path)
     [[ -n "$executable" ]] || { @ "$_RECEIVER" reject: "chad is not installed. Install it with: $(@ Tools::Chad installCommand)"; return 1; }
     model=$(@ "$_RECEIVER" model) || return 1
     think=$(@ "$_RECEIVER" thinkBudget) || return 1
     sandbox=$(@ "$_RECEIVER" sandbox) || return 1
     workspace=$(@ "$run" executionWorkspace)
+    directory=$(@ Agent::Driver runDirFor: "$run")
     store=$(@ "$_RECEIVER" storeFor: "$run") || return 1
     argv=$(@ "$_RECEIVER" argvFor: "$executable" workspace: "$workspace" store: "$store" model: "$model" think: "$think" sandbox: "$sandbox" promptFile: "$prompt" ref: "$ref") || return 1
+    # Conversation runs (marked by their context reminder) project the user's
+    # text into the run's conversation log, which the session view renders.
+    # Worker deliveries keep their inbox history as the only transcript.
+    if [[ -s "$directory/system-reminder.txt" && -s "$prompt" ]]; then
+      jq -Rsc --argjson time "${EPOCHREALTIME:-0}" '{kind:"user",text:.,time:($time*1000|floor)}' "$prompt" >> "$directory/conversation.jsonl" || return 1
+    fi
     @ "$_RECEIVER" launchArgv: "$argv" promptFile: "$prompt" run: "$run" token: "$token" ref: "$ref"
   ]
 
@@ -101,6 +108,24 @@ ChadDriver subclass: Agent::Driver
     [[ -d "$base" ]] || return 0
     newest=$(ls -t "$base"/*/2*.json 2>/dev/null | head -n 1)
     [[ -z "$newest" ]] || { newest=${newest##*/}; printf '%s\n' "${newest%.json}"; }
+  ]
+
+  # The reply a conversation shows. A clean exit prints it on stdout. chad's
+  # no-empty-diff gate stops a reply-only turn with only a "[stopped: ...]"
+  # notice there, so the answer is the last assistant message in the newest
+  # saved conversation, after its thinking.
+  rawClassMethod: answerFor: run [
+    local directory session base ref file text
+    directory=$(@ Agent::Driver runDirFor: "$1")
+    text=$(cat "$directory/stdout.log" 2>/dev/null)
+    if [[ -n "$text" && "$text" != '[stopped:'* ]]; then printf '%s\n' "$text"; return 0; fi
+    session=$(@ "$1" session)
+    base="${directory%/*}/chad-sessions/$session"
+    ref=$(@ "$_RECEIVER" harnessConversationRefFor: "$1")
+    file=$(ls "$base"/*/"$ref".json 2>/dev/null | head -n 1)
+    [[ -n "$ref" && -n "$file" ]] && text=$(jq -r '[.messages[] | select(.role == "assistant")] | last // {} | .content // ""
+      | select(contains("<tool_call>") | not) | split("</think>") | last | sub("^\\s+"; "") | sub("\\s+$"; "")' "$file")
+    printf '%s\n' "$text"
   ]
 
   # A clean exit means the task ended on its own. Exit 1 with chad's
@@ -126,8 +151,19 @@ ChadDriver subclass: Agent::Driver
   # stopped a reply-only turn (resultSeenFor:), report a clean exit and keep
   # chad's real status beside it; delivery settlement still decides the run.
   rawClassMethod: outcomeOf: run [
-    local outcome
+    local outcome directory answer
     outcome=$(@ "$_RECEIVER" processOutcomeOf: "$1") || return 1
+    # Conversation runs project chad's final answer into the run's conversation
+    # log once; the session view renders it as the reply. The stamp keeps
+    # repeated reconciliation from duplicating the entry.
+    directory=$(@ Agent::Driver runDirFor: "$1")
+    if [[ $(jq -r .result_seen <<<"$outcome") == true && -s "$directory/system-reminder.txt" && ! -e "$directory/assistant-recorded" ]]; then
+      answer=$(@ "$_RECEIVER" answerFor: "$1")
+      if [[ -n "$answer" ]]; then
+        { printf '%s' "$answer" | jq -Rsc --argjson time "${EPOCHREALTIME:-0}" '{kind:"assistant_delta",text:.,time:($time*1000|floor)}' >> "$directory/conversation.jsonl" &&
+          touch "$directory/assistant-recorded"; } || return 1
+      fi
+    fi
     jq -c 'if .exit_code == 1 and .result_seen == true
            then . + {chad_exit_code: 1, chad_stop: "no-change gate", exit_code: 0, error: ""}
            else . end' <<<"$outcome"

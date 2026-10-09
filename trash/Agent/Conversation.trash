@@ -36,8 +36,6 @@ Conversation subclass: Object
     run := @ self requireInputReady: session.
     profile := @ session backendProfile.
     driver := @ Agent::Worker driverFor: profile.
-    allowed := (@ driver capabilities) jsonTextAt: 'live_input'.
-    (allowed ~= 'true') ifTrue: [^ @ Require reject: 'This driver does not support direct session input'].
     (run notEmpty) ifTrue: [
       ignored := @ Agent::Worker reconcileRun: run.
       ignored := @ session reload.
@@ -46,6 +44,8 @@ Conversation subclass: Object
     (run notEmpty) ifTrue: [
       purpose := @ run purpose.
       (purpose = 'compact') ifTrue: [^ @ Require reject: 'Wait for context compaction to finish before sending input'].
+      allowed := (@ driver capabilities) jsonTextAt: 'live_input'.
+      (allowed ~= 'true') ifTrue: [^ @ Require reject: 'This driver cannot take input while its run is working; wait for the run to finish or stop it, then send again'].
       workspace := @ run executionWorkspace.
       role := @ session role.
       ignored := @ role reload.

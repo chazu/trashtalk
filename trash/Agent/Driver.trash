@@ -11,6 +11,7 @@ package: Agent
 #   capabilities                                   JSON
 #   launch: promptFile run: runId token: token     prints pid
 #   resume: ref promptFile: f run: runId token: t  prints pid
+#   awaitInputFor: runId                           direct-input acknowledgement
 #   outcomeOf: runId                               JSON
 #   interrupt: runId                               'true' | 'false'
 Driver subclass: Object
@@ -59,6 +60,20 @@ Driver subclass: Object
 
   classMethod: resume: ref promptFile: promptFile run: run token: token [
     ^ @ self launchRef: ref promptFile: promptFile run: run token: token
+  ]
+
+  # One-shot harnesses accept their input at launch, not while working: acknowledge
+  # once the detached process is alive. A fast exit before acknowledgement means
+  # the input was never taken, so the sender retains its draft.
+  rawClassMethod: awaitInputFor: run [
+    local run="$1" directory
+    directory=$(@ Agent::Driver runDirFor: "$run")
+    for attempt in {1..50}; do
+      [[ "$(@ "$run" isProcessAlive)" == true ]] && { echo 'Input sent directly to the session'; return 0; }
+      [[ -f "$directory/exit" ]] && break
+      sleep 0.1
+    done
+    { echo 'Session input was not acknowledged; inspect the conversation before retrying' >&2; return 1; }
   ]
 
   # Filesystem boundary: record the run's error log before preparation, so a
