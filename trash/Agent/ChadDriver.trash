@@ -1,0 +1,128 @@
+package: Agent
+
+# Agent::ChadDriver - Session driver for the chad local coding agent
+# (https://github.com/nathansutton/chad, `chad-code` on PyPI).
+# One detached headless `chad --yolo -- <prompt>` process per delivery batch.
+# chad takes its prompt as a positional argument, so a bash wrapper reads the
+# worker's prompt file into it. stdout is the final answer only and the trace
+# goes to stderr; chad prints no session id.
+#
+# Continuity: each Trashtalk session gets its own CHAD_SESSION_DIR, so
+# `--continue` (chad's most recent conversation for the directory) always means
+# this session's latest. Every resume forks to a new chad id; the id a run
+# produced is the newest file in the store once the run has saved.
+#
+# Exit status (chad 2.4.0): 0 the task ended on its own, 1 a guard or budget
+# stopped it, 130 interrupted. Only 0 counts as a result.
+#
+# Verified against chad's source, not a live model run. chad's yolo-mode
+# Seatbelt confines bash writes to the workspace, /tmp and ~/.chad, which blocks
+# trash-send's writes to the Trashtalk database. The driver therefore sets
+# CHAD_NO_SEATBELT unless chad.sandbox is on, and reports sandbox:false.
+ChadDriver subclass: Agent::Driver
+
+  classMethod: capabilities [
+    ^ '{"schema_version":1,"headless":true,"resume":true,"queued_input":true,"stop":true,"live_input":false,"sandbox":false}'
+  ]
+
+  # Empty means chad's shipped default model.
+  classMethod: model [ ^ @ Agent::ChadSettings model ]
+
+  # 0 leaves chad's own default (no soft cap).
+  classMethod: thinkBudget [ ^ @ Agent::ChadSettings thinkBudget ]
+
+  # 'off' disables chad's Seatbelt so trash-send can write the database.
+  classMethod: sandbox [ ^ @ Agent::ChadSettings sandbox ]
+
+  # JSON construction boundary. The wrapper changes into the workspace (chad
+  # keys its sessions by directory) and reads the prompt file into the
+  # positional argument; an empty prompt would start the interactive TUI, so
+  # it exits 2 instead. A non-empty ref resumes with --continue.
+  rawClassMethod: argvFor: executable workspace: workspace store: store model: model think: think sandbox: sandbox promptFile: promptFile ref: ref [
+    jq -cn --arg exe "$1" --arg ws "$2" --arg store "$3" --arg model "$4" --arg think "$5" \
+      --arg sandbox "$6" --arg prompt "$7" --arg ref "$8" '
+      ["env", "CHAD_SESSION_DIR=" + $store]
+        + (if $sandbox == "on" then [] else ["CHAD_NO_SEATBELT=1"] end)
+        + ["bash", "-c",
+           "cd \"$1\" && prompt=$(cat \"$2\") && [ -n \"$prompt\" ] || exit 2; shift 2; exec \"$@\" -- \"$prompt\"",
+           "chad-driver", $ws, $prompt, $exe, "--yolo"]
+        + (if $model != "" then ["--model", $model] else [] end)
+        + (if ($think | test("^[1-9][0-9]*$")) then ["--think-budget", $think] else [] end)
+        + (if $ref != "" then ["--continue"] else [] end)'
+  ]
+
+  # chad's per-session store, next to the run directories. Created private:
+  # it holds full tool arguments and results.
+  rawClassMethod: storeFor: run [
+    local session base
+    session=$(@ "$1" session)
+    base=$(@ Agent::Driver runDirFor: "$1")
+    base="${base%/*}/chad-sessions"
+    (umask 077; mkdir -p "$base/$session") || return 1
+    printf '%s\n' "$base/$session"
+  ]
+
+  # _throw carries runtime error state but does not write stderr; persist the
+  # diagnostic explicitly so detached worker failures remain inspectable.
+  rawClassMethod: reject: reason [
+    printf '%s\n' "$1" >&2
+    _throw 'DriverError' "$1"
+    return 1
+  ]
+
+  # OS boundary: locate chad and reuse Agent::Driver's launcher. Agent::Driver
+  # launchRef: has recorded the error log and captures stderr.
+  rawClassMethod: launchPreparedRef: ref promptFile: promptFile run: run token: token [
+    local ref="$1" prompt="$2" run="$3" token="$4" executable workspace store model think sandbox argv
+    executable=$(@ Tools::Chad path)
+    [[ -n "$executable" ]] || { @ "$_RECEIVER" reject: "chad is not installed. Install it with: $(@ Tools::Chad installCommand)"; return 1; }
+    model=$(@ "$_RECEIVER" model) || return 1
+    think=$(@ "$_RECEIVER" thinkBudget) || return 1
+    sandbox=$(@ "$_RECEIVER" sandbox) || return 1
+    workspace=$(@ "$run" executionWorkspace)
+    store=$(@ "$_RECEIVER" storeFor: "$run") || return 1
+    argv=$(@ "$_RECEIVER" argvFor: "$executable" workspace: "$workspace" store: "$store" model: "$model" think: "$think" sandbox: "$sandbox" promptFile: "$prompt" ref: "$ref") || return 1
+    @ "$_RECEIVER" launchArgv: "$argv" promptFile: "$prompt" run: "$run" token: "$token" ref: "$ref"
+  ]
+
+  # chad reports no id. The newest saved conversation in this session's store
+  # is the one the run just wrote; empty falls back to the recorded reference.
+  rawClassMethod: harnessConversationRefFor: run [
+    local session base newest
+    session=$(@ "$1" session)
+    base=$(@ Agent::Driver runDirFor: "$1")
+    base="${base%/*}/chad-sessions/$session"
+    [[ -d "$base" ]] || return 0
+    newest=$(ls -t "$base"/*/2*.json 2>/dev/null | head -n 1)
+    [[ -z "$newest" ]] || { newest=${newest##*/}; printf '%s\n' "${newest%.json}"; }
+  ]
+
+  # Only a clean exit means the task ended on its own; exit 1 is a guard or
+  # budget stop and 130 an interrupt.
+  rawClassMethod: resultSeenFor: run [
+    local exit_file code
+    exit_file=$(@ "$1" exitFile)
+    if [[ -n "$exit_file" && -f "$exit_file" ]]; then
+      code=$(tr -d '[:space:]' < "$exit_file")
+      [[ "$code" == 0 ]] && { echo true; return; }
+    fi
+    echo false
+  ]
+
+  # Name the exit statuses chad defines; anything else falls back to stderr.
+  rawClassMethod: harnessErrorFor: run [
+    local exit_file code log tail
+    exit_file=$(@ "$1" exitFile)
+    [[ -n "$exit_file" && -f "$exit_file" ]] || return 0
+    code=$(tr -d '[:space:]' < "$exit_file")
+    case "$code" in
+      1) printf 'chad stopped before finishing the task (guard or budget stop, exit 1)' ;;
+      130) printf 'chad was interrupted (exit 130)' ;;
+      *) return 0 ;;
+    esac
+    log=$(@ "$1" errorLog)
+    if [[ -n "$log" && -f "$log" ]]; then
+      tail=$(tail -c 2048 "$log")
+      [[ -z "$tail" ]] || printf ': %s' "$tail"
+    fi
+  ]

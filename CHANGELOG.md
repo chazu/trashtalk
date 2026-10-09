@@ -4,6 +4,12 @@
 
 ### Added
 
+- `chad` session harness: `gusgus.profile = "chad"` runs sessions on the chad local
+  coding agent through `Agent::ChadDriver`. Opt-in and not yet qualified with a
+  live model run. Each session has its own chad store so `--continue` is
+  deterministic; the driver turns chad's Seatbelt sandbox off by default because
+  it blocks `trash-send` (`chad.sandbox`). `chad.model` and `chad.thinkBudget`
+  tune it. See `docs/chad-session-driver.md`.
 - `machines/<name>/` and `bin/trash-machine`: a machine's Gusgus config and the
   settings of the tools around it (omlx, pi, Hindsight) live in the repo.
   `trash-machine diff|apply NAME` links `trashtalk.config` and merges the JSON

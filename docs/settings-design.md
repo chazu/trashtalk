@@ -109,7 +109,7 @@ class is the singleton.
 ```smalltalk
 GusgusSettings subclass: Settings
   prefix: gusgus
-  setting: profile type: #(jcode maki codex pi shell) default: 'jcode'
+  setting: profile type: #(jcode maki codex pi chad shell) default: 'jcode'
     doc: 'Harness for new Gusgus sessions'
 ```
 

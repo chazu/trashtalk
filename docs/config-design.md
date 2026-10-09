@@ -114,7 +114,7 @@ so `at:` forks nothing: no jq and no sqlite. The file is re-read on each
 
 | Key | Env override | Type | Default | Description |
 | --- | --- | --- | --- | --- |
-| `gusgus.profile` | `TRASHTALK_GUSGUS_PROFILE` | one of `jcode maki codex pi shell` | `jcode` | Harness for new Gusgus sessions |
+| `gusgus.profile` | `TRASHTALK_GUSGUS_PROFILE` | one of `jcode maki codex pi chad shell` | `jcode` | Harness for new Gusgus sessions |
 | `jcode.model` | `TRASHTALK_JCODE_MODEL` | string | `gpt-5.6-terra` | Model for Jcode sessions |
 | `jcode.provider` | `TRASHTALK_JCODE_PROVIDER` | string | `openai` | `openai` (subscription login) or the name of a local OpenAI-compatible profile |
 | `jcode.baseUrl` | `TRASHTALK_JCODE_BASE_URL` | string | empty | Base URL for a local Jcode provider |

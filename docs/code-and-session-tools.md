@@ -1,6 +1,6 @@
 # Code and session Tool adapters
 
-**Status:** Current CLI adapters; persistent memory and a Chad session driver remain future work.
+**Status:** Current CLI adapters; persistent memory remains future work. Chad also has an opt-in session driver.
 
 `Tools::Git`, `Tools::Roam`, `Tools::AstGrep`, `Tools::Cass`, `Tools::Chad`,
 and `Tools::Worktrunk` are available
@@ -216,8 +216,9 @@ parsed into a fabricated final-answer or session-ID protocol.
 
 `continueLatest:` means the most recent saved conversation in that directory;
 Chad forks it. It does not target a Trashtalk Agent::Session ID and is unsuitable
-for concurrent identities sharing one directory. This Tool is not registered
-as a resident `Agent::Driver` or selected as Gusgus's harness. Exit 0 means the
+for concurrent identities sharing one directory. This Tool is not
+itself a session harness; `Agent::ChadDriver` (see
+[chad-session-driver.md](chad-session-driver.md)) is the opt-in resident driver. Exit 0 means the
 process finished successfully; it does not complete an Assignment.
 
 ## Verification

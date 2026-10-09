@@ -151,6 +151,14 @@ Trash subclass: Object
           printf 'bad\t%s\n' "pi is missing or cannot run; $(@ Pi installGuidance)"
         fi
         ;;
+      chad)
+        session_executable=$(@ Tools::Chad path)
+        if [[ -n "$session_executable" ]] && session_version=$("$session_executable" --version 2>&1); then
+          printf 'ok\t%s\n' "chad found ($session_executable); $session_version"
+        else
+          printf 'bad\t%s\n' "chad is missing or cannot run; $(@ Tools::Chad installCommand)"
+        fi
+        ;;
     esac
   ]
 

@@ -20,6 +20,7 @@ Worker subclass: Object
       'maki' -> [ 'Agent::MakiDriver' ].
       'jcode' -> [ 'Agent::JcodeDriver' ].
       'pi' -> [ 'Agent::PiDriver' ].
+      'chad' -> [ 'Agent::ChadDriver' ].
       #('codex' 'assistant-low-power' '') -> [ 'Agent::CodexDriver' ]
     } otherwise: [ @ WorkerError signal: 'Unknown backend profile ' , profile ]
   ]

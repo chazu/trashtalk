@@ -1,0 +1,11 @@
+package: Agent
+
+# Agent::ChadSettings - settings read by Agent::ChadDriver.
+ChadSettings subclass: Settings
+  prefix: chad
+  setting: model type: string default: ''
+    doc: "Model for chad sessions (HF repo, local dir or GGUF); empty uses chad's shipped default"
+  setting: thinkBudget type: integer default: 0
+    doc: "Soft cap in tokens for each thinking step (--think-budget); 0 leaves chad's default (off)"
+  setting: sandbox type: #(off on) default: 'off'
+    doc: "chad confines yolo-mode bash writes to the workspace, which blocks trash-send; off sets CHAD_NO_SEATBELT"
