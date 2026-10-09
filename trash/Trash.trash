@@ -25,6 +25,66 @@ Trash subclass: Object
     ^ @ Inbox named: user
   ]
 
+  # Print the managed Bash startup block. The installer below replaces this
+  # whole block, so users can run it again after Trashtalk moves.
+  rawMethod: bashShortcutConfig [
+    cat <<CONFIG
+# >>> trashtalk bash shortcuts >>>
+export TRASHTALK_DIR=$(printf '%q' "$TRASHTALK_DIR")
+if ! declare -F @ >/dev/null && [[ -f "\$TRASHTALK_DIR/lib/trash.bash" ]]; then
+  source "\$TRASHTALK_DIR/lib/trash.bash"
+fi
+if declare -F @ >/dev/null; then
+  trashtalk_focus_gusgus() { @ Gusgus focusCurrent; }
+  trashtalk_browse_code() { @ Trash browse; }
+  trashtalk_browse_inbox() { @ "\$(@ Trash userInbox)" browse; }
+  bind -x '"\eu": trashtalk_focus_gusgus'
+  bind -x '"\ey": trashtalk_browse_code'
+  bind -x '"\ei": trashtalk_browse_inbox'
+fi
+# <<< trashtalk bash shortcuts <<<
+CONFIG
+  ]
+
+  # Install or replace the managed Bash shortcut block. Set TRASHTALK_BASHRC
+  # to target another file, for example when preparing a dotfiles repository.
+  rawMethod: installBashShortcuts [
+    local bashrc="${TRASHTALK_BASHRC:-$HOME/.bashrc}"
+    local start='# >>> trashtalk bash shortcuts >>>'
+    local end='# <<< trashtalk bash shortcuts <<<'
+    local config next backup
+
+    mkdir -p "$(dirname "$bashrc")" || return 1
+    [[ -e "$bashrc" ]] || : > "$bashrc" || return 1
+    [[ -f "$bashrc" ]] || { printf 'Error: Bash startup path is not a regular file: %s\n' "$bashrc" >&2; return 1; }
+
+    config=$(@ "$_RECEIVER" bashShortcutConfig) || return 1
+    next=$(mktemp "$(dirname "$bashrc")/.trashtalk-bashrc.XXXXXX") || return 1
+    if ! awk -v start="$start" -v end="$end" '
+      $0 == start { skipping = 1; found = 1; next }
+      $0 == end { if (!skipping) exit 1; skipping = 0; next }
+      !skipping { print }
+      END { if (skipping) exit 1 }
+    ' "$bashrc" > "$next"; then
+      rm -f "$next"
+      printf 'Error: malformed Trashtalk shortcut block in %s\n' "$bashrc" >&2
+      return 1
+    fi
+    if [[ -s "$next" ]] && [[ $(tail -c 1 "$next" | od -An -t x1) != *0a* ]]; then printf '\n' >> "$next"; fi
+    printf '%s\n' "$config" >> "$next"
+
+    if cmp -s "$bashrc" "$next"; then
+      rm -f "$next"
+      printf 'Trashtalk Bash shortcuts already installed in %s\n' "$bashrc"
+      return 0
+    fi
+
+    backup="${bashrc}.bak-trashtalk-$(date +%Y%m%d%H%M%S)"
+    cp -p "$bashrc" "$backup" || { rm -f "$next"; return 1; }
+    mv "$next" "$bashrc" || { rm -f "$next"; return 1; }
+    printf 'Installed Trashtalk Bash shortcuts in %s\nBackup: %s\nRestart Bash or run: source %q\n' "$bashrc" "$backup" "$bashrc"
+  ]
+
   # Get system information
   rawMethod: info [
     echo "=== Trash System Information ==="
@@ -537,6 +597,7 @@ Trash subclass: Object
     echo "=== Trash System Commands ==="
     printf "$row" '@ Trash info' 'Show system information'
     printf "$row" '@ Trash doctor' 'Diagnose environment/setup issues'
+    printf "$row" '@ Trash installBashShortcuts' 'Install Alt-U, Alt-Y and Alt-I in .bashrc'
     printf "$row" '@ Trash userInbox' 'Return your Inbox instance'
     printf "$row" '@ Trash listObjects' 'List all objects'
     printf "$row" '@ Trash listTraits' 'List all traits'

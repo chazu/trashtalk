@@ -34,6 +34,16 @@ Add `source ~/.trashtalk/lib/trash.bash` to your Bash startup file. If installed
 elsewhere, set `TRASHTALK_DIR` to that checkout, `TRASHDIR` to its `trash`
 directory, and `SQLITE_JSON_DB` to its `instances.db` before sourcing the
 runtime; each defaults to a path under `~/.trashtalk` independently.
+To install the standard Readline shortcuts, send this after loading Trashtalk:
+
+```bash
+@ Trash installBashShortcuts
+```
+
+It adds one managed block to `.bashrc`, backs up that file before a change, and
+is safe to run again. Alt-U opens the current Gusgus composer, Alt-Y opens the
+source browser, and Alt-I opens the user inbox. Set `TRASHTALK_BASHRC` to write
+the block into a different Bash startup file.
 `@ Trash doctor` checks dependencies and optional integrations; with the Maki
 profile selected, it can also install a missing Maki executable.
 

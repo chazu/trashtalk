@@ -2,6 +2,8 @@
 
 # Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TRASHTALK_DIR="${TRASHTALK_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+export TRASHTALK_DIR
 
 # Trashtalk needs Bash 4.4+ (including NUL-delimited `mapfile -d` for exact argv). macOS
 # ships bash 3.2 as /bin/bash, where sourcing this file dies with a cryptic
