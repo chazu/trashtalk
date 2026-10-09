@@ -27,20 +27,11 @@ Config subclass: Object
   # Remove the key from the named preferences class.
   classPrimitive: reset: key in: preferencesClass calls: trash_config_reset
 
-  # Every key with its effective value and source (env, preferences, file, default).
+  # Every key with its effective value and source (env, preferences, default).
   classPrimitive: list calls: trash_config_list
 
   # Every compiled preferences class; the active one is marked with "*".
   classPrimitive: preferences calls: trash_config_preferences
-
-  # Write a preferences class in trash/user/ holding the legacy config file's values.
-  classPrimitive: import: name calls: trash_config_import
-
-  # The same, as a subclass of an existing preferences class.
-  classPrimitive: import: name subclassing: superclass calls: trash_config_import
-
-  # The legacy config file's path, whether or not it exists.
-  classPrimitive: path calls: trash_config_path
 
   # Doctor findings, one "ok|warn|bad<TAB>message" line each.
   classPrimitive: check calls: trash_config_check

@@ -8,8 +8,6 @@ declare -gA _TRASH_CONFIG_ENV=() _TRASH_CONFIG_TYPE=() _TRASH_CONFIG_DEFAULT=() 
 declare -gA _TRASH_CONFIG_GROUP=() _TRASH_SETTINGS_PREFIX=() _TRASH_SETTINGS_SOURCE=()
 declare -gA _TRASH_PREFS_PARENT=() _TRASH_PREFS_HOST=() _TRASH_PREFS_SOURCE=() _TRASH_PREFS_HASH=()
 declare -gA _TRASH_PREFS_VALUES=()
-declare -gA _TRASH_CONFIG_FILE_VALUES=() _TRASH_CONFIG_FILE_LINE=()
-declare -ga _TRASH_CONFIG_FILE_ORDER=() _TRASH_CONFIG_FILE_DUPES=() _TRASH_CONFIG_FILE_ERRORS=()
 _TRASH_CONFIG_LOADED=''
 
 # The build generates .settings.bash from every Settings group and Preferences
@@ -64,78 +62,6 @@ _trash_config_load() {
 
 # Force the next read to source the table, after this process rebuilt it.
 _trash_config_unload() { _TRASH_CONFIG_LOADED=''; }
-
-_TRASH_CONFIG_KEY_RE='^[[:space:]]*([A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)*)[[:space:]]*=[[:space:]]*(.*)$'
-_TRASH_CONFIG_QUOTED_RE='^"([^"\\]*)"[[:space:]]*(#.*)?$'
-_TRASH_CONFIG_BARE_RE='^(true|false|[+-]?[0-9]+)[[:space:]]*(#.*)?$'
-_TRASH_CONFIG_BLANK_RE='^[[:space:]]*(#.*)?$'
-
-# Sets _tc_file to the user file, or empty when user config is disabled. An
-# explicit TRASHTALK_CONFIG is honored even when the default file is skipped.
-_trash_config_file() {
-    if [[ -n ${TRASHTALK_CONFIG:-} ]]; then
-        _tc_file=$TRASHTALK_CONFIG
-    elif [[ -n ${TRASHTALK_SKIP_USER_CONFIG:-} ]]; then
-        _tc_file=''
-    else
-        _tc_file=${XDG_CONFIG_HOME:-$HOME/.config}/trashtalk/config
-    fi
-}
-
-# Parse one line. Sets _tc_kind (blank, entry, error), and _tc_key,
-# _tc_value, _tc_bare, _tc_comment for entries or _tc_error for errors.
-_trash_config_parse_line() {
-    local rest
-    _tc_key='' _tc_value='' _tc_bare='' _tc_comment='' _tc_error=''
-    if [[ $1 =~ $_TRASH_CONFIG_BLANK_RE ]]; then
-        _tc_kind=blank; return
-    fi
-    _tc_kind=error
-    if [[ $1 =~ ^[[:space:]]*\[ ]]; then
-        _tc_error='table headers are not supported; write dotted keys such as jcode.model = "..."'
-        return
-    fi
-    if [[ ! $1 =~ $_TRASH_CONFIG_KEY_RE ]]; then
-        _tc_error='expected key = value'; return
-    fi
-    _tc_key=${BASH_REMATCH[1]} rest=${BASH_REMATCH[3]}
-    if [[ $rest =~ $_TRASH_CONFIG_QUOTED_RE ]]; then
-        _tc_value=${BASH_REMATCH[1]} _tc_comment=${BASH_REMATCH[2]}
-    elif [[ $rest =~ $_TRASH_CONFIG_BARE_RE ]]; then
-        _tc_value=${BASH_REMATCH[1]#+} _tc_comment=${BASH_REMATCH[2]} _tc_bare=1
-    else
-        _tc_error='value must be a "quoted string" without quotes or backslashes, an integer, or true/false'
-        return
-    fi
-    _tc_kind=entry
-}
-
-# Read a config file into _TRASH_CONFIG_FILE_VALUES (last duplicate wins),
-# _TRASH_CONFIG_FILE_LINE, _TRASH_CONFIG_FILE_ORDER, _TRASH_CONFIG_FILE_DUPES
-# and _TRASH_CONFIG_FILE_ERRORS. Returns 1 when any line has a syntax error.
-_trash_config_scan() {
-    local line number=0
-    declare -gA _TRASH_CONFIG_FILE_VALUES=() _TRASH_CONFIG_FILE_LINE=()
-    declare -ga _TRASH_CONFIG_FILE_ORDER=() _TRASH_CONFIG_FILE_DUPES=() _TRASH_CONFIG_FILE_ERRORS=()
-    [[ -f $1 ]] || return 0
-    while IFS= read -r line || [[ -n $line ]]; do
-        number=$((number + 1))
-        _trash_config_parse_line "$line"
-        case $_tc_kind in
-            error) _TRASH_CONFIG_FILE_ERRORS+=("$1:$number: $_tc_error") ;;
-            entry)
-                if [[ -n ${_TRASH_CONFIG_FILE_LINE[$_tc_key]:-} ]]; then
-                    _TRASH_CONFIG_FILE_DUPES+=("$_tc_key")
-                else
-                    _TRASH_CONFIG_FILE_ORDER+=("$_tc_key")
-                fi
-                _TRASH_CONFIG_FILE_VALUES[$_tc_key]=$_tc_value
-                _TRASH_CONFIG_FILE_LINE[$_tc_key]=$number
-                ;;
-        esac
-    done < "$1"
-    ((${#_TRASH_CONFIG_FILE_ERRORS[@]} == 0))
-}
 
 _TRASH_CONFIG_LIB=${BASH_SOURCE[0]%/*}
 _TRASH_PREFS_LINE_RE='^([[:space:]]*)([A-Za-z_][A-Za-z0-9_]*(::[A-Za-z_][A-Za-z0-9_]*)?)[[:space:]]+([A-Za-z][A-Za-z0-9]*):(.*)$'
@@ -237,21 +163,6 @@ _trash_config_resolve() {
         fi
         class=${_TRASH_PREFS_PARENT[$class]:-}
     done
-    _trash_config_file
-    if [[ -n $_tc_file ]]; then
-        if ! _trash_config_scan "$_tc_file"; then
-            _throw ConfigurationError "${_TRASH_CONFIG_FILE_ERRORS[0]}"
-            return 1
-        fi
-        if [[ -n ${_TRASH_CONFIG_FILE_VALUES[$key]+set} ]]; then
-            _tc_value=${_TRASH_CONFIG_FILE_VALUES[$key]} _tc_source=file
-            if ! _trash_config_valid "$key" "$_tc_value"; then
-                _throw ConfigurationError "$_tc_file:${_TRASH_CONFIG_FILE_LINE[$key]}: $key $_tc_error"
-                return 1
-            fi
-            return 0
-        fi
-    fi
     _tc_value=${_TRASH_CONFIG_DEFAULT[$key]} _tc_source=default
 }
 
@@ -267,16 +178,6 @@ _trash_config_source_label() {
 trash_config_at() {
     _trash_config_resolve "$1" || return 1
     printf '%s\n' "$_tc_value"
-}
-
-# The legacy config file's path, whether or not it exists.
-trash_config_path() {
-    _trash_config_file
-    if [[ -n $_tc_file ]]; then
-        printf '%s\n' "$_tc_file"
-    else
-        printf '%s\n' "${XDG_CONFIG_HOME:-$HOME/.config}/trashtalk/config"
-    fi
 }
 
 # Print key, value, and source for each named key, in aligned columns.
@@ -355,7 +256,6 @@ _trash_user_class_compile() {
 # Answer the preferences class to write: the named one, or the active one.
 # Sets _tc_prefs.
 _trash_prefs_target() {
-    local file_values=0
     if [[ -n $1 ]]; then
         if [[ -z ${_TRASH_PREFS_SOURCE[$1]+set} ]]; then
             _throw ConfigurationError "$1 is not a compiled Preferences class (see: @ Config preferences)"
@@ -372,13 +272,7 @@ _trash_prefs_target() {
     elif ((${#_tc_roots[@]} > 1)); then
         _throw ConfigurationError "No Preferences class is active: ${_tc_roots[*]} could each apply; set TRASHTALK_PREFERENCES or give the class for this machine host: ${HOSTNAME%%.*}"
     else
-        _trash_config_file
-        [[ -z $_tc_file ]] || ! _trash_config_scan "$_tc_file" || file_values=${#_TRASH_CONFIG_FILE_ORDER[@]}
-        if ((file_values)); then
-            _throw ConfigurationError "No Preferences class is active; move $_tc_file into one with: @ Config import: 'YourName'"
-        else
-            _throw ConfigurationError "No Preferences class is active; create one with: @ Trash newPreferencesClass: 'YourName' subclassing: 'Preferences'"
-        fi
+        _throw ConfigurationError "No Preferences class is active; create one with: @ Trash newPreferencesClass: 'YourName' subclassing: 'Preferences'"
     fi
     return 1
 }
@@ -592,36 +486,6 @@ trash_preferences_create() {
     _trash_user_class_write "$name" "${lines[@]}"
 }
 
-# Usage: trash_config_import Name [Superclass]. A preferences class holding
-# the legacy config file's values; the file itself is left in place.
-trash_config_import() {
-    local name=$1 superclass=${2:-Preferences} key value
-    local -a lines=()
-    _trash_prefs_superclass "$superclass" || return 1
-    _trash_config_file
-    if [[ -z $_tc_file || ! -f $_tc_file ]]; then
-        _throw ConfigurationError "No config file to import at $(trash_config_path)"
-        return 1
-    fi
-    if ! _trash_config_scan "$_tc_file"; then
-        _throw ConfigurationError "${_TRASH_CONFIG_FILE_ERRORS[0]}"
-        return 1
-    fi
-    lines=("# $name - Trashtalk preferences imported from $_tc_file."
-        "$name subclass: $superclass")
-    for key in "${_TRASH_CONFIG_FILE_ORDER[@]}"; do
-        value=${_TRASH_CONFIG_FILE_VALUES[$key]}
-        if ! _trash_config_declared "$key"; then
-            echo "Warning: skipping unknown key $key" >&2
-            continue
-        fi
-        _trash_prefs_writable "$key" "$value" || return 1
-        lines+=("  ${_TRASH_CONFIG_GROUP[$key]} ${key#*.}: $(_trash_prefs_literal "$key" "$value")")
-    done
-    _trash_user_class_write "$name" "${lines[@]}" || return 1
-    echo "Imported ${#_TRASH_CONFIG_FILE_ORDER[@]} settings. Once this class is active, remove $_tc_file." >&2
-}
-
 # Doctor report: one "ok|warn|bad<TAB>message" line per finding.
 trash_config_check() {
     local key var message class hash finding=0
@@ -653,40 +517,6 @@ trash_config_check() {
         [[ ${hash%% *} == "${_TRASH_PREFS_HASH[$class]}" ]] ||
             printf 'warn\tPreferences class %s changed since it was compiled; run make\n' "$class"
     done
-    _trash_config_file
-    _trash_config_scan "${_tc_file:-/dev/null/none}"
-    if [[ -z $_tc_file ]]; then
-        printf 'ok\tUser config file skipped (TRASHTALK_SKIP_USER_CONFIG)\n'
-    elif [[ -e $_tc_file ]]; then
-        for message in "${_TRASH_CONFIG_FILE_ERRORS[@]}"; do
-            printf 'bad\tConfig syntax: %s\n' "$message"; finding=1
-        done
-        for key in "${_TRASH_CONFIG_FILE_ORDER[@]}"; do
-            if ! _trash_config_declared "$key"; then
-                printf 'warn\tUnknown config key %s at %s:%s\n' "$key" "$_tc_file" "${_TRASH_CONFIG_FILE_LINE[$key]}"
-                finding=1
-            elif ! _trash_config_valid "$key" "${_TRASH_CONFIG_FILE_VALUES[$key]}"; then
-                printf 'bad\tConfig %s at %s:%s %s\n' "$key" "$_tc_file" "${_TRASH_CONFIG_FILE_LINE[$key]}" "$_tc_error"
-                finding=1
-            fi
-            class=$_tc_prefs
-            while [[ -n $class ]]; do
-                if [[ -n ${_TRASH_PREFS_VALUES[$class|$key]+set} ]]; then overlap+=("$key"); break; fi
-                class=${_TRASH_PREFS_PARENT[$class]:-}
-            done
-        done
-        for key in "${_TRASH_CONFIG_FILE_DUPES[@]}"; do
-            printf 'warn\tConfig key %s appears more than once in %s; the last one wins\n' "$key" "$_tc_file"
-            finding=1
-        done
-        if ((${#overlap[@]})); then
-            printf 'warn\t%s sets %s, which the config file %s also sets; the preferences win\n' \
-                "$_tc_prefs" "${overlap[*]}" "$_tc_file"
-            finding=1
-        fi
-        ((finding)) || printf 'ok\tConfig file %s (%s settings; move them with: @ Config import: '"'"'YourName'"'"')\n' \
-            "$_tc_file" "${#_TRASH_CONFIG_FILE_ORDER[@]}"
-    fi
     for key in "${_TRASH_CONFIG_KEYS[@]}"; do
         var=${_TRASH_CONFIG_ENV[$key]}
         [[ -n ${!var:-} ]] || continue
@@ -700,8 +530,6 @@ trash_config_check() {
         done
         if [[ -n $class ]]; then
             printf 'warn\t%s overrides %s from preferences %s\n' "$var" "$key" "$class"
-        elif [[ -n $_tc_file && -n ${_TRASH_CONFIG_FILE_VALUES[$key]+set} ]]; then
-            printf 'warn\t%s overrides %s from the config file\n' "$var" "$key"
         fi
     done
 }

@@ -6,7 +6,6 @@
 #   trash-machine apply NAME     make this machine match NAME (backs up first)
 #
 # A machine directory may hold any of these; missing parts are skipped:
-#   trashtalk.config      linked to ~/.config/trashtalk/config
 #   omlx/*.json           merged into ~/.omlx/{settings,model_settings,model_profiles}.json
 #   pi/settings.json      merged into ~/.pi/agent/settings.json
 #   hindsight/config.json merged into ~/.hindsight/config.json
@@ -20,7 +19,6 @@ set -euo pipefail
 
 root=$(cd "${BASH_SOURCE[0]%/*}/.." && pwd)
 stamp=$(date +%Y%m%d%H%M%S)
-cfg=${XDG_CONFIG_HOME:-$HOME/.config}/trashtalk/config
 changed=0
 
 die() { printf 'trash-machine: %s\n' "$*" >&2; exit 1; }
@@ -76,34 +74,6 @@ merge_json() {
     printf '  %-22s updated (backup %s.bak-trashtalk-%s)\n' "" "${target##*/}" "$stamp"
 }
 
-link_config() {
-    local source=$1 mode=$2
-    [[ -f $source ]] || return 0
-    if [[ -L $cfg && $(readlink "$cfg") == "$source" ]]; then
-        printf '  %-22s ok (linked)\n' trashtalk.config
-        return 0
-    fi
-    changed=1
-    if [[ -e $cfg || -L $cfg ]]; then
-        if cmp -s "$cfg" "$source"; then
-            printf '  %-22s not linked (same content as %s)\n' trashtalk.config "$cfg"
-        else
-            printf '  %-22s differs from %s\n' trashtalk.config "$cfg"
-        fi
-        if [[ $mode == diff ]]; then
-            diff -u --label "current $cfg" --label "machine trashtalk.config" "$cfg" "$source" | sed 's/^/      /' || true
-            return 0
-        fi
-        mv "$cfg" "$cfg.bak-trashtalk-$stamp"
-        printf '  %-22s backed up to %s\n' "" "${cfg##*/}.bak-trashtalk-$stamp"
-    else
-        printf '  %-22s link %s\n' trashtalk.config "$cfg"
-        [[ $mode == diff ]] && return 0
-    fi
-    mkdir -p "${cfg%/*}"
-    ln -s "$source" "$cfg"
-}
-
 apply_patches() {
     local dir=$1 mode=$2 patch ext name
     ext=$HOME/.pi/agent/npm/node_modules/@walodayeet/hindsight-pi
@@ -139,7 +109,6 @@ run() {
     local mode=$1 name=$2 dir=$root/machines/$2
     [[ -d $dir ]] || die "no machine '$name' (try: trash-machine list)"
     printf '%s %s\n' "$mode" "$name"
-    link_config "$dir/trashtalk.config" "$mode"
     merge_json omlx/settings.json "$dir/omlx/settings.json" "$HOME/.omlx/settings.json" "$mode"
     merge_json omlx/model_settings "$dir/omlx/model_settings.json" "$HOME/.omlx/model_settings.json" "$mode"
     merge_json omlx/model_profiles "$dir/omlx/model_profiles.json" "$HOME/.omlx/model_profiles.json" "$mode"

@@ -1,8 +1,0 @@
-{
-  "defaultModel": "Qwen3.6-35B-A3B-4bit",
-  "defaultProvider": "omlx",
-  "defaultThinkingLevel": "low",
-  "modelThinkingLevels": {
-    "omlx/Qwen3.6-35B-A3B-4bit": "low"
-  }
-}
