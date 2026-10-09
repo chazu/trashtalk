@@ -66,6 +66,17 @@ Focus subclass: Object
     ^ 'Messages marked read'
   ]
 
+  # A Gusgus conversation restarts on the profile Gusgus is configured for now,
+  # not the one it was created with. Other agents keep their session's backend
+  # (empty).
+  classMethod: freshProfileFor: session [
+    | identity handle |
+    identity := @ session identity.
+    handle := @ identity handle.
+    (handle = (@ Gusgus agentHandle)) ifTrue: [^ @ Gusgus profile ifFailed: [:e | @ e signal]].
+    ^ ''
+  ]
+
   classMethod: perform: intent session: session body: body run: run [
     | result allowed |
     # Native input validates current ownership and membership under the worker
@@ -73,7 +84,7 @@ Focus subclass: Object
     (intent = 'send_message') ifTrue: [^ @ session input: body].
     session := @ self accessibleSession: session ifFailed: [:e | @ e signal].
     ^ intent caseOf: {
-      'start_fresh_session' -> [ @ Agent::Session freshFrom: session ].
+      'start_fresh_session' -> [ @ Agent::Session freshFrom: session profile: (@ self freshProfileFor: session) ].
       'compact_session' -> [ @ session compact ].
       'pause_session' -> [ @ session pause ].
       'resume_session' -> [

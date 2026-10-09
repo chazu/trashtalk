@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Starting a fresh Gusgus conversation from the focus view now uses the
+  configured `gusgus.profile`. It used to copy the replaced session's backend, so
+  a conversation begun on jcode stayed on jcode after the setting changed to chad.
+
 ### Added
 
 - `chad` session harness: `gusgus.profile = "chad"` runs sessions on the chad local

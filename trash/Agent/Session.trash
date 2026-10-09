@@ -284,19 +284,27 @@ Session subclass: Object
   # attached to. Resolve its identity/configuration in the transaction so a
   # stale UI frame cannot replace a different session after a concurrent change.
   classMethod: freshFrom: session [
+    ^ @ self freshFrom: session profile: ''
+  ]
+
+  # An empty profile keeps the replaced session's backend; a caller that knows
+  # the agent's configured profile passes it so a settings change takes effect.
+  classMethod: freshFrom: session profile: profile [
     | args |
-    args := #{session: session} asJson.
+    args := #{session: session profile: profile} asJson.
     @ self ensureSchema.
     ^ @ Store transaction: self sending: 'freshFromWithin:' with: args
   ]
 
   classMethod: freshFromWithin: args [
-    | current settings |
+    | current settings profile |
     @ Store requireTransaction.
     current := @ Agent::Access validateLiveSession: (args objectAt: 'session').
+    profile := args jsonTextAt: 'profile'.
+    (profile isEmpty) ifTrue: [profile := @ current backendProfile].
     settings := #{identity: (@ current identity) archetype: (@ current archetype)
       role: (@ current role) workspace: (@ current workspace)
-      profile: (@ current backendProfile)} asJson.
+      profile: profile} asJson.
     ^ @ self freshWithin: settings
   ]
 

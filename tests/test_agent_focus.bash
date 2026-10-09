@@ -203,6 +203,17 @@ check 'fresh conversation returns a different pinned session' true "$([[ "$fresh
 check 'fresh conversation closes the former session' closed "$(@ "$session" lifecycleState)"
 check 'fresh conversation preserves the agent identity' "$(@ "$session" identity)" "$(@ "$fresh" identity)"
 check 'fresh conversation preserves the backend profile' "$(@ "$session" backendProfile)" "$(@ "$fresh" backendProfile)"
+# A Gusgus conversation restarts on the profile now configured, not the one it began with.
+TRASHTALK_GUSGUS_PROFILE=chad
+fresh_context=$(jq -cn --arg session "$fresh" '{session:$session,window:400}')
+frame='{"schema_version":1,"request_id":30,"intent":"start_fresh_session"}'
+result=$(@ Agent::Focus handleFrame: "$frame" context: "$fresh_context")
+reconfigured=$(field "$result" .context.session)
+check 'fresh conversation after a settings change is accepted' true "$(field "$result" .frame.ok)"
+check 'fresh conversation adopts the configured Gusgus profile' chad "$(@ "$reconfigured" backendProfile)"
+check 'fresh conversation closes the previous session' closed "$(@ "$fresh" lifecycleState)"
+TRASHTALK_GUSGUS_PROFILE=shell
+@ "$reconfigured" close >/dev/null
 frame='{"schema_version":1,"request_id":19,"intent":"send_message","body":"must not send into a closed session"}'
 result=$(@ Agent::Focus handleFrame: "$frame" context: "$context")
 check 'send refreshes lifecycle changed by another process' false "$(field "$result" .frame.ok)"
