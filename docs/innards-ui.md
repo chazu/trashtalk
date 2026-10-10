@@ -25,6 +25,23 @@ debounced filtering, and a small plot. Its events are not agent transcripts or
 production telemetry. `@ obj inspect` opens `UI::Inspector` on a live object.
 Applications connect their own bulk sources through the handler contract below.
 
+## Tree and Tabs example
+
+Build Trashtalk and open the bundled static surface from an interactive terminal:
+
+```bash
+cd ~/.trashtalk
+make bash
+source lib/trash.bash
+@ UI::TreeTabsExample open
+```
+
+The example uses `UI::Surface` and `UI::Node` to open an `inui` surface. Its
+Workspace Tree starts with nested `src` and `UI` branches expanded. Use j/k to
+select nodes, h/l to collapse or expand, and Space to toggle a branch. Press
+Tab to focus Tabs, then h/l to select Overview, Files, or Activity. Press Esc
+or Ctrl-C to close the surface.
+
 Tab/Shift-Tab move focus; arrows, Home/End and PageUp/PageDown navigate lists and
 tables. Enter invokes an action or submits a single-line input. Multiline input
 uses Enter for newline and Ctrl-Enter for submit where the terminal supports

@@ -40,6 +40,8 @@ if @ UITest badBinding > /dev/null 2>&1;then echo 'FAIL read-only binding';exit 
 [[ $(@ UI::Binding invalidated) == label ]]
 node=$(@ UI::Node text: 'literal $() " text' key: title)
 [[ $(jq -r '.props.text' <<< "$node") == 'literal $() " text' ]]
+example=$(@ UI::TreeTabsExample frameFor: '{}')
+jq -e '.schema_version == 1 and .type == "init" and .root.children[1].kind == "tree" and .root.children[1].props.tree[0].children[1].children[0].label == "Node.trash" and .root.children[2].kind == "tabs" and .root.children[2].props.options == ["Overview", "Files", "Activity"]' <<< "$example" >/dev/null
 form=$(@ UI::Form fields: '[{"key":"name","label":"Name","value":"Ada"}]' key: settings submit: save)
 jq -e '.children[1].kind=="input" and .children[1].props.value=="Ada" and .children[2].props.inputs==["name"]' <<< "$form" >/dev/null
 context='{"record":{"a":{"b":{"c":1}},"other":{"d":2}},"title":"Object","paths":[[]],"active":0,"revision":0}'

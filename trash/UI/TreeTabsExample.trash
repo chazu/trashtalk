@@ -1,0 +1,29 @@
+package: UI
+
+# A static, runnable UI::Surface application for Tree and Tabs controls.
+TreeTabsExample subclass: Object
+  classMethod: open [
+    ^ @ UI::Surface open: self context: '{}'
+  ]
+
+  classMethod: frameFor: context [
+    | treeProps tabsProps tree tabs help note children root |
+    tree := '[{"key":"src","label":"src","expanded":true,"children":[{"key":"main","label":"main.trash","children":[]},{"key":"ui","label":"UI","expanded":true,"children":[{"key":"node","label":"Node.trash","children":[]},{"key":"surface","label":"Surface.trash","children":[]}]}]},{"key":"docs","label":"docs","children":[{"key":"guide","label":"innards-ui.md","children":[]}]},{"key":"makefile","label":"Makefile","children":[]}]'.
+    treeProps := '{"title":"Workspace","border":true,"size":9,"tree":' , tree , '}'.
+    tabsProps := '{"title":"View","border":true,"options":["Overview","Files","Activity"]}'.
+    help := @ UI::Node text: 'Tree: j/k select, h/l collapse or expand, Space toggles. Tab then h/l selects a tab.' key: 'help'.
+    tree := @ UI::Node kind: 'tree' key: 'workspace' props: treeProps children: '[]'.
+    tabs := @ UI::Node kind: 'tabs' key: 'views' props: tabsProps children: '[]'.
+    note := @ UI::Node text: 'Selections stay local. Press Esc or Ctrl-C to exit.' key: 'note'.
+    children := #((help jsonValue) (tree jsonValue) (tabs jsonValue) (note jsonValue)) asJson.
+    root := @ UI::Node panel: children key: 'root' direction: 'column'.
+    ^ @ UI::Surface view: 'tree-tabs-example' revision: '0' root: root collections: '[]'
+  ]
+
+  classMethod: handleFrame: frame context: context [
+    ^ #{context: (context jsonValue) frames: #()} asJson
+  ]
+
+  classMethod: pollFor: context [
+    ^ #{context: (context jsonValue) frames: #()} asJson
+  ]
