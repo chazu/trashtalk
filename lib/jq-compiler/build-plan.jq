@@ -78,7 +78,7 @@ else
         (if ($check.conflicts|length)>0 then "; conflicting direct traits: " + ($check.conflicts|join(", ")) else "" end)
       else empty end] | join("\n")) as $failures |
     if $failures != "" then protocol_error($m; $failures) else . end |
-    ($m | settings_semantics) as $m |
+    ($m | settings_semantics | agent_profile_semantics) as $m |
     ($done[($lookup[$m.resolved_parent]|tostring)]) as $parentNode |
     (($m.resolved_parent == "Preferences") or ($parentNode.preferences != null)) as $isPreferences |
     (if $isPreferences then preferences_values($m; $done; $lookup)
@@ -86,6 +86,7 @@ else
        settings_error($m; $m.preferences[0].location; "preference lines and host: belong in a subclass of Preferences")
      else null end) as $preferences |
     .[($i|tostring)] = ($node + {dependencies:$inputs, surface:$surface, preferences:$preferences,
+      agentProfile:(if $m.resolved_parent == "Agent::AgentProfile" then ($m | agent_profile_spec) else null end),
       dirty:(($valid|not) or any($deps[]; $done[.].dirty)),
       level:([0, ($deps[] | $done[.].level+1)] | max)}))
   | [.[]] | sort_by(.level,.index)

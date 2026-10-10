@@ -32,6 +32,7 @@ is not redefined as an ephemeral worker in this work.
   records.
 - Let each agent have a stable handle, display name, profile, instructions,
   role, session scope, and enabled state.
+- Let the configuration of durable agents be expressed in trashtalk classes
 - Make configured agents visible, selectable, focusable, and explicit delegation
   targets.
 - Preserve the existing ownership, session-membership, workspace authorization,

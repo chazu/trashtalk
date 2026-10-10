@@ -13,7 +13,7 @@ Assignment subclass: Object
                 currentSession:'' generation:0 delivery:'' history:'[]' events:'[]'
                 externalIssue:'' result:'' resultMessage:'' cancellationNote:''
                 created:'' completedAt:'' dispatchMode:'manual'
-                requestKey:'' originRun:'' delegationTarget:'' statusMessage:''
+                requestKey:'' originRun:'' delegationTarget:'' delegationTargetKey:'' statusMessage:''
 
   method: transitionRules [ ^ '["open:completed","open:cancelled"]' ]
 

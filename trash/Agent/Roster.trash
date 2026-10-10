@@ -1,0 +1,142 @@
+package: Agent
+
+# Roster reconciles the compiled, user-owned AgentProfile manifest into durable
+# identities.  The manifest declares desired defaults.  Identities retain the
+# authority boundary, historical work, and provider conversations.
+Roster subclass: Object
+  # Read-only projection of compiled profiles. The source file is validated by
+  # the compiler, and this boundary still refuses a missing or malformed file.
+  rawClassMethod: manifest [
+    local path="${TRASHTALK_DIR:-$HOME/.trashtalk}/trash/.compiled/.agent-profile-manifest.json"
+    [[ -f "$path" ]] || { printf '%s\n' '{"schema":1,"profiles":[]}'; return; }
+    jq -ce 'select(.schema == 1 and (.profiles | type == "array"))' "$path"
+  ]
+
+  rawClassMethod: profileNamed: handle [
+    local path="${TRASHTALK_DIR:-$HOME/.trashtalk}/trash/.compiled/.agent-profile-manifest.json"
+    [[ -f "$path" ]] || return 0
+    jq -cer --arg handle "$1" '.profiles[] | select(.handle == $handle)' "$path"
+  ]
+
+  # Apply every compiled profile. Each profile commits independently so one
+  # conflicting identity does not block unrelated configured agents.
+  rawClassMethod: reconcile [
+    local profile result last=''
+    while IFS= read -r profile; do
+      result=$(@ Agent::Roster reconcileProfile: "$profile") || return 1
+      last="$result"
+    done < <(@ Agent::Roster manifest | jq -c '.profiles[]')
+    printf '%s\n' "$last"
+  ]
+
+  classMethod: reconcileProfile: profile [
+    ^ @ self reconcileProfile: profile adopting: false
+  ]
+
+  classMethod: reconcileProfile: profile adopting: adopting [
+    | args identity archetypeSpec roleSpec archetype role |
+    identity := @ Agent::Identity named: (profile jsonTextAt: 'handle').
+    archetypeSpec := profile jsonAt: 'archetype'.
+    roleSpec := profile jsonAt: 'role'.
+    archetype := @ Agent::Archetype named: (archetypeSpec jsonTextAt: 'name') revision: (archetypeSpec jsonTextAt: 'revision').
+    role := @ Agent::Role named: (roleSpec jsonTextAt: 'name') revision: (roleSpec jsonTextAt: 'revision').
+    args := #{profile: (profile jsonValue) identity: identity archetype: archetype role: role adopting: adopting} asJson.
+    ^ @ Store transaction: self sending: 'reconcileWithin:' with: args replaying: true
+  ]
+
+  # An identity created outside the roster needs an intentional adoption. This
+  # avoids a similarly named profile changing a manually managed assistant.
+  classMethod: adopt: handle [
+    | profile |
+    profile := @ self profileNamed: handle.
+    profile isEmpty ifTrue: [^ @ Require reject: 'No compiled agent profile has that handle'].
+    ^ @ self reconcileProfile: profile adopting: true
+  ]
+
+  classMethod: reconcileWithin: args [
+    | profile handle name profileName archetypeSpec roleSpec scope enabled owner ids count identity existing managed current archetype role digest adopting |
+    @ Store requireTransaction.
+    profile := args objectAt: 'profile'.
+    identity := args objectAt: 'identity'.
+    handle := profile jsonTextAt: 'handle'.
+    name := profile jsonTextAt: 'displayName'.
+    profileName := profile jsonTextAt: 'profile'.
+    archetypeSpec := profile jsonAt: 'archetype'.
+    roleSpec := profile jsonAt: 'role'.
+    scope := profile jsonTextAt: 'sessionScope'.
+    enabled := profile jsonTextAt: 'enabled'.
+    adopting := args objectAt: 'adopting'.
+    ((handle = 'gusgus') or: [handle = 'specialist']) ifTrue: [
+      ^ @ Require reject: 'Built-in identities cannot be roster-managed'
+    ].
+    owner := @ Agent::Focus human.
+    @ Require text: owner.
+    ids := @ Store idsOf: 'Agent::Identity' matching: (#{handle: handle} asJson).
+    count := ids arrayLength.
+    (count > 1) ifTrue: [^ @ Require reject: 'Identity handle is ambiguous; inspect legacy records'].
+    (count = 0) ifTrue: [^ @ Require reject: 'Identity disappeared before roster configuration'].
+    identity := @ Store read: (ids arrayFirst) class: 'Agent::Identity'.
+    managed := @ identity configProfile.
+    (managed isEmpty) ifTrue: [
+      current := @ identity owner.
+      (current isEmpty) ifTrue: [
+        @ identity owner: owner.
+        @ identity sessionScope: scope.
+        @ identity sessionPolicyRevision: 1
+      ] ifFalse: [
+        @ Require equal: (@ identity owner) to: owner.
+        (adopting = 'true') ifFalse: [^ @ Require reject: 'Identity is not roster-managed; use Agent::Roster adopt: first']
+      ].
+      @ identity configProfile: (profile jsonTextAt: 'identity')
+    ] ifFalse: [
+      @ Require equal: (@ identity owner) to: owner.
+      @ Require equal: managed to: (profile jsonTextAt: 'identity').
+      ((@ identity sessionScope) ~= scope) ifTrue: [
+        @ identity pendingSessionScope: scope.
+        @ identity save.
+        ^ @ Require reject: 'Session scope change is pending explicit migration'
+      ]
+    ].
+    archetype := args objectAt: 'archetype'.
+    role := args objectAt: 'role'.
+    @ Require text: archetype.
+    @ Require text: role.
+    digest := profile jsonTextAt: 'source_hash'.
+    @ identity displayName: name.
+    @ identity enabled: enabled.
+    @ identity defaultArchetype: archetype.
+    @ identity defaultRole: role.
+    @ identity defaultProfile: profileName.
+    @ identity configProfile: (profile jsonTextAt: 'identity').
+    @ identity configDigest: digest.
+    @ identity pendingSessionScope: ''.
+    @ identity save.
+    ^ identity
+  ]
+
+  # Resolve a roster-managed, enabled agent inside the caller's transaction.
+  # Delegation passes the caller's execution workspace to ensure the correct
+  # workspace-scoped session is selected or created.
+  classMethod: sessionForDelegationWithin: handle profile: profile owner: owner workspace: workspace [
+    | identity session args |
+    @ Store requireTransaction.
+    profile isEmpty ifTrue: [^ @ Require reject: 'No compiled agent profile has that handle'].
+    identity := @ Agent::Identity findByHandle: handle.
+    identity isEmpty ifTrue: [^ @ Require reject: 'Configured agent needs reconciliation'].
+    identity := @ Store read: identity class: 'Agent::Identity'.
+    @ Require equal: (@ identity owner) to: owner.
+    @ Require equal: (@ identity enabled) to: 'true'.
+    @ Require equal: (@ identity configProfile) to: (profile jsonTextAt: 'identity').
+    current := @ identity pendingSessionScope.
+    (current isEmpty) ifFalse: [^ @ Require reject: 'Configured agent has a pending session scope migration'].
+    args := #{identity: identity workspace: workspace archetype: (@ identity defaultArchetype)
+      role: (@ identity defaultRole) profile: (@ identity defaultProfile)} asJson.
+    session := @ Agent::Session ensureWithin: args.
+    ^ session
+  ]
+
+  # A read-only roster view. This intentionally does not create identities or
+  # sessions, so removing a profile source remains non-destructive.
+  classMethod: list [
+    ^ @ self manifest
+  ]

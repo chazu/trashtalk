@@ -505,6 +505,34 @@ def parsePreference:
     else fail end
   end;
 
+# A permanent-agent profile is deliberately a small data declaration, rather
+# than a class with executable methods.  Values use the same literal grammar as
+# Settings and Preferences.  The semantic pass validates which fields belong to
+# Agent::AgentProfile and their types.
+def parseAgentProfileField:
+  {line: current.line, col: current.col} as $location |
+  if current.value == "handle:" or current.value == "displayName:" or current.value == "profile:" or current.value == "sessionScope:" or current.value == "enabled:" then
+    (current.value | rtrimstr(":")) as $name |
+    advance | skipNewlines | parseSettingLiteral |
+    if .result == null then .
+    elif atEnd or current.type == "NEWLINE" or current.type == "COMMENT" then
+      .result = {name:$name, value:.result, location:$location}
+    else fail end
+  elif current.value == "archetype:" or current.value == "role:" then
+    (current.value | rtrimstr(":")) as $name |
+    advance | skipNewlines | parseSettingLiteral |
+    if .result == null then . else
+      .result as $value | skipNewlines |
+      if current.value != "revision:" then fail else
+        advance | skipNewlines | parseSettingLiteral |
+        if .result == null then .
+        elif atEnd or current.type == "NEWLINE" or current.type == "COMMENT" then
+          .result = {name:$name, value:$value, revision:.result, location:$location}
+        else fail end
+      end
+    end
+  else fail end;
+
 # One class-side getter and setter per declared setting. Both are primitives
 # over lib/config.bash, so a read forks nothing.
 def settingsAccessors:
@@ -718,7 +746,7 @@ def parsePrimitive:
 
 # Parse class body elements
 def parseClassBody:
-  {instanceVars: [], classInstanceVars: [], traits: [], requires: [], methodRequirements: [], requirementDeclarations: [], implementedProtocols: [], methods: [], aliases: [], advice: [], classPragmas: [], settingsPrefix: null, settings: [], preferences: [], preferenceHost: null, errors: [], currentCategory: null, state: .} |
+  {instanceVars: [], classInstanceVars: [], traits: [], requires: [], methodRequirements: [], requirementDeclarations: [], implementedProtocols: [], methods: [], aliases: [], advice: [], classPragmas: [], settingsPrefix: null, settings: [], preferences: [], preferenceHost: null, agentProfileDeclarations: [], errors: [], currentCategory: null, state: .} |
   until((.state | atEnd);
     .state |= skipNewlines |
     if (.state | atEnd) then
@@ -755,6 +783,14 @@ def parseClassBody:
           message: "Expected a preference `Group setting: value` with a literal value, alone on its line",
           token: (.state | current), context: "preferences"}] |
         .state |= (advance | until(atEnd or current.type == "NEWLINE"; advance))
+      end
+    elif (.state | current.value) == "handle:" or (.state | current.value) == "displayName:" or (.state | current.value) == "profile:" or (.state | current.value) == "archetype:" or (.state | current.value) == "role:" or (.state | current.value) == "sessionScope:" or (.state | current.value) == "enabled:" then
+      (.state | parseAgentProfileField) as $r |
+      if $r.result != null then
+        .agentProfileDeclarations += [$r.result] | .state = $r
+      else
+        .errors += [{type: "agent_profile_error", message: "Expected an AgentProfile field with literal values", token: (.state | current), context: "agent profile"}] |
+        .state |= (advance | synchronize)
       end
     elif (.state | current.value) == "category:" then
       # Parse category directive: category: "name" or category: 'name'
@@ -958,7 +994,8 @@ def parseClassBody:
     settingsPrefix: .settingsPrefix,
     settings: .settings,
     preferences: .preferences,
-    preferenceHost: .preferenceHost
+    preferenceHost: .preferenceHost,
+    agentProfileDeclarations: .agentProfileDeclarations
   } | settingsAccessors) as $body |
   .errors as $errors |
   .state | .errors = (.errors + $errors) | .result = $body;

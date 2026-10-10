@@ -303,6 +303,11 @@ Run subclass: Object
     ^ @ Agent::Delegation create: objective session: session criteria: criteria key: key
   ]
 
+  # Delegate to an enabled permanent agent declared in the user's roster.
+  classMethod: delegate: objective toAgent: handle criteria: criteria key: key [
+    ^ @ Agent::Delegation create: objective agent: handle criteria: criteria key: key
+  ]
+
   # Deduplicated send: one message per (session, key).
   rawClassMethod: send: body to: address key: k [
     local run sid key esc efrom existing

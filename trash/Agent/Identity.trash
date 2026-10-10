@@ -12,7 +12,8 @@ Identity subclass: Object
   include: Persistable
   include: Agent::LegacyId
   instanceVars: handle:'' displayName:'' owner:'' enabled:'true' defaultArchetype:''
-                defaultRole:'' inbox:'' created:'' sessionScope:'workspace' currentSession:'' sessionPolicyRevision:0
+                defaultRole:'' defaultProfile:'' inbox:'' created:'' sessionScope:'workspace' currentSession:'' sessionPolicyRevision:0
+                configProfile:'' configDigest:'' pendingSessionScope:''
 
   # Compatibility defaults are read-only; migration remains explicit.
   method: sessionPolicyRevision [
@@ -85,7 +86,8 @@ Identity subclass: Object
     workspace := @ Agent::Session workspaceFor: path.
     archetype := @ identity defaultArchetype.
     role := @ identity defaultRole.
-    profile := @ archetype suggestedBackendProfile.
+    profile := @ identity defaultProfile.
+    (profile isEmpty) ifTrue: [profile := @ archetype suggestedBackendProfile].
     ^ @ Agent::Session ensureFor: identity archetype: archetype role: role workspace: workspace profile: profile
   ]
 

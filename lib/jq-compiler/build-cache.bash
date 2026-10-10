@@ -63,7 +63,7 @@ _build_plan() {
 }
 
 cmd_build_metadata() {
-    _parse_single_file "$1" | jq -c -L "$SCRIPT_DIR" 'include "protocols"; protocol_metadata | protocol_semantics | settings_semantics' > "$2"
+    _parse_single_file "$1" | jq -c -L "$SCRIPT_DIR" 'include "protocols"; protocol_metadata | protocol_semantics | settings_semantics | agent_profile_semantics' > "$2"
 }
 
 # Cache entries are keyed by content hash and compiler fingerprint, so every
@@ -233,10 +233,27 @@ _build_publish_settings() {
     mv -f "$tmp" "$table"
 }
 
+# Agent profiles are user-source declarations.  The runtime reads their small
+# manifest only while reconciling identities, never on the worker hot path.
+_build_publish_agent_profiles() {
+    local manifest="$TRASHTALK_COMPILED_DIR/.protocol-manifest.json"
+    local index="$TRASHTALK_COMPILED_DIR/.agent-profile-manifest.json" tmp
+    [[ -f "$manifest" ]] || return 0
+    tmp=$(mktemp "$index.XXXXXX")
+    if ! jq -L "$SCRIPT_DIR" 'include "protocols"; agent_profiles_index' "$manifest" > "$tmp"; then
+        rm -f "$tmp"; return 1
+    fi
+    if [[ -f "$index" ]] && cmp -s "$tmp" "$index"; then
+        rm -f "$tmp"; return 0
+    fi
+    mv -f "$tmp" "$index"
+}
+
 # Publish the manifest, then remove orphaned artifacts and stale cache entries.
 _build_finish() {
     _build_publish_manifest || return
     _build_publish_settings || return
+    _build_publish_agent_profiles || return
     _build_prune_orphans
     _build_prune_caches
 }
@@ -396,6 +413,7 @@ _build_publish_manifest() {
           api_hash:$n.api_hash,surface:$n.surface,requirements:$n.metadata.requirements,
           settings:(if $n.metadata.resolved_parent == "Settings" then ($n.metadata|settings_spec) else null end),
           preferences:$n.preferences,
+          agentProfile:$n.agentProfile,
           receipt_data:([$receipts[0][]|select(.source==$n.source)][0])})
       ' "$build_work/plan.json" > "$tmp" || { rm -f "$tmp"; return 1; }
     : > "$build_work/retired-artifacts.nul"

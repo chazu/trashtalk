@@ -26,6 +26,7 @@ def protocol_metadata:
    aliases:(.aliases // []),
    settingsPrefix:(.settingsPrefix.name // null), settingsLocation:(.settingsPrefix.location // null),
    settingsDeclarations:(.settings // []), preferences:(.preferences // []),
+   agentProfileDeclarations:(.agentProfileDeclarations // []),
    preferenceHost:(.preferenceHost.name // null),
    shape:{methods:([.methods[]? | select(.category != "settings")] | length),
      instanceVars:(.instanceVars // [] | length), classInstanceVars:(.classInstanceVars // [] | length)}};
@@ -114,6 +115,73 @@ def settings_semantics:
       $m
     end
   else . end;
+
+# ------------------------------------------------------------------------------
+# Permanent AgentProfile declarations (docs/permanent-agent-configuration.md)
+# ------------------------------------------------------------------------------
+def agent_profile_error($m; $loc; $message):
+  error("AgentProfileError: " + $m.identity + (if $loc then " (line " + ($loc.line|tostring) + ")" else "" end) + ": " + $message);
+def agent_profile_value($entries; $name): [$entries[] | select(.name == $name)];
+def agent_profile_string($entry): $entry.value.kind == "string" and ($entry.value.value | length) > 0;
+def agent_profile_revision($entry): $entry.revision.kind == "integer" and ($entry.revision.value | test("^[1-9][0-9]*$"));
+def agent_profile_semantics:
+  . as $m |
+  ($m.agentProfileDeclarations // []) as $entries |
+  ($m.resolved_parent == "Agent::AgentProfile") as $isProfile |
+  if (($entries|length) > 0) and ($isProfile|not) then
+    agent_profile_error($m; $entries[0].location; "agent profile fields belong in a direct Agent::AgentProfile subclass")
+  elif $isProfile then
+    if $m.package != null then agent_profile_error($m; null; "an agent profile lives in trash/user and takes no package:")
+    elif $m.shape.methods + $m.shape.instanceVars + $m.shape.classInstanceVars > 0 or ($m.traits|length)>0
+      or ($m.implementedProtocols|length)>0 or ($m.requirements|length)>0 or ($m.preferences|length)>0
+      or $m.settingsPrefix != null or ($m.settingsDeclarations|length)>0 then
+      agent_profile_error($m; ($entries[0].location // null); "an agent profile holds only profile fields")
+    elif any($entries[]; .name as $n | ($entries | map(select(.name == $n)) | length) > 1) then
+      agent_profile_error($m; ($entries | group_by(.name) | map(select(length>1)) | first | .[1].location); "a profile field is declared more than once")
+    elif (agent_profile_value($entries; "handle")|length) != 1 or (agent_profile_value($entries; "displayName")|length) != 1
+      or (agent_profile_value($entries; "profile")|length) != 1 or (agent_profile_value($entries; "archetype")|length) != 1
+      or (agent_profile_value($entries; "role")|length) != 1 then
+      agent_profile_error($m; null; "handle:, displayName:, profile:, archetype:, and role: are required")
+    elif (agent_profile_value($entries; "handle")[0] | agent_profile_string(.) | not) then
+      agent_profile_error($m; (agent_profile_value($entries; "handle")[0].location); "handle: must be a non-empty string")
+    elif (agent_profile_value($entries; "handle")[0].value.value | test("^[A-Za-z0-9_.:-]+$") | not) then
+      agent_profile_error($m; (agent_profile_value($entries; "handle")[0].location); "handle: contains invalid characters")
+    elif (agent_profile_value($entries; "displayName")[0] | agent_profile_string(.) | not) then
+      agent_profile_error($m; (agent_profile_value($entries; "displayName")[0].location); "displayName: must be a non-empty string")
+    elif (agent_profile_value($entries; "profile")[0] | agent_profile_string(.) | not)
+      or (["jcode","maki","codex","pi","chad","shell"] | index(agent_profile_value($entries; "profile")[0].value.value)) == null then
+      agent_profile_error($m; (agent_profile_value($entries; "profile")[0].location); "profile: must name a supported harness")
+    elif (agent_profile_value($entries; "archetype")[0] | agent_profile_string(.) | not)
+      or (agent_profile_value($entries; "archetype")[0] | agent_profile_revision(.) | not) then
+      agent_profile_error($m; (agent_profile_value($entries; "archetype")[0].location); "archetype: needs a name and a positive integer revision:")
+    elif (agent_profile_value($entries; "role")[0] | agent_profile_string(.) | not)
+      or (agent_profile_value($entries; "role")[0] | agent_profile_revision(.) | not) then
+      agent_profile_error($m; (agent_profile_value($entries; "role")[0].location); "role: needs a name and a positive integer revision:")
+    elif (agent_profile_value($entries; "sessionScope")|length)>1 or ((agent_profile_value($entries; "sessionScope")|length)==1 and
+      ((agent_profile_value($entries; "sessionScope")[0].value.kind != "string") or
+       (["workspace","identity"] | index(agent_profile_value($entries; "sessionScope")[0].value.value)) == null)) then
+      agent_profile_error($m; (agent_profile_value($entries; "sessionScope")[0].location); "sessionScope: must be workspace or identity")
+    elif (agent_profile_value($entries; "enabled")|length)>1 or ((agent_profile_value($entries; "enabled")|length)==1 and
+      (agent_profile_value($entries; "enabled")[0].value.kind != "boolean")) then
+      agent_profile_error($m; (agent_profile_value($entries; "enabled")[0].location); "enabled: must be true or false")
+    else $m end
+  else . end;
+def agent_profile_spec:
+  .agentProfileDeclarations as $entries |
+  {identity, handle:(agent_profile_value($entries; "handle")[0].value.value),
+   displayName:(agent_profile_value($entries; "displayName")[0].value.value),
+   profile:(agent_profile_value($entries; "profile")[0].value.value),
+   archetype:{name:(agent_profile_value($entries; "archetype")[0].value.value), revision:(agent_profile_value($entries; "archetype")[0].revision.value)},
+   role:{name:(agent_profile_value($entries; "role")[0].value.value), revision:(agent_profile_value($entries; "role")[0].revision.value)},
+   sessionScope:(if (agent_profile_value($entries; "sessionScope")|length)==0 then "workspace" else agent_profile_value($entries; "sessionScope")[0].value.value end),
+   enabled:(if (agent_profile_value($entries; "enabled")|length)==0 then "true" else agent_profile_value($entries; "enabled")[0].value.value end)};
+def agent_profiles_index:
+  ([.entries[] | select(.agentProfile != null) |
+    .agentProfile + {source, source_hash:.receipt_data.source_hash}] | sort_by(.handle)) as $profiles |
+  ($profiles | group_by(.handle) | map(select(length > 1)) | first) as $duplicate |
+  if $duplicate then
+    error("AgentProfileError: handle " + $duplicate[0].handle + " is declared by " + ([$duplicate[].identity] | join(" and ")))
+  else {schema:1, profiles:$profiles} end;
 # The settings index: every group and preferences class in a published manifest.
 # Earlier entries the manifest does not mention are kept while their source is live.
 def settings_index($previous; $live):

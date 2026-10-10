@@ -1,0 +1,6 @@
+package: Agent
+
+# AgentProfile is the restricted base class for user-owned permanent-agent
+# declarations.  Its subclasses live in trash/user/ and are validated by the
+# compiler.  They contain only literal profile fields, never executable code.
+AgentProfile subclass: Object
