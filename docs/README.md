@@ -53,6 +53,8 @@ implemented contracts from designs and historical evidence.
   dated evaluation, not a claim of installed memory services.
 - [Utopia knowledge subsystem plan](utopia-knowledge-subsystem-plan.md): an opt-in,
   MCP-based external knowledge service with read-only work before reviewed writes.
+- [Agent-generated Innards UI design](agent-generated-innards-ui-design.md): a
+  restricted, opt-in proposal catalog for dynamic agent UI, with a later A2UI adapter.
 - [Cue/mise brainstorm](cue-mise-brainstorm.md): current wrappers plus proposed uses.
 - [Kubernetes package](kube-design.md): implemented package with historical design
   sketches and open questions.
