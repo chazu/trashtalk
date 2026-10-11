@@ -178,6 +178,27 @@ MyAppSettings subclass: Settings
 and read it with `@ MyApp::MyAppSettings retries`. See the
 [settings design](docs/settings-design.md).
 
+## Durable agents
+
+Trashtalk keeps an agent's authority and history in a durable `Agent::Identity`.
+An `Agent::Session` is that agent's mutable conversation in one workspace or,
+for a global assistant such as Gusgus, across workspaces. Runs, inbox messages,
+and Assignments attach to the session, so stopping a process does not erase the
+conversation or its work record.
+
+Gusgus is the built-in assistant behind `@@`. To declare another permanent
+agent, add a literal-only `Agent::AgentProfile` subclass in `trash/user/`, then
+run `make bash`. Each profile selects a handle, display name, harness profile,
+versioned archetype and role, session scope, and enabled state. See
+[permanent agent configuration](docs/permanent-agent-configuration.md) for the
+complete profile and policy setup.
+
+An interactive human shell reconciles compiled profiles automatically at startup.
+Use `@ Agent::Roster list` to see declarations. Inspect one durable identity with
+`@ Agent::Roster inspect: 'gadget'`, and inspect its sessions with
+`@ Agent::Session browse`. Set `TRASHTALK_ROSTER_AUTO_RECONCILE=0` in `.trashrc`
+to disable automatic reconciliation.
+
 ## Work on the code
 
 ```bash
@@ -218,6 +239,7 @@ directory to `load-path` and `(require 'trashtalk-mode)`.
 | Syntax and language limitations | [LANGUAGE.md](LANGUAGE.md) |
 | Small, executable DSL recipes | [Patterns](docs/trashtalk-patterns.md) |
 | Design idioms and domain examples | [The Way of Trashtalk](docs/the-way-of-trashtalk.md) |
+| Durable agents, sessions, and roster profiles | [Agent operations](docs/agent-operations.md), [permanent agents](docs/permanent-agent-configuration.md) |
 | Compiler architecture | [jq compiler](lib/jq-compiler/README.md) |
 | Current guides, designs, and history | [Documentation index](docs/README.md) |
 | Accepted cleanup work and validation | [Cleanup checklist](docs/cleanup-2026-09-29.md) |
