@@ -140,3 +140,95 @@ Roster subclass: Object
   classMethod: list [
     ^ @ self manifest
   ]
+
+  # Return the durable state alongside the compiled declaration. The manifest
+  # is read before the transaction because it is a raw file boundary.
+  classMethod: inspect: handle [
+    | profile args owner |
+    profile := @ self profileNamed: handle.
+    owner := @ Agent::Focus human.
+    args := #{handle: handle profile: profile owner: owner} asJson.
+    ^ @ Store transaction: self sending: 'inspectWithin:' with: args
+  ]
+
+  classMethod: inspectWithin: args [
+    | ids count identity owner profile status managed pending |
+    @ Store requireTransaction.
+    owner := args objectAt: 'owner'.
+    ids := @ Store idsOf: 'Agent::Identity' matching: (#{handle: (args objectAt: 'handle')} asJson).
+    count := ids arrayLength.
+    (count > 1) ifTrue: [^ @ Require reject: 'Identity handle is ambiguous; inspect legacy records'].
+    (count = 0) ifTrue: [^ @ Require reject: 'No durable identity has that handle'].
+    identity := @ Store read: (ids arrayFirst) class: 'Agent::Identity'.
+    @ Require equal: (@ identity owner) to: owner.
+    profile := args objectAt: 'profile'.
+    status := 'unmanaged'.
+    managed := @ identity configProfile.
+    pending := @ identity pendingSessionScope.
+    (managed notEmpty) ifTrue: [status := 'managed'].
+    (pending notEmpty) ifTrue: [status := 'pending-scope-migration'].
+    ^ #{identity: identity handle: (@ identity handle) displayName: (@ identity displayName)
+      enabled: (@ identity enabled) profile: (@ identity defaultProfile)
+      scope: (@ identity sessionScope) currentSession: (@ identity currentSession)
+      status: status configured: profile} asJson
+  ]
+
+  classMethod: disable: handle [
+    | args owner |
+    owner := @ Agent::Focus human.
+    args := #{handle: handle owner: owner} asJson.
+    ^ @ Store transaction: self sending: 'disableWithin:' with: args replaying: true
+  ]
+
+  classMethod: disableWithin: args [
+    | ids count identity |
+    @ Store requireTransaction.
+    ids := @ Store idsOf: 'Agent::Identity' matching: (#{handle: (args objectAt: 'handle')} asJson).
+    count := ids arrayLength.
+    @ Require equal: count to: 1.
+    identity := @ Store read: (ids arrayFirst) class: 'Agent::Identity'.
+    @ Require equal: (@ identity owner) to: (args objectAt: 'owner').
+    @ identity enabled: false.
+    @ identity save.
+    ^ identity
+  ]
+
+  # Retirement preserves the identity, sessions, and history. It removes the
+  # identity from future work by disabling it and clears roster provenance, so
+  # later source removal cannot silently reactivate it.
+  classMethod: retire: handle reason: reason [
+    | args owner |
+    owner := @ Agent::Focus human.
+    @ Require text: reason.
+    args := #{handle: handle owner: owner} asJson.
+    ^ @ Store transaction: self sending: 'retireWithin:' with: args replaying: true
+  ]
+
+  classMethod: retireWithin: args [
+    | ids count identity |
+    @ Store requireTransaction.
+    ids := @ Store idsOf: 'Agent::Identity' matching: (#{handle: (args objectAt: 'handle')} asJson).
+    count := ids arrayLength.
+    @ Require equal: count to: 1.
+    identity := @ Store read: (ids arrayFirst) class: 'Agent::Identity'.
+    @ Require equal: (@ identity owner) to: (args objectAt: 'owner').
+    @ identity enabled: false.
+    @ identity configProfile: ''.
+    @ identity configDigest: ''.
+    @ identity pendingSessionScope: ''.
+    @ identity save.
+    ^ identity
+  ]
+
+  rawClassMethod: focus: handle [
+    @ Agent::Roster focus: "$1" workspace: "$PWD"
+  ]
+
+  classMethod: focus: handle workspace: workspace [
+    | snapshot identity session |
+    snapshot := @ self inspect: handle.
+    identity := snapshot jsonTextAt: 'identity'.
+    session := @ Agent::Session currentFor: identity workspace: workspace.
+    session isEmpty ifTrue: [^ @ Require reject: 'Configured agent has no current session; start a conversation first'].
+    ^ @ Agent::Focus open: session
+  ]

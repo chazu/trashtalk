@@ -49,6 +49,12 @@ check 'reconcile applies each profile scope' identity "$(@ "$analyst" sessionSco
 check 'reconcile records display name' Researcher "$(@ "$id" displayName)"
 check 'reconcile records profile default' shell "$(@ "$id" defaultProfile)"
 check 'reconcile records roster provenance' Researcher "$(@ "$id" configProfile)"
+inspection=$(must @ Agent::Roster inspect: researcher)
+check 'inspect reports managed roster state' managed "$(printf '%s' "$inspection" | jq -r .status)"
+check 'inspect reports configured handle' researcher "$(printf '%s' "$inspection" | jq -r .handle)"
+@ Agent::Roster disable: researcher >/dev/null
+check 'disable prevents new configured sessions' false "$(@ "$id" enabled)"
+@ Agent::Roster reconcile >/dev/null
 check 'reconcile is idempotent' "$id" "$(must @ Agent::Roster reconcile)"
 mkdir "$tmp/work"
 session=$(must @ "$id" ensureCurrentSessionFor: "$tmp/work")
@@ -65,5 +71,9 @@ manual=$(must @ Agent::Identity named: reviewer)
 @ "$manual" owner: roster-owner
 @ "$manual" save
 reject 'profile cannot silently adopt unmanaged identity' @ Agent::Roster reconcileProfile: '{"identity":"Researcher","handle":"reviewer"}'
+
+@ Agent::Roster retire: analyst reason: 'No longer needed' >/dev/null
+check 'retire disables durable identity' false "$(@ "$analyst" enabled)"
+check 'retire removes roster provenance' '' "$(@ "$analyst" configProfile)"
 
 echo "PASS: $passed roster checks"

@@ -29,16 +29,19 @@ Browser subclass: Object
   ]
 
   classMethod: browseIn: dir [
-    | records choice selected action ignored |
+    | records choice selected action ignored handle |
     [1 = 1] whileTrue: [
       records := @ self sessionRecordsIn: dir.
       choice := @ self pickSession: records in: dir.
       selected := choice jsonTextAt: 'id'.
       selected isEmpty ifTrue: [^ 'dismissed'].
       action := choice jsonTextAt: 'action'.
-      (action = 'terminate') ifTrue: [
+      handle := @ self configuredHandleFrom: selected.
+      (handle notEmpty) ifTrue: [
+        ignored := @ self configuredAgent: handle in: dir
+      ] ifFalse: [(action = 'terminate') ifTrue: [
         ignored := @ self confirmTerminationOf: selected in: dir
-      ] ifFalse: [ignored := @ self session: selected in: dir]
+      ] ifFalse: [ignored := @ self session: selected in: dir]]
     ]
   ]
 
@@ -151,9 +154,51 @@ Browser subclass: Object
   ]
 
   classMethod: sessionRecordsIn: dir [
+    pragma: stream
     | sessions |
+    @ self configuredAgentRecordsIn: dir.
     sessions := @ self listedSessions.
-    ^ @ self sessionRecordsFor: sessions in: dir
+    @ self sessionRecordsFor: sessions in: dir
+  ]
+
+  # Manifest records are offered before history. The record id has a private
+  # prefix, so a picker result cannot be mistaken for a session id.
+  rawClassMethod: configuredAgentRecordsIn: dir [
+    @ Agent::Roster manifest | jq -c --arg dir "$1" '.profiles[] | {
+      schema_version: 1, id: ("agent:" + .handle), kind: "configured-agent",
+      label: (.displayName + " (" + .handle + ")"),
+      detail: ("Configured agent, scope=" + .sessionScope + ", enabled=" + (.enabled|tostring)),
+      path: ("configured-" + .handle + ".txt"), line: 1, column: 1
+    }'
+  ]
+
+  rawClassMethod: configuredHandleFrom: recordId [
+    case "$1" in agent:*) printf '%s\n' "${1#agent:}";; esac
+  ]
+
+  classMethod: configuredAgent: handle in: dir [
+    | records action inspection ignored |
+    [1 = 1] whileTrue: [
+      records := @ self configuredActionRecordsFor: handle.
+      action := @ self pick: records root: dir title: 'Configured agent actions'.
+      action caseOf: {
+        #('' 'back') -> [^ 'dismissed'].
+        'focus' -> [ignored := @ Agent::Roster focus: handle].
+        'disable' -> [ignored := @ Agent::Roster disable: handle].
+        'inspect' -> [
+          inspection := @ Agent::Roster inspect: handle.
+          ignored := @ self page: inspection title: 'Configured agent inspection'
+        ]
+      }
+    ]
+  ]
+
+  classMethod: configuredActionRecordsFor: handle [
+    pragma: stream
+    @ self actionRecord: 'focus' label: 'Focus existing conversation' detail: 'Open the current session without creating work'.
+    @ self actionRecord: 'inspect' label: 'Inspect configuration' detail: 'Show owner, scope, state, and manifest declaration'.
+    @ self actionRecord: 'disable' label: 'Disable agent' detail: 'Prevent new sessions and delegated work; retain history'.
+    @ self actionRecord: 'back' label: 'Back' detail: 'Return to configured agents'
   ]
 
   # Text projection of a session snapshot, shared by preview files and details.
