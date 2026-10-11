@@ -2434,8 +2434,27 @@ function initialize_trash() {
   msg_debug "Trash system initialized"
 }
 
+function reconcile_roster_on_interactive_startup() {
+  # A profile is user-owned desired configuration. Apply it when its owner
+  # opens an interactive shell, but never from tests, UI bridges, workers, or
+  # authenticated agent runs. Those contexts either lack human authority or
+  # must remain free of startup writes.
+  [[ $- == *i* ]] || return 0
+  [[ -z "${TRASHTALK_SKIP_USER_CONFIG:-}" ]] || return 0
+  [[ ! ${TRASHTALK_RUN_TOKEN+x} ]] || return 0
+  [[ "${TRASHTALK_ROSTER_AUTO_RECONCILE:-1}" != 0 ]] || return 0
+  [[ "${_TRASHTALK_ROSTER_RECONCILED_DB:-}" != "$SQLITE_JSON_DB" ]] || return 0
+
+  if ! @ Agent::Roster reconcile >/dev/null; then
+    msg_warning "Configured agent roster was not reconciled; run: @ Agent::Roster reconcile"
+    return 0
+  fi
+  _TRASHTALK_ROSTER_RECONCILED_DB="$SQLITE_JSON_DB"
+}
+
 # Auto-initialize when sourced
 initialize_trash || return 1
+reconcile_roster_on_interactive_startup
 
 # Load tab completion for @ if in interactive shell
 if [[ $- == *i* ]] && [[ -f "$SCRIPT_DIR/trash-completion.bash" ]]; then

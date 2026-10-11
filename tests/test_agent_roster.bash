@@ -39,6 +39,21 @@ reject() { local name="$1"; shift; if "$@" >"$tmp/rejected.out" 2>"$tmp/rejected
 
 check 'compiled profile manifest handle' researcher "$(jq -r '.profiles[1].handle' "$root/trash/.compiled/.agent-profile-manifest.json")"
 check 'compiled profile manifest includes every declared agent' 2 "$(jq '.profiles | length' "$root/trash/.compiled/.agent-profile-manifest.json")"
+
+# A human interactive shell reconciles the already compiled manifest. Agent runs
+# and test shells skip this startup write, so this uses a separate human-owned DB.
+startup_db="$tmp/startup.db"
+env -u TRASHTALK_RUN_TOKEN TRASHTALK_DIR="$root" TRASHDIR="$root/trash" SQLITE_JSON_DB="$startup_db" TRASHTALK_USER=roster-startup TRASHTALK_SKIP_USER_CONFIG=1 bash -c '
+  source "$TRASHTALK_DIR/lib/trash.bash"
+  @ Agent::Archetype define: assistant revision: 1 instructions: "Research carefully." profile: shell >/dev/null
+  @ Agent::Role define: assistant revision: 1 capabilities: "[\"assignment.work\"]" workspacePolicy: "[]" runBudget: "{\"retryLimit\":0}" >/dev/null
+'
+startup=$(env -u TRASHTALK_RUN_TOKEN -u TRASHTALK_SKIP_USER_CONFIG HOME="$tmp/home" TRASHTALK_DIR="$root" TRASHDIR="$root/trash" SQLITE_JSON_DB="$startup_db" TRASHTALK_USER=roster-startup bash --noprofile --norc -ic '
+  source "$TRASHTALK_DIR/lib/trash.bash"
+  @ Agent::Roster inspect: researcher
+' 2>/dev/null)
+check 'interactive startup reconciles roster' managed "$(printf '%s' "$startup" | jq -r .status)"
+
 arch=$(must @ Agent::Archetype define: assistant revision: 1 instructions: 'Research carefully.' profile: shell)
 role=$(must @ Agent::Role define: assistant revision: 1 capabilities: '["assignment.work"]' workspacePolicy: '[]' runBudget: '{"retryLimit":0}')
 id=$(must @ Agent::Roster reconcile)

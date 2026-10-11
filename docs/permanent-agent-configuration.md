@@ -112,9 +112,16 @@ compiled input with `cat trash/.compiled/.agent-profile-manifest.json`. An empty
 
 ## Reconciliation and lifecycle
 
-`@ Agent::Roster reconcile` is the only operation that applies declared
-configuration to durable identities. It runs after a successful build, at worker
-startup, and from a user-visible roster action. It is idempotent.
+`@ Agent::Roster reconcile` is the operation that applies declared configuration
+to durable identities. Trashtalk runs it automatically after loading an
+interactive human shell. It does not run from agent tokens, workers, UI bridges,
+or isolated tests. This keeps startup configuration writes with the human owner.
+
+`.trashrc` is sourced before Trashtalk has loaded its dispatcher, so it must not
+call `@ Agent::Roster reconcile` itself. Set `TRASHTALK_ROSTER_AUTO_RECONCILE=0`
+in `.trashrc` to disable the default startup behavior. Run
+`@ Agent::Roster reconcile` explicitly after editing a profile and rebuilding
+when the current shell must see the change now. Reconciliation is idempotent.
 
 For each profile, reconciliation runs one transaction that:
 
