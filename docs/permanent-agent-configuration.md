@@ -1,6 +1,6 @@
 # Permanent agent configuration
 
-**Status:** Proposed
+**Status:** Partially implemented
 **Date:** 2026-10-10
 **Scope:** Configured, durable agent identities. Ephemeral, assignment-owned agents are explicitly deferred.
 
@@ -150,7 +150,7 @@ runs, and publishes the membership change atomically.
 
 ## Public interface and UI
 
-Add these public operations:
+The following public operations are implemented:
 
 ```smalltalk
 @ Agent::Roster list
@@ -162,18 +162,19 @@ Add these public operations:
 @ Agent::Run delegate: objective toAgent: 'researcher' criteria: criteria key: key
 ```
 
-`list` shows handle, display name, state, owner, profile, scope, current-session
-state, and configuration status: managed, pending scope migration, unmanaged,
-or configuration error. `focus:` resolves only an owned current session and
-opens the existing empty-composer behavior when there is no session. It never
-creates a session. Sending direct input or creating a delegation can call
+`list` returns the compiled manifest. `inspect:` returns an owner-authorized
+projection of one durable identity and its manifest declaration. It reports
+managed, unmanaged, or pending scope migration status. `focus:` resolves only
+an owned current session. It rejects when no session exists, so it never creates
+work. Sending direct input or creating a delegation can call
 `ensureCurrentSessionFor:` because that is explicit work creation.
 
-The session browser gains a **Configured agents** section before the historical
-session list. Selecting an agent offers Focus, Start conversation, Delegate,
-Pause, Disable, and Inspect. Disabled agents show their history but omit Start
-and Delegate. The Inbox and Assignment workboard show the assignee display name
-and stable handle.
+The session browser now places manifest-backed configured agents before
+historical sessions. Its configured-agent menu offers Focus existing
+conversation, Inspect configuration, and Disable agent. Records have an
+`agent:` namespace and cannot be treated as session IDs. Disabled agents retain
+their history. Start conversation, Delegate, Pause, and assignment-workboard
+presentation remain deferred controls.
 
 `delegate:toAgent:criteria:key:` resolves a roster-managed, enabled identity for
 the current owner, then uses that identity's current session for the run's
@@ -199,23 +200,43 @@ a complete result. Build-time errors prevent a new manifest, so worker startup
 continues using the last successful manifest and reports that the source needs a
 successful build.
 
-Retirement is an explicit, owner-authorized lifecycle operation. It first
-requires no active run or requires the owner to stop those runs. It disables the
-identity, closes current-session membership, and retains every historical
-record. It does not delete provider references, sessions, assignments, or
-messages.
+Retirement is an explicit, owner-authorized lifecycle operation. The delivered
+operation disables the identity and clears roster provenance while retaining all
+sessions and history. Active-run checking and membership closure remain deferred
+before retirement can become a full session-lifecycle control.
 
-## Implementation slices
+## Delivered implementation
 
-1. Add the restricted `AgentProfile` source form, manifest generation, and
-   compiler validation. Add profiles for no built-in identities yet.
-2. Add `Agent::Roster reconcile`, configuration provenance, adoption, and
-   non-destructive disabled and unmanaged states. Cover restart and conflict
-   behavior with transaction tests.
-3. Add roster listing, inspection, focus, and session-browser presentation.
-4. Add `delegate:toAgent:criteria:key:` and verify that it preserves all
-   Assignment authorization and idempotency guarantees.
-5. Add explicit disable, re-enable, retirement, and pending scope-migration UI.
+Commits `ea9fc115` and `002f2cd` deliver the restricted `AgentProfile` form,
+compiler manifest generation, reconciliation, provenance, adoption, configured
+delegation, inspection, disable, retirement, focus, and browser presentation.
+Reconciliation processes every profile independently. The focused regression
+suite covers multiple profiles, idempotence, provenance, disable, retirement,
+and unmanaged identity protection.
+
+## Deferred controls
+
+- Add Start conversation, Delegate, and Pause to the configured-agent menu.
+- Add configured-agent display names to Inbox and Assignment workboards.
+- Add an explicit scope-migration UI.
+- Require an idle identity and clear current-session memberships during retire.
+- Add the remaining acceptance coverage for cross-owner access, scope routing,
+  profile upgrades, source deletion, and configured-agent delegation.
+
+## Validation evidence
+
+The delivered commits passed these commands in the repository checkout:
+
+```sh
+make single CLASS=Agent/Roster
+make single CLASS=Agent/Delegation
+make single CLASS=Agent/Browser
+bash tests/test_agent_roster.bash
+bash tests/test_agent_delegation.bash
+bash tests/test_agent_browser.bash
+```
+
+`tests/test_agent_roster.bash` completed 18 checks after the lifecycle work.
 
 ## Acceptance tests
 
