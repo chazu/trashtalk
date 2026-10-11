@@ -51,6 +51,8 @@ implemented contracts from designs and historical evidence.
   consult current agent guides for available behavior.
 - [Code intelligence and memory research](code-intelligence-and-memory-research.md):
   dated evaluation, not a claim of installed memory services.
+- [Utopia knowledge subsystem plan](utopia-knowledge-subsystem-plan.md): an opt-in,
+  MCP-based external knowledge service with read-only work before reviewed writes.
 - [Cue/mise brainstorm](cue-mise-brainstorm.md): current wrappers plus proposed uses.
 - [Kubernetes package](kube-design.md): implemented package with historical design
   sketches and open questions.
