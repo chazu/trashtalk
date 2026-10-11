@@ -4,6 +4,18 @@ if [[ "${TRASHTALK_TEST_ISOLATED:-}" != 1 ]]; then
 fi
 set -uo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+mkdir -p "$root/trash/user"
+cat > "$root/trash/user/Researcher.trash" <<'EOF'
+Researcher subclass: Agent::AgentProfile
+  handle: 'researcher'
+  displayName: 'Researcher'
+  profile: 'shell'
+  archetype: 'assistant' revision: 1
+  role: 'assistant' revision: 1
+  sessionScope: 'workspace'
+  enabled: true
+EOF
+make -C "$root" bash >/dev/null
 source "$root/lib/trash.bash"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
@@ -43,6 +55,8 @@ run=${lines[0]}
 @ Agent::Worker handlesInbox: test >/dev/null
 __Agent__Worker__class__tickSession_() { printf '%s\n' "$1" >> "$TICKS"; }
 records=$(@ Agent::Browser sessionRecordsIn: "$tmp")
+check 'configured profile appears in session browser' agent:researcher "$(printf '%s\n' "$records" | head -n 1 | jq -r .id)"
+contains 'configured profile record shows display name' Researcher "$records"
 contains 'session record includes workspace' "$root" "$records"
 contains 'session record includes queued count' 'pending=1' "$records"
 contains 'session details include provider failure' 'fixture provider error' "$(@ "$session" details)"

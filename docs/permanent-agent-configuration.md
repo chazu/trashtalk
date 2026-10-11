@@ -95,6 +95,21 @@ invalid scopes, unknown profile kinds, missing archetype or role revisions, and
 invalid class bodies during the build. Two enabled or disabled profiles cannot
 claim the same handle.
 
+To view configured agents, create at least one `AgentProfile` file under
+`trash/user/`, then rebuild the local Trashtalk artifacts:
+
+```sh
+cd ~/.trashtalk
+make bash
+source lib/trash.bash
+@ Agent::Roster reconcile
+@ Agent::Session browse
+```
+
+The build must succeed before the browser can read a profile. Inspect the
+compiled input with `cat trash/.compiled/.agent-profile-manifest.json`. An empty
+`profiles` array means that the browser has no configured agents to show.
+
 ## Reconciliation and lifecycle
 
 `@ Agent::Roster reconcile` is the only operation that applies declared
