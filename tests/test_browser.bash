@@ -32,10 +32,12 @@ mkdir -p "$FAKE_BIN" "$NAMESPACE_DIR"
 cat > "$SOURCE_FILE" <<EOF
 package: $TEST_PACKAGE
 
+## Brief: Exercises the source browser contract.
 Widget subclass: Object
   instanceVars: value:0
   classInstanceVars: tally:0
 
+  ## Brief: Stores a value at an index.
   method: at: index put: newValue [
     value := newValue.
     ^ value
@@ -64,6 +66,8 @@ Widget subclass: Object
   method: textOnly [
     ^ 'at:put:'
   ]
+## Help:
+# Use this fixture to test class and method source browser records.
 EOF
 
 cat > "$TRAIT_FILE" <<EOF
@@ -146,6 +150,8 @@ echo "=== Symbol and Instance Browser Tests ==="
 
 records=$(@ Trash symbolRecords)
 printf '%s\n' "$records" > "$TEST_TMP/symbols.jsonl"
+browser_index=$(@ Trash browserIndex)
+printf '%s\n' "$browser_index" > "$TEST_TMP/browser-index.json"
 
 assert_jq "namespaced class record" "$TEST_TMP/symbols.jsonl" \
     "select(.id == \"$TEST_CLASS\" and .kind == \"class\")"
@@ -165,6 +171,8 @@ assert_jq "raw class method" "$TEST_TMP/symbols.jsonl" \
     "select(.id == \"$TEST_CLASS class>>rawFactory\" and .raw == true)"
 assert_jq "test method" "$TEST_TMP/symbols.jsonl" \
     "select(.id == \"$TEST_CLASS test>>testKeywordMethod\" and .kind == \"test_method\")"
+assert_jq "browser index preserves class and method documentation" "$TEST_TMP/browser-index.json" \
+    ".classes[] | select(.name == \"Widget\" and .brief == \"Exercises the source browser contract.\" and .help == \"Use this fixture to test class and method source browser records.\") | .methods[] | select(.selector == \"at:put:\" and .brief == \"Stores a value at an index.\")"
 
 expected_line=$(grep -n 'method: at:' "$SOURCE_FILE" | cut -d: -f1)
 actual_line=$(jq -r "select(.id == \"$TEST_CLASS>>at:put:\") | .line" "$TEST_TMP/symbols.jsonl")
