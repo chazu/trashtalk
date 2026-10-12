@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root=${1:-trash}
+missing=0
+declared=0
+documented=0
+
+while IFS= read -r -d '' file; do
+    previous=''
+    line_number=0
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line_number=$((line_number + 1))
+        if [[ $line =~ ^[[:space:]]*([[:alnum:]_:]+[[:space:]]+(subclass:|trait)|((raw|class|rawClass)?[Mm]ethod|test):) ]]; then
+            declared=$((declared + 1))
+            if [[ $previous =~ ^[[:space:]]*##[[:space:]]Brief:[[:space:]]+.+ ]]; then
+                documented=$((documented + 1))
+            else
+                printf 'MISSING %s:%s %s\n' "$file" "$line_number" "$line"
+                missing=$((missing + 1))
+            fi
+        fi
+        previous=$line
+    done <"$file"
+done < <(find "$root" -type f -name '*.trash' -print0 | sort -z)
+
+printf 'Documented %s of %s declarations. Missing %s.\n' "$documented" "$declared" "$missing"
+test "$missing" -eq 0

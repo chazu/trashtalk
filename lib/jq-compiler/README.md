@@ -17,6 +17,32 @@ methods use a separate Bash token reconstruction path.
 IR, or grammar-module pipeline. `symbols.jq` and `senders.jq` query ASTs for
 browsing; they do not generate executable code.
 
+## Browser documentation
+
+Use `## Brief:` for one sentence of browser-visible documentation. Put it on
+the line immediately before a class, trait, or method declaration. A blank
+line or an ordinary `#` comment prevents attachment.
+
+```trash
+## Brief: Counts values collected by the importer.
+Counter subclass: Object
+  ## Brief: Returns the current value count.
+  method: count [ ^ 0 ]
+## Help:
+# Open this class in the browser to inspect the importer state.
+# Select count to view the implementation.
+```
+
+`## Help:` is class-level documentation. It must occur after every declaration
+and be followed by a terminal, contiguous block of `#` comment lines. The
+browser shows the class brief, method brief, and help above selected source.
+Ordinary `#` comments remain comments and do not create metadata.
+
+Run `bin/trash-doc-audit` to list declarations that lack an immediately
+attached brief. The audit reports all declarations. Authors can leave trivial
+accessors and private implementation helpers undocumented only when they have
+an explicit local reason to do so.
+
 From the repository root:
 
 ```bash
