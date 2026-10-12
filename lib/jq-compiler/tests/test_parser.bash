@@ -657,3 +657,53 @@ run_test "location: trait line" "1" \
 
 run_test "location: trait method line" "2" \
     "$(parse_field "$INPUT_TRAIT_LOC" '.methods[0].location.line')"
+
+# ------------------------------------------------------------------------------
+# Source Documentation Tests
+# ------------------------------------------------------------------------------
+
+echo -e "\n  Source Documentation:"
+
+INPUT_SOURCE_DOCS='## Brief: Counts stored values.
+Counter subclass: Object
+  ## Brief: Returns the number of stored values.
+  method: count [ ^ 0 ]
+## Help:
+# Open the class in the browser.
+# Select count to inspect its source.'
+
+run_test "brief: class attaches immediately before declaration" "Counts stored values." \
+    "$(parse_field "$INPUT_SOURCE_DOCS" '.brief')"
+
+run_test "brief: method attaches immediately before declaration" "Returns the number of stored values." \
+    "$(parse_field "$INPUT_SOURCE_DOCS" '.methods[0].brief')"
+
+run_test "help: terminal contiguous comments are joined" $'Open the class in the browser.\nSelect count to inspect its source.' \
+    "$(parse_field "$INPUT_SOURCE_DOCS" '.help')"
+
+INPUT_NONATTACHED_BRIEF='## Brief: This is separated from the class.
+
+Counter subclass: Object
+  # Ordinary comment.
+  method: count [ ^ 0 ]'
+
+run_test "brief: blank line prevents attachment" "null" \
+    "$(parse_field "$INPUT_NONATTACHED_BRIEF" '.brief')"
+
+run_test "brief: ordinary comments remain metadata-free" "null" \
+    "$(parse_field "$INPUT_NONATTACHED_BRIEF" '.methods[0].brief')"
+
+INPUT_NONTERMINAL_HELP='Counter subclass: Object
+  method: count [ ^ 0 ]
+## Help:
+# This is not terminal.
+method: later [ ^ 1 ]'
+
+run_test "help: non-terminal block is ignored" "null" \
+    "$(parse_field "$INPUT_NONTERMINAL_HELP" '.help')"
+
+INPUT_EMPTY_HELP='Counter subclass: Object
+## Help:'
+
+run_test "help: marker without comment lines is ignored" "null" \
+    "$(parse_field "$INPUT_EMPTY_HELP" '.help')"

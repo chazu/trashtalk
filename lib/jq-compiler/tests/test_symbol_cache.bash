@@ -25,12 +25,19 @@ printf 'First subclass: Object\n  method: gamma [ ^ 1 ]\n' >"$first"
 touch -r "$TEST_TMP/mtime" "$first"
 "$driver" symbols-many "$first" "$second" >"$TEST_TMP/changed"
 jq -se 'any(.[]; .selector == "gamma") and all(.[]; .selector != "alpha")' "$TEST_TMP/changed"
+# Documentation-only changes must invalidate a symbol cache even when mtime is
+# restored. This also verifies that class and method records preserve briefs.
+cp -p "$first" "$TEST_TMP/documented-mtime"
+printf '## Brief: A documented first class.\nFirst subclass: Object\n  ## Brief: Reads gamma.\n  method: gamma [ ^ 1 ]\n' >"$first"
+touch -r "$TEST_TMP/documented-mtime" "$first"
+"$driver" symbols-many "$first" "$second" >"$TEST_TMP/documented"
+jq -se 'any(.[]; .class_name == "First" and .kind == "class" and .brief == "A documented first class.") and any(.[]; .selector == "gamma" and .brief == "Reads gamma.")' "$TEST_TMP/documented"
 # Corrupt one cached JSON array; a warm query must repair it before publishing.
 for cache in "$TEST_TMP/trash/.compiled/.symbolcache/"*.json; do
     printf '{' >"$cache"
 done
 "$driver" symbols-many "$first" "$second" >"$TEST_TMP/repaired"
-cmp "$TEST_TMP/changed" "$TEST_TMP/repaired"
+cmp "$TEST_TMP/documented" "$TEST_TMP/repaired"
 mv "$first" "$TEST_TMP/renamed.trash"
 "$driver" symbols-many "$TEST_TMP/renamed.trash" >"$TEST_TMP/renamed"
 jq -se --arg path "$TEST_TMP/renamed.trash" 'all(.[]; .class_name == "First" and .path == $path)' "$TEST_TMP/renamed"

@@ -1056,18 +1056,28 @@ def brief_before($tokens; $location):
     | .value | sub("^## Brief:[ ]*"; "")
   ] | last // null;
 
-# Help is deliberately terminal: its marker must occur after every declaration.
-# The block contains every following contiguous comment line, with one leading
-# comment marker removed. Parser validation will reject non-comment content.
+# Help is deliberately terminal: its marker must occur after every declaration
+# and the rest of the file must contain only its contiguous comment block.
 def terminal_help($tokens; $class):
   ($class.methods | map(.location.line) | max // $class.location.line) as $last |
-  [ $tokens[] | select(.type == "COMMENT" and .line > $last and (.value | startswith("## Help:"))) ]
-  | last as $marker
-  | if $marker == null then null
-    else [ $tokens[]
-           | select(.type == "COMMENT" and .line > $marker.line)
-           | .value | sub("^#[ ]?"; "") ] | join("\n")
-    end;
+  ([range(0; ($tokens | length)) as $i
+    | $tokens[$i]
+    | select(.type == "COMMENT" and .line > $last and (.value | startswith("## Help:")))
+    | $i] | last) as $marker_index |
+  if $marker_index == null then null
+  else
+    ($tokens | length) as $length |
+    ([range($marker_index + 1; $length) as $i
+      | select(($tokens[$i].type != "NEWLINE") and ($tokens[$i].type != "COMMENT"))
+      | $i] | first // $length) as $block_end |
+    if $block_end != $length then null
+    else
+      [range($marker_index + 1; $block_end) as $i
+       | $tokens[$i]
+       | select(.type == "COMMENT")
+       | .value | sub("^#[ ]?"; "")] | join("\n")
+    end
+  end;
 
 def attach_docs($tokens):
   . as $class |
