@@ -28,6 +28,14 @@ parse_ast() {
     echo "$1" | "$TOKENIZER" | jq -f "$PARSER"
 }
 
+# Compare JSON values without depending on jq's pretty-printing layout.
+run_test_json() {
+    local name="$1"
+    local expected="$2"
+    local actual="$3"
+    run_test "$name" "$(printf '%s' "$expected" | jq -c .)" "$(printf '%s' "$actual" | jq -c .)"
+}
+
 # ------------------------------------------------------------------------------
 # Class Header Tests
 # ------------------------------------------------------------------------------
