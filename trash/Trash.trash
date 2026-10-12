@@ -1,5 +1,6 @@
 # Trash - The system object representing the entire trash system
 # Provides introspection, management, and system-wide operations
+## Brief: Provides Trashtalk system management and source browsing.
 Trash subclass: Object
   include: Debuggable
 
@@ -657,6 +658,7 @@ CONFIG
 
   # Read-only browser snapshot. The canonical jq parser supplies every class
   # and method location; Innards is given no mutation protocol or shell hooks.
+  ## Brief: Builds the read-only source browser index.
   rawMethod: browserIndex [
     local root driver records
     local -a files
@@ -676,6 +678,7 @@ CONFIG
            kind:.method_kind,raw,line,brief:(.brief // "")}] }]}' <<< "$records"
   ]
 
+  ## Brief: Opens the installed Innards source browser.
   classMethod: browse [
     | available index |
     available := @ Tools::Inbrowser isInstalled.
@@ -1276,3 +1279,6 @@ EVALEOF
     code=$(cat "$1")
     @ Trash eval: "$code"
   ]
+## Help:
+# Run @ Trash browse to inspect classes and their source without mutation.
+# Use @ Trash sourceFor: <class> when a caller needs the raw source text.
