@@ -671,9 +671,9 @@ CONFIG
       [ .[] | select(.kind == "class" or .kind == "trait") ] as $classes |
       [ .[] | select(.kind == "instance_method" or .kind == "class_method" or .kind == "test_method") ] as $methods |
       {schema_version:1,root:$root,classes:[$classes[] as $class | {name:($class|short),package:($class|package),kind:$class.kind,
-        superclass:($class.superclass // ""),path:$class.path,methods:[$methods[] | select(.class_name == $class.class_name) |
+        superclass:($class.superclass // ""),path:$class.path,brief:($class.brief // ""),help:($class.help // ""),methods:[$methods[] | select(.class_name == $class.class_name) |
           {selector,side:(if .method_kind == "class" then "class" elif .method_kind == "test" then "test" else "instance" end),
-           kind:.method_kind,raw,line}] }]}' <<< "$records"
+           kind:.method_kind,raw,line,brief:(.brief // "")}] }]}' <<< "$records"
   ]
 
   classMethod: browse [

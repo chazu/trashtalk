@@ -1047,6 +1047,37 @@ def parsePackageDecl:
 # Main Parser
 # ==============================================================================
 
+# Documentation is opt-in so ordinary comments retain their existing ignored
+# semantics. A brief must be the comment immediately above a declaration.
+def brief_before($tokens; $location):
+  [ $tokens[]
+    | select(.type == "COMMENT" and .line == ($location.line - 1))
+    | select(.value | startswith("## Brief:"))
+    | .value | sub("^## Brief:[ ]*"; "")
+  ] | last // null;
+
+# Help is deliberately terminal: its marker must occur after every declaration.
+# The block contains every following contiguous comment line, with one leading
+# comment marker removed. Parser validation will reject non-comment content.
+def terminal_help($tokens; $class):
+  ($class.methods | map(.location.line) | max // $class.location.line) as $last |
+  [ $tokens[] | select(.type == "COMMENT" and .line > $last and (.value | startswith("## Help:"))) ]
+  | last as $marker
+  | if $marker == null then null
+    else [ $tokens[]
+           | select(.type == "COMMENT" and .line > $marker.line)
+           | .value | sub("^#[ ]?"; "") ] | join("\n")
+    end;
+
+def attach_docs($tokens):
+  . as $class |
+  (brief_before($tokens; $class.location)) as $brief |
+  (terminal_help($tokens; $class)) as $help |
+  .methods |= map(. as $method | (brief_before($tokens; $method.location)) as $method_brief |
+    if $method_brief == null then . else . + {brief: $method_brief} end) |
+  if $brief == null then . else . + {brief: $brief} end |
+  if $help == null or $help == "" then . else . + {help: $help} end;
+
 def parseClass:
   # First check for package declaration
   parsePackageDecl |
@@ -1081,14 +1112,15 @@ def parseClass:
 # ==============================================================================
 
 # Input is token array from tokenizer
-{tokens: ., pos: 0, result: null, errors: []} |
+. as $source_tokens |
+{tokens: $source_tokens, pos: 0, result: null, errors: []} |
 parseClass |
 if .result != null then
   # Include warnings if there were non-fatal errors during parsing
   if (.errors | length) > 0 then
-    .result + {warnings: .errors}
+    (.result | attach_docs($source_tokens)) + {warnings: .errors}
   else
-    .result
+    .result | attach_docs($source_tokens)
   end
 else
   {error: true, message: "Parse failed", pos: .pos, errors: .errors}

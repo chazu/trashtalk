@@ -41,11 +41,13 @@ def resolved_parent:
     column: (($class.location.col // 0) + 1),
     label: $qualified,
     kind: (if $class.isTrait then "trait" else "class" end),
-    detail: ($class.parent // ""),
+    detail: ($class.brief // $class.parent // ""),
     class_name: $qualified,
     superclass: ($class | resolved_parent),
     traits: ($class.traits // [])
-  } + (if ($class.implementedProtocols // [] | length)>0 then
+  } + (if ($class.brief // "") != "" then {brief:$class.brief} else {} end)
+    + (if ($class.help // "") != "" then {help:$class.help} else {} end)
+  + (if ($class.implementedProtocols // [] | length)>0 then
     {protocols:[$class.implementedProtocols[] | {identity:(.protocol |
       if contains("::") or ($class.package // "")=="" then . else $class.package+"::"+. end),
       line:.location.line,column:(.location.col+1)}]}
@@ -90,11 +92,11 @@ def resolved_parent:
       column: ((.location.col // 0) + 1),
       label: $label,
       kind: method_kind,
-      detail: (if .raw then "raw" else "DSL" end),
+      detail: (.brief // if .raw then "raw" else "DSL" end),
       class_name: $qualified,
       selector: $selector,
       method_kind: .kind,
       raw: (.raw // false)
-    }
+    } + (if (.brief // "") != "" then {brief:.brief} else {} end)
   )
 )
