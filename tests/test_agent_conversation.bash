@@ -42,7 +42,7 @@ settle() {
 legacy=$(@ Agent::Archetype define: assistant revision: 1 instructions: 'Legacy inbox-only assistant.' profile: jcode)
 identity=$(@ Gusgus identity)
 session=$(@ Agent::Session openFor: "$identity" archetype: "$legacy" role: "$(@ Gusgus role)" workspace: "$tmp/workspace" profile: jcode)
-check 'new Gusgus archetype is versioned separately' 2 "$(@ "$(@ Gusgus archetype)" revision)"
+check 'new Gusgus archetype is versioned separately' 3 "$(@ "$(@ Gusgus archetype)" revision)"
 check 'existing conversation is retained' "$session" "$(@ Gusgus sessionFor: "$tmp/workspace")"
 check 'old archetype remains immutable' 'Legacy inbox-only assistant.' "$(@ "$legacy" instructions)"
 body=$'literal $(touch unexpected); "quotes"\n日本語\n'

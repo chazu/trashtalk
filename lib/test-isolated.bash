@@ -26,15 +26,23 @@ prepare_checkout() {
         done
         ((${#caches[@]} == 0)) || cp -- "${caches[@]}" "$target/trash/.compiled/$cache_kind/"
     done
-    # trash/user/ is not copied, so neither are the preferences compiled from it.
-    local settings="$target/trash/.compiled/.settings"
-    if [[ -f "$settings-manifest.json" ]]; then
-        jq '.preferences = []' "$settings-manifest.json" > "$settings-manifest.json.tmp" &&
-            mv "$settings-manifest.json.tmp" "$settings-manifest.json"
+    # trash/user/ is not copied, so neither are the classes compiled from it.
+    local user_dir="$root/trash/user" user_src user_name
+    if [[ -d $user_dir ]]; then
+        while IFS= read -r user_src; do
+            user_name=${user_src#"$user_dir/"}
+            user_name=${user_name%.trash}
+            rm -f "$target/trash/.compiled/${user_name//\//__}"
+        done < <(find "$user_dir" -name '*.trash')
     fi
-    if [[ -f "$settings.bash" ]]; then
-        grep -v '^_trash_prefs_' "$settings.bash" > "$settings.bash.tmp" || true
-        mv "$settings.bash.tmp" "$settings.bash"
+    local settings="$target/trash/.compiled/.settings"
+    if [[ -f "${settings}-manifest.json" ]]; then
+        jq '.preferences = []' "${settings}-manifest.json" > "${settings}-manifest.json.tmp" &&
+            mv "${settings}-manifest.json.tmp" "${settings}-manifest.json"
+    fi
+    if [[ -f "${settings}.bash" ]]; then
+        grep -v '^_trash_prefs_' "${settings}.bash" > "${settings}.bash.tmp" || true
+        mv "${settings}.bash.tmp" "${settings}.bash"
     fi
 }
 

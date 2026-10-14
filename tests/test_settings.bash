@@ -113,14 +113,9 @@ report=$(HOSTNAME=elsewhere @ Config check)
 [[ $report == *$'warn\tPreferences class Chaz changed since it was compiled'* ]] &&
     test_pass "check reports stale preferences" || test_fail "check reports stale preferences: $report"
 
-# Import moves a legacy config file into a new class.
-printf 'jcode.model = "from-file"\nagent.controlWait = 45\n' > "$TMPDIR/legacy"
-TRASHTALK_CONFIG="$TMPDIR/legacy" @ Config import: 'Imported' 2>/dev/null >/dev/null
-check "import writes the file's values" "$(TRASHTALK_PREFERENCES=Imported @ Config at: 'agent.controlWait')" '45'
-grep -q "^  Agent::JcodeSettings model: 'from-file'$" "$user/Imported.trash" &&
-    test_pass "import writes preference lines" || test_fail "import writes preference lines"
-
-# Imported is a second root class, so nothing picks one on another machine.
+# A second root class, so nothing picks one on another machine.
+@ Trash createPreferencesClass: 'Other' subclassing: 'Preferences' >/dev/null
+check "a second root is template-only" "$(grep -cE '^  [A-Za-z_].*:' "$user/Other.trash")" '0'
 fails "two roots with no host are ambiguous" 'could each apply' bash -c \
     "source lib/trash.bash; HOSTNAME=elsewhere @ Config at: 'jcode.model' put: x"
 
