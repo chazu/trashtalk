@@ -5,6 +5,8 @@ ChadSettings subclass: Settings
   prefix: chad
   setting: model type: string default: ''
     doc: "Model for chad sessions (HF repo, local dir or GGUF); empty uses chad's shipped default"
+  setting: thinking type: #(on off) default: 'on'
+    doc: "off passes --no-think so chad skips its <think> blocks (faster; overrides thinkBudget)"
   setting: thinkBudget type: integer default: 0
     doc: "Soft cap in tokens for each thinking step (--think-budget); 0 leaves chad's default (off)"
   setting: sandbox type: #(off on) default: 'off'

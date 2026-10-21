@@ -19,11 +19,12 @@ delegating run's profile. Existing sessions keep their recorded profile; run
 `@ Gusgus fresh: "$PWD"` to open one on chad. `@ Trash doctor` reports the
 executable and version. Install with `@ Tools::Chad installCommand`.
 
-| Setting | Env | Default | Meaning |
-|---|---|---|---|
-| `chad.model` | `TRASHTALK_CHAD_MODEL` | empty | `--model` (HF repo, local dir, GGUF) |
-| `chad.thinkBudget` | `TRASHTALK_CHAD_THINK_BUDGET` | 0 | `--think-budget`; 0 omits it |
-| `chad.sandbox` | `TRASHTALK_CHAD_SANDBOX` | `off` | see Sandbox |
+| Setting            | Env                           | Default | Meaning                                          |
+|--------------------|-------------------------------|---------|--------------------------------------------------|
+| `chad.model`       | `TRASHTALK_CHAD_MODEL`        | empty   | `--model` (HF repo, local dir, GGUF)             |
+| `chad.thinking`    | `TRASHTALK_CHAD_THINKING`     | `on`    | `off` passes `--no-think`; overrides thinkBudget |
+| `chad.thinkBudget` | `TRASHTALK_CHAD_THINK_BUDGET` | 0       | `--think-budget`; 0 omits it                     |
+| `chad.sandbox`     | `TRASHTALK_CHAD_SANDBOX`      | `off`   | see Sandbox                                      |
 
 ## Protocol
 

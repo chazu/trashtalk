@@ -11,7 +11,7 @@ trap 'rm -rf "$tmp"' EXIT
 export SQLITE_JSON_DB="$tmp/state.db" TRASHTALK_RUN_DIR="$tmp/runs"
 export TRASHTALK_NO_AUTOTICK=1 TRASHTALK_USER=chad-tester
 export TRASHTALK_GUSGUS_PROFILE=chad
-unset TRASHTALK_CHAD_MODEL TRASHTALK_CHAD_THINK_BUDGET TRASHTALK_CHAD_SANDBOX CHAD_SESSION_DIR CHAD_NO_SEATBELT
+unset TRASHTALK_CHAD_MODEL TRASHTALK_CHAD_THINKING TRASHTALK_CHAD_THINK_BUDGET TRASHTALK_CHAD_SANDBOX CHAD_SESSION_DIR CHAD_NO_SEATBELT
 export CHAD_TEST_LOG="$tmp/log"
 mkdir "$tmp/bin" "$CHAD_TEST_LOG" "$tmp/workspace with spaces"
 cat > "$tmp/bin/chad" <<'CHAD'
@@ -113,7 +113,10 @@ contains 'think budget reaches chad' $'--think-budget\n256' "$(cat "$CHAD_TEST_L
 check 'sandbox on leaves seatbelt enabled' "$tmp/runs/chad-sessions/$session||0" "$(cat "$CHAD_TEST_LOG/$run2.env")"
 check 'both runs share one session store' 2 "$(ls "$tmp/runs/chad-sessions/$session"/fixturehash/2*.json | wc -l | tr -d ' ')"
 unset TRASHTALK_CHAD_MODEL TRASHTALK_CHAD_THINK_BUDGET TRASHTALK_CHAD_SANDBOX
-check 'a zero think budget is not passed' 0 "$(@ Agent::ChadDriver argvFor: /bin/chad workspace: /w store: /s model: '' think: 0 sandbox: off promptFile: /p ref: '' | grep -c think-budget)"
+check 'a zero think budget is not passed' 0 "$(@ Agent::ChadDriver argvFor: /bin/chad workspace: /w store: /s model: '' thinking: on think: 0 sandbox: off promptFile: /p ref: '' | grep -c think-budget)"
+check 'thinking off passes --no-think' 1 "$(@ Agent::ChadDriver argvFor: /bin/chad workspace: /w store: /s model: '' thinking: off think: 0 sandbox: off promptFile: /p ref: '' | grep -c no-think)"
+check 'thinking off overrides the budget' 0 "$(@ Agent::ChadDriver argvFor: /bin/chad workspace: /w store: /s model: '' thinking: off think: 256 sandbox: off promptFile: /p ref: '' | grep -c think-budget)"
+check 'thinking on omits --no-think' 0 "$(@ Agent::ChadDriver argvFor: /bin/chad workspace: /w store: /s model: '' thinking: on think: 0 sandbox: off promptFile: /p ref: '' | grep -c no-think)"
 check 'every delivery processed' 0 "$(_db_sql "SELECT count(*) FROM instances WHERE class='Agent::Delivery' AND json_extract(data,'$.state')!='processed';")"
 
 # Exit status classifies the run; a clean exit is the only result.

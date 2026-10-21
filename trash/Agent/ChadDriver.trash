@@ -34,6 +34,9 @@ ChadDriver subclass: Agent::Driver
   # Empty means chad's shipped default model.
   classMethod: model [ ^ @ Agent::ChadSettings model ]
 
+  # 'off' skips chad's <think> blocks entirely.
+  classMethod: thinking [ ^ @ Agent::ChadSettings thinking ]
+
   # 0 leaves chad's own default (no soft cap).
   classMethod: thinkBudget [ ^ @ Agent::ChadSettings thinkBudget ]
 
@@ -44,16 +47,16 @@ ChadDriver subclass: Agent::Driver
   # keys its sessions by directory) and reads the prompt file into the
   # positional argument; an empty prompt would start the interactive TUI, so
   # it exits 2 instead. A non-empty ref resumes with --continue.
-  rawClassMethod: argvFor: executable workspace: workspace store: store model: model think: think sandbox: sandbox promptFile: promptFile ref: ref [
-    jq -cn --arg exe "$1" --arg ws "$2" --arg store "$3" --arg model "$4" --arg think "$5" \
-      --arg sandbox "$6" --arg prompt "$7" --arg ref "$8" '
+  rawClassMethod: argvFor: executable workspace: workspace store: store model: model thinking: thinking think: think sandbox: sandbox promptFile: promptFile ref: ref [
+    jq -cn --arg exe "$1" --arg ws "$2" --arg store "$3" --arg model "$4" --arg thinking "$5" --arg think "$6" \
+      --arg sandbox "$7" --arg prompt "$8" --arg ref "$9" '
       ["env", "CHAD_SESSION_DIR=" + $store, "CHAD_AUTO_CONTINUE=0"]
         + (if $sandbox == "on" then [] else ["CHAD_NO_SEATBELT=1"] end)
         + ["bash", "-c",
            "cd \"$1\" && prompt=$(cat \"$2\") && [ -n \"$prompt\" ] || exit 2; shift 2; exec \"$@\" -- \"$prompt\"",
            "chad-driver", $ws, $prompt, $exe, "--yolo"]
         + (if $model != "" then ["--model", $model] else [] end)
-        + (if ($think | test("^[1-9][0-9]*$")) then ["--think-budget", $think] else [] end)
+        + (if $thinking == "off" then ["--no-think"] elif ($think | test("^[1-9][0-9]*$")) then ["--think-budget", $think] else [] end)
         + (if $ref != "" then ["--continue"] else [] end)'
   ]
 
@@ -79,16 +82,17 @@ ChadDriver subclass: Agent::Driver
   # OS boundary: locate chad and reuse Agent::Driver's launcher. Agent::Driver
   # launchRef: has recorded the error log and captures stderr.
   rawClassMethod: launchPreparedRef: ref promptFile: promptFile run: run token: token [
-    local ref="$1" prompt="$2" run="$3" token="$4" executable workspace store model think sandbox argv directory
+    local ref="$1" prompt="$2" run="$3" token="$4" executable workspace store model thinking think sandbox argv directory
     executable=$(@ Tools::Chad path)
     [[ -n "$executable" ]] || { @ "$_RECEIVER" reject: "chad is not installed. Install it with: $(@ Tools::Chad installCommand)"; return 1; }
     model=$(@ "$_RECEIVER" model) || return 1
+    thinking=$(@ "$_RECEIVER" thinking) || return 1
     think=$(@ "$_RECEIVER" thinkBudget) || return 1
     sandbox=$(@ "$_RECEIVER" sandbox) || return 1
     workspace=$(@ "$run" executionWorkspace)
     directory=$(@ Agent::Driver runDirFor: "$run")
     store=$(@ "$_RECEIVER" storeFor: "$run") || return 1
-    argv=$(@ "$_RECEIVER" argvFor: "$executable" workspace: "$workspace" store: "$store" model: "$model" think: "$think" sandbox: "$sandbox" promptFile: "$prompt" ref: "$ref") || return 1
+    argv=$(@ "$_RECEIVER" argvFor: "$executable" workspace: "$workspace" store: "$store" model: "$model" thinking: "$thinking" think: "$think" sandbox: "$sandbox" promptFile: "$prompt" ref: "$ref") || return 1
     # Conversation runs (marked by their context reminder) project the user's
     # text into the run's conversation log, which the session view renders.
     # Worker deliveries keep their inbox history as the only transcript.
